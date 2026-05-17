@@ -34,15 +34,30 @@ public:
 
     void save(OutputStream& stream) const override;
 
+    void setLocation(int xPos, int yPos) override;
+
     /// Enables placement on sand tiles
     bool canBePlacedAt(int x, int y, bool torch = false) const;
 
     DuneCity::ZoneType getZoneType() const { return zoneType_; }
 
+    ObjectInterface* getInterfaceContainer() override;
+
     void destroy() override;
+
+    /// Recompute zone power from current tile density and apply the delta to
+    /// the owner's House::powerRequirement. Idempotent; safe to call from
+    /// setLocation, density-change hooks, and load.
+    void refreshZonePowerDraw();
+
+    /// Update curAnimFrame from current tile density (column in the atlas)
+    /// and the sampled land-value tier (row). Called every tick so the
+    /// sprite tracks growth and changes in neighbourhood quality.
+    void updateStructureSpecificStuff() override;
 
 private:
     DuneCity::ZoneType zoneType_;  // The type of zone this structure represents
+    int registeredZonePower_ = 0;  // Power last reported into the House pool.
 };
 
 /// A residential zone structure
@@ -51,6 +66,8 @@ public:
     explicit ResidentialZone(House* newOwner);
     explicit ResidentialZone(InputStream& stream);
     virtual ~ResidentialZone() override = default;
+private:
+    void init();
 };
 
 /// A commercial zone structure
@@ -59,6 +76,8 @@ public:
     explicit CommercialZone(House* newOwner);
     explicit CommercialZone(InputStream& stream);
     virtual ~CommercialZone() override = default;
+private:
+    void init();
 };
 
 /// An industrial zone structure
@@ -67,6 +86,8 @@ public:
     explicit IndustrialZone(House* newOwner);
     explicit IndustrialZone(InputStream& stream);
     virtual ~IndustrialZone() override = default;
+private:
+    void init();
 };
 
 #endif // ZONESTRUCTURE_H

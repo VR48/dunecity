@@ -21,6 +21,7 @@
 
 #include <FileClasses/FileManager.h>
 #include <FileClasses/TextManager.h>
+#include <FileClasses/FontManager.h>
 #include <FileClasses/PictureFactory.h>
 #include <FileClasses/LoadSavePNG.h>
 #include <FileClasses/Shpfile.h>
@@ -29,9 +30,15 @@
 #include <FileClasses/Wsafile.h>
 #include <FileClasses/Palfile.h>
 
+#include <Colors.h>
+
+#include <misc/FileSystem.h>
+
 #include <misc/draw_util.h>
 #include <misc/Scaler.h>
 #include <misc/exceptions.h>
+
+#include <cstdlib>
 
 /**
     Number of columns and rows each obj pic has
@@ -112,6 +119,12 @@ static const Coord objPicTiles[] {
     { 16, 1 },  // ObjPic_Terrain_HiddenFog
     { 8, 1 },   // ObjPic_Terrain_Tracks
     { 1, 1 },   // ObjPic_Star
+    { 4, 4 },   // ObjPic_ZoneResidential (4 density × 4 value-tier variants)
+    { 4, 4 },   // ObjPic_ZoneCommercial  (4 density × 4 value-tier variants)
+    { 4, 2 },   // ObjPic_ZoneIndustrial  (4 density × 2 value-tier variants)
+    { 16, 1 },  // ObjPic_CityRoad (16 connection variants, indexed by neighbor mask)
+    { 8, 1 },   // ObjPic_NuclearPlant (8 frame slots for build-animation parity; all identical)
+    { 4, 1 },   // ObjPic_PoliceStation (4 frame slots, all identical; 2x2 footprint)
 };
 
 
@@ -213,6 +226,551 @@ GFXManager::GFXManager() {
     objPic[ObjPic_GunTurret][HOUSE_HARKONNEN][0] = icon->getPictureArray(23);
     objPic[ObjPic_RocketTurret][HOUSE_HARKONNEN][0] = icon->getPictureArray(24);
     objPic[ObjPic_Wall][HOUSE_HARKONNEN][0] = icon->getPictureArray(6,25,3,1);
+
+    // DuneCity zone sprites — load the full 3×3 Micropolis composites and
+    // downscale them to the 2×2 gameplay footprint (32×32 at base zoom).
+    // This shows the entire building art rather than a 2×2 center crop.
+    // Fall back to colored placeholder surfaces when the imported PNGs
+    // are absent (e.g. fresh checkout without running the import script).
+    //
+    // These surfaces are 32-bit RGBA (either from LoadPNG_RW or the
+    // placeholder helper).  The legacy Scaler functions assume 8-bit
+    // paletted surfaces and would segfault on them, so we pre-generate
+    // all three zoom levels here using format-agnostic SDL_BlitScaled,
+    // mirroring how ObjPic_Star bypasses the scaler.
+    {
+        auto makeZonePlaceholder = [](Uint8 r, Uint8 g, Uint8 b) -> sdl2::surface_ptr {
+            const int sz = 2 * D2_TILESIZE;  // 32x32
+            sdl2::surface_ptr s{ SDL_CreateRGBSurface(0, sz, sz, SCREEN_BPP, RMASK, GMASK, BMASK, AMASK) };
+            SDL_FillRect(s.get(), nullptr, SDL_MapRGBA(s->format, r, g, b, 255));
+            SDL_Rect top{0,0,sz,1}, bot{0,sz-1,sz,1}, lft{0,0,1,sz}, rgt{sz-1,0,1,sz};
+            Uint32 border = SDL_MapRGBA(s->format, r/2, g/2, b/2, 255);
+            SDL_FillRect(s.get(), &top, border);
+            SDL_FillRect(s.get(), &bot, border);
+            SDL_FillRect(s.get(), &lft, border);
+            SDL_FillRect(s.get(), &rgt, border);
+            return s;
+        };
+
+        // Scale a 32-bit surface by an integer factor using SDL_BlitScaled
+        // (nearest-neighbour).  This avoids the legacy 8-bit Scaler path.
+        auto scaleRGBASurface = [](SDL_Surface* src, int factor) -> sdl2::surface_ptr {
+            sdl2::surface_ptr dst{ SDL_CreateRGBSurface(0,
+                src->w * factor, src->h * factor,
+                src->format->BitsPerPixel,
+                src->format->Rmask, src->format->Gmask,
+                src->format->Bmask, src->format->Amask) };
+            if (dst) {
+                SDL_BlitScaled(src, nullptr, dst.get(), nullptr);
+            }
+            return dst;
+        };
+
+        // Try loading imported zone sprites (default: variant 0, density 2).
+        // Search order: installed data dir, then source-tree-relative
+        // paths for dev builds (binary in build/bin/ or app bundle).
+        char* sdlBasePath = SDL_GetBasePath();
+        std::string binDir = sdlBasePath ? sdlBasePath : "./";
+        if (sdlBasePath) SDL_free(sdlBasePath);
+
+        std::vector<std::string> searchDirs = {
+            getDuneLegacyDataDir() + "imported_sprites/micropolis/composites_2x2/",
+            binDir + "imported_sprites/micropolis/composites_2x2/",               // CMake-copied next to binary
+            binDir + "../../imported_sprites/micropolis/composites_2x2/",          // build/bin -> root
+            binDir + "../../../../../imported_sprites/micropolis/composites_2x2/",  // .app/Contents/MacOS -> root
+        };
+        // Dev-friendly fallback: DUNE_CITY_SOURCE_DIR env points at the
+        // source tree so imported sprites are found without installing.
+        const char* srcDirEnv = SDL_getenv("DUNE_CITY_SOURCE_DIR");
+        if (srcDirEnv && srcDirEnv[0]) {
+            std::string srcDir = srcDirEnv;
+            if (srcDir.back() != '/' && srcDir.back() != '\\') srcDir += '/';
+            searchDirs.push_back(srcDir + "imported_sprites/micropolis/composites_2x2/");
+        }
+        // Build a per-zone-type atlas containing all (value-tier × density)
+        // variants. Atlas layout: columns = density (0..numDensity-1), rows
+        // = value tier (0..numValue-1). ZoneStructure picks the cell at
+        // (density, valueTier) each tick so a growing residential zone walks
+        // from "empty lot" through "house" to "tall apartment" sprites, with
+        // value-tier variants adding richer-looking buildings where the land
+        // value is high. Sprite files come from the Micropolis import in
+        // imported_sprites/micropolis/composites_2x2/.
+        struct ZoneAtlasSpec {
+            int objPicID;
+            const char* prefix;     // "res", "com", or "ind"
+            int numDensity;         // columns
+            int numValue;           // rows
+            int emptyBaseTile;      // top-left Micropolis tile of the 3x3 empty-zone graphic
+            Uint8 r, g, b;          // fallback color if every variant is missing
+        };
+        // Micropolis empty-zone graphic IDs (3x3 each, with the R/C/I letter
+        // and dotted border baked into the center tile):
+        //   Residential RZB = 240 (range 240-248)
+        //   Commercial  CZB = 423 (range 423-431)
+        //   Industrial  IZB = 612 (range 612-620)
+        const ZoneAtlasSpec zoneAtlases[] = {
+            { ObjPic_ZoneResidential, "res", 4, 4, 240,  80, 160,  80 },
+            { ObjPic_ZoneCommercial,  "com", 4, 4, 423,  80,  80, 200 },
+            { ObjPic_ZoneIndustrial,  "ind", 4, 2, 612, 200, 160,  50 },
+        };
+
+        const int cellSize = 2 * D2_TILESIZE;  // 32 px per zone cell at zoom 0
+
+        // Build the empty-zone (d=0) sprite for a zone type by compositing
+        // the Micropolis 3x3 empty-zone tile group into a 48x48 image and
+        // downscaling to 32x32. The center tile of each group carries the
+        // R/C/I letter glyph, the surrounding 8 tiles form the dotted
+        // border the player recognises from SimCity Classic.
+        auto buildEmptyZoneCell = [&](int baseTile) -> sdl2::surface_ptr {
+            std::vector<std::string> rawDirs = {
+                getDuneLegacyDataDir() + "imported_sprites/micropolis/raw_tiles/",
+                binDir + "imported_sprites/micropolis/raw_tiles/",
+                binDir + "../../imported_sprites/micropolis/raw_tiles/",
+                binDir + "../../../../../imported_sprites/micropolis/raw_tiles/",
+            };
+            if (srcDirEnv && srcDirEnv[0]) {
+                std::string sd = srcDirEnv;
+                if (sd.back() != '/' && sd.back() != '\\') sd += '/';
+                rawDirs.push_back(sd + "imported_sprites/micropolis/raw_tiles/");
+            }
+            auto loadTile = [&](int n) -> sdl2::surface_ptr {
+                char fn[32];
+                std::snprintf(fn, sizeof(fn), "tile_%03d.png", n);
+                for (const auto& dir : rawDirs) {
+                    auto rw = sdl2::RWops_ptr{ SDL_RWFromFile((dir + fn).c_str(), "rb") };
+                    if (rw) {
+                        auto img = LoadPNG_RW(rw.get());
+                        if (img) return img;
+                    }
+                }
+                return sdl2::surface_ptr{};
+            };
+
+            const int srcTileSize = 16;  // Micropolis tile pixel size
+            const int srcW = 3 * srcTileSize;
+            const int srcH = 3 * srcTileSize;
+            sdl2::surface_ptr big{ SDL_CreateRGBSurface(0, srcW, srcH,
+                SCREEN_BPP, RMASK, GMASK, BMASK, AMASK) };
+            if (!big) return sdl2::surface_ptr{};
+            SDL_FillRect(big.get(), nullptr,
+                         SDL_MapRGBA(big->format, 0, 0, 0, 0));
+            for (int row = 0; row < 3; ++row) {
+                for (int col = 0; col < 3; ++col) {
+                    auto t = loadTile(baseTile + row * 3 + col);
+                    if (!t) continue;
+                    SDL_SetSurfaceBlendMode(t.get(), SDL_BLENDMODE_NONE);
+                    SDL_Rect d{ col * srcTileSize, row * srcTileSize,
+                                srcTileSize, srcTileSize };
+                    SDL_BlitSurface(t.get(), nullptr, big.get(), &d);
+                }
+            }
+            // Downscale 48x48 → 32x32 to fit our 2x2 zone footprint.
+            sdl2::surface_ptr down{ SDL_CreateRGBSurface(0, cellSize, cellSize,
+                SCREEN_BPP, RMASK, GMASK, BMASK, AMASK) };
+            if (down) {
+                SDL_SetSurfaceBlendMode(big.get(), SDL_BLENDMODE_NONE);
+                SDL_BlitScaled(big.get(), nullptr, down.get(), nullptr);
+            }
+            return down;
+        };
+
+        for (const auto& spec : zoneAtlases) {
+            const int atlasW = spec.numDensity * cellSize;
+            const int atlasH = spec.numValue   * cellSize;
+            sdl2::surface_ptr atlas{ SDL_CreateRGBSurface(0,
+                atlasW, atlasH, SCREEN_BPP, RMASK, GMASK, BMASK, AMASK) };
+            if (!atlas) continue;
+            // Transparent atlas so any frame we fail to load falls back to
+            // showing terrain rather than a stale neighbour cell.
+            SDL_FillRect(atlas.get(), nullptr,
+                         SDL_MapRGBA(atlas->format, 0, 0, 0, 0));
+
+            // Pre-build the empty-zone (d=0) cell from Micropolis raw tiles
+            // so every row of column 0 shares the same proper SC-style
+            // "freshly zoned, R/C/I letter visible, dotted border" look.
+            sdl2::surface_ptr emptyCell = buildEmptyZoneCell(spec.emptyBaseTile);
+
+            for (int v = 0; v < spec.numValue; ++v) {
+                for (int d = 0; d < spec.numDensity; ++d) {
+                    if (d == 0) {
+                        if (emptyCell) {
+                            SDL_SetSurfaceBlendMode(emptyCell.get(), SDL_BLENDMODE_NONE);
+                            SDL_Rect dst{ d * cellSize, v * cellSize, cellSize, cellSize };
+                            SDL_BlitSurface(emptyCell.get(), nullptr, atlas.get(), &dst);
+                        }
+                        continue;
+                    }
+
+                    char fileName[64];
+                    std::snprintf(fileName, sizeof(fileName),
+                                  "%s_v%d_d%d_2x2.png", spec.prefix, v, d);
+
+                    sdl2::surface_ptr cell;
+                    for (const auto& dir : searchDirs) {
+                        std::string path = dir + fileName;
+                        auto rwops = sdl2::RWops_ptr{ SDL_RWFromFile(path.c_str(), "rb") };
+                        if (rwops) {
+                            cell = LoadPNG_RW(rwops.get());
+                            if (cell) break;
+                        }
+                    }
+                    if (!cell) {
+                        SDL_Log("Zone sprite missing, placeholder for %s", fileName);
+                        cell = makeZonePlaceholder(spec.r, spec.g, spec.b);
+                    }
+                    // Composites are 32×32 already; resize defensively in
+                    // case the import pipeline produced a different size.
+                    if (cell->w != cellSize || cell->h != cellSize) {
+                        sdl2::surface_ptr scaled{ SDL_CreateRGBSurface(0,
+                            cellSize, cellSize,
+                            cell->format->BitsPerPixel,
+                            cell->format->Rmask, cell->format->Gmask,
+                            cell->format->Bmask, cell->format->Amask) };
+                        if (scaled) {
+                            SDL_BlitScaled(cell.get(), nullptr, scaled.get(), nullptr);
+                            cell = std::move(scaled);
+                        }
+                    }
+                    SDL_SetSurfaceBlendMode(cell.get(), SDL_BLENDMODE_NONE);
+                    SDL_Rect dst{ d * cellSize, v * cellSize, cellSize, cellSize };
+                    SDL_BlitSurface(cell.get(), nullptr, atlas.get(), &dst);
+                }
+            }
+
+            // Pre-generate all zoom levels so the 8-bit scaler loop never
+            // runs on these truecolor RGBA surfaces.
+            objPic[spec.objPicID][HOUSE_HARKONNEN][0] = std::move(atlas);
+            objPic[spec.objPicID][HOUSE_HARKONNEN][1] = scaleRGBASurface(objPic[spec.objPicID][HOUSE_HARKONNEN][0].get(), 2);
+            objPic[spec.objPicID][HOUSE_HARKONNEN][2] = scaleRGBASurface(objPic[spec.objPicID][HOUSE_HARKONNEN][0].get(), 3);
+
+            // Zone sprites are house-independent — pre-fill every house slot
+            // so getZoomedObjPic() never tries to palette-remap RGBA data.
+            for (int h = 1; h < NUM_HOUSES; h++) {
+                for (int z = 0; z < NUM_ZOOMLEVEL; z++) {
+                    objPic[spec.objPicID][h][z] = sdl2::surface_ptr{
+                        SDL_ConvertSurface(objPic[spec.objPicID][HOUSE_HARKONNEN][z].get(),
+                                           objPic[spec.objPicID][HOUSE_HARKONNEN][z]->format, 0)
+                    };
+                }
+            }
+        }
+
+        // ----- DuneCity city-mode road atlas -----
+        //
+        // 16 connection variants indexed by Dune-Legacy neighbor mask
+        // (bit 0 up, 1 right, 2 down, 3 left).  We pull the artwork from
+        // Micropolis road tiles and use Micropolis's _RoadTable[] to map
+        // each mask to the right Micropolis tile number — the bit ordering
+        // matches Dune Legacy's exactly.  Result is a single 16×1 atlas
+        // (16*TILESIZE × TILESIZE) consumed by Tile::blitGround() when a
+        // slab is rendered in city-sim mode.
+        {
+            std::vector<std::string> roadDirs = {
+                getDuneLegacyDataDir() + "imported_sprites/micropolis/categories/roads/",
+                binDir + "imported_sprites/micropolis/categories/roads/",
+                binDir + "../../imported_sprites/micropolis/categories/roads/",
+                binDir + "../../../../../imported_sprites/micropolis/categories/roads/",
+            };
+            if (srcDirEnv && srcDirEnv[0]) {
+                std::string srcDir = srcDirEnv;
+                if (srcDir.back() != '/' && srcDir.back() != '\\') srcDir += '/';
+                roadDirs.push_back(srcDir + "imported_sprites/micropolis/categories/roads/");
+            }
+
+            // Micropolis _RoadTable[16] from src/sim/w_con.c — indexed by
+            // neighbor mask, value is the Micropolis tile number.
+            static const int kRoadTileForMask[16] = {
+                66, 67, 66, 68,   // 0=none, 1=U,    2=R,    3=UR
+                67, 67, 69, 73,   // 4=D,    5=UD,   6=RD,   7=URD
+                66, 71, 66, 72,   // 8=L,    9=UL,   10=LR,  11=ULR
+                70, 75, 74, 76    // 12=LD,  13=ULD, 14=LRD, 15=cross
+            };
+
+            // Build the 16-tile atlas at zoom-0 native pixel size (each tile
+            // is D2_TILESIZE square = 16px, matching the source PNGs and what
+            // the in-game renderer samples via world2zoomedWorld(TILESIZE)).
+            // TILESIZE (64) is a world-coord scaling constant, NOT a pixel
+            // size — using it here makes the atlas 4× too big in every
+            // dimension and the renderer ends up sampling only the corner of
+            // each tile (where curbs live, not the road markings).
+            const int atlasW = 16 * D2_TILESIZE;
+            const int atlasH = D2_TILESIZE;
+            sdl2::surface_ptr atlas{ SDL_CreateRGBSurface(0, atlasW, atlasH,
+                SCREEN_BPP, RMASK, GMASK, BMASK, AMASK) };
+
+            // Asphalt-color background — matches the recolored Micropolis
+            // road interior so a missing source PNG looks like plain road
+            // rather than a black square.
+            if (atlas) {
+                SDL_FillRect(atlas.get(), nullptr,
+                             SDL_MapRGBA(atlas->format, 63, 63, 63, 255));
+            }
+
+            int roadsLoaded = 0;
+            for (int mask = 0; mask < 16 && atlas; ++mask) {
+                char filename[32];
+                snprintf(filename, sizeof(filename), "tile_%03d.png", kRoadTileForMask[mask]);
+
+                sdl2::surface_ptr src;
+                for (const auto& dir : roadDirs) {
+                    std::string path = dir + filename;
+                    auto rwops = sdl2::RWops_ptr{ SDL_RWFromFile(path.c_str(), "rb") };
+                    if (rwops) {
+                        src = LoadPNG_RW(rwops.get());
+                        if (src) break;
+                    }
+                }
+
+                if (!src) {
+                    // Leave the black fallback for this slot — surrounding
+                    // tiles still composite into a navigable road surface.
+                    continue;
+                }
+
+                // Repaint the source tile so it reads cleanly on Dune rock:
+                //   - peach curbs (204,127,102) → asphalt (the road has no
+                //     real-world curb context on bare rock)
+                //   - grass corners (0,230,0) → asphalt (same reason)
+                //   - light-gray edge marks (191,191,191) → white (boost
+                //     contrast so they're visible against dark asphalt)
+                // Then procedurally stamp a 2×2 white center dot on every
+                // tile — the Micropolis intersection art (mask 15) has no
+                // center marking, and the dashed center on straight tiles
+                // is small enough to disappear once asphalt-on-rock becomes
+                // the dominant visual. The center dot guarantees every road
+                // tile reads as "a road" regardless of connectivity.
+                {
+                    sdl2::surface_ptr rgba{ SDL_ConvertSurfaceFormat(src.get(), SDL_PIXELFORMAT_RGBA32, 0) };
+                    if (rgba) {
+                        SDL_LockSurface(rgba.get());
+                        Uint8* pixels = static_cast<Uint8*>(rgba->pixels);
+                        for (int y = 0; y < rgba->h; ++y) {
+                            Uint8* row = pixels + y * rgba->pitch;
+                            for (int x = 0; x < rgba->w; ++x) {
+                                Uint32* px = reinterpret_cast<Uint32*>(row + x * 4);
+                                Uint8 cr, cg, cb, ca;
+                                SDL_GetRGBA(*px, rgba->format, &cr, &cg, &cb, &ca);
+                                const bool isPeachCurb = (cr == 204 && cg == 127 && cb == 102);
+                                const bool isGrass     = (cr == 0 && cg == 230 && cb == 0);
+                                const bool isLightMark = (cr == 191 && cg == 191 && cb == 191);
+                                if (isPeachCurb || isGrass) {
+                                    *px = SDL_MapRGBA(rgba->format, 63, 63, 63, 255);
+                                } else if (isLightMark) {
+                                    *px = SDL_MapRGBA(rgba->format, 255, 255, 255, 255);
+                                }
+                            }
+                        }
+                        // Center 2×2 white dot to guarantee visibility.
+                        const Uint32 white = SDL_MapRGBA(rgba->format, 255, 255, 255, 255);
+                        for (int dy = 0; dy < 2; ++dy) {
+                            for (int dx = 0; dx < 2; ++dx) {
+                                int cx = rgba->w / 2 - 1 + dx;
+                                int cy = rgba->h / 2 - 1 + dy;
+                                Uint32* p = reinterpret_cast<Uint32*>(static_cast<Uint8*>(rgba->pixels) + cy * rgba->pitch + cx * 4);
+                                *p = white;
+                            }
+                        }
+                        SDL_UnlockSurface(rgba.get());
+                        src = std::move(rgba);
+                    }
+                }
+
+                SDL_Rect dst{ mask * D2_TILESIZE, 0, D2_TILESIZE, D2_TILESIZE };
+                if (src->w == D2_TILESIZE && src->h == D2_TILESIZE) {
+                    SDL_BlitSurface(src.get(), nullptr, atlas.get(), &dst);
+                } else {
+                    SDL_BlitScaled(src.get(), nullptr, atlas.get(), &dst);
+                }
+                roadsLoaded++;
+            }
+            SDL_Log("Loaded %d/16 city-road tiles from Micropolis road set", roadsLoaded);
+
+            objPic[ObjPic_CityRoad][HOUSE_HARKONNEN][0] = std::move(atlas);
+            objPic[ObjPic_CityRoad][HOUSE_HARKONNEN][1] = scaleRGBASurface(objPic[ObjPic_CityRoad][HOUSE_HARKONNEN][0].get(), 2);
+            objPic[ObjPic_CityRoad][HOUSE_HARKONNEN][2] = scaleRGBASurface(objPic[ObjPic_CityRoad][HOUSE_HARKONNEN][0].get(), 3);
+
+            for (int h = 1; h < NUM_HOUSES; h++) {
+                for (int z = 0; z < NUM_ZOOMLEVEL; z++) {
+                    if (objPic[ObjPic_CityRoad][HOUSE_HARKONNEN][z]) {
+                        objPic[ObjPic_CityRoad][h][z] = sdl2::surface_ptr{
+                            SDL_ConvertSurface(objPic[ObjPic_CityRoad][HOUSE_HARKONNEN][z].get(),
+                                               objPic[ObjPic_CityRoad][HOUSE_HARKONNEN][z]->format, 0)
+                        };
+                    }
+                }
+            }
+        }
+
+        // ----- DuneCity nuclear-plant sprite -----
+        //
+        // The nuclear plant has a 3x3 gameplay footprint and StructureBase
+        // animates by stepping through 8 horizontal frames. We prefer the
+        // 4x4 (64×64) Micropolis source — downscaling 64→48 with BlitScaled
+        // gives a cleaner result than upscaling the 2x2 (32×32) variant.
+        {
+            std::vector<std::string> nuclearDirs4x4 = {
+                getDuneLegacyDataDir() + "imported_sprites/micropolis/composites_special/",
+                binDir + "imported_sprites/micropolis/composites_special/",
+                binDir + "../../imported_sprites/micropolis/composites_special/",
+                binDir + "../../../../../imported_sprites/micropolis/composites_special/",
+            };
+            std::vector<std::string> nuclearDirs2x2 = {
+                getDuneLegacyDataDir() + "imported_sprites/micropolis/composites_special_2x2/",
+                binDir + "imported_sprites/micropolis/composites_special_2x2/",
+                binDir + "../../imported_sprites/micropolis/composites_special_2x2/",
+                binDir + "../../../../../imported_sprites/micropolis/composites_special_2x2/",
+            };
+            if (srcDirEnv && srcDirEnv[0]) {
+                std::string srcDir = srcDirEnv;
+                if (srcDir.back() != '/' && srcDir.back() != '\\') srcDir += '/';
+                nuclearDirs4x4.push_back(srcDir + "imported_sprites/micropolis/composites_special/");
+                nuclearDirs2x2.push_back(srcDir + "imported_sprites/micropolis/composites_special_2x2/");
+            }
+
+            // Atlas frame dimensions at zoom-0 pixel size. TILESIZE (64) is
+            // the world-coord constant; D2_TILESIZE (16) is the actual zoom-0
+            // pixel size. Using TILESIZE here would put the sprite far outside
+            // the rectangle the renderer samples.
+            const int frameW = 3 * D2_TILESIZE;
+            const int frameH = 3 * D2_TILESIZE;
+            const int numFrames = 8;
+            const int atlasW = numFrames * frameW;
+            const int atlasH = frameH;
+            sdl2::surface_ptr atlas{ SDL_CreateRGBSurface(0, atlasW, atlasH,
+                SCREEN_BPP, RMASK, GMASK, BMASK, AMASK) };
+            if (atlas) {
+                SDL_FillRect(atlas.get(), nullptr, SDL_MapRGBA(atlas->format, 0, 0, 0, 0));
+            }
+
+            sdl2::surface_ptr nuclearSrc;
+            for (const auto& dir : nuclearDirs4x4) {
+                std::string path = dir + "nuclear_power_plant_4x4.png";
+                auto rwops = sdl2::RWops_ptr{ SDL_RWFromFile(path.c_str(), "rb") };
+                if (rwops) {
+                    nuclearSrc = LoadPNG_RW(rwops.get());
+                    if (nuclearSrc) {
+                        SDL_Log("Loaded nuclear plant sprite (4x4) from: %s", path.c_str());
+                        break;
+                    }
+                }
+            }
+            if (!nuclearSrc) {
+                for (const auto& dir : nuclearDirs2x2) {
+                    std::string path = dir + "nuclear_power_plant_2x2.png";
+                    auto rwops = sdl2::RWops_ptr{ SDL_RWFromFile(path.c_str(), "rb") };
+                    if (rwops) {
+                        nuclearSrc = LoadPNG_RW(rwops.get());
+                        if (nuclearSrc) {
+                            SDL_Log("Loaded nuclear plant sprite (2x2 fallback) from: %s", path.c_str());
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (atlas && nuclearSrc) {
+                // Scale the source to fill the full 48×48 frame so the
+                // nuclear plant occupies its entire 3×3 gameplay footprint.
+                SDL_SetSurfaceBlendMode(nuclearSrc.get(), SDL_BLENDMODE_NONE);
+                for (int f = 0; f < numFrames; ++f) {
+                    SDL_Rect frameDst = { f * frameW, 0, frameW, frameH };
+                    SDL_BlitScaled(nuclearSrc.get(), nullptr, atlas.get(), &frameDst);
+                }
+
+                objPic[ObjPic_NuclearPlant][HOUSE_HARKONNEN][0] = std::move(atlas);
+                objPic[ObjPic_NuclearPlant][HOUSE_HARKONNEN][1] = scaleRGBASurface(objPic[ObjPic_NuclearPlant][HOUSE_HARKONNEN][0].get(), 2);
+                objPic[ObjPic_NuclearPlant][HOUSE_HARKONNEN][2] = scaleRGBASurface(objPic[ObjPic_NuclearPlant][HOUSE_HARKONNEN][0].get(), 3);
+
+                for (int h = 1; h < NUM_HOUSES; h++) {
+                    for (int z = 0; z < NUM_ZOOMLEVEL; z++) {
+                        if (objPic[ObjPic_NuclearPlant][HOUSE_HARKONNEN][z]) {
+                            objPic[ObjPic_NuclearPlant][h][z] = sdl2::surface_ptr{
+                                SDL_ConvertSurface(objPic[ObjPic_NuclearPlant][HOUSE_HARKONNEN][z].get(),
+                                                   objPic[ObjPic_NuclearPlant][HOUSE_HARKONNEN][z]->format, 0)
+                            };
+                        }
+                    }
+                }
+            } else {
+                SDL_Log("Nuclear plant sprite not found; NuclearPlant will fall back to HighTechFactory art");
+            }
+        }
+
+        // ----- DuneCity police-station sprite -----
+        //
+        // 2x2 footprint, no animation. Like the nuclear plant we still
+        // build a multi-frame atlas (4 horizontal copies) so StructureBase
+        // animation indexing has somewhere to land — all frames are the
+        // same image, so the sprite never appears to "animate".
+        {
+            std::vector<std::string> policeDirs = {
+                getDuneLegacyDataDir() + "imported_sprites/micropolis/composites_2x2/",
+                binDir + "imported_sprites/micropolis/composites_2x2/",
+                binDir + "../../imported_sprites/micropolis/composites_2x2/",
+                binDir + "../../../../../imported_sprites/micropolis/composites_2x2/",
+            };
+            if (srcDirEnv && srcDirEnv[0]) {
+                std::string srcDir = srcDirEnv;
+                if (srcDir.back() != '/' && srcDir.back() != '\\') srcDir += '/';
+                policeDirs.push_back(srcDir + "imported_sprites/micropolis/composites_2x2/");
+            }
+
+            const int frameW    = 2 * D2_TILESIZE;   // 32 px at zoom 0
+            const int frameH    = 2 * D2_TILESIZE;
+            const int numFrames = 4;
+            sdl2::surface_ptr atlas{ SDL_CreateRGBSurface(0,
+                numFrames * frameW, frameH,
+                SCREEN_BPP, RMASK, GMASK, BMASK, AMASK) };
+            if (atlas) {
+                SDL_FillRect(atlas.get(), nullptr,
+                             SDL_MapRGBA(atlas->format, 0, 0, 0, 0));
+            }
+
+            sdl2::surface_ptr policeSrc;
+            for (const auto& dir : policeDirs) {
+                std::string path = dir + "police_station_2x2.png";
+                auto rwops = sdl2::RWops_ptr{ SDL_RWFromFile(path.c_str(), "rb") };
+                if (rwops) {
+                    policeSrc = LoadPNG_RW(rwops.get());
+                    if (policeSrc) {
+                        SDL_Log("Loaded police station sprite from: %s", path.c_str());
+                        break;
+                    }
+                }
+            }
+
+            if (atlas && policeSrc) {
+                SDL_SetSurfaceBlendMode(policeSrc.get(), SDL_BLENDMODE_NONE);
+                for (int f = 0; f < numFrames; ++f) {
+                    SDL_Rect dst{ f * frameW, 0, frameW, frameH };
+                    SDL_BlitScaled(policeSrc.get(), nullptr, atlas.get(), &dst);
+                }
+
+                objPic[ObjPic_PoliceStation][HOUSE_HARKONNEN][0] = std::move(atlas);
+                objPic[ObjPic_PoliceStation][HOUSE_HARKONNEN][1] =
+                    scaleRGBASurface(objPic[ObjPic_PoliceStation][HOUSE_HARKONNEN][0].get(), 2);
+                objPic[ObjPic_PoliceStation][HOUSE_HARKONNEN][2] =
+                    scaleRGBASurface(objPic[ObjPic_PoliceStation][HOUSE_HARKONNEN][0].get(), 3);
+
+                // House-independent sprite — clone for every house slot
+                // so getZoomedObjPic() never attempts a palette remap on
+                // RGBA data.
+                for (int h = 1; h < NUM_HOUSES; h++) {
+                    for (int z = 0; z < NUM_ZOOMLEVEL; z++) {
+                        if (objPic[ObjPic_PoliceStation][HOUSE_HARKONNEN][z]) {
+                            objPic[ObjPic_PoliceStation][h][z] = sdl2::surface_ptr{
+                                SDL_ConvertSurface(objPic[ObjPic_PoliceStation][HOUSE_HARKONNEN][z].get(),
+                                                   objPic[ObjPic_PoliceStation][HOUSE_HARKONNEN][z]->format, 0)
+                            };
+                        }
+                    }
+                }
+            } else {
+                SDL_Log("Police station sprite not found at imported_sprites/micropolis/composites_2x2/police_station_2x2.png");
+            }
+        }
+    }
+
     objPic[ObjPic_Bullet_SmallRocket][HOUSE_HARKONNEN][0] = units->getPictureArray(16,1,ROCKET_ROW(35));
     objPic[ObjPic_Bullet_MediumRocket][HOUSE_HARKONNEN][0] = units->getPictureArray(16,1,ROCKET_ROW(20));
     objPic[ObjPic_Bullet_LargeRocket][HOUSE_HARKONNEN][0] = units->getPictureArray(16,1,ROCKET_ROW(40));
@@ -259,19 +817,38 @@ GFXManager::GFXManager() {
 
     // scale obj pics and apply color key
     for(int id = 0; id < NUM_OBJPICS; id++) {
+        // Zone sprites (and Star) are 32-bit RGBA with per-pixel alpha.
+        // SDL_SetColorKey with PALCOLOR_TRANSPARENT (== 0) on them would
+        // treat any pixel with raw value 0 as color-keyed, overriding the
+        // alpha channel and producing black squares where transparent
+        // pixels have non-zero RGB.  Skip color keying for these IDs.
+        const bool isTruecolorSprite = (id == ObjPic_ZoneResidential
+                                     || id == ObjPic_ZoneCommercial
+                                     || id == ObjPic_ZoneIndustrial
+                                     || id == ObjPic_CityRoad
+                                     || id == ObjPic_NuclearPlant
+                                     || id == ObjPic_PoliceStation
+                                     || id == ObjPic_Star);
+
         for(int h = 0; h < (int) NUM_HOUSES; h++) {
             if(objPic[id][h][0] != nullptr) {
                 if(objPic[id][h][1] == nullptr) {
                     objPic[id][h][1] = generateDoubledObjPic(id, h);
                 }
-                SDL_SetColorKey(objPic[id][h][1].get(), SDL_TRUE, PALCOLOR_TRANSPARENT);
+                if(!isTruecolorSprite) {
+                    SDL_SetColorKey(objPic[id][h][1].get(), SDL_TRUE, PALCOLOR_TRANSPARENT);
+                }
 
                 if(objPic[id][h][2] == nullptr) {
                     objPic[id][h][2] = generateTripledObjPic(id, h);
                 }
-                SDL_SetColorKey(objPic[id][h][2].get(), SDL_TRUE, PALCOLOR_TRANSPARENT);
+                if(!isTruecolorSprite) {
+                    SDL_SetColorKey(objPic[id][h][2].get(), SDL_TRUE, PALCOLOR_TRANSPARENT);
+                }
 
-                SDL_SetColorKey(objPic[id][h][0].get(), SDL_TRUE, PALCOLOR_TRANSPARENT);
+                if(!isTruecolorSprite) {
+                    SDL_SetColorKey(objPic[id][h][0].get(), SDL_TRUE, PALCOLOR_TRANSPARENT);
+                }
             }
         }
     }
@@ -334,6 +911,100 @@ GFXManager::GFXManager() {
     smallDetailPicTex[Picture_Wall] = extractSmallDetailPic("WALL.WSA");
     smallDetailPicTex[Picture_WindTrap] = extractSmallDetailPic("WINDTRAP.WSA");
     smallDetailPicTex[Picture_WOR] = extractSmallDetailPic("WOR.WSA");
+
+    // DuneCity zone build-menu icons — scale the imported zone sprite down
+    // to 91x55 for the small detail pic.  Falls back to SLAB.WSA if the
+    // zone surface was not loaded.
+    {
+        auto makeZoneDetailPic = [&](int objPicId) -> sdl2::texture_ptr {
+            SDL_Surface* zoneSrc = objPic[objPicId][HOUSE_HARKONNEN][0].get();
+            if (!zoneSrc) return extractSmallDetailPic("SLAB.WSA");
+
+            // Atlas layout: columns = density, rows = value tier. Sample
+            // the medium-density v0 cell (col 2, row 0) as the build-menu
+            // representative — the v0/d0 corner is an empty-lot placeholder.
+            const int cellSize = 2 * D2_TILESIZE;  // 32 px
+            SDL_Rect srcRect = { 2 * cellSize, 0, cellSize, cellSize };
+
+            // Create a transparent 91x55 canvas.  Reserve gutters so the
+            // icon doesn't overlap the top-left lattice overlay (13x13 at
+            // offset 2,2) or the bottom-left price text (~12px tall).
+            sdl2::surface_ptr canvas{ SDL_CreateRGBSurface(0, 91, 55,
+                SCREEN_BPP, RMASK, GMASK, BMASK, AMASK) };
+            if (!canvas) return extractSmallDetailPic("SLAB.WSA");
+            SDL_FillRect(canvas.get(), nullptr, SDL_MapRGBA(canvas->format, 0, 0, 0, 0));
+
+            const int leftGutter  = 16;  // clear the 13px lattice + padding
+            const int bottomGutter = 14; // clear the ~12px price text
+            const int topMargin   = 2;
+            const int rightMargin = 4;
+            const int usableW = 91 - leftGutter - rightMargin;  // 71
+            const int usableH = 55 - topMargin - bottomGutter;  // 39
+            float scale = std::min(static_cast<float>(usableW) / cellSize,
+                                   static_cast<float>(usableH) / cellSize);
+            // Cap at 1.5x to avoid over-enlarging small sprites.
+            if (scale > 1.5f) scale = 1.5f;
+            int destW = static_cast<int>(cellSize * scale);
+            int destH = static_cast<int>(cellSize * scale);
+            // Center within the usable area (right of lattice, above price).
+            int destX = leftGutter + (usableW - destW) / 2;
+            int destY = topMargin  + (usableH - destH) / 2;
+            SDL_Rect destRect = { destX, destY, destW, destH };
+
+            SDL_BlendMode prevMode;
+            SDL_GetSurfaceBlendMode(zoneSrc, &prevMode);
+            SDL_SetSurfaceBlendMode(zoneSrc, SDL_BLENDMODE_NONE);
+            SDL_BlitScaled(zoneSrc, &srcRect, canvas.get(), &destRect);
+            SDL_SetSurfaceBlendMode(zoneSrc, prevMode);
+
+            auto tex = convertSurfaceToTexture(canvas.get());
+            if (tex) SDL_SetTextureBlendMode(tex.get(), SDL_BLENDMODE_BLEND);
+            return tex ? std::move(tex) : extractSmallDetailPic("SLAB.WSA");
+        };
+        smallDetailPicTex[Picture_ZoneResidential] = makeZoneDetailPic(ObjPic_ZoneResidential);
+        smallDetailPicTex[Picture_ZoneCommercial]  = makeZoneDetailPic(ObjPic_ZoneCommercial);
+        smallDetailPicTex[Picture_ZoneIndustrial]  = makeZoneDetailPic(ObjPic_ZoneIndustrial);
+
+        // Road build-menu icon: use the cross-intersection frame (mask=15)
+        // of the Micropolis road atlas so the icon visually reads as a road,
+        // not as a slab of concrete (the previous SLAB.WSA placeholder).
+        SDL_Surface* roadAtlas = objPic[ObjPic_CityRoad][HOUSE_HARKONNEN][0].get();
+        if (roadAtlas) {
+            const int crossFrame = 15;  // four-way intersection — most "road"-looking glyph
+            sdl2::surface_ptr crossTile = getSubPicture(roadAtlas, crossFrame * TILESIZE, 0, TILESIZE, TILESIZE);
+            if (crossTile) {
+                sdl2::surface_ptr canvas{ SDL_CreateRGBSurface(0, 91, 55,
+                    SCREEN_BPP, RMASK, GMASK, BMASK, AMASK) };
+                if (canvas) {
+                    SDL_FillRect(canvas.get(), nullptr, SDL_MapRGBA(canvas->format, 0, 0, 0, 0));
+                    const int leftGutter = 16, bottomGutter = 14, topMargin = 2, rightMargin = 4;
+                    const int usableW = 91 - leftGutter - rightMargin;
+                    const int usableH = 55 - topMargin - bottomGutter;
+                    // Scale up the 16x16 tile to make it readable at sidebar size.
+                    float scale = std::min(static_cast<float>(usableW) / crossTile->w,
+                                           static_cast<float>(usableH) / crossTile->h);
+                    if (scale > 2.0f) scale = 2.0f;
+                    int destW = static_cast<int>(crossTile->w * scale);
+                    int destH = static_cast<int>(crossTile->h * scale);
+                    int destX = leftGutter + (usableW - destW) / 2;
+                    int destY = topMargin  + (usableH - destH) / 2;
+                    SDL_Rect destRect = { destX, destY, destW, destH };
+                    SDL_SetSurfaceBlendMode(crossTile.get(), SDL_BLENDMODE_NONE);
+                    SDL_BlitScaled(crossTile.get(), nullptr, canvas.get(), &destRect);
+                    auto tex = convertSurfaceToTexture(canvas.get());
+                    if (tex) {
+                        SDL_SetTextureBlendMode(tex.get(), SDL_BLENDMODE_BLEND);
+                        smallDetailPicTex[Picture_Road] = std::move(tex);
+                    }
+                }
+            }
+        }
+    }
+    if (!smallDetailPicTex[Picture_Road]) {
+        smallDetailPicTex[Picture_Road]        = extractSmallDetailPic("SLAB.WSA");
+    }
+    smallDetailPicTex[Picture_PowerLine]       = extractSmallDetailPic("SLAB.WSA");
+
     // unused: FARTR.WSA, FHARK.WSA, FORDOS.WSA
 
 
@@ -505,6 +1176,24 @@ GFXManager::GFXManager() {
     uiGraphic[UI_LoadSaveWindow][HOUSE_HARKONNEN] = PicFactory->createMenu(280,228);
     uiGraphic[UI_NewMapWindow][HOUSE_HARKONNEN] = PicFactory->createMenu(600,440);
     uiGraphic[UI_DuneLegacy][HOUSE_HARKONNEN] = LoadPNG_RW(pFileManager->openFile("DuneLegacy.png").get());
+    {
+        // Replace the baked-in "Dune Legacy" title with "Dune City": fill the
+        // central text region with the banner's dark interior tone and draw
+        // our own title centered. Decorative wood frame at the edges remains
+        // visible. The same surface is then reused as UI_GameMenu's header.
+        SDL_Surface* pBanner = uiGraphic[UI_DuneLegacy][HOUSE_HARKONNEN].get();
+        const int bw = pBanner->w;
+        const int bh = pBanner->h;
+        SDL_Rect inner = { bw / 16, bh / 8, bw - (bw / 16) * 2, bh - (bh / 8) * 2 };
+        SDL_FillRect(pBanner, &inner, SDL_MapRGB(pBanner->format, 18, 22, 60));
+
+        const int titleFontSize = std::max(16, std::min(34, bh - 16));
+        sdl2::surface_ptr titleText{
+            pFontManager->createSurfaceWithText("Dune City", COLOR_LIGHTYELLOW, titleFontSize) };
+        SDL_Rect titleDest = calcDrawingRect(titleText.get(), bw / 2, bh / 2,
+                                             HAlign::Center, VAlign::Center);
+        SDL_BlitSurface(titleText.get(), nullptr, pBanner, &titleDest);
+    }
     uiGraphic[UI_GameMenu][HOUSE_HARKONNEN] = PicFactory->createMenu(uiGraphic[UI_DuneLegacy][HOUSE_HARKONNEN].get(),158);
     PicFactory->drawFrame(uiGraphic[UI_DuneLegacy][HOUSE_HARKONNEN].get(),PictureFactory::SimpleFrame);
 
@@ -762,6 +1451,59 @@ GFXManager::GFXManager() {
     uiGraphic[UI_MapEditor_Pen5x5][HOUSE_HARKONNEN] = LoadPNG_RW(pFileManager->openFile("MapEditorPen5x5.png").get());
     SDL_SetColorKey(uiGraphic[UI_MapEditor_Pen5x5][HOUSE_HARKONNEN].get(), SDL_TRUE, 0);
 
+    // DuneCity: map-editor icons for SimCity-style buildings exposed when the
+    // city mod is active. Zone atlases are a single 2x2-tile frame each, so
+    // we just take the whole surface. Zones are RGBA truecolor (house-agnostic
+    // city buildings), so we pre-fill every house slot — the lazy remap in
+    // getUIGraphicSurface() assumes palette-indexed surfaces and would corrupt
+    // RGBA. NuclearPlant reuses the HighTechFactory icon (same convention used
+    // by the in-game detail pic — see sand.cpp) and inherits the standard
+    // house-colour remap.
+    {
+        struct ZoneIcon { int uiID; int objPicID; };
+        const ZoneIcon zoneIcons[] = {
+            { UI_MapEditor_ZoneResidential, ObjPic_ZoneResidential },
+            { UI_MapEditor_ZoneCommercial,  ObjPic_ZoneCommercial  },
+            { UI_MapEditor_ZoneIndustrial,  ObjPic_ZoneIndustrial  },
+        };
+        // Editor icon = the medium-density v0 cell (column 2, row 0) of the
+        // atlas. The v0/d0 top-left corner is an "empty lot" placeholder
+        // which would make every zone button look like dirt.
+        const int iconCellX = 2 * (2 * D2_TILESIZE);  // column 2 (d=2)
+        const int iconCellY = 0;                      // row 0 (v=0)
+        for (const auto& z : zoneIcons) {
+            for (int h = 0; h < (int)NUM_HOUSES; ++h) {
+                uiGraphic[z.uiID][h] = getSubPicture(objPic[z.objPicID][HOUSE_HARKONNEN][0].get(),
+                                                    iconCellX, iconCellY,
+                                                    2*D2_TILESIZE, 2*D2_TILESIZE);
+            }
+        }
+    }
+    // Pull the nuclear icon directly from the Micropolis nuclear-plant atlas
+    // — first 3x3 frame is identical across all 8 animation slots. Pre-fill
+    // every house slot like the zone icons (sprite is house-agnostic).
+    for (int h = 0; h < (int)NUM_HOUSES; ++h) {
+        if (objPic[ObjPic_NuclearPlant][HOUSE_HARKONNEN][0]) {
+            uiGraphic[UI_MapEditor_NuclearPlant][h] = getSubPicture(objPic[ObjPic_NuclearPlant][HOUSE_HARKONNEN][0].get(), 0, 0, 3*D2_TILESIZE, 3*D2_TILESIZE);
+        } else {
+            // Fall back to HighTechFactory if the Micropolis PNG is missing.
+            uiGraphic[UI_MapEditor_NuclearPlant][h] = getSubPicture(objPic[ObjPic_HighTechFactory][HOUSE_HARKONNEN][0].get(), 2*3*D2_TILESIZE, 0, 3*D2_TILESIZE, 2*D2_TILESIZE);
+        }
+    }
+
+    // Road icon: pull frame 15 (four-way intersection) from the CityRoad
+    // atlas at zoom level 1 (D2_TILESIZE-per-cell) so it matches the size of
+    // other 1x1 structure icons (Slab1, Wall). Road is house-agnostic — fill
+    // every house slot directly so the palette-remap helper doesn't run on
+    // RGBA surfaces.
+    for (int h = 0; h < (int)NUM_HOUSES; ++h) {
+        if (objPic[ObjPic_CityRoad][HOUSE_HARKONNEN][1]) {
+            uiGraphic[UI_MapEditor_Road][h] = getSubPicture(objPic[ObjPic_CityRoad][HOUSE_HARKONNEN][1].get(), 15 * D2_TILESIZE, 0, D2_TILESIZE, D2_TILESIZE);
+        } else {
+            // Fall back to SLAB.WSA-style if the road atlas wasn't built.
+            uiGraphic[UI_MapEditor_Road][h] = getSubPicture(objPic[ObjPic_Wall][HOUSE_HARKONNEN][0].get(), 2*D2_TILESIZE, 0, D2_TILESIZE, D2_TILESIZE);
+        }
+    }
 
 
     // load animations
@@ -850,6 +1592,17 @@ SDL_Texture* GFXManager::getZoomedObjPic(unsigned int id, int house, unsigned in
             objPicTex[id][house][z] = sdl2::texture_ptr{ SDL_CreateTexture(renderer, SCREEN_FORMAT, SDL_TEXTUREACCESS_TARGET, objPic[id][house][z]->w, objPic[id][house][z]->h) };
         } else {
             objPicTex[id][house][z] = convertSurfaceToTexture(objPic[id][house][z].get());
+        }
+
+        // Truecolor RGBA sprites need explicit blend mode so their alpha
+        // channel is respected during rendering; without this, transparent
+        // pixels appear as solid black.
+        if(id == ObjPic_ZoneResidential || id == ObjPic_ZoneCommercial
+           || id == ObjPic_ZoneIndustrial || id == ObjPic_CityRoad
+           || id == ObjPic_NuclearPlant || id == ObjPic_Star) {
+            if(objPicTex[id][house][z]) {
+                SDL_SetTextureBlendMode(objPicTex[id][house][z].get(), SDL_BLENDMODE_BLEND);
+            }
         }
     }
 

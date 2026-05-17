@@ -79,6 +79,13 @@ public:
     */
     bool hasChildWindow() const { return (pChildWindow != nullptr); };
 
+    /// Modal windows capture all parent input until closed. Non-modal child
+    /// windows auto-close when the player clicks outside their bounds and
+    /// let the click pass through to the underlying interface. Default is
+    /// modal so existing windows behave as before.
+    bool isModal() const { return modal_; }
+    void setModal(bool m) { modal_ = m; }
+
     /**
         Get the current position of this window.
         \return current position of this window
@@ -261,6 +268,7 @@ protected:
     bool bTransparentBackground;                        ///< true = no background is drawn
     bool bSelfGeneratedBackground;                      ///< true = background is created by this window, false = created by someone else
     sdl2::texture_unique_or_nonowning_ptr pBackground;  ///< background texture
+    bool modal_ = true;                                 ///< false: clicks outside the window dismiss it and fall through
 };
 
 #endif //WINDOW_H

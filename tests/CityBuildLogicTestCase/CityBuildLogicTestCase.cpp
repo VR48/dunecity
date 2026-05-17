@@ -13,18 +13,18 @@ TEST_CASE("CityBuildLogic: road placement uses the city tool road command", "[ci
     REQUIRE(command.parameter == static_cast<uint32_t>(DuneCity::CityTool_Road));
 }
 
-TEST_CASE("CityBuildLogic: valid road placement becomes conductive", "[city][roads][placement]") {
+TEST_CASE("CityBuildLogic: valid road placement marks tile as road", "[city][roads][placement]") {
     auto state = DuneCity::makeCityTilePlacementState(
         true,   // isRock
         false,  // isMountain
         false,  // hasGroundObject
         false,  // hasCityZone
-        false   // isCityConductive
+        false   // hasRoad
     );
 
     REQUIRE(DuneCity::canPlaceRoad(state));
     REQUIRE(DuneCity::applyRoadPlacement(state));
-    REQUIRE(state.isCityConductive);
+    REQUIRE(state.hasRoad);
 }
 
 TEST_CASE("CityBuildLogic: invalid road placement is rejected cleanly", "[city][roads][placement]") {
@@ -33,7 +33,7 @@ TEST_CASE("CityBuildLogic: invalid road placement is rejected cleanly", "[city][
         REQUIRE_FALSE(DuneCity::canPlaceRoad(state));
         auto mutableState = state;
         REQUIRE_FALSE(DuneCity::applyRoadPlacement(mutableState));
-        REQUIRE_FALSE(mutableState.isCityConductive);
+        REQUIRE_FALSE(mutableState.hasRoad);
     }
 
     SECTION("blocked terrain") {
@@ -41,7 +41,7 @@ TEST_CASE("CityBuildLogic: invalid road placement is rejected cleanly", "[city][
         REQUIRE_FALSE(DuneCity::canPlaceRoad(state));
         auto mutableState = state;
         REQUIRE_FALSE(DuneCity::applyRoadPlacement(mutableState));
-        REQUIRE_FALSE(mutableState.isCityConductive);
+        REQUIRE_FALSE(mutableState.hasRoad);
     }
 
     SECTION("mountain terrain") {
@@ -49,7 +49,7 @@ TEST_CASE("CityBuildLogic: invalid road placement is rejected cleanly", "[city][
         REQUIRE_FALSE(DuneCity::canPlaceRoad(state));
         auto mutableState = state;
         REQUIRE_FALSE(DuneCity::applyRoadPlacement(mutableState));
-        REQUIRE_FALSE(mutableState.isCityConductive);
+        REQUIRE_FALSE(mutableState.hasRoad);
     }
 
     SECTION("duplicate road") {
@@ -57,7 +57,7 @@ TEST_CASE("CityBuildLogic: invalid road placement is rejected cleanly", "[city][
         REQUIRE_FALSE(DuneCity::canPlaceRoad(state));
         auto mutableState = state;
         REQUIRE_FALSE(DuneCity::applyRoadPlacement(mutableState));
-        REQUIRE(mutableState.isCityConductive);
+        REQUIRE(mutableState.hasRoad);
     }
 
     SECTION("existing city zone") {
@@ -65,6 +65,6 @@ TEST_CASE("CityBuildLogic: invalid road placement is rejected cleanly", "[city][
         REQUIRE_FALSE(DuneCity::canPlaceRoad(state));
         auto mutableState = state;
         REQUIRE_FALSE(DuneCity::applyRoadPlacement(mutableState));
-        REQUIRE_FALSE(mutableState.isCityConductive);
+        REQUIRE_FALSE(mutableState.hasRoad);
     }
 }

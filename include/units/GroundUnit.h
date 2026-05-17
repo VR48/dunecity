@@ -48,7 +48,12 @@ public:
 
     void doRequestCarryallDrop(int x, int y);
     bool requestCarryall();
+    void cancelCarryallPickup();
     void setPickedUp(UnitBase* newCarrier) override;
+
+    using UnitBase::doMove2Pos;
+    void doMove2Pos(int xPos, int yPos, bool bForced) override;
+    void doMove2Object(const ObjectBase* pTargetObject) override;
 
     /**
         This method is called when the user clicks on the repair button for this unit

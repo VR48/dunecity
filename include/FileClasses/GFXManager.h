@@ -113,6 +113,12 @@ typedef enum {
     ObjPic_Terrain_HiddenFog,
     ObjPic_Terrain_Tracks,
     ObjPic_Star,
+    ObjPic_ZoneResidential,
+    ObjPic_ZoneCommercial,
+    ObjPic_ZoneIndustrial,
+    ObjPic_CityRoad,
+    ObjPic_NuclearPlant,   ///< DuneCity: Micropolis nuclear-plant sprite (3x3 footprint)
+    ObjPic_PoliceStation,  ///< DuneCity: Micropolis police-station sprite (2x2 footprint)
     NUM_OBJPICS
 } ObjPic_enum;
 
@@ -125,7 +131,8 @@ static const std::array<std::string, NUM_OBJPICS> ObjPicNames =  { { "Tank_Base"
     "Bullet_SonicTemp", "Hit_Gas", "Hit_ShellSmall", "Hit_ShellMedium", "Hit_ShellLarge", "ExplosionSmall", "ExplosionMedium1",
     "ExplosionMedium2", "ExplosionLarge1", "ExplosionLarge2", "ExplosionSmallUnit", "ExplosionFlames", "ExplosionSpiceBloom",
     "DeadInfantry", "DeadAirUnit", "Smoke", "SandwormShimmerMask", "SandwormShimmerTemp", "Terrain", "DestroyedStructure", "RockDamage",
-    "SandDamage", "Terrain_Hidden", "Terrain_HiddenFog", "Terrain_Tracks", "Star" } };
+    "SandDamage", "Terrain_Hidden", "Terrain_HiddenFog", "Terrain_Tracks", "Star",
+    "ZoneResidential", "ZoneCommercial", "ZoneIndustrial", "CityRoad", "NuclearPlant", "PoliceStation" } };
 
 #define GROUNDUNIT_ROW(i) (i+2)|TILE_NORMAL,(i+1)|TILE_NORMAL,i|TILE_NORMAL,(i+1)|TILE_FLIPV,(i+2)|TILE_FLIPV,(i+3)|TILE_FLIPV, (i+4)|TILE_NORMAL,(i+3)|TILE_NORMAL
 #define AIRUNIT_ROW(i) (i+2)|TILE_NORMAL,(i+1)|TILE_NORMAL,i|TILE_NORMAL,(i+1)|TILE_FLIPV,(i+2)|TILE_FLIPV,(i+1)|TILE_ROTATE, i|TILE_FLIPH,(i+1)|TILE_FLIPH
@@ -180,6 +187,11 @@ typedef enum {
     Picture_Wall,
     Picture_WindTrap,
     Picture_WOR,
+    Picture_ZoneResidential,
+    Picture_ZoneCommercial,
+    Picture_ZoneIndustrial,
+    Picture_Road,
+    Picture_PowerLine,
     NUM_SMALLDETAILPICS
 } SmallDetailPics_Enum;
 
@@ -419,6 +431,11 @@ typedef enum {
     UI_MapEditor_Pen1x1,
     UI_MapEditor_Pen3x3,
     UI_MapEditor_Pen5x5,
+    UI_MapEditor_ZoneResidential,   ///< DuneCity: map-editor icon for R zone
+    UI_MapEditor_ZoneCommercial,    ///< DuneCity: map-editor icon for C zone
+    UI_MapEditor_ZoneIndustrial,    ///< DuneCity: map-editor icon for I zone
+    UI_MapEditor_NuclearPlant,      ///< DuneCity: map-editor icon for nuclear plant
+    UI_MapEditor_Road,              ///< DuneCity: map-editor icon for road tile
     NUM_UIGRAPHICS
 } UIGraphics_Enum;
 

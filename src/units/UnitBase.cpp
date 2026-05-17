@@ -1274,7 +1274,12 @@ void UnitBase::setSpeeds() {
     FixPoint speed = getMaxSpeed();
 
     if(!isAFlyingUnit()) {
-        speed += speed*(1 - getTerrainDifficulty((TERRAINTYPE) currentGameMap->getTile(location)->getType()));
+        const Tile* pTile = currentGameMap->getTile(location);
+        speed += speed*(1 - getTerrainDifficulty((TERRAINTYPE) pTile->getType()));
+        if(pTile->isRoad()) {
+            // Roads double ground-unit travel speed (city-sim feature).
+            speed *= 2;
+        }
         if(isBadlyDamaged()) {
             speed *= HEAVILYDAMAGEDSPEEDMULTIPLIER;
         }

@@ -19,6 +19,7 @@
 #define WINDTRAPINTERFACE_H
 
 #include "DefaultStructureInterface.h"
+#include "CityStatsBox.h"
 
 #include <FileClasses/FontManager.h>
 #include <FileClasses/TextManager.h>
@@ -50,6 +51,9 @@ protected:
         producedEnergyLabel.setTextFontSize(12);
         producedEnergyLabel.setTextColor(color);
         textVBox.addWidget(&producedEnergyLabel, 0.005);
+
+        cityStats_.attachTo(textVBox, color);
+
         textVBox.addWidget(Spacer::create(),0.99);
     }
 
@@ -70,6 +74,8 @@ protected:
         requiredEnergyLabel.setText(" " + _("Required") + ": " + std::to_string(pOwner->getPowerRequirement()));
         producedEnergyLabel.setText(" " + _("Produced") + ": " + std::to_string(pOwner->getProducedPower()));
 
+        cityStats_.update(dynamic_cast<StructureBase*>(pObject));
+
         return DefaultStructureInterface::update();
     }
 
@@ -78,6 +84,8 @@ private:
 
     Label   requiredEnergyLabel;
     Label   producedEnergyLabel;
+
+    CityStatsBox cityStats_;
 };
 
 #endif // WINDTRAPINTERFACE_H

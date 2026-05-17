@@ -90,3 +90,10 @@ documents/
 dist/
 build0/
 analysis/
+
+# Imported original-game sprites (local use only, never commit)
+imported_sprites/
+
+# Local-only scratch / editor files
+tmp/
+*.code-workspace

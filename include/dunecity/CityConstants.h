@@ -29,7 +29,7 @@ struct CityTilePlacementState {
     bool isMountain = false;
     bool hasGroundObject = false;
     bool hasCityZone = false;
-    bool isCityConductive = false;
+    bool hasRoad = false;
 };
 
 struct CityBuildCommandDescriptor {
@@ -39,13 +39,13 @@ struct CityBuildCommandDescriptor {
 
 inline CityTilePlacementState makeCityTilePlacementState(
         bool isRock, bool isMountain, bool hasGroundObject,
-        bool hasCityZone, bool isCityConductive) {
-    return { isRock && !isMountain, isMountain, hasGroundObject, hasCityZone, isCityConductive };
+        bool hasCityZone, bool hasRoad) {
+    return { isRock && !isMountain, isMountain, hasGroundObject, hasCityZone, hasRoad };
 }
 
 inline bool canPlaceRoad(const CityTilePlacementState& s) {
     return s.supportedTerrain && !s.isMountain && !s.hasGroundObject
-           && !s.hasCityZone && !s.isCityConductive;
+           && !s.hasCityZone && !s.hasRoad;
 }
 
 inline bool applyRoadPlacement(CityTilePlacementState& state) {
@@ -53,7 +53,7 @@ inline bool applyRoadPlacement(CityTilePlacementState& state) {
         return false;
     }
 
-    state.isCityConductive = true;
+    state.hasRoad = true;
     return true;
 }
 

@@ -1,0 +1,62 @@
+/*
+ *  UnitMovementPolicyTestCase.cpp
+ *
+ *  Tests the policy that decides when a forced move order should release a
+ *  pending carryall pickup booking. The bug this guards against: harvesters
+ *  with awaitingPickup=true silently ignore navigate(), so a player move order
+ *  appears to do nothing (see ornithopter-hunt log: "HARVESTER 152 STUCK 30s
+ *  ... awaiting=1 ... pathSize=0").
+ */
+
+#include <catch2/catch_all.hpp>
+#include <units/UnitMovementPolicy.h>
+#include <DataTypes.h>
+
+using UnitMovementPolicy::shouldCancelPickupOnMove;
+using UnitMovementPolicy::attackModeAfterCancellingPickup;
+
+TEST_CASE("Forced move on a unit awaiting pickup releases the booking", "[unit-movement]") {
+    REQUIRE(shouldCancelPickupOnMove(/*awaitingPickup=*/true, GUARD,             /*bForced=*/true));
+    REQUIRE(shouldCancelPickupOnMove(/*awaitingPickup=*/true, HARVEST,           /*bForced=*/true));
+    REQUIRE(shouldCancelPickupOnMove(/*awaitingPickup=*/true, CARRYALLREQUESTED, /*bForced=*/true));
+}
+
+TEST_CASE("Forced move on a unit with CARRYALLREQUESTED but no booking still cancels", "[unit-movement]") {
+    // Carryall booking can be cleared by checkPos before pickup arrives, but
+    // the next checkPos re-books because attackMode is still CARRYALLREQUESTED.
+    // A forced move must clear the mode too, otherwise the harvester gets
+    // re-trapped immediately.
+    REQUIRE(shouldCancelPickupOnMove(/*awaitingPickup=*/false, CARRYALLREQUESTED, /*bForced=*/true));
+}
+
+TEST_CASE("Non-forced (AI) move never cancels a pickup", "[unit-movement]") {
+    // AI internal repathing during harvest must not break in-flight carryall
+    // pickups.
+    REQUIRE_FALSE(shouldCancelPickupOnMove(true,  GUARD,             /*bForced=*/false));
+    REQUIRE_FALSE(shouldCancelPickupOnMove(true,  CARRYALLREQUESTED, /*bForced=*/false));
+    REQUIRE_FALSE(shouldCancelPickupOnMove(false, HARVEST,           /*bForced=*/false));
+}
+
+TEST_CASE("Forced move on a unit with no pickup booking is a no-op", "[unit-movement]") {
+    REQUIRE_FALSE(shouldCancelPickupOnMove(false, GUARD,   true));
+    REQUIRE_FALSE(shouldCancelPickupOnMove(false, HARVEST, true));
+    REQUIRE_FALSE(shouldCancelPickupOnMove(false, HUNT,    true));
+}
+
+TEST_CASE("Cancelled CARRYALLREQUESTED falls back to HARVEST for harvesters", "[unit-movement]") {
+    REQUIRE(attackModeAfterCancellingPickup(CARRYALLREQUESTED, /*isHarvester=*/true) == HARVEST);
+}
+
+TEST_CASE("Cancelled CARRYALLREQUESTED falls back to GUARD for combat units", "[unit-movement]") {
+    REQUIRE(attackModeAfterCancellingPickup(CARRYALLREQUESTED, /*isHarvester=*/false) == GUARD);
+}
+
+TEST_CASE("Non-CARRYALLREQUESTED attack modes are preserved on cancellation", "[unit-movement]") {
+    // A harvester in HARVEST mode that happened to be awaiting pickup should
+    // stay in HARVEST mode after the player overrides with a manual move.
+    REQUIRE(attackModeAfterCancellingPickup(HARVEST,   true)  == HARVEST);
+    REQUIRE(attackModeAfterCancellingPickup(GUARD,     false) == GUARD);
+    REQUIRE(attackModeAfterCancellingPickup(AREAGUARD, false) == AREAGUARD);
+    REQUIRE(attackModeAfterCancellingPickup(HUNT,      false) == HUNT);
+    REQUIRE(attackModeAfterCancellingPickup(STOP,      false) == STOP);
+}

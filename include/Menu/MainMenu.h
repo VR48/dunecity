@@ -24,6 +24,7 @@
 #include <GUI/TextButton.h>
 #include <GUI/Spacer.h>
 #include <GUI/PictureLabel.h>
+#include <GUI/Label.h>
 #include <Network/VersionChecker.h>
 
 #include <memory>
@@ -51,6 +52,10 @@ private:
     void onAbout() const;
     void onQuit();
 
+    /// Refresh the bottom-left mod/version watermark from the current
+    /// active mod. Cheap; no-op when the displayed mod hasn't changed.
+    void refreshModVersionLabel();
+
     StaticContainer windowWidget;
     VBox            MenuButtons;
 
@@ -65,6 +70,9 @@ private:
     PictureLabel    planetPicture;
     PictureLabel    duneLegacy;
     PictureLabel    buttonBorder;
+
+    Label           modVersionLabel; ///< Bottom-right "<active mod>\nv<VERSION>" watermark.
+    std::string     lastShownModName; ///< Tracks last mod name written to modVersionLabel; avoids redundant setText.
 
     // Version checking
     std::unique_ptr<VersionChecker> pVersionChecker;

@@ -33,6 +33,7 @@
 #include <units/UnitBase.h>
 
 #include <GUI/ObjectInterfaces/DefaultStructureInterface.h>
+#include <GUI/ObjectInterfaces/CityStatsStructureInterface.h>
 
 StructureBase::StructureBase(House* newOwner) : ObjectBase(newOwner) {
     StructureBase::init();
@@ -55,6 +56,8 @@ StructureBase::StructureBase(InputStream& stream): ObjectBase(stream) {
     for(size_t i=0;i<numSmoke; i++) {
         smoke.emplace_back(stream);
     }
+
+    cityOccupancy_ = stream.readUint8();
 }
 
 void StructureBase::init() {
@@ -104,6 +107,8 @@ void StructureBase::save(OutputStream& stream) const {
     for(const StructureSmoke& structureSmoke : smoke) {
         structureSmoke.save(stream);
     }
+
+    stream.writeUint8(cityOccupancy_);
 }
 
 void StructureBase::assignToMap(const Coord& pos) {
@@ -176,6 +181,13 @@ void StructureBase::blitToScreen() {
 
 ObjectInterface* StructureBase::getInterfaceContainer() {
     if((pLocalHouse == owner) || (debug == true)) {
+        // Non-builder structures with no specific interface (Wall, GunTurret,
+        // RocketTurret, IX, NuclearPlant) get the city-sim stats panel when
+        // city sim is active. Builder structures use BuilderInterface from
+        // BuilderBase, so they bypass this entirely.
+        if (currentGame && currentGame->isCitySimEnabled() && !isABuilder()) {
+            return CityStatsStructureInterface::create(objectID);
+        }
         return DefaultStructureInterface::create(objectID);
     } else {
         return DefaultObjectInterface::create(objectID);

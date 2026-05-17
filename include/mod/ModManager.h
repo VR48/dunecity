@@ -67,6 +67,12 @@ public:
      * \return Mod name (e.g., "vanilla")
      */
     std::string getActiveModName() const;
+
+    /**
+     * \return true if the active mod opts into DuneCity city-sim features
+     *         (i.e. its mod.ini sets `Enables City Mode = true`).
+     */
+    bool isCityModeActive() const;
     
     /**
      * Set the active mod by name.
@@ -178,12 +184,24 @@ public:
      * Called automatically during initialize() if needed.
      */
     void seedVanillaFromDefaults();
-    
+
     /**
      * Check if vanilla mod needs to be re-seeded (version mismatch).
      * \return true if game version doesn't match vanilla mod version
      */
     bool vanillaNeedsReseed() const;
+
+    /**
+     * Seed the built-in "dunecity" mod from install defaults.
+     * Same config files as vanilla, but mod.ini sets `Enables City Mode = true`.
+     */
+    void seedDunecityFromDefaults();
+
+    /**
+     * \return true if the dunecity mod is missing required files or has
+     *         a stale game version and should be re-seeded.
+     */
+    bool dunecityNeedsReseed() const;
     
     // === Paths ===
     
@@ -225,6 +243,20 @@ private:
      * Get path to install config defaults directory.
      */
     std::string getInstallConfigPath() const;
+
+    /**
+     * Compute a canonical FNV-1a hash of an INI-style file (skips comments and
+     * blank lines so cosmetic edits don't change the hash). Returns
+     * "FILE_NOT_FOUND" if the file is missing.
+     */
+    static std::string hashFileCanonical(const std::string& path);
+
+    /**
+     * Returns true when the installed mod's ObjectData.ini canonical hash
+     * differs from the install's ObjectData.ini.default canonical hash.
+     * Used to auto-reseed mods when the shipped defaults are updated.
+     */
+    bool installedObjectDataDiffersFromDefaults(const std::string& modName) const;
     
     std::string modsBasePath;        ///< Base path for mods directory
     std::string activeMod;           ///< Currently active mod name

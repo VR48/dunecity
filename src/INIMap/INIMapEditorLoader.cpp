@@ -474,7 +474,7 @@ void INIMapEditorLoader::loadStructures()
 
             int itemID = getItemIDByName(BuildingStr);
 
-            if((itemID == Structure_Slab1) || (itemID == Structure_Slab4) || (itemID == Structure_Wall)) {
+            if((itemID == Structure_Slab1) || (itemID == Structure_Slab4) || (itemID == Structure_Wall) || (itemID == Structure_Road)) {
                 pMapEditor->structures.emplace_back(genID, houseID, itemID, 256, Coord(getXPos(pos),getYPos(pos)));
                 genID--;
             } else {

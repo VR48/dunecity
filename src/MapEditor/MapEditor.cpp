@@ -217,7 +217,7 @@ void MapEditor::setMap(const MapData& mapdata, const MapInfo& newMapInfo) {
 
 bool MapEditor::isTileBlocked(int x, int y, bool bSlabIsBlocking, bool bUnitsAreBlocking) const {
     for(const Structure& structure : structures) {
-        if(!bSlabIsBlocking && ((structure.itemID == Structure_Slab1) || (structure.itemID == Structure_Slab4)) ) {
+        if(!bSlabIsBlocking && ((structure.itemID == Structure_Slab1) || (structure.itemID == Structure_Slab4) || (structure.itemID == Structure_Road)) ) {
             continue;
         }
 
@@ -681,7 +681,7 @@ void MapEditor::saveMap(const std::string& filepath) {
     for(const Structure& structure : structures) {
         int position = (logicalOffsetY+structure.position.y) * logicalSizeX + (logicalOffsetX+structure.position.x);
 
-        if((structure.itemID == Structure_Slab1) || (structure.itemID == Structure_Slab4) || (structure.itemID == Structure_Wall)) {
+        if((structure.itemID == Structure_Slab1) || (structure.itemID == Structure_Slab4) || (structure.itemID == Structure_Wall) || (structure.itemID == Structure_Road)) {
             std::string structureKey = fmt::sprintf("GEN%.3d", position);
 
             std::string structureValue = house2housename[structure.house] + "," + getItemNameByID(structure.itemID);
@@ -1475,6 +1475,32 @@ void MapEditor::drawMap(ScreenBorder* pScreenborder, bool bCompleteMap) {
             SDL_RenderCopy(renderer, TerrainSprite, &source, &dest);
 
             selectionDest = dest;
+        } else if(structure.itemID == Structure_Road) {
+            // Auto-tile the road by checking adjacent road structures (same
+            // 4-bit mask scheme Tile::blitGround uses for in-game rendering).
+            const auto adjacent = [&](int dx, int dy) {
+                for(const Structure& s : structures) {
+                    if(s.itemID == Structure_Road
+                       && s.position.x == position.x + dx
+                       && s.position.y == position.y + dy) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+            const bool up = adjacent(0, -1);
+            const bool right = adjacent(1, 0);
+            const bool down = adjacent(0, 1);
+            const bool left = adjacent(-1, 0);
+            const int mask = ((int)up) | ((int)right << 1) | ((int)down << 2) | ((int)left << 3);
+
+            SDL_Texture* RoadSprite = pGFXManager->getZoomedObjPic(ObjPic_CityRoad, currentZoomlevel);
+            SDL_Rect source = { mask * zoomedTilesize, 0, zoomedTilesize, zoomedTilesize };
+            SDL_Rect dest = { pScreenborder->world2screenX(position.x*TILESIZE), pScreenborder->world2screenY(position.y*TILESIZE), zoomedTilesize, zoomedTilesize };
+
+            SDL_RenderCopy(renderer, RoadSprite, &source, &dest);
+
+            selectionDest = dest;
         } else if(structure.itemID == Structure_Slab4) {
             // Load Terrain Surface
             SDL_Texture* TerrainSprite = pGFXManager->getZoomedObjPic(ObjPic_Terrain, currentZoomlevel);
@@ -1571,6 +1597,10 @@ void MapEditor::drawMap(ScreenBorder* pScreenborder, bool bCompleteMap) {
                 case Structure_Wall:                objectPic = ObjPic_Wall;                break;
                 case Structure_WindTrap:            objectPic = ObjPic_Windtrap;            break;
                 case Structure_WOR:                 objectPic = ObjPic_WOR;                 break;
+                case Structure_ZoneResidential:     objectPic = ObjPic_ZoneResidential;     break;
+                case Structure_ZoneCommercial:      objectPic = ObjPic_ZoneCommercial;      break;
+                case Structure_ZoneIndustrial:      objectPic = ObjPic_ZoneIndustrial;      break;
+                case Structure_NuclearPlant:        objectPic = ObjPic_NuclearPlant;        break;
                 default:                            objectPic = 0;                          break;
             }
 
@@ -1578,7 +1608,13 @@ void MapEditor::drawMap(ScreenBorder* pScreenborder, bool bCompleteMap) {
 
             Coord frameSize = world2zoomedWorld(getStructureSize(structure.itemID)*TILESIZE);
 
-            SDL_Rect source = { frameSize.x*(structure.itemID == Structure_WindTrap ? 9 : 2), 0, frameSize.x, frameSize.y };
+            // Frame index: WindTrap uses frame 9, zones are single-frame, others use frame 2.
+            int frameIdx = 2;
+            if(structure.itemID == Structure_WindTrap) frameIdx = 9;
+            else if(structure.itemID == Structure_ZoneResidential
+                 || structure.itemID == Structure_ZoneCommercial
+                 || structure.itemID == Structure_ZoneIndustrial) frameIdx = 0;
+            SDL_Rect source = { frameSize.x*frameIdx, 0, frameSize.x, frameSize.y };
             SDL_Rect dest = { pScreenborder->world2screenX(position.x*TILESIZE), pScreenborder->world2screenY(position.y*TILESIZE), frameSize.x, frameSize.y };
 
             SDL_RenderCopy(renderer, ObjectSprite, &source, &dest);

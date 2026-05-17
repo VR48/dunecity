@@ -32,6 +32,7 @@
 #include <DataTypes.h>
 
 #include <string>
+#include <vector>
 
 #include "MenuBase.h"
 
@@ -56,10 +57,22 @@ private:
     void onMapTypeChange(int buttonID);
     void onMapListSelectionChange(bool bInteractive);
 
+    /// Resolves the full path of the currently-selected map. In single-
+    /// directory modes this is just `currentMapDirectory + entry + ".ini"`;
+    /// in "All Maps" mode the source directory varies per entry.
+    std::string getSelectedMapPath() const;
+
     bool bMultiplayer;
     bool bLANServer;
 
+    /// Single-directory mode: the directory whose .ini files populate
+    /// the list. Empty when "All Maps" mode is active (entries then
+    /// resolve via mapEntryDirectories_).
     std::string currentMapDirectory;
+
+    /// Per-entry source directory, parallel to mapList entries when in
+    /// "All Maps" mode. Empty in single-directory modes.
+    std::vector<std::string> mapEntryDirectories_;
 
     SettingsClass::GameOptionsClass currentGameOptions;
 
@@ -73,6 +86,7 @@ private:
     // left VBox with map list and map options
     VBox            leftVBox;
     HBox            mapTypeButtonsHBox;
+    TextButton      allMapsButton;          ///< Combined: every map from all 4 directories
     TextButton      singleplayerMapsButton;
     TextButton      singleplayerUserMapsButton;
     TextButton      multiplayerMapsButton;

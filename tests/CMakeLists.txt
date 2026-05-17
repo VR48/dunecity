@@ -21,15 +21,22 @@ target_sources(dunelegacy_tests
         CityRoadTestCase/CityRoadTestCase.cpp
         RoadNetworkGrowthTestCase/RoadNetworkGrowthTestCase.cpp
         MilestoneTestCase/MilestoneTestCase.cpp
+        CityStructuresTestCase/CityStructuresTestCase.cpp
+        ConstructionYardResolverTestCase/ConstructionYardResolverTestCase.cpp
+        UnitMovementPolicyTestCase/UnitMovementPolicyTestCase.cpp
+        ZonePowerTestCase/ZonePowerTestCase.cpp
+        CityEffectsTestCase/CityEffectsTestCase.cpp
+        ValueModelTestCase/ValueModelTestCase.cpp
+        PoliceStationTestCase/PoliceStationTestCase.cpp
         # DuneCity core sources (needed for CitySimulation tests)
         ${CMAKE_SOURCE_DIR}/src/dunecity/CitySimulation.cpp
+        CityEffectsRuntime_test_stub.cpp
         ${CMAKE_SOURCE_DIR}/src/dunecity/PowerGrid.cpp
         ${CMAKE_SOURCE_DIR}/src/dunecity/ZoneSimulation.cpp
         ${CMAKE_SOURCE_DIR}/src/dunecity/TrafficSimulation.cpp
         ${CMAKE_SOURCE_DIR}/src/dunecity/CityBudget.cpp
         ${CMAKE_SOURCE_DIR}/src/dunecity/CityScanner.cpp
         ${CMAKE_SOURCE_DIR}/src/dunecity/CityEvaluation.cpp
-        ${CMAKE_SOURCE_DIR}/src/Map.cpp
         ${CMAKE_SOURCE_DIR}/src/audio/sounds.cpp
         globals_test_stub.cpp
         TextManager_stub.cpp
@@ -87,7 +94,7 @@ add_test(NAME dunelegacy_tests COMMAND dunelegacy_tests)
 
 # Set test properties
 set_tests_properties(dunelegacy_tests PROPERTIES
-    ENVIRONMENT "DUNECITY_DATADIR=${CMAKE_SOURCE_DIR}/data"
+    ENVIRONMENT "DUNECITY_DATADIR=${CMAKE_SOURCE_DIR}/data;DUNE_CITY_SOURCE_DIR=${CMAKE_SOURCE_DIR}"
 )
 
 # Copy test data to build directory

@@ -30,14 +30,13 @@
 
 #include <GUI/ObjectInterfaces/BuilderInterface.h>
 
-const int BuilderBase::itemOrder[] = {    Structure_Slab4, Structure_Slab1, Structure_IX, Structure_StarPort,
+const int BuilderBase::itemOrder[] = {    Structure_Slab4, Structure_Slab1, Structure_Road, Structure_IX, Structure_StarPort,
                                            Structure_HighTechFactory, Structure_HeavyFactory, Structure_RocketTurret,
                                            Structure_RepairYard, Structure_GunTurret, Structure_WOR,
                                            Structure_Barracks, Structure_Wall, Structure_LightFactory,
                                            Structure_Silo, Structure_Radar, Structure_Refinery, Structure_WindTrap,
-                                           Structure_Palace,
+                                           Structure_NuclearPlant, Structure_PoliceStation, Structure_Palace,
                                            Structure_ZoneResidential, Structure_ZoneCommercial, Structure_ZoneIndustrial,
-                                           Structure_Road, Structure_PowerLine,
                                            Unit_SonicTank, Unit_Devastator, Unit_Deviator, Unit_Special,
                                            Unit_Launcher, Unit_SiegeTank, Unit_Tank, Unit_MCV, Unit_Harvester,
                                            Unit_Ornithopter, Unit_Carryall, Unit_Quad, Unit_RaiderTrike,
@@ -223,7 +222,17 @@ void BuilderBase::updateProductionProgress() {
 
             FixPoint oldProgress = productionProgress;
 
-            if(currentGame->getGameInitSettings().getGameOptions().instantBuild == true) {
+            // City-sim mode: concrete slabs AND road tiles feel right as
+            // instant placement (think SimCity road-laying), not Dune-style
+            // timed construction. Roads are a single-tile structure that
+            // mutates tile state on placement; gating them behind a build
+            // timer would feel sluggish for laying out a road network.
+            const bool tileLikeInCityMode = currentGame->isCitySimEnabled()
+                                        && (currentProducedItem == Structure_Slab1
+                                         || currentProducedItem == Structure_Slab4
+                                         || currentProducedItem == Structure_Road);
+
+            if(currentGame->getGameInitSettings().getGameOptions().instantBuild == true || tileLikeInCityMode) {
                 FixPoint totalBuildCosts = currentGame->objectData.data[currentProducedItem][originalHouseID].price;
                 FixPoint buildCosts = totalBuildCosts - productionProgress;
 
@@ -297,6 +306,20 @@ void BuilderBase::updateBuildList()
     for(int i = 0; itemOrder[i] != ItemID_Invalid; i++) {
 
         int itemID2Add = itemOrder[i];
+
+        // City zones and Road are only available when the active mod opts into
+        // DuneCity city-sim features. Hide them from the build list otherwise.
+        // (Concrete slabs stay available in vanilla mode — they pre-date the
+        // city-sim fork and are core Dune Legacy.)
+        const bool isCityOnly = (itemID2Add == Structure_ZoneResidential
+                              || itemID2Add == Structure_ZoneCommercial
+                              || itemID2Add == Structure_ZoneIndustrial
+                              || itemID2Add == Structure_Road
+                              || itemID2Add == Structure_PoliceStation);
+        if (isCityOnly && !currentGame->isCitySimEnabled()) {
+            removeItem(buildList, iter, itemID2Add);
+            continue;
+        }
 
         const ObjectData::ObjectDataStruct& objData = currentGame->objectData.data[itemID2Add][originalHouseID];
 

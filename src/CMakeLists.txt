@@ -242,6 +242,8 @@ target_sources(dunecity
         structures/Wall.cpp
         structures/WindTrap.cpp
         structures/WOR.cpp
+        structures/NuclearPlant.cpp
+        structures/PoliceStation.cpp
         structures/ZoneStructure.cpp
 
         # Units
@@ -307,6 +309,7 @@ target_sources(dunecity
 
         # DuneCity - city-building simulation layer
         dunecity/CitySimulation.cpp
+        dunecity/CityEffectsRuntime.cpp
         dunecity/PowerGrid.cpp
         dunecity/ZoneSimulation.cpp
         dunecity/TrafficSimulation.cpp
@@ -471,7 +474,21 @@ if(APPLE)
             "${BUNDLE_RESOURCES_DIR}/config/"
         COMMENT "Copying data and config files into app bundle Resources"
     )
-    
+
+    # Copy imported Micropolis-derived zone sprites into the bundle so they
+    # are found by getDuneLegacyDataDir() + "imported_sprites/..." at runtime.
+    set(IMPORTED_SPRITES_SRC "${CMAKE_SOURCE_DIR}/imported_sprites")
+    if(EXISTS "${IMPORTED_SPRITES_SRC}")
+        add_custom_command(
+            TARGET dunecity
+            POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${IMPORTED_SPRITES_SRC}"
+                "${BUNDLE_RESOURCES_DIR}/imported_sprites"
+            COMMENT "Copying imported sprites into app bundle Resources"
+        )
+    endif()
+
     # Code sign the app bundle with ad-hoc signature
     # This is required for macOS Gatekeeper to allow the app to run when downloaded
     # Without proper signing, users get "app is damaged and can't be opened" error
@@ -492,6 +509,19 @@ else()
             "${BUILD_DATA_DIR}"
         COMMENT "Copying data directory to build directory"
     )
+
+    # Copy imported zone sprites next to the binary for non-bundle builds
+    set(IMPORTED_SPRITES_SRC "${CMAKE_SOURCE_DIR}/imported_sprites")
+    if(EXISTS "${IMPORTED_SPRITES_SRC}")
+        add_custom_command(
+            TARGET dunecity
+            POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${IMPORTED_SPRITES_SRC}"
+                "${CMAKE_BINARY_DIR}/bin/imported_sprites"
+            COMMENT "Copying imported sprites to build output"
+        )
+    endif()
 endif()
 
 # Install data directory

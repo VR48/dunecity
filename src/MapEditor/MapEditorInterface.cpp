@@ -39,6 +39,7 @@
 #include <misc/FileSystem.h>
 
 #include <ObjectBase.h>
+#include <mod/ModManager.h>
 #include <GUI/ObjectInterfaces/ObjectInterface.h>
 #include <GUI/ObjectInterfaces/MultiUnitInterface.h>
 #include <GUI/dune/LoadSaveWindow.h>
@@ -355,7 +356,7 @@ MapEditorInterface::MapEditorInterface(MapEditor* pMapEditor)
     // setup structures mode
     editorModeStructs_MainVBox.addWidget(&editorModeStructs_VBox, 0.01);
 
-    editorModeStructs_VBox.addWidget(&editorModeStructs_HBox1, 2*D2_TILESIZE + 10);
+    editorModeStructs_VBox.addWidget(&editorModeStructs_HBox1, 2*D2_TILESIZE + 4);
 
     editorModeStructs_HBox1.addWidget(&editorModeStructs_SmallStruct_VBox);
 
@@ -397,9 +398,8 @@ MapEditorInterface::MapEditorInterface(MapEditor* pMapEditor)
     editorModeStructs_Windtrap.setOnClick(std::bind(&MapEditorInterface::onStructButton, this, Structure_WindTrap));
     editorModeStructs_HBox1.addWidget(&editorModeStructs_Windtrap);
 
-    editorModeStructs_VBox.addWidget(VSpacer::create(2));
 
-    editorModeStructs_VBox.addWidget(&editorModeStructs_HBox2, 2*D2_TILESIZE + 10);
+    editorModeStructs_VBox.addWidget(&editorModeStructs_HBox2, 2*D2_TILESIZE + 4);
 
     editorModeStructs_Radar.setToggleButton(true);
     editorModeStructs_Radar.setTooltipText(resolveItemName(Structure_Radar));
@@ -420,9 +420,8 @@ MapEditorInterface::MapEditorInterface(MapEditor* pMapEditor)
     editorModeStructs_IX.setOnClick(std::bind(&MapEditorInterface::onStructButton, this, Structure_IX));
     editorModeStructs_HBox2.addWidget(&editorModeStructs_IX);
 
-    editorModeStructs_VBox.addWidget(VSpacer::create(2));
 
-    editorModeStructs_VBox.addWidget(&editorModeStructs_HBox3, 2*D2_TILESIZE + 10);
+    editorModeStructs_VBox.addWidget(&editorModeStructs_HBox3, 2*D2_TILESIZE + 4);
 
     editorModeStructs_Barracks.setToggleButton(true);
     editorModeStructs_Barracks.setTooltipText(resolveItemName(Structure_Barracks));
@@ -443,9 +442,8 @@ MapEditorInterface::MapEditorInterface(MapEditor* pMapEditor)
     editorModeStructs_LightFactory.setOnClick(std::bind(&MapEditorInterface::onStructButton, this, Structure_LightFactory));
     editorModeStructs_HBox3.addWidget(&editorModeStructs_LightFactory);
 
-    editorModeStructs_VBox.addWidget(VSpacer::create(2));
 
-    editorModeStructs_VBox.addWidget(&editorModeStructs_HBox4, 2*D2_TILESIZE + 10);
+    editorModeStructs_VBox.addWidget(&editorModeStructs_HBox4, 2*D2_TILESIZE + 4);
 
     editorModeStructs_Refinery.setToggleButton(true);
     editorModeStructs_Refinery.setTooltipText(resolveItemName(Structure_Refinery));
@@ -459,9 +457,8 @@ MapEditorInterface::MapEditorInterface(MapEditor* pMapEditor)
     editorModeStructs_HighTechFactory.setOnClick(std::bind(&MapEditorInterface::onStructButton, this, Structure_HighTechFactory));
     editorModeStructs_HBox4.addWidget(&editorModeStructs_HighTechFactory);
 
-    editorModeStructs_VBox.addWidget(VSpacer::create(2));
 
-    editorModeStructs_VBox.addWidget(&editorModeStructs_HBox5, 2*D2_TILESIZE + 10);
+    editorModeStructs_VBox.addWidget(&editorModeStructs_HBox5, 2*D2_TILESIZE + 4);
 
     editorModeStructs_HeavyFactory.setToggleButton(true);
     editorModeStructs_HeavyFactory.setTooltipText(resolveItemName(Structure_HeavyFactory));
@@ -475,9 +472,8 @@ MapEditorInterface::MapEditorInterface(MapEditor* pMapEditor)
     editorModeStructs_RepairYard.setOnClick(std::bind(&MapEditorInterface::onStructButton, this, Structure_RepairYard));
     editorModeStructs_HBox5.addWidget(&editorModeStructs_RepairYard);
 
-    editorModeStructs_VBox.addWidget(VSpacer::create(2));
 
-    editorModeStructs_VBox.addWidget(&editorModeStructs_HBox6, 3*D2_TILESIZE + 10);
+    editorModeStructs_VBox.addWidget(&editorModeStructs_HBox6, 3*D2_TILESIZE + 4);
 
     editorModeStructs_Starport.setToggleButton(true);
     editorModeStructs_Starport.setTooltipText(resolveItemName(Structure_StarPort));
@@ -491,7 +487,50 @@ MapEditorInterface::MapEditorInterface(MapEditor* pMapEditor)
     editorModeStructs_Palace.setOnClick(std::bind(&MapEditorInterface::onStructButton, this, Structure_Palace));
     editorModeStructs_HBox6.addWidget(&editorModeStructs_Palace);
 
-    editorModeStructs_VBox.addWidget(VSpacer::create(2));
+
+    // DuneCity: expose SimCity-style buildings (R/C/I zones, Road, nuclear
+    // plant) in the editor when the dune city mod is the active mod. Always
+    // wire the click handlers + tooltips so the existing toggle/symbol code
+    // paths can address these buttons uniformly; only the layout add is
+    // conditional. Two rows so the 3-wide Nuclear sprite doesn't overflow
+    // the sidebar width.
+    editorModeStructs_ZoneResidential.setToggleButton(true);
+    editorModeStructs_ZoneResidential.setTooltipText(resolveItemName(Structure_ZoneResidential));
+    editorModeStructs_ZoneResidential.setOnClick(std::bind(&MapEditorInterface::onStructButton, this, Structure_ZoneResidential));
+
+    editorModeStructs_ZoneCommercial.setToggleButton(true);
+    editorModeStructs_ZoneCommercial.setTooltipText(resolveItemName(Structure_ZoneCommercial));
+    editorModeStructs_ZoneCommercial.setOnClick(std::bind(&MapEditorInterface::onStructButton, this, Structure_ZoneCommercial));
+
+    editorModeStructs_ZoneIndustrial.setToggleButton(true);
+    editorModeStructs_ZoneIndustrial.setTooltipText(resolveItemName(Structure_ZoneIndustrial));
+    editorModeStructs_ZoneIndustrial.setOnClick(std::bind(&MapEditorInterface::onStructButton, this, Structure_ZoneIndustrial));
+
+    editorModeStructs_Road.setToggleButton(true);
+    editorModeStructs_Road.setTooltipText(resolveItemName(Structure_Road));
+    editorModeStructs_Road.setOnClick(std::bind(&MapEditorInterface::onStructButton, this, Structure_Road));
+
+    editorModeStructs_NuclearPlant.setToggleButton(true);
+    editorModeStructs_NuclearPlant.setTooltipText(resolveItemName(Structure_NuclearPlant));
+    editorModeStructs_NuclearPlant.setOnClick(std::bind(&MapEditorInterface::onStructButton, this, Structure_NuclearPlant));
+
+    cityStructsVisible_ = ModManager::instance().isCityModeActive();
+    if(cityStructsVisible_) {
+        // Row 1: R/C/I zones (three 2x2-tile buttons).
+        editorModeStructs_VBox.addWidget(&editorModeStructs_HBoxCityZones, 2*D2_TILESIZE + 4);
+        editorModeStructs_HBoxCityZones.addWidget(&editorModeStructs_ZoneResidential);
+        editorModeStructs_HBoxCityZones.addWidget(HSpacer::create(2));
+        editorModeStructs_HBoxCityZones.addWidget(&editorModeStructs_ZoneCommercial);
+        editorModeStructs_HBoxCityZones.addWidget(HSpacer::create(2));
+        editorModeStructs_HBoxCityZones.addWidget(&editorModeStructs_ZoneIndustrial);
+
+        // Row 2: Road (1x1) + NuclearPlant (3x3). Three-tile-tall row matches
+        // Nuclear; the smaller Road button is vertically centered by HBox.
+        editorModeStructs_VBox.addWidget(&editorModeStructs_HBoxCityInfra, 3*D2_TILESIZE + 4);
+        editorModeStructs_HBoxCityInfra.addWidget(&editorModeStructs_Road);
+        editorModeStructs_HBoxCityInfra.addWidget(HSpacer::create(2));
+        editorModeStructs_HBoxCityInfra.addWidget(&editorModeStructs_NuclearPlant);
+    }
 
     editorModeStructs_MainVBox.addWidget(Spacer::create());
 
@@ -1073,6 +1112,12 @@ void MapEditorInterface::onStructButton(int structType) {
     editorModeStructs_Starport.setToggleState( (structType == Structure_StarPort) );
     editorModeStructs_Palace.setToggleState( (structType == Structure_Palace) );
 
+    editorModeStructs_ZoneResidential.setToggleState( (structType == Structure_ZoneResidential) );
+    editorModeStructs_ZoneCommercial.setToggleState( (structType == Structure_ZoneCommercial) );
+    editorModeStructs_ZoneIndustrial.setToggleState( (structType == Structure_ZoneIndustrial) );
+    editorModeStructs_Road.setToggleState( (structType == Structure_Road) );
+    editorModeStructs_NuclearPlant.setToggleState( (structType == Structure_NuclearPlant) );
+
     if(structType >= 0) {
         HOUSETYPE house = (HOUSETYPE) houseDropDownBox.getSelectedEntryIntData();
         pMapEditor->setEditorMode(MapEditor::EditorMode(house, structType, 256));
@@ -1312,6 +1357,12 @@ void MapEditorInterface::changeInterfaceColor(HOUSETYPE newHouse) {
     editorModeStructs_RepairYard.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_RepairYard, newHouse));
     editorModeStructs_Starport.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Starport, newHouse));
     editorModeStructs_Palace.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Palace, newHouse));
+
+    editorModeStructs_ZoneResidential.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_ZoneResidential, newHouse));
+    editorModeStructs_ZoneCommercial.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_ZoneCommercial, newHouse));
+    editorModeStructs_ZoneIndustrial.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_ZoneIndustrial, newHouse));
+    editorModeStructs_Road.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Road, newHouse));
+    editorModeStructs_NuclearPlant.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_NuclearPlant, newHouse));
 
     editorModeUnits_Soldier.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Soldier, newHouse));
     editorModeUnits_Trooper.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Trooper, newHouse));

@@ -28,6 +28,7 @@
 
 #include <structures/RepairYard.h>
 #include <units/Carryall.h>
+#include <units/UnitMovementPolicy.h>
 
 GroundUnit::GroundUnit(House* newOwner) : UnitBase(newOwner) {
 
@@ -182,6 +183,36 @@ void GroundUnit::doRequestCarryallDrop(int xPos, int yPos) {
     }
 }
 
+void GroundUnit::cancelCarryallPickup() {
+    if(awaitingPickup || bookedCarrier != NONE_ID) {
+        // bookCarrier(nullptr) clears bookedCarrier and awaitingPickup, and
+        // Carryall::engageTarget() will release us on its next tick because
+        // isAwaitingPickup() now returns false.
+        bookCarrier(nullptr);
+    }
+
+    const ATTACKMODE next = UnitMovementPolicy::attackModeAfterCancellingPickup(
+        attackMode, getItemID() == Unit_Harvester);
+    if(next != attackMode) {
+        doSetAttackMode(next);
+    }
+}
+
+void GroundUnit::doMove2Pos(int xPos, int yPos, bool bForced) {
+    if(UnitMovementPolicy::shouldCancelPickupOnMove(awaitingPickup, attackMode, bForced)) {
+        cancelCarryallPickup();
+    }
+    UnitBase::doMove2Pos(xPos, yPos, bForced);
+}
+
+void GroundUnit::doMove2Object(const ObjectBase* pTargetObject) {
+    // doMove2Object is always treated as a forced move (see UnitBase::doMove2Object).
+    if(UnitMovementPolicy::shouldCancelPickupOnMove(awaitingPickup, attackMode, true)) {
+        cancelCarryallPickup();
+    }
+    UnitBase::doMove2Object(pTargetObject);
+}
+
 bool GroundUnit::requestCarryall() {
     if (getOwner()->hasCarryalls() && !awaitingPickup)  {
         Carryall* carryall = nullptr;
@@ -283,8 +314,10 @@ void GroundUnit::doRepair() {
         }
 
         if(pBestRepairYard) {
-            requestCarryall();
+            // doMove2Object first: GroundUnit::doMove2Object cancels any pending
+            // pickup booking, so requesting the carryall afterwards keeps the booking.
             doMove2Object(pBestRepairYard);
+            requestCarryall();
         }
     }
 }

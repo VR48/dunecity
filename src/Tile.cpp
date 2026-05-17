@@ -152,7 +152,7 @@ void Tile::load(InputStream& stream) {
         cityZoneType_ = static_cast<DuneCity::ZoneType>(stream.readUint8());
         cityZoneDensity_ = stream.readUint8();
         cityTileId_ = stream.readUint16();
-        stream.readBools(&cityPowered_, &cityConductive_);
+        stream.readBools(&cityPowered_, &isRoad_);
     }
 }
 
@@ -235,7 +235,7 @@ void Tile::save(OutputStream& stream) const {
     stream.writeUint8(static_cast<Uint8>(cityZoneType_));
     stream.writeUint8(cityZoneDensity_);
     stream.writeUint16(cityTileId_);
-    stream.writeBools(cityPowered_, cityConductive_);
+    stream.writeBools(cityPowered_, isRoad_);
 }
 
 void Tile::assignAirUnit(Uint32 newObjectID) {
@@ -291,19 +291,52 @@ void Tile::assignUndergroundUnit(Uint32 newObjectID) {
 }
 
 void Tile::blitGround(int xPos, int yPos) {
-    if (hasANonInfantryGroundObject() && getNonInfantryGroundObject()->isAStructure())
-        return;
+    // Skip terrain rendering when a regular Dune building occupies this
+    // tile (the building sprite is opaque and fully covers the tile —
+    // drawing terrain underneath would just be wasted work). DuneCity
+    // zone structures are an exception: their density=0 cells are
+    // transparent so the player sees the Micropolis-style empty plot
+    // (colored zone tint + dotted border) underneath. Without this
+    // exception, fresh-zoned tiles render as solid black.
+    if (hasANonInfantryGroundObject() && getNonInfantryGroundObject()->isAStructure()) {
+        if (!hasCityZone()) return;
+    }
 
-    const auto tileIndex = getTerrainTile();
-    const auto indexX = tileIndex % NUM_TERRAIN_TILES_X;
-    const auto indexY = tileIndex / NUM_TERRAIN_TILES_X;
     const auto zoomed_tilesize = world2zoomedWorld(TILESIZE);
-    SDL_Rect source = { indexX*zoomed_tilesize, indexY*zoomed_tilesize, zoomed_tilesize, zoomed_tilesize };
     SDL_Rect drawLocation = { xPos, yPos, zoomed_tilesize, zoomed_tilesize };
+
+    SDL_Rect source;
+    {
+        const auto tileIndex = getTerrainTile();
+        const auto indexX = tileIndex % NUM_TERRAIN_TILES_X;
+        const auto indexY = tileIndex / NUM_TERRAIN_TILES_X;
+        source = { indexX*zoomed_tilesize, indexY*zoomed_tilesize, zoomed_tilesize, zoomed_tilesize };
+    }
 
     //draw terrain
     if (destroyedStructureTile == DestroyedStructure_None || destroyedStructureTile == DestroyedStructure_Wall) {
         SDL_RenderCopy(renderer, sprite[currentZoomlevel], &source, &drawLocation);
+    }
+
+    // DuneCity: overlay an auto-tiled road sprite when the tile carries a
+    // player-placed Road structure. Roads sit on rock terrain (placement
+    // rule), and connect visually only to neighboring roads — concrete
+    // slabs render as plain concrete and do *not* trigger road auto-tiling.
+    if (isRoad_ && currentGame && currentGame->isCitySimEnabled()) {
+        SDL_Texture* cityRoadTex = pGFXManager->getZoomedObjPic(ObjPic_CityRoad, currentZoomlevel);
+        if (cityRoadTex) {
+            const bool up    = !currentGameMap->tileExists(location.x, location.y - 1)
+                               || currentGameMap->getTile(location.x, location.y - 1)->isRoad();
+            const bool right = !currentGameMap->tileExists(location.x + 1, location.y)
+                               || currentGameMap->getTile(location.x + 1, location.y)->isRoad();
+            const bool down  = !currentGameMap->tileExists(location.x, location.y + 1)
+                               || currentGameMap->getTile(location.x, location.y + 1)->isRoad();
+            const bool left  = !currentGameMap->tileExists(location.x - 1, location.y)
+                               || currentGameMap->getTile(location.x - 1, location.y)->isRoad();
+            const int mask = ((int)up) | ((int)right << 1) | ((int)down << 2) | ((int)left << 3);
+            SDL_Rect roadSrc = { mask * zoomed_tilesize, 0, zoomed_tilesize, zoomed_tilesize };
+            SDL_RenderCopy(renderer, cityRoadTex, &roadSrc, &drawLocation);
+        }
     }
 
     if (destroyedStructureTile != DestroyedStructure_None) {

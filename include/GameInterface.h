@@ -25,12 +25,14 @@
 #include <GUI/TextButton.h>
 #include <GUI/PictureButton.h>
 #include <GUI/PictureLabel.h>
+#include <GUI/Label.h>
 #include <GUI/dune/ChatManager.h>
 #include <GUI/dune/NewsTicker.h>
 #include <GUI/dune/DisasterNotification.h>
 
 #include <vector>
 #include <functional>
+#include <climits>
 
 #include <RadarView.h>
 
@@ -121,6 +123,7 @@ private:
     NewsTicker          newsticker;             ///< The newsticker showing news on the game (e.g. new starport prices, harvester fill level, etc.)
     PictureButton       optionsButton;          ///< Button for accessing the ingame menu
     PictureButton       mentatButton;           ///< Button for accessing the mentat menu
+    TextButton          budgetButton;           ///< City sim mode only: opens the budget mini-window
     PictureLabel        topBar;                 ///< The background of the top bar
 
     PictureLabel        sideBar;                ///< The background of the side bar
@@ -131,6 +134,14 @@ private:
     TextButton          ornithopterSelectButton;///< Button that selects all owned ornithopters
 
     bool                showCityStatsOverlay;   ///< Whether to show the city stats overlay
+
+    Label               modVersionLabel;        ///< Bottom-right "<active mod>\nv<VERSION>" watermark, mirrors the main menu.
+    Label               populationLabel;        ///< Always-visible "Pop: N" pill (city sim mode only). Refreshed in update().
+    Label               rciDemandLabel;         ///< RCI demand readout (city sim mode only), sits just below populationLabel.
+    int                 lastShownPopulation = -1; ///< Tracks last value pushed to populationLabel; avoids redundant setText.
+    int                 lastShownResValve = INT_MIN; ///< Tracks last RCI snapshot pushed to rciDemandLabel.
+    int                 lastShownComValve = INT_MIN;
+    int                 lastShownIndValve = INT_MIN;
 
     std::vector<std::unique_ptr<DisasterNotification>> disasterNotifications_;
 };

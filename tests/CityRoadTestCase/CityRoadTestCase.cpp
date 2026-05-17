@@ -58,14 +58,14 @@ TEST_CASE("CityRoad: All DuneCity commands are contiguous after CMD_TEST_SYNC", 
 
 namespace {
 
-struct TileConductiveProxy {
-    bool cityConductive_ = false;
+struct TileRoadProxy {
+    bool isRoad_ = false;
     bool cityPowered_ = false;
     DuneCity::ZoneType cityZoneType_ = DuneCity::ZoneType::None;
     uint8_t cityZoneDensity_ = 0;
 
-    bool isCityConductive() const noexcept { return cityConductive_; }
-    void setCityConductive(bool c) noexcept { cityConductive_ = c; }
+    bool isRoad() const noexcept { return isRoad_; }
+    void setRoad(bool c) noexcept { isRoad_ = c; }
     bool isCityPowered() const noexcept { return cityPowered_; }
     void setCityPowered(bool p) noexcept { cityPowered_ = p; }
     DuneCity::ZoneType getCityZoneType() const noexcept { return cityZoneType_; }
@@ -76,44 +76,44 @@ struct TileConductiveProxy {
 } // anonymous namespace
 
 TEST_CASE("CityRoad: Tile starts non-conductive", "[road][tile]") {
-    TileConductiveProxy tile;
-    REQUIRE_FALSE(tile.isCityConductive());
+    TileRoadProxy tile;
+    REQUIRE_FALSE(tile.isRoad());
 }
 
-TEST_CASE("CityRoad: setCityConductive(true) makes tile conductive", "[road][tile]") {
-    TileConductiveProxy tile;
-    tile.setCityConductive(true);
-    REQUIRE(tile.isCityConductive());
+TEST_CASE("CityRoad: setRoad(true) makes tile conductive", "[road][tile]") {
+    TileRoadProxy tile;
+    tile.setRoad(true);
+    REQUIRE(tile.isRoad());
 }
 
-TEST_CASE("CityRoad: setCityConductive(false) removes conductivity", "[road][tile]") {
-    TileConductiveProxy tile;
-    tile.setCityConductive(true);
-    REQUIRE(tile.isCityConductive());
-    tile.setCityConductive(false);
-    REQUIRE_FALSE(tile.isCityConductive());
+TEST_CASE("CityRoad: setRoad(false) removes conductivity", "[road][tile]") {
+    TileRoadProxy tile;
+    tile.setRoad(true);
+    REQUIRE(tile.isRoad());
+    tile.setRoad(false);
+    REQUIRE_FALSE(tile.isRoad());
 }
 
 TEST_CASE("CityRoad: Road (conductive) is independent of zone type", "[road][tile]") {
-    TileConductiveProxy tile;
-    tile.setCityConductive(true);
-    REQUIRE(tile.isCityConductive());
+    TileRoadProxy tile;
+    tile.setRoad(true);
+    REQUIRE(tile.isRoad());
     REQUIRE_FALSE(tile.hasCityZone());
 
     tile.setCityZoneType(DuneCity::ZoneType::Residential);
-    REQUIRE(tile.isCityConductive());
+    REQUIRE(tile.isRoad());
     REQUIRE(tile.hasCityZone());
 }
 
 TEST_CASE("CityRoad: Conductive state is independent of powered state", "[road][tile]") {
-    TileConductiveProxy tile;
-    tile.setCityConductive(true);
+    TileRoadProxy tile;
+    tile.setRoad(true);
     REQUIRE_FALSE(tile.isCityPowered());
-    REQUIRE(tile.isCityConductive());
+    REQUIRE(tile.isRoad());
 
     tile.setCityPowered(true);
     REQUIRE(tile.isCityPowered());
-    REQUIRE(tile.isCityConductive());
+    REQUIRE(tile.isRoad());
 }
 
 // =============================================================================
@@ -155,19 +155,19 @@ TEST_CASE("CityRoad: Road cannot be placed on existing city zone", "[road][valid
 // =============================================================================
 
 TEST_CASE("CityRoad: Placing road sets conductive flag", "[road][effect]") {
-    TileConductiveProxy tile;
-    tile.setCityConductive(true);
-    REQUIRE(tile.isCityConductive());
+    TileRoadProxy tile;
+    tile.setRoad(true);
+    REQUIRE(tile.isRoad());
 }
 
 TEST_CASE("CityRoad: Road placement on valid tile follows correct sequence", "[road][effect]") {
-    TileConductiveProxy tile;
+    TileRoadProxy tile;
 
-    REQUIRE_FALSE(tile.isCityConductive());
+    REQUIRE_FALSE(tile.isRoad());
 
-    tile.setCityConductive(true);
+    tile.setRoad(true);
 
-    REQUIRE(tile.isCityConductive());
+    REQUIRE(tile.isRoad());
 }
 
 // =============================================================================

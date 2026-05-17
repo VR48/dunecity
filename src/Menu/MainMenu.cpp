@@ -33,6 +33,8 @@
 
 #include <GUI/QstBox.h>
 #include <misc/DiscordManager.h>
+#include <mod/ModManager.h>
+#include <mod/ModInfo.h>
 #include <config.h>
 
 MainMenu::MainMenu()
@@ -111,6 +113,45 @@ MainMenu::MainMenu()
     quitButton.setText(_("QUIT"));
     quitButton.setOnClick(std::bind(&MainMenu::onQuit, this));
     MenuButtons.addWidget(&quitButton);
+
+    // Bottom-right watermark: <active mod display name> stacked over v<VERSION>.
+    {
+        modVersionLabel.setTextFontSize(16);
+        modVersionLabel.setTextColor(COLOR_WHITE, COLOR_BLACK);
+        modVersionLabel.setAlignment(static_cast<Alignment_Enum>(Alignment_Left | Alignment_VCenter));
+        refreshModVersionLabel();
+
+        const int labelWidth  = 220;
+        const int labelHeight = 50;
+        const int marginX     = 12;
+        const int marginY     = 8;
+        windowWidget.addWidget(&modVersionLabel,
+                               Point(marginX,
+                                     getRendererHeight() - labelHeight - marginY),
+                               Point(labelWidth, labelHeight));
+    }
+}
+
+void MainMenu::refreshModVersionLabel()
+{
+    std::string activeModName;
+    std::string modDisplayName = "Vanilla";
+    ModManager& modManager = ModManager::instance();
+    if (modManager.isInitialized()) {
+        activeModName = modManager.getActiveModName();
+        ModInfo info = modManager.getModInfo(activeModName);
+        if (!info.displayName.empty()) {
+            modDisplayName = info.displayName;
+        } else if (!info.name.empty()) {
+            modDisplayName = info.name;
+        }
+    }
+
+    if (activeModName == lastShownModName) {
+        return;
+    }
+    lastShownModName = activeModName;
+    modVersionLabel.setText(modDisplayName + "\nv" + std::string(VERSION));
 }
 
 MainMenu::~MainMenu() = default;
@@ -139,6 +180,11 @@ int MainMenu::showMenu()
 
 void MainMenu::update()
 {
+    // Mod can be switched from any sub-menu (ModMenu, CustomGameMenu,
+    // CustomGamePlayers); refresh the watermark on every tick so it
+    // tracks the live ModManager state when control returns here.
+    refreshModVersionLabel();
+
     // Process version check results
     if(pVersionChecker) {
         pVersionChecker->update();

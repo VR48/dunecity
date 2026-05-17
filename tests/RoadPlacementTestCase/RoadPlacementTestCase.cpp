@@ -1,68 +1,106 @@
 /*
- *  RoadPlacementTestCase.cpp - Tests for city road placement
+ *  RoadPlacementTestCase.cpp - Regression tests for the Road structure
  *
- *  Validates: road item ID, city tool command handling, tile conductivity.
+ *  Roads are a build-menu structure (like concrete slabs): they mutate
+ *  tile state on placement, render with an auto-tile sprite overlay, are
+ *  not selectable. Concrete and Road are now separate tile states — a
+ *  slab is just concrete, a road is just a road. Power flows globally,
+ *  so road placement no longer carries any "conductivity" semantics.
+ *
+ *  Validates:
+ *  - Slab1 and Slab4 placement paths do NOT set the road flag (concrete
+ *    stays concrete).
+ *  - Structure_Road is registered in BuilderBase::itemOrder.
+ *  - Structure_PowerLine is NOT in itemOrder (no power lines in DuneCity).
+ *  - Enum IDs preserved (no renumbering).
  */
 
 #include <catch2/catch_all.hpp>
 #include <data.h>
-#include <Command.h>
-#include <Game.h>
-#include <Map.h>
-#include <Tile.h>
-#include <dunecity/CitySimulation.h>
+#include <fstream>
+#include <string>
+#include <cstdlib>
+
+static std::string readSourceFile(const std::string& relativePath) {
+    const char* env = std::getenv("DUNE_CITY_SOURCE_DIR");
+    if (!env) return {};
+    std::ifstream f(std::string(env) + "/" + relativePath);
+    return std::string((std::istreambuf_iterator<char>(f)),
+                        std::istreambuf_iterator<char>());
+}
 
 // =============================================================================
-// Road Item ID Tests
+// Enum ID stability (no renumbering happened)
 // =============================================================================
 
-TEST_CASE("Road: Structure IDs are correctly assigned", "[road][ids]") {
+TEST_CASE("RoadPlacement: Road and PowerLine enum IDs are preserved", "[road][ids]") {
     REQUIRE(Structure_Road == 23);
     REQUIRE(Structure_PowerLine == 24);
-    REQUIRE(Structure_LastID == 24);
-}
-
-TEST_CASE("Road: Road is a structure not a zone", "[road][helpers]") {
-    REQUIRE(isStructure(Structure_Road));
-    REQUIRE_FALSE(isZoneStructure(Structure_Road));
-    REQUIRE_FALSE(isUnit(Structure_Road));
+    REQUIRE(Structure_Slab1 == 14);
+    REQUIRE(Structure_Slab4 == 15);
 }
 
 // =============================================================================
-// City Tool Command Tests
+// Concrete and Road are independent tile states
 // =============================================================================
 
-TEST_CASE("Road: CMD_CITY_TOOL type 1 = road", "[road][command]") {
-    // Verify tool type 1 corresponds to road in the command handler
-    // The command system is tested indirectly through integration
-    REQUIRE(true); // Placeholder - command enum exists
+TEST_CASE("RoadPlacement: Slab1 placement does NOT set the road flag", "[road][concrete-separation]") {
+    std::string src = readSourceFile("src/House.cpp");
+    REQUIRE_FALSE(src.empty());
+
+    auto slab1Pos = src.find("case (Structure_Slab1):");
+    REQUIRE(slab1Pos != std::string::npos);
+
+    auto blockEnd = src.find("} break;", slab1Pos);
+    REQUIRE(blockEnd != std::string::npos);
+
+    std::string block = src.substr(slab1Pos, blockEnd - slab1Pos);
+    REQUIRE(block.find("setRoad(true)") == std::string::npos);
+    REQUIRE(block.find("setCityConductive") == std::string::npos);
+}
+
+TEST_CASE("RoadPlacement: Slab4 placement does NOT set the road flag", "[road][concrete-separation]") {
+    std::string src = readSourceFile("src/House.cpp");
+    REQUIRE_FALSE(src.empty());
+
+    auto slab4Pos = src.find("case (Structure_Slab4):");
+    REQUIRE(slab4Pos != std::string::npos);
+
+    auto blockEnd = src.find("} break;", slab4Pos);
+    REQUIRE(blockEnd != std::string::npos);
+
+    std::string block = src.substr(slab4Pos, blockEnd - slab4Pos);
+    REQUIRE(block.find("setRoad(true)") == std::string::npos);
+    REQUIRE(block.find("setCityConductive") == std::string::npos);
+}
+
+TEST_CASE("RoadPlacement: Structure_Road placement sets the road flag", "[road][effect]") {
+    std::string src = readSourceFile("src/House.cpp");
+    REQUIRE_FALSE(src.empty());
+
+    auto roadPos = src.find("case (Structure_Road):");
+    REQUIRE(roadPos != std::string::npos);
+
+    auto blockEnd = src.find("} break;", roadPos);
+    REQUIRE(blockEnd != std::string::npos);
+
+    std::string block = src.substr(roadPos, blockEnd - roadPos);
+    REQUIRE(block.find("setRoad(true)") != std::string::npos);
 }
 
 // =============================================================================
-// Tile Conductivity Tests
+// Build menu wiring
 // =============================================================================
 
-TEST_CASE("Road: Conductive tiles are detected", "[road][conductivity]") {
-    // Tile::isCityConductive() should return true for road tiles
-    // This is tested through the city simulation integration
-    REQUIRE(true); // Placeholder - requires game context
-}
+TEST_CASE("RoadPlacement: Road is in the build menu; PowerLine is not", "[road][build]") {
+    std::string src = readSourceFile("src/structures/BuilderBase.cpp");
+    REQUIRE_FALSE(src.empty());
 
-TEST_CASE("Road: Power grid detects conductive tiles", "[road][powergrid]") {
-    // The power grid simulation uses cityConductive_ to determine
-    // whether a tile can transmit power
-    REQUIRE(true); // Placeholder - requires game context
-}
+    auto orderStart = src.find("itemOrder[]");
+    REQUIRE(orderStart != std::string::npos);
+    auto orderEnd = src.find("};", orderStart);
+    std::string orderBlock = src.substr(orderStart, orderEnd - orderStart);
 
-// =============================================================================
-// Integration Tests
-// =============================================================================
-
-TEST_CASE("Road: Full placement flow", "[road][integration]") {
-    // Full integration test would require:
-    // 1. Create city simulation
-    // 2. Dispatch CMD_CITY_TOOL with toolType=1
-    // 3. Verify tile becomes conductive
-    // This is tested through manual verification
-    REQUIRE(true);
+    REQUIRE(orderBlock.find("Structure_Road") != std::string::npos);
+    REQUIRE(orderBlock.find("Structure_PowerLine") == std::string::npos);
 }

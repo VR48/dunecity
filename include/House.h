@@ -78,6 +78,11 @@ public:
     void setProducedPower(int newPower);
     inline int getPowerRequirement() const { return powerRequirement; }
 
+    /// Apply a runtime adjustment to the power requirement pool. Use this
+    /// for state that isn't captured by the static ObjectData.power field —
+    /// e.g. city zones whose draw scales with density.
+    inline void adjustPowerRequirement(int delta) { powerRequirement += delta; }
+
     inline int getBuiltValue() const { return unitBuiltValue + structureBuiltValue; }
     inline int getUnitBuiltValue() const { return unitBuiltValue; }
     inline int getMilitaryValue() const { return militaryValue; }

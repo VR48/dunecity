@@ -19,6 +19,7 @@
 #define RADARINTERFACE_H
 
 #include "DefaultStructureInterface.h"
+#include "CityStatsBox.h"
 
 #include <FileClasses/FontManager.h>
 #include <FileClasses/TextManager.h>
@@ -50,6 +51,9 @@ protected:
         enemyUnitsLabel.setTextFontSize(12);
         enemyUnitsLabel.setTextColor(color);
         textVBox.addWidget(&enemyUnitsLabel, 0.005);
+
+        cityStats_.attachTo(textVBox, color);
+
         textVBox.addWidget(Spacer::create(), 0.99);
     }
 
@@ -70,6 +74,8 @@ protected:
         friendlyUnitsLabel.setText(" " + _("Friend") + ": " + std::to_string(pOwner->getNumVisibleFriendlyUnits()));
         enemyUnitsLabel.setText(" " + _("Enemy") + ": " + std::to_string(pOwner->getNumVisibleEnemyUnits()));
 
+        cityStats_.update(dynamic_cast<StructureBase*>(pObject));
+
         return DefaultStructureInterface::update();
     }
 
@@ -78,6 +84,8 @@ private:
 
     Label   friendlyUnitsLabel;
     Label   enemyUnitsLabel;
+
+    CityStatsBox cityStats_;
 };
 
 #endif // RADARINTERFACE_H

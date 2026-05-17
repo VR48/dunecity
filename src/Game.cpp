@@ -91,7 +91,7 @@ DuneCity::CityTilePlacementState makeCityTilePlacementState(const Tile& tile) {
         tile.isMountain(),
         tile.hasAGroundObject(),
         tile.hasCityZone(),
-        tile.isCityConductive());
+        tile.isRoad());
 }
 
 bool hasVisibleRoadNeighbor(int x, int y) {
@@ -107,7 +107,7 @@ bool hasVisibleRoadNeighbor(int x, int y) {
         }
 
         const Tile* neighbor = currentGameMap->getTile(nx, ny);
-        if (neighbor->isCityConductive() && !neighbor->hasCityZone()) {
+        if (neighbor->isRoad() && !neighbor->hasCityZone()) {
             return true;
         }
     }
@@ -121,6 +121,10 @@ Game::Game() {
     currentZoomlevel = settings.video.preferredZoomLevel;
 
     localPlayerName = settings.general.playerName;
+
+    // City-sim features are gated by the active mod. A savegame load may
+    // re-enable this later if the save contains city-sim state.
+    citySimEnabled_ = ModManager::instance().isCityModeActive();
 
     unitList.clear();       //holds all the units
     structureList.clear();  //all the structures
@@ -287,6 +291,26 @@ void Game::logPerformance(const char* format, ...) {
 void Game::initGame(const GameInitSettings& newGameInitSettings) {
     gameInitSettings = newGameInitSettings;
 
+    // The host's mod choice is the source of truth for whether the
+    // city-sim feature flag is on — not whatever mod the local player
+    // happens to have active in their main menu. This matters most for
+    // multiplayer clients (their local ModManager may be on vanilla),
+    // but also keeps single-player consistent if mod state drifted
+    // between menu navigation and game start.
+    {
+        const std::string& sessionMod = gameInitSettings.getModName();
+        if (!sessionMod.empty()) {
+            ModInfo info = ModManager::instance().getModInfo(sessionMod);
+            // If the named mod isn't installed locally we keep the
+            // earlier value (set in the Game constructor) so single
+            // player still works — but for any installed mod the
+            // session's choice wins.
+            if (!info.name.empty()) {
+                citySimEnabled_ = info.enablesCityMode;
+            }
+        }
+    }
+
     targetRequestQueue.clear();
     pendingTargetRequestIds.clear();
     pathRequestQueue.clear();
@@ -321,6 +345,20 @@ void Game::initGame(const GameInitSettings& newGameInitSettings) {
             randomGen.setSeed(gameInitSettings.getRandomSeed());
 
             objectData.loadFromINIFile("config/ObjectData.ini");
+
+            // City zones must not be buildable when the active mod doesn't
+            // opt into DuneCity city-sim features. Force-disable them in the
+            // loaded ObjectData so every consumer (build lists, prerequisites,
+            // AI, save/load) sees them as unavailable, regardless of what the
+            // mod's ObjectData.ini says.
+            if (!citySimEnabled_) {
+                for (int h = 0; h < NUM_HOUSES; h++) {
+                    objectData.data[Structure_ZoneResidential][h].enabled = false;
+                    objectData.data[Structure_ZoneCommercial][h].enabled  = false;
+                    objectData.data[Structure_ZoneIndustrial][h].enabled  = false;
+                }
+            }
+
             objectData.logSettings();
 
             if(gameInitSettings.getMission() != 0) {
@@ -1347,8 +1385,6 @@ void Game::drawScreen()
     /* draw placeholder road visuals */
     drawCityRoads(x1, y1, x2, y2);
 
-    /* draw zone / road tooltip on hover */
-    drawZoneTooltip();
     /* draw structures */
     currentGameMap->for_each(x1, y1, x2, y2,
         [](Tile& t) {
@@ -2394,6 +2430,11 @@ void Game::initializeGameLoop() {
     if (citySimEnabled_ && currentGameMap != nullptr && !citySimulation_) {
         citySimulation_ = std::make_unique<DuneCity::CitySimulation>();
         citySimulation_->init(currentGameMap->getSizeX(), currentGameMap->getSizeY());
+        // City Effects is implicitly on whenever the city sim itself is
+        // on — the GameOptions.ini toggle is kept for explicit overrides
+        // but should never silently leave a city-mode game with the
+        // pollution/land-value/crime/growth pipeline disabled.
+        citySimulation_->setCityEffectsEnabled(true);
     }
 
     // Check if a player has lost
@@ -3026,24 +3067,32 @@ bool Game::loadSaveGame(InputStream& stream) {
     if (savegameVersion >= 9806) {
         savedModName = stream.readString();
         savedModChecksum = stream.readString();
-        
+
         // Check if save was created with a different mod
         std::string currentModName = ModManager::instance().getActiveModName();
         std::string currentChecksum = ModManager::instance().getEffectiveChecksums().combined;
-        
+
         if (savedModChecksum != currentChecksum) {
             SDL_Log("Game::loadSaveGame(): Save mod mismatch detected");
             SDL_Log("  Save mod: %s (checksum: %s)", savedModName.c_str(), savedModChecksum.c_str());
             SDL_Log("  Current mod: %s (checksum: %s)", currentModName.c_str(), currentChecksum.c_str());
-            
-            // Check if the required mod exists
+
             if (!ModManager::instance().modExists(savedModName)) {
-                SDL_Log("Game::loadSaveGame(): Required mod '%s' not found!", savedModName.c_str());
-                // For now, log warning and continue - full enforcement would require UI dialog
-                SDL_Log("Game::loadSaveGame(): WARNING - Loading with different mod may cause issues");
-            } else {
-                SDL_Log("Game::loadSaveGame(): WARNING - Save uses mod '%s' but '%s' is active", 
-                        savedModName.c_str(), currentModName.c_str());
+                SDL_Log("Game::loadSaveGame(): Required mod '%s' not found - loading with current mod active",
+                        savedModName.c_str());
+            } else if (savedModName != currentModName) {
+                // Auto-switch to the save's mod so its rules (city sim,
+                // ObjectData, GameOptions) match what the save was authored
+                // against. Persists via active_mod.txt — same as picking it
+                // in the mod menu.
+                if (ModManager::instance().setActiveMod(savedModName)) {
+                    SDL_Log("Game::loadSaveGame(): switched active mod to '%s' for save load",
+                            savedModName.c_str());
+                    citySimEnabled_ = ModManager::instance().isCityModeActive();
+                } else {
+                    SDL_Log("Game::loadSaveGame(): WARNING - failed to switch to mod '%s'; loading anyway",
+                            savedModName.c_str());
+                }
             }
         }
     }
@@ -3175,7 +3224,20 @@ bool Game::loadSaveGame(InputStream& stream) {
             citySimEnabled_ = true;
             citySimulation_ = std::make_unique<DuneCity::CitySimulation>();
             citySimulation_->init(currentGameMap->getSizeX(), currentGameMap->getSizeY());
+            citySimulation_->setCityEffectsEnabled(
+                gameInitSettings.getGameOptions().cityEffects);
             citySimulation_->load(stream);
+        }
+    }
+
+    // Mirror the new-game gate: if the loaded save's ObjectData has zones
+    // enabled but city sim is off, force them off so vanilla saves can't
+    // surface zone build entries.
+    if (!citySimEnabled_) {
+        for (int h = 0; h < NUM_HOUSES; h++) {
+            objectData.data[Structure_ZoneResidential][h].enabled = false;
+            objectData.data[Structure_ZoneCommercial][h].enabled  = false;
+            objectData.data[Structure_ZoneIndustrial][h].enabled  = false;
         }
     }
 
@@ -3621,7 +3683,7 @@ void Game::handleKeyInput(SDL_KeyboardEvent& keyboardEvent) {
         case SDLK_9: {
             int selectListIndex = keyboardEvent.keysym.sym - SDLK_1;
 
-            if(SDL_GetModState() & KMOD_SHIFT) {
+            if(citySimEnabled_ && (SDL_GetModState() & KMOD_SHIFT)) {
                 switch(keyboardEvent.keysym.sym) {
                     case SDLK_1: currentCityOverlay_ = DuneCity::CityOverlayMode::None; break;
                     case SDLK_2: currentCityOverlay_ = DuneCity::CityOverlayMode::PowerGrid; break;
@@ -3633,7 +3695,7 @@ void Game::handleKeyInput(SDL_KeyboardEvent& keyboardEvent) {
                     case SDLK_8: currentCityOverlay_ = DuneCity::CityOverlayMode::WindTrapRadius; break;
                     default: break;
                 }
-            } else if (currentCursorMode == CursorMode_CityZone && selectListIndex < 3) {
+            } else if (citySimEnabled_ && currentCursorMode == CursorMode_CityZone && selectListIndex < 3) {
                 selectedZoneType_ = static_cast<DuneCity::ZoneType>(selectListIndex + 1);
             } else if(SDL_GetModState() & KMOD_CTRL) {
                 pLocalPlayer->setGroupList(selectListIndex, selectedList);
@@ -3706,13 +3768,13 @@ void Game::handleKeyInput(SDL_KeyboardEvent& keyboardEvent) {
         } break;
 
         case SDLK_b: {
-            if (SDL_GetModState() & KMOD_SHIFT) {
+            if (citySimEnabled_ && (SDL_GetModState() & KMOD_SHIFT)) {
                 onCityBudget();
             }
         } break;
 
         case SDLK_c: {
-            if (SDL_GetModState() & KMOD_SHIFT) {
+            if (citySimEnabled_ && (SDL_GetModState() & KMOD_SHIFT)) {
                 pInterface->toggleCityStatsOverlay();
             } else {
                 setCursorMode(CursorMode_Capture);
@@ -3720,6 +3782,9 @@ void Game::handleKeyInput(SDL_KeyboardEvent& keyboardEvent) {
         } break;
 
         case SDLK_z: {
+            if (!citySimEnabled_) {
+                break;
+            }
             if (currentCursorMode == CursorMode_CityZone) {
                 setCursorMode(CursorMode_Normal);
             } else {
@@ -3789,17 +3854,23 @@ void Game::handleKeyInput(SDL_KeyboardEvent& keyboardEvent) {
 
         case SDLK_F7: {
             // Test: Fire disaster notification
-            triggerFireDisaster();
+            if (citySimEnabled_) {
+                triggerFireDisaster();
+            }
         } break;
 
         case SDLK_F8: {
             // Test: Sandstorm disaster notification
-            triggerSandstormDisaster();
+            if (citySimEnabled_) {
+                triggerSandstormDisaster();
+            }
         } break;
 
         case SDLK_F9: {
             // Test: Sandworm disaster notification
-            triggerSandwormDisaster();
+            if (citySimEnabled_) {
+                triggerSandwormDisaster();
+            }
         } break;
 
         case SDLK_F10: {
@@ -3885,7 +3956,7 @@ void Game::handleKeyInput(SDL_KeyboardEvent& keyboardEvent) {
 
 
         case SDLK_r: {
-            if (SDL_GetModState() & KMOD_SHIFT) {
+            if (citySimEnabled_ && (SDL_GetModState() & KMOD_SHIFT)) {
                 if (currentCursorMode == CursorMode_CityRoad) {
                     setCursorMode(CursorMode_Normal);
                 } else {
@@ -4214,7 +4285,7 @@ void Game::handleCityRoadPlacementClick(int xPos, int yPos) {
         return;
     }
 
-    if(pTile->isCityConductive()) {
+    if(pTile->isRoad()) {
         soundPlayer->playSound(Sound_InvalidAction);
         return;
     }
@@ -4283,13 +4354,25 @@ void Game::drawCityOverlay(int x1, int y1, int x2, int y2) {
 
     switch (currentCityOverlay_) {
         case DuneCity::CityOverlayMode::PowerGrid: {
+            // The per-tile city power grid (CitySimulation::getPowerGridMap)
+            // is stubbed — every cell reads 0.  Instead, show a simple
+            // house-level power status: green overlay on zone/conductive tiles
+            // when the house has power, red when it doesn't.
+            bool housePower = pLocalHouse->hasPower();
+            uint8_t level = housePower ? 200 : 200;
+            int rOn = 0, gOn = 255, bOn = 0;     // green = powered
+            int rOff = 255, gOff = 0, bOff = 0;  // red   = no power
             const auto& powerMap = citySimulation_->getPowerGridMap();
             int blockSize = powerMap.getBlockSize();
             for (int x = x1; x < x2; x += blockSize) {
                 for (int y = y1; y < y2; y += blockSize) {
-                    uint8_t powered = powerMap.worldGet(x, y);
-                    if (powered > 0) {
-                        drawOverlayBlock(x, y, blockSize, powered, 200, 0, 0, 0, 255, 0);
+                    if (!currentGameMap->tileExists(x, y)) continue;
+                    Tile* t = currentGameMap->getTile(x, y);
+                    if (t->hasCityZone() || t->isRoad()) {
+                        if (housePower)
+                            drawOverlayBlock(x, y, blockSize, level, rOn, gOn, bOn, rOn, gOn, bOn);
+                        else
+                            drawOverlayBlock(x, y, blockSize, level, rOff, gOff, bOff, rOff, gOff, bOff);
                     }
                 }
             }
@@ -4442,7 +4525,7 @@ void Game::drawCityRoads(int x1, int y1, int x2, int y2) {
     };
 
     currentGameMap->for_each(x1, y1, x2, y2, [&](Tile& tile) {
-        if (!tile.isCityConductive() || tile.hasCityZone()) {
+        if (!tile.isRoad() || tile.hasCityZone()) {
             return;
         }
 
@@ -4465,16 +4548,16 @@ void Game::drawCityRoads(int x1, int y1, int x2, int y2) {
         SDL_RenderFillRect(renderer, &centerRect);
 
         SDL_SetRenderDrawColor(renderer, 196, 168, 120, 210);
-        if (currentGameMap->tileExists(tileX, tileY - 1) && currentGameMap->getTile(tileX, tileY - 1)->isCityConductive()) {
+        if (currentGameMap->tileExists(tileX, tileY - 1) && currentGameMap->getTile(tileX, tileY - 1)->isRoad()) {
             drawRoadStub(tileX, tileY, 0, -1);
         }
-        if (currentGameMap->tileExists(tileX + 1, tileY) && currentGameMap->getTile(tileX + 1, tileY)->isCityConductive()) {
+        if (currentGameMap->tileExists(tileX + 1, tileY) && currentGameMap->getTile(tileX + 1, tileY)->isRoad()) {
             drawRoadStub(tileX, tileY, 1, 0);
         }
-        if (currentGameMap->tileExists(tileX, tileY + 1) && currentGameMap->getTile(tileX, tileY + 1)->isCityConductive()) {
+        if (currentGameMap->tileExists(tileX, tileY + 1) && currentGameMap->getTile(tileX, tileY + 1)->isRoad()) {
             drawRoadStub(tileX, tileY, 0, 1);
         }
-        if (currentGameMap->tileExists(tileX - 1, tileY) && currentGameMap->getTile(tileX - 1, tileY)->isCityConductive()) {
+        if (currentGameMap->tileExists(tileX - 1, tileY) && currentGameMap->getTile(tileX - 1, tileY)->isRoad()) {
             drawRoadStub(tileX, tileY, -1, 0);
         }
 
@@ -4523,107 +4606,6 @@ void Game::drawCityPlacementHint() {
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
 }
 
-
-void Game::drawZoneTooltip() {
-    // Only show tooltip if cursor is on the map and we have city simulation
-    if (!citySimulation_ || !screenborder->isScreenCoordInsideMap(drawnMouseX, drawnMouseY)) {
-        return;
-    }
-
-    // Convert screen coordinates to map tile coordinates
-    int mapX = screenborder->screen2MapX(drawnMouseX);
-    int mapY = screenborder->screen2MapY(drawnMouseY);
-
-    // Check if the tile is valid and has a zone
-    if (!currentGameMap->tileExists(mapX, mapY)) {
-        return;
-    }
-
-    Tile* pTile = currentGameMap->getTile(mapX, mapY);
-    DuneCity::ZoneType zoneType = pTile->getCityZoneType();
-
-    // Build tooltip text based on city content
-    std::string zoneName;
-    std::string zoneInfo;
-
-    if (zoneType == DuneCity::ZoneType::None) {
-        if (!pTile->isCityConductive()) {
-            return;
-        }
-
-        zoneName = "Road";
-        zoneInfo = "Conductive city tile";
-    } else {
-        switch (zoneType) {
-            case DuneCity::ZoneType::Residential:
-                zoneName = "Residential Zone";
-                break;
-            case DuneCity::ZoneType::Commercial:
-                zoneName = "Commercial Zone";
-                break;
-            case DuneCity::ZoneType::Industrial:
-                zoneName = "Industrial Zone";
-                break;
-            default:
-                return;
-        }
-
-        // Get zone density (population level)
-        uint8_t density = pTile->getCityZoneDensity();
-        bool powered = pTile->isCityPowered();
-
-        zoneInfo = "Density: " + std::to_string(density) + "/8";
-        if (powered) {
-            zoneInfo += " | Powered";
-        } else {
-            zoneInfo += " | UNPOWERED";
-        }
-    }
-
-    // Create tooltip texture with zone name and info
-    std::string tooltipText = zoneName + "\n" + zoneInfo;
-
-    sdl2::texture_ptr pTooltipTexture = pFontManager->createTextureWithMultilineText(
-        tooltipText.c_str(), COLOR_WHITE, 12, true);
-
-    if (!pTooltipTexture) {
-        return;
-    }
-
-    int texW, texH;
-    SDL_QueryTexture(pTooltipTexture.get(), nullptr, nullptr, &texW, &texH);
-
-    // Position tooltip near cursor, offset to avoid cursor overlap
-    int tooltipX = drawnMouseX + 15;
-    int tooltipY = drawnMouseY + 15;
-
-    // Keep tooltip within screen bounds
-    int screenW = getRendererWidth();
-    int screenH = getRendererHeight();
-    if (tooltipX + texW + 10 > screenW) {
-        tooltipX = drawnMouseX - texW - 15;
-    }
-    if (tooltipY + texH + 10 > screenH) {
-        tooltipY = drawnMouseY - texH - 15;
-    }
-
-    // Draw tooltip background (semi-transparent dark)
-    SDL_Rect bgRect = {tooltipX - 5, tooltipY - 5, texW + 10, texH + 10};
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 180);
-    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
-    SDL_RenderFillRect(renderer, &bgRect);
-
-    // Draw tooltip border
-    SDL_SetRenderDrawColor(renderer, 150, 150, 150, 200);
-    SDL_Rect borderRect = {tooltipX - 5, tooltipY - 5, texW + 10, texH + 10};
-    SDL_RenderDrawRect(renderer, &borderRect);
-
-    // Draw tooltip text
-    SDL_Rect textRect = {tooltipX, tooltipY, texW, texH};
-    SDL_RenderCopy(renderer, pTooltipTexture.get(), nullptr, &textRect);
-
-    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
-}
 
 void Game::takeScreenshot() const {
     std::string screenshotFilename;

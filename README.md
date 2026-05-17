@@ -291,7 +291,10 @@ All city state is deterministic for multiplayer:
 
 | Path | What It Is |
 |------|-----------|
-| `analysis/delivery-summary.md` | Full technical delivery summary |
+| `ARCHITECTURE.md` | Repo-root architecture entry point and settled constraints |
+| `CLAUDE.md` | Claude CLI / coding-agent instructions for this repo |
+| `docs/dunecity-current-architecture.md` | Code-verified current implementation state |
+| `analysis/delivery-summary.md` | Historical technical delivery summary |
 | `analysis/architecture-comparison.md` | Dune Legacy vs Micropolis deep comparison |
 | `analysis/dunelegacy-architecture.md` | Dune Legacy architecture deep dive |
 | `analysis/simcity-architecture.md` | Micropolis architecture deep dive |

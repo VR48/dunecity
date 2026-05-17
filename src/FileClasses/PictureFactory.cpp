@@ -508,19 +508,9 @@ sdl2::surface_ptr PictureFactory::createMainBackground() const {
     SDL_Rect dest3 = calcDrawingRect(ordosLogo.get(),11,getHeight(Pic.get())-11,HAlign::Left,VAlign::Bottom);
     SDL_BlitSurface(ordosLogo.get(),nullptr,Pic.get(),&dest3);
 
-    sdl2::surface_ptr Version{ getSubPicture(background.get(),0,0,75,32) };
-
-    sdl2::surface_ptr VersionText{ pFontManager->createSurfaceWithText(std::string(VERSION), PALCOLOR_BLACK, 14) };
-
-    SDL_Rect dest4 = calcDrawingRect(VersionText.get(), getWidth(Version.get())/2, getHeight(Version.get())/2 + 2, HAlign::Center, VAlign::Center);
-    SDL_BlitSurface(VersionText.get(),nullptr,Version.get(),&dest4);
-
-    VersionText.reset();
-
-    drawFrame(Version.get(),SimpleFrame);
-
-    SDL_Rect dest5 = calcDrawingRect(Version.get(), getWidth(Pic.get()) - 11, getHeight(Pic.get()) - 11, HAlign::Right, VAlign::Bottom);
-    SDL_BlitSurface(Version.get(),nullptr,Pic.get(),&dest5);
+    // Version watermark moved to MainMenu (active mod name + game version),
+    // so the bordered version box that used to live in the bottom-right of
+    // this background is intentionally not drawn anymore.
 
     return Pic;
 }

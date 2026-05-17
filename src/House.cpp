@@ -701,6 +701,33 @@ StructureBase* House::placeStructure(Uint32 builderID, int itemID, int xPos, int
 
         } break;
 
+        case (Structure_Road): {
+            // Road is a tile-state structure (like Slab1) — not selectable,
+            // no StructureBase object, just a flag on the underlying rock.
+            // Power flows globally in DuneCity, so roads don't conduct
+            // electricity; they only matter as the city's transport substrate
+            // and as a visual road overlay.
+            Tile* pTile = currentGameMap->getTile(xPos, yPos);
+            pTile->setRoad(true);
+            pTile->setOwner(getHouseID());
+            currentGameMap->viewMap(getHouseID(), xPos, yPos, currentGame->objectData.data[Structure_Road][houseID].viewrange);
+
+            if(pBuilder != nullptr) {
+                pBuilder->unSetWaitingToPlace();
+
+                if(this == pLocalHouse) {
+                    if(pBuilder->isSelected()) {
+                        currentGame->setCursorMode(Game::CursorMode_Normal);
+                    }
+
+                    pLocalPlayer->onPlaceStructure(nullptr);
+                }
+            }
+
+            return nullptr;
+
+        } break;
+
         case (Structure_Slab4): {
             // Slabs are no normal buildings
             currentGameMap->for_each(xPos, yPos, xPos + 2, yPos + 2,
@@ -759,6 +786,42 @@ StructureBase* House::placeStructure(Uint32 builderID, int itemID, int xPos, int
             }
 
             newStructure->setLocation(xPos, yPos);
+
+            // DuneCity: when city-sim mode is active, auto-pave a 1-tile
+            // road ring around any freshly-placed building (zones AND
+            // regular Dune structures like Refineries/Barracks/etc.) so
+            // every plot is road-accessible by default — the SimCity
+            // "zone with road frontage" pattern, generalised. Only empty
+            // rock tiles get the flag; sand, mountain, and tiles with
+            // existing ground objects are skipped. The structure's own
+            // footprint tiles get any prior road flag cleared so the
+            // auto-tiled road overlay doesn't render under the building
+            // art. Players can still place buildings on top of these
+            // auto-roads later (road is a tile flag, not a StructureBase).
+            if (currentGame && currentGame->isCitySimEnabled() && itemID != Structure_Wall) {
+                const int sx = newStructure->getStructureSizeX();
+                const int sy = newStructure->getStructureSizeY();
+                for (int dy = 0; dy < sy; ++dy) {
+                    for (int dx = 0; dx < sx; ++dx) {
+                        if (Tile* t = currentGameMap->getTile(xPos + dx, yPos + dy)) {
+                            t->setRoad(false);
+                        }
+                    }
+                }
+                for (int dy = -1; dy <= sy; ++dy) {
+                    for (int dx = -1; dx <= sx; ++dx) {
+                        const bool onFootprint = (dx >= 0 && dx < sx && dy >= 0 && dy < sy);
+                        if (onFootprint) continue;
+                        const int tx = xPos + dx;
+                        const int ty = yPos + dy;
+                        if (!currentGameMap->tileExists(tx, ty)) continue;
+                        Tile* t = currentGameMap->getTile(tx, ty);
+                        if (t->hasAGroundObject()) continue;
+                        if (t->getType() != Terrain_Rock) continue;
+                        t->setRoad(true);
+                    }
+                }
+            }
 
             if ((builderID != NONE_ID) && (itemID != Structure_Wall)) {
                 newStructure->setJustPlaced();

@@ -135,6 +135,17 @@ public:
     }
     inline size_t getNumSmoke() const { return smoke.size(); }
 
+    /// City sim "occupancy" (0..maxLevel for this structure type). Acts as
+    /// the analogue of a zone's tile density for non-zone city-role
+    /// structures (Refinery, Silo, Radar, Factories, RepairYard, IX,
+    /// HighTech). The city sim floors these at level 1 once the structure
+    /// exists (CityEffectsRuntime.cpp) so player-built supply doesn't sit
+    /// at zero jobs; higher tiers are still reached via the usual demand
+    /// gates. The raw stored value can be 0 (newly built / loaded from an
+    /// older save) without affecting jobs.
+    uint8_t getCityOccupancy() const { return cityOccupancy_; }
+    void setCityOccupancy(uint8_t v) { cityOccupancy_ = v; }
+
 protected:
     /**
         Used for updating things that are specific to that particular structure. Is called from
@@ -162,6 +173,8 @@ protected:
     int     lastAnimFrame;      ///< Last frame of the current animation
     int     curAnimFrame;       ///< The current frame of the current animation
     int     animationCounter;   ///< When to show the next animation frame?
+
+    uint8_t cityOccupancy_ = 0; ///< City sim level for non-zone city-role structures (0=vacant)
 
 private:
     void init();

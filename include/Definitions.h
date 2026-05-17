@@ -30,7 +30,7 @@
 #define DEFAULT_METASERVER  "https://dunelegacy.com/metaserver/metaserver.php"
 
 #define SAVEMAGIC           8675309
-#define SAVEGAMEVERSION     9807  // Incremented for DuneCity simulation state in saves
+#define SAVEGAMEVERSION     9810  // Incremented for Structure_PoliceStation: Structure_LastID 25→26 shifted all Unit_* IDs by 1.
 
 #define MAX_PLAYERNAMELENGHT    24
 

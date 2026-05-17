@@ -26,6 +26,9 @@
 #include <GUI/Spacer.h>
 #include <GUI/PictureButton.h>
 
+/// City budget mini-window. Player can adjust the tax rate and the
+/// police-funding share; both feed back into the city budget. Underfunding
+/// police scales coverage proportionally.
 class CityBudgetWindow : public Window
 {
 public:
@@ -33,21 +36,12 @@ public:
     virtual ~CityBudgetWindow();
 
     void onClose();
-    void onTaxRateIncrease();
-    void onTaxRateDecrease();
-
-    void onRoadIncrease();
-    void onRoadDecrease();
+    void onTaxIncrease();
+    void onTaxDecrease();
     void onPoliceIncrease();
     void onPoliceDecrease();
-    void onFireIncrease();
-    void onFireDecrease();
     void onApply();
 
-    /**
-        This static method creates a dynamic city budget window.
-        \return The new dialog box (will be automatically destroyed when it's closed)
-    */
     static CityBudgetWindow* create() {
         CityBudgetWindow* dlg = new CityBudgetWindow();
         dlg->pAllocated = true;
@@ -57,27 +51,21 @@ public:
 private:
     void updateDisplay();
     void updateAllocationLabels();
-    bool validateAllocation();
 
     VBox mainVBox;
     Label titleLabel;
-    
+
+    Label yearLabel;
     Label treasuryLabel;
     Label incomeLabel;
-    Label expensesLabel;
-    
-    HBox taxRateHBox;
-    Label taxRateLabel;
-    PictureButton taxRateMinus;
-    Label taxRateValueLabel;
-    PictureButton taxRatePlus;
+    Label policeCostLabel;
+    Label netLabel;
 
-    // Budget allocation sliders
-    HBox roadHBox;
-    Label roadLabel;
-    PictureButton roadMinus;
-    Label roadValueLabel;
-    PictureButton roadPlus;
+    HBox taxHBox;
+    Label taxLabel;
+    PictureButton taxMinus;
+    Label taxValueLabel;
+    PictureButton taxPlus;
 
     HBox policeHBox;
     Label policeLabel;
@@ -85,27 +73,17 @@ private:
     Label policeValueLabel;
     PictureButton policePlus;
 
-    HBox fireHBox;
-    Label fireLabel;
-    PictureButton fireMinus;
-    Label fireValueLabel;
-    PictureButton firePlus;
-
-    HBox allocationButtonsHBox;
-    Label totalAllocationLabel;
-    TextButton applyButton;
-    TextButton cancelButton;
-
-    int pendingRoadPercent = 100;
-    int pendingPolicePercent = 100;
-    int pendingFirePercent = 100;
-
     Label resPopLabel;
     Label comPopLabel;
     Label indPopLabel;
     Label totalPopLabel;
-    
+
+    HBox buttonsHBox;
+    TextButton applyButton;
     TextButton closeButton;
+
+    int pendingPolicePercent = 100;
+    int pendingTaxRate = 7;
 };
 
 #endif // CITYBUDGETWINDOW_H

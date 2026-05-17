@@ -27,7 +27,13 @@
 #include <misc/format.h>
 
 CityBudgetWindow::CityBudgetWindow()
- : Window(100, 100, 420, 480) {
+ : Window(100, 100, 400, 380) {
+
+    // Non-modal: clicks outside this window dismiss it and pass through to
+    // the underlying interface, so the player can still hit build buttons,
+    // scroll the starport list, and select units without first finding the
+    // Close button.
+    setModal(false);
 
     setWindowWidget(&mainVBox);
 
@@ -39,75 +45,57 @@ CityBudgetWindow::CityBudgetWindow()
     mainVBox.addWidget(&titleLabel);
     mainVBox.addWidget(VSpacer::create(15));
 
+    // Top: year + treasury at-a-glance.
+    yearLabel.setText("Year: 0");
+    yearLabel.setTextColor(COLOR_WHITE);
+    mainVBox.addWidget(&yearLabel);
+    mainVBox.addWidget(VSpacer::create(4));
+
     treasuryLabel.setText("Treasury: 0");
     treasuryLabel.setTextColor(COLOR_WHITE);
     mainVBox.addWidget(&treasuryLabel);
+    mainVBox.addWidget(VSpacer::create(12));
+
+    // Tax rate slider — player-adjustable lever (0-20%, default 7%).
+    taxLabel.setText("Tax Rate:");
+    taxLabel.setTextColor(COLOR_WHITE);
+    taxHBox.addWidget(&taxLabel);
+    taxHBox.addWidget(HSpacer::create(10));
+
+    taxMinus.setTextures(pGFXManager->getUIGraphic(UI_Minus), pGFXManager->getUIGraphic(UI_Minus_Pressed));
+    taxMinus.setOnClick(std::bind(&CityBudgetWindow::onTaxDecrease, this));
+    taxHBox.addWidget(&taxMinus);
+    taxHBox.addWidget(HSpacer::create(5));
+
+    taxValueLabel.setText("7%");
+    taxValueLabel.setTextColor(COLOR_WHITE);
+    taxHBox.addWidget(&taxValueLabel);
+    taxHBox.addWidget(HSpacer::create(5));
+
+    taxPlus.setTextures(pGFXManager->getUIGraphic(UI_Plus), pGFXManager->getUIGraphic(UI_Plus_Pressed));
+    taxPlus.setOnClick(std::bind(&CityBudgetWindow::onTaxIncrease, this));
+    taxHBox.addWidget(&taxPlus);
+
+    mainVBox.addWidget(&taxHBox, 30);
     mainVBox.addWidget(VSpacer::create(8));
 
-    incomeLabel.setText("Income: 0");
+    incomeLabel.setText("Tax Revenue: +0/yr");
     incomeLabel.setTextColor(COLOR_WHITE);
     mainVBox.addWidget(&incomeLabel);
-    mainVBox.addWidget(VSpacer::create(8));
+    mainVBox.addWidget(VSpacer::create(4));
 
-    expensesLabel.setText("Expenses: 0");
-    expensesLabel.setTextColor(COLOR_WHITE);
-    mainVBox.addWidget(&expensesLabel);
+    policeCostLabel.setText("Police: -0/yr");
+    policeCostLabel.setTextColor(COLOR_WHITE);
+    mainVBox.addWidget(&policeCostLabel);
+    mainVBox.addWidget(VSpacer::create(4));
+
+    netLabel.setText("Net: 0/yr");
+    netLabel.setTextColor(COLOR_WHITE);
+    mainVBox.addWidget(&netLabel);
     mainVBox.addWidget(VSpacer::create(15));
 
-    taxRateLabel.setText("Tax Rate:");
-    taxRateLabel.setTextColor(COLOR_WHITE);
-    taxRateHBox.addWidget(&taxRateLabel);
-    taxRateHBox.addWidget(HSpacer::create(10));
-
-    taxRateMinus.setTextures(pGFXManager->getUIGraphic(UI_Minus), pGFXManager->getUIGraphic(UI_Minus_Pressed));
-    taxRateMinus.setOnClick(std::bind(&CityBudgetWindow::onTaxRateDecrease, this));
-    taxRateHBox.addWidget(&taxRateMinus);
-    taxRateHBox.addWidget(HSpacer::create(5));
-
-    taxRateValueLabel.setText("0%");
-    taxRateValueLabel.setTextColor(COLOR_WHITE);
-    taxRateHBox.addWidget(&taxRateValueLabel);
-    taxRateHBox.addWidget(HSpacer::create(5));
-
-    taxRatePlus.setTextures(pGFXManager->getUIGraphic(UI_Plus), pGFXManager->getUIGraphic(UI_Plus_Pressed));
-    taxRatePlus.setOnClick(std::bind(&CityBudgetWindow::onTaxRateIncrease, this));
-    taxRateHBox.addWidget(&taxRatePlus);
-
-    mainVBox.addWidget(&taxRateHBox, 30);
-    mainVBox.addWidget(VSpacer::create(15));
-
-    // Budget allocation section
-    Label allocationTitle;
-    allocationTitle.setText("--- Allocation ---");
-    allocationTitle.setTextColor(COLOR_WHITE);
-    mainVBox.addWidget(&allocationTitle);
-    mainVBox.addWidget(VSpacer::create(10));
-
-    // Road/Transport slider
-    roadLabel.setText("Transport:");
-    roadLabel.setTextColor(COLOR_WHITE);
-    roadHBox.addWidget(&roadLabel);
-    roadHBox.addWidget(HSpacer::create(10));
-
-    roadMinus.setTextures(pGFXManager->getUIGraphic(UI_Minus), pGFXManager->getUIGraphic(UI_Minus_Pressed));
-    roadMinus.setOnClick(std::bind(&CityBudgetWindow::onRoadDecrease, this));
-    roadHBox.addWidget(&roadMinus);
-    roadHBox.addWidget(HSpacer::create(5));
-
-    roadValueLabel.setText("100%");
-    roadValueLabel.setTextColor(COLOR_WHITE);
-    roadHBox.addWidget(&roadValueLabel);
-    roadHBox.addWidget(HSpacer::create(5));
-
-    roadPlus.setTextures(pGFXManager->getUIGraphic(UI_Plus), pGFXManager->getUIGraphic(UI_Plus_Pressed));
-    roadPlus.setOnClick(std::bind(&CityBudgetWindow::onRoadIncrease, this));
-    roadHBox.addWidget(&roadPlus);
-
-    mainVBox.addWidget(&roadHBox, 30);
-    mainVBox.addWidget(VSpacer::create(5));
-
-    // Police slider
-    policeLabel.setText("Police:");
+    // Police funding slider — the only player-adjustable lever.
+    policeLabel.setText("Police Funding:");
     policeLabel.setTextColor(COLOR_WHITE);
     policeHBox.addWidget(&policeLabel);
     policeHBox.addWidget(HSpacer::create(10));
@@ -127,124 +115,60 @@ CityBudgetWindow::CityBudgetWindow()
     policeHBox.addWidget(&policePlus);
 
     mainVBox.addWidget(&policeHBox, 30);
-    mainVBox.addWidget(VSpacer::create(5));
-
-    // Fire slider
-    fireLabel.setText("Fire:");
-    fireLabel.setTextColor(COLOR_WHITE);
-    fireHBox.addWidget(&fireLabel);
-    fireHBox.addWidget(HSpacer::create(10));
-
-    fireMinus.setTextures(pGFXManager->getUIGraphic(UI_Minus), pGFXManager->getUIGraphic(UI_Minus_Pressed));
-    fireMinus.setOnClick(std::bind(&CityBudgetWindow::onFireDecrease, this));
-    fireHBox.addWidget(&fireMinus);
-    fireHBox.addWidget(HSpacer::create(5));
-
-    fireValueLabel.setText("100%");
-    fireValueLabel.setTextColor(COLOR_WHITE);
-    fireHBox.addWidget(&fireValueLabel);
-    fireHBox.addWidget(HSpacer::create(5));
-
-    firePlus.setTextures(pGFXManager->getUIGraphic(UI_Plus), pGFXManager->getUIGraphic(UI_Plus_Pressed));
-    firePlus.setOnClick(std::bind(&CityBudgetWindow::onFireIncrease, this));
-    fireHBox.addWidget(&firePlus);
-
-    mainVBox.addWidget(&fireHBox, 30);
-    mainVBox.addWidget(VSpacer::create(10));
-
-    // Total and buttons
-    totalAllocationLabel.setText("Total: 300%");
-    totalAllocationLabel.setTextColor(COLOR_WHITE);
-    allocationButtonsHBox.addWidget(&totalAllocationLabel);
-    allocationButtonsHBox.addWidget(HSpacer::create(20));
-
-    applyButton.setText("Apply");
-    applyButton.setOnClick(std::bind(&CityBudgetWindow::onApply, this));
-    allocationButtonsHBox.addWidget(&applyButton);
-    allocationButtonsHBox.addWidget(HSpacer::create(10));
-
-    cancelButton.setText("Cancel");
-    cancelButton.setOnClick(std::bind(&CityBudgetWindow::onClose, this));
-    allocationButtonsHBox.addWidget(&cancelButton);
-
-    mainVBox.addWidget(&allocationButtonsHBox, 30);
     mainVBox.addWidget(VSpacer::create(15));
 
+    // Population breakdown (informational).
     resPopLabel.setText("Residential: 0");
     resPopLabel.setTextColor(COLOR_WHITE);
     mainVBox.addWidget(&resPopLabel);
-    mainVBox.addWidget(VSpacer::create(8));
+    mainVBox.addWidget(VSpacer::create(4));
 
     comPopLabel.setText("Commercial: 0");
     comPopLabel.setTextColor(COLOR_WHITE);
     mainVBox.addWidget(&comPopLabel);
-    mainVBox.addWidget(VSpacer::create(8));
+    mainVBox.addWidget(VSpacer::create(4));
 
     indPopLabel.setText("Industrial: 0");
     indPopLabel.setTextColor(COLOR_WHITE);
     mainVBox.addWidget(&indPopLabel);
-    mainVBox.addWidget(VSpacer::create(8));
+    mainVBox.addWidget(VSpacer::create(4));
 
     totalPopLabel.setText("Total Population: 0");
     totalPopLabel.setTextColor(COLOR_WHITE);
     mainVBox.addWidget(&totalPopLabel);
     mainVBox.addWidget(VSpacer::create(15));
 
+    applyButton.setText("Apply");
+    applyButton.setOnClick(std::bind(&CityBudgetWindow::onApply, this));
+    buttonsHBox.addWidget(&applyButton);
+    buttonsHBox.addWidget(HSpacer::create(10));
+
     closeButton.setText("Close");
     closeButton.setOnClick(std::bind(&CityBudgetWindow::onClose, this));
-    mainVBox.addWidget(&closeButton);
+    buttonsHBox.addWidget(&closeButton);
+
+    mainVBox.addWidget(&buttonsHBox, 30);
     mainVBox.addWidget(VSpacer::create(10));
 
+    // Snapshot the live tax rate and funding % so the sliders open at the
+    // current settings rather than the header defaults. updateDisplay()
+    // refreshes the readouts but does NOT clobber pendingTaxRate /
+    // pendingPolicePercent on later ticks (the player may already be
+    // mid-edit).
+    auto* citySim = currentGame ? currentGame->getCitySimulation() : nullptr;
+    if (citySim && citySim->isInitialized()) {
+        pendingPolicePercent = citySim->getPoliceFundingPercent();
+        pendingTaxRate       = citySim->getCityTax();
+    }
     updateDisplay();
 }
 
-CityBudgetWindow::~CityBudgetWindow() {
-}
+CityBudgetWindow::~CityBudgetWindow() = default;
 
 void CityBudgetWindow::onClose() {
     Window* pParentWindow = dynamic_cast<Window*>(getParent());
     if(pParentWindow != nullptr) {
         pParentWindow->closeChildWindow();
-    }
-}
-
-void CityBudgetWindow::onTaxRateIncrease() {
-    auto* citySim = currentGame->getCitySimulation();
-    if (!citySim || !citySim->isInitialized()) return;
-
-    int16_t currentRate = citySim->getCityTax();
-    if (currentRate < DuneCity::MAX_TAX_RATE) {
-        currentGame->getCommandManager().addCommand(
-            Command(pLocalPlayer->getPlayerID(), CMD_CITY_SET_TAX_RATE, 0, currentRate + 1, 0));
-    }
-    updateDisplay();
-}
-
-void CityBudgetWindow::onTaxRateDecrease() {
-    auto* citySim = currentGame->getCitySimulation();
-    if (!citySim || !citySim->isInitialized()) return;
-
-    int16_t currentRate = citySim->getCityTax();
-    if (currentRate > 0) {
-        currentGame->getCommandManager().addCommand(
-            Command(pLocalPlayer->getPlayerID(), CMD_CITY_SET_TAX_RATE, 0, currentRate - 1, 0));
-    }
-    updateDisplay();
-}
-
-void CityBudgetWindow::onRoadIncrease() {
-    if (pendingRoadPercent < 100) {
-        pendingRoadPercent += 5;
-        if (pendingRoadPercent > 100) pendingRoadPercent = 100;
-        updateAllocationLabels();
-    }
-}
-
-void CityBudgetWindow::onRoadDecrease() {
-    if (pendingRoadPercent > 0) {
-        pendingRoadPercent -= 5;
-        if (pendingRoadPercent < 0) pendingRoadPercent = 0;
-        updateAllocationLabels();
     }
 }
 
@@ -264,84 +188,65 @@ void CityBudgetWindow::onPoliceDecrease() {
     }
 }
 
-void CityBudgetWindow::onFireIncrease() {
-    if (pendingFirePercent < 100) {
-        pendingFirePercent += 5;
-        if (pendingFirePercent > 100) pendingFirePercent = 100;
+void CityBudgetWindow::onTaxIncrease() {
+    if (pendingTaxRate < DuneCity::CitySimulation::kMaxTaxRate) {
+        ++pendingTaxRate;
         updateAllocationLabels();
     }
 }
 
-void CityBudgetWindow::onFireDecrease() {
-    if (pendingFirePercent > 0) {
-        pendingFirePercent -= 5;
-        if (pendingFirePercent < 0) pendingFirePercent = 0;
+void CityBudgetWindow::onTaxDecrease() {
+    if (pendingTaxRate > DuneCity::CitySimulation::kMinTaxRate) {
+        --pendingTaxRate;
         updateAllocationLabels();
     }
 }
 
 void CityBudgetWindow::onApply() {
-    if (!validateAllocation()) return;
-
+    // Route through the command system so multiplayer remains
+    // deterministic. p0 reserved (legacy houseID slot for tax),
+    // p1 = new tax rate.
+    currentGame->getCommandManager().addCommand(
+        Command(pLocalPlayer->getPlayerID(), CMD_CITY_SET_TAX_RATE,
+                0u, static_cast<uint32_t>(pendingTaxRate), 0u));
     currentGame->getCommandManager().addCommand(
         Command(pLocalPlayer->getPlayerID(), CMD_CITY_SET_BUDGET,
-                pendingRoadPercent, pendingPolicePercent, pendingFirePercent));
-
-    // Reset pending to current values after apply
-    auto* citySim = currentGame->getCitySimulation();
-    if (citySim && citySim->isInitialized()) {
-        auto& budget = citySim->getCityBudget();
-        pendingRoadPercent = budget.getRoadPercent();
-        pendingPolicePercent = budget.getPolicePercent();
-        pendingFirePercent = budget.getFirePercent();
-    }
-
+                static_cast<uint32_t>(pendingPolicePercent), 0u, 0u));
     updateDisplay();
 }
 
-bool CityBudgetWindow::validateAllocation() {
-    int total = pendingRoadPercent + pendingPolicePercent + pendingFirePercent;
-    if (total > 100) {
-        totalAllocationLabel.setTextColor(COLOR_RED);
-        applyButton.setEnabled(false);
-        return false;
-    }
-    totalAllocationLabel.setTextColor(COLOR_WHITE);
-    applyButton.setEnabled(true);
-    return true;
-}
-
 void CityBudgetWindow::updateAllocationLabels() {
-    roadValueLabel.setText(fmt::sprintf("%d%%", pendingRoadPercent));
+    taxValueLabel.setText(fmt::sprintf("%d%%", pendingTaxRate));
     policeValueLabel.setText(fmt::sprintf("%d%%", pendingPolicePercent));
-    fireValueLabel.setText(fmt::sprintf("%d%%", pendingFirePercent));
-
-    int total = pendingRoadPercent + pendingPolicePercent + pendingFirePercent;
-    totalAllocationLabel.setText(fmt::sprintf("Total: %d%%", total));
-
-    validateAllocation();
 }
 
 void CityBudgetWindow::updateDisplay() {
-    auto* citySim = currentGame->getCitySimulation();
+    auto* citySim = currentGame ? currentGame->getCitySimulation() : nullptr;
     if (!citySim || !citySim->isInitialized()) {
         return;
     }
 
+    yearLabel.setText(fmt::sprintf("Year: %d", citySim->getCityYear()));
     treasuryLabel.setText(fmt::sprintf("Treasury: %d", citySim->getTotalFunds()));
 
-    auto& budget = citySim->getCityBudget();
-    int32_t lastRevenue = budget.getLastTaxRevenue();
-    incomeLabel.setText(fmt::sprintf("Tax Revenue: %d", lastRevenue));
+    // Annual revenue = current pop * tax rate / 100. We project, rather
+    // than show the most recent collection — projection is what the
+    // player needs to plan, the historical figure rolls in on year tick.
+    const int totalPop  = citySim->getTotalPop();
+    const int taxRate   = citySim->getCityTax();
+    const int projected = (totalPop * taxRate) / 100;
+    incomeLabel.setText(fmt::sprintf("Tax Revenue: +%d/yr (proj.)", projected));
 
-    expensesLabel.setText("Expenses: (calculated)");
+    // Police: nominal cost is full-funded; actual paid is scaled.
+    const int32_t nominal = citySim->getNominalPoliceCost();
+    const int32_t paying  = (nominal * citySim->getPoliceFundingPercent()) / 100;
+    policeCostLabel.setText(fmt::sprintf("Police: -%d/yr (of %d at 100%%)",
+                                         paying, nominal));
 
-    taxRateValueLabel.setText(fmt::sprintf("%d%%", citySim->getCityTax()));
+    netLabel.setText(fmt::sprintf("Net: %+d/yr", projected - paying));
 
-    // Initialize pending values from current
-    pendingRoadPercent = budget.getRoadPercent();
-    pendingPolicePercent = budget.getPolicePercent();
-    pendingFirePercent = budget.getFirePercent();
+    // The slider's pending value is seeded once in the constructor so
+    // subsequent +/- clicks edit the pending copy without being clobbered.
     updateAllocationLabels();
 
     resPopLabel.setText(fmt::sprintf("Residential: %d", citySim->getResPop()));

@@ -215,7 +215,7 @@ public:
          : gameSpeed(GAMESPEED_DEFAULT), concreteRequired(true), structuresDegradeOnConcrete(true), fogOfWar(false),
            startWithExploredMap(false), instantBuild(false), onlyOnePalace(false), rocketTurretsNeedPower(false),
            sandwormsRespawn(false), killedSandwormsDropSpice(false), manualCarryallDrops(false), maximumNumberOfUnitsOverride(-1),
-           maximumNumberOfHarvestersOverride(-1), immortalHumanPlayer(false)  {
+           maximumNumberOfHarvestersOverride(-1), immortalHumanPlayer(false), cityEffects(false)  {
         }
 
 
@@ -233,7 +233,8 @@ public:
                     && (manualCarryallDrops == goc.manualCarryallDrops)
                     && (maximumNumberOfUnitsOverride == goc.maximumNumberOfUnitsOverride)
                     && (maximumNumberOfHarvestersOverride == goc.maximumNumberOfHarvestersOverride)
-                    && (immortalHumanPlayer == goc.immortalHumanPlayer);
+                    && (immortalHumanPlayer == goc.immortalHumanPlayer)
+                    && (cityEffects == goc.cityEffects);
         }
 
         bool operator!=(const GameOptionsClass& goc) const {
@@ -260,6 +261,7 @@ public:
             optStr += std::to_string(manualCarryallDrops);
             optStr += std::to_string(maximumNumberOfUnitsOverride);
             optStr += std::to_string(maximumNumberOfHarvestersOverride);
+            optStr += std::to_string(cityEffects);
             // Note: immortalHumanPlayer is intentionally excluded as it's a per-player setting
             
             // FNV-1a hash
@@ -289,6 +291,7 @@ public:
         int         maximumNumberOfUnitsOverride;
         int         maximumNumberOfHarvestersOverride;
         bool        immortalHumanPlayer;
+        bool        cityEffects;        ///< DuneCity: enable pollution/land-value/crime/zone-growth pipeline
     } gameOptions;
 };
 

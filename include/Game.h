@@ -245,6 +245,7 @@ public:
     inline ObjectManager& getObjectManager() { return objectManager; };
     inline GameInterface& getGameInterface() { return *pInterface; };
     DuneCity::CitySimulation* getCitySimulation() { return citySimulation_.get(); }
+    bool isCitySimEnabled() const { return citySimEnabled_; }
     DuneCity::CityOverlayMode getCityOverlayMode() const { return currentCityOverlay_; }
     void setCityOverlayMode(DuneCity::CityOverlayMode mode) { currentCityOverlay_ = mode; }
     void queueTargetRequest(Uint32 objectId);
@@ -472,11 +473,6 @@ public:
         Draw the city data overlay for the visible map area
     */
     void drawCityOverlay(int x1, int y1, int x2, int y2);
-
-    /**
-        Draw zone info tooltip on hover (Phase 2 feature)
-    */
-    void drawZoneTooltip();
 
     /**
         Draw placeholder visuals for conductive city roads.
@@ -846,7 +842,7 @@ private:
 
     std::unique_ptr<SpatialGrid>    spatialGrid;            ///< Spatial partition for fast proximity queries
     std::unique_ptr<DuneCity::CitySimulation> citySimulation_; ///< City-building simulation layer
-    bool                citySimEnabled_ = true;              ///< Feature flag for city simulation
+    bool                citySimEnabled_ = false;             ///< Feature flag for city simulation. Defaults off; enabled when the active mod opts into city mode (see ModManager::isCityModeActive) or when a savegame contains city-sim state.
     DuneCity::CityOverlayMode currentCityOverlay_ = DuneCity::CityOverlayMode::None; ///< Current city data overlay mode
 
     ObjectManager       objectManager;          ///< This manages all the object and maps object ids to the actual objects

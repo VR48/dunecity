@@ -2203,6 +2203,41 @@ void QuantBot::build(int militaryValue) {
 					int powerDeficit = getHouse()->getPowerRequirement() - getHouse()->getProducedPower();
 					logDebug("POWER-RECOVERY: Building windtrap to recover from power deficit (%d)", powerDeficit);
 				}
+				// 1c. City-mode aggressive power buffer.
+				//
+				// City zones consume power proportional to their density:
+				// ~24 power per industrial-density-3 zone, with hundreds of
+				// zones in a typical city. A single Windtrap (+100) can't
+				// keep up — by the time the deficit-recovery rule above
+				// fires, zones are already power-starved and DECLINING
+				// (CityEffectsRuntime.cpp:582 power-starved demotion path).
+				// So in city mode we proactively build power whenever the
+				// buffer drops below 1000, preferring Nuclear Plants
+				// (+1000 each) and falling back to Windtraps if the tech
+				// or placement isn't available.
+				if (itemID == NONE_ID && !skipRemainingStructureLogic
+					&& currentGame && currentGame->isCitySimEnabled()) {
+					const int produced  = getHouse()->getProducedPower();
+					const int required  = getHouse()->getPowerRequirement();
+					const int buffer    = produced - required;
+					constexpr int kCityPowerBuffer = 1000;
+					if (buffer < kCityPowerBuffer) {
+						// Prefer Nuclear: one plant = 10 Windtraps, and a
+						// city packed with zones has limited rock left for
+						// more Windtrap footprints.
+						if (pBuilder->isAvailableToBuild(Structure_NuclearPlant)
+							&& findPlaceLocation(Structure_NuclearPlant).isValid()) {
+							itemID = Structure_NuclearPlant;
+							logDebug("CITY-POWER: Building Nuclear Plant (buffer=%d, threshold=%d)",
+									 buffer, kCityPowerBuffer);
+						} else if (pBuilder->isAvailableToBuild(Structure_WindTrap)
+							&& findPlaceLocation(Structure_WindTrap).isValid()) {
+							itemID = Structure_WindTrap;
+							logDebug("CITY-POWER: Building Windtrap (no Nuclear available, buffer=%d)",
+									 buffer);
+						}
+					}
+				}
 				// 2. Refinery (if 0)
 				if (itemID == NONE_ID && !skipRemainingStructureLogic
 					&& itemCount[Structure_Refinery] == 0 
@@ -3714,7 +3749,7 @@ void QuantBot::manageCityBuilding() {
             if (!currentGameMap->tileExists(tx, ty)) continue;
 
             Tile* tile = currentGameMap->getTile(tx, ty);
-            if (tile->hasCityZone() || tile->isCityConductive()) continue;
+            if (tile->hasCityZone() || tile->isRoad()) continue;
             if (tile->hasAStructure() || tile->hasAnObject()) continue;
 
             if (tile->getType() != Terrain_Rock && tile->getType() != Terrain_Sand) continue;
@@ -3724,7 +3759,7 @@ void QuantBot::manageCityBuilding() {
                 int nx = tx + dx4[d];
                 int ny = ty + dy4[d];
                 if (nx >= 0 && nx < currentGameMap->getSizeX() && ny >= 0 && ny < currentGameMap->getSizeY()) {
-                    if (currentGameMap->tileExists(nx, ny) && currentGameMap->getTile(nx, ny)->isCityConductive()) {
+                    if (currentGameMap->tileExists(nx, ny) && currentGameMap->getTile(nx, ny)->isRoad()) {
                         nearRoad = true;
                         break;
                     }
@@ -3766,7 +3801,7 @@ void QuantBot::manageCityBuilding() {
             if (!currentGameMap->tileExists(tx, ty)) continue;
 
             Tile* tile = currentGameMap->getTile(tx, ty);
-            if (tile->isCityConductive() || tile->hasCityZone()) continue;
+            if (tile->isRoad() || tile->hasCityZone()) continue;
             if (tile->hasAStructure()) continue;
 
             bool nearZone = false;

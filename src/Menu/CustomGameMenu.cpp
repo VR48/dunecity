@@ -39,7 +39,12 @@
 #include <globals.h>
 #include <mod/ModManager.h>
 
+#include <algorithm>
+#include <array>
+#include <cstring>
 #include <memory>
+#include <utility>
+#include <vector>
 
 
 CustomGameMenu::CustomGameMenu(bool multiplayer, bool LANServer)
@@ -66,6 +71,16 @@ CustomGameMenu::CustomGameMenu(bool multiplayer, bool LANServer)
     mainHBox.addWidget(&leftVBox, 0.8);
 
     leftVBox.addWidget(&mapTypeButtonsHBox, 24);
+
+    // "All Maps" combines every .ini file from the four standard map
+    // directories (SP install, SP user, MP install, MP user). Default
+    // tab in multiplayer so the host doesn't have to hunt for maps;
+    // also a useful escape hatch in single-player when the user just
+    // wants every map at a glance.
+    allMapsButton.setText(_("All Maps"));
+    allMapsButton.setToggleButton(true);
+    allMapsButton.setOnClick(std::bind(&CustomGameMenu::onMapTypeChange, this, 4));
+    mapTypeButtonsHBox.addWidget(&allMapsButton);
 
     singleplayerMapsButton.setText(_("SP Maps"));
     singleplayerMapsButton.setToggleButton(true);
@@ -181,7 +196,9 @@ CustomGameMenu::CustomGameMenu(bool multiplayer, bool LANServer)
     buttonHBox.addWidget(&nextButton, 0.1);
     buttonHBox.addWidget(HSpacer::create(90));
 
-    onMapTypeChange(0);
+    // Default tab: "All Maps" in multiplayer (host gets every option),
+    // "SP Maps" in single-player (matches the original behaviour).
+    onMapTypeChange(bMultiplayer ? 4 : 0);
 }
 
 CustomGameMenu::~CustomGameMenu()
@@ -228,7 +245,7 @@ void CustomGameMenu::onNext()
         effectiveGameOptions = ModManager::instance().loadEffectiveGameOptions(settings.gameOptions);
     }
 
-    std::string mapFilename = currentMapDirectory + mapList.getSelectedEntry() + ".ini";
+    std::string mapFilename = getSelectedMapPath();
     getCaseInsensitiveFilename(mapFilename);
 
     GameInitSettings gameInitSettings;
@@ -263,36 +280,88 @@ void CustomGameMenu::onGameOptions()
     openWindow(GameOptionsWindow::create(currentGameOptions));
 }
 
+std::string CustomGameMenu::getSelectedMapPath() const
+{
+    int idx = mapList.getSelectedIndex();
+    if (idx < 0) return "";
+
+    const std::string entry = mapList.getEntry(idx);
+    if (currentMapDirectory.empty()) {
+        // "All Maps" mode: per-entry source directory.
+        if (idx >= static_cast<int>(mapEntryDirectories_.size())) return "";
+        return mapEntryDirectories_[idx] + entry + ".ini";
+    }
+    return currentMapDirectory + entry + ".ini";
+}
+
 void CustomGameMenu::onMapTypeChange(int buttonID)
 {
-    singleplayerMapsButton.setToggleState(buttonID == 0);
+    allMapsButton           .setToggleState(buttonID == 4);
+    singleplayerMapsButton  .setToggleState(buttonID == 0);
     singleplayerUserMapsButton.setToggleState(buttonID == 1);
-    multiplayerMapsButton.setToggleState(buttonID == 2);
+    multiplayerMapsButton   .setToggleState(buttonID == 2);
     multiplayerUserMapsButton.setToggleState(buttonID == 3);
 
-    switch(buttonID) {
-        case 0: {
-            currentMapDirectory = getDuneLegacyDataDir() + "/maps/singleplayer/";
-        } break;
-        case 1: {
-            char tmp[FILENAME_MAX];
-            fnkdat("maps/singleplayer/", tmp, FILENAME_MAX, FNKDAT_USER | FNKDAT_CREAT);
-            currentMapDirectory = tmp;
-        } break;
-        case 2: {
-            currentMapDirectory = getDuneLegacyDataDir() + "/maps/multiplayer/";
-        } break;
-        case 3: {
-            char tmp[FILENAME_MAX];
-            fnkdat("maps/multiplayer/", tmp, FILENAME_MAX, FNKDAT_USER | FNKDAT_CREAT);
-            currentMapDirectory = tmp;
-        } break;
+    // Resolve the four standard map directories once; we either pick
+    // one (single-directory mode) or scan them all (mode 4).
+    std::string spDataDir   = getDuneLegacyDataDir() + "/maps/singleplayer/";
+    std::string mpDataDir   = getDuneLegacyDataDir() + "/maps/multiplayer/";
+    std::string spUserDir;
+    std::string mpUserDir;
+    {
+        char tmp[FILENAME_MAX];
+        if (fnkdat("maps/singleplayer/", tmp, FILENAME_MAX, FNKDAT_USER | FNKDAT_CREAT) >= 0) {
+            spUserDir = tmp;
+        }
+        if (fnkdat("maps/multiplayer/",  tmp, FILENAME_MAX, FNKDAT_USER | FNKDAT_CREAT) >= 0) {
+            mpUserDir = tmp;
+        }
     }
 
     mapList.clearAllEntries();
+    mapEntryDirectories_.clear();
 
-    for(const std::string& file : getFileNamesList(currentMapDirectory, "ini", true, FileListOrder_Name_CaseInsensitive_Asc)) {
-        mapList.addEntry(file.substr(0, file.length() - 4));
+    if (buttonID == 4) {
+        // "All Maps": scan every directory and remember the source per
+        // entry so onNext / preview can resolve the full path.
+        currentMapDirectory.clear();
+
+        struct Source { const std::string* dir; };
+        const std::array<const std::string*, 4> sources = {
+            &spDataDir, &spUserDir, &mpDataDir, &mpUserDir
+        };
+
+        // Collect (entryName, sourceDir) so we can sort once; the per-
+        // directory sort wouldn't interleave the sources alphabetically.
+        std::vector<std::pair<std::string, std::string>> all;
+        for (const auto* src : sources) {
+            if (!src || src->empty()) continue;
+            for (const std::string& file :
+                 getFileNamesList(*src, "ini", true,
+                                  FileListOrder_Name_CaseInsensitive_Asc)) {
+                std::string base = file.substr(0, file.length() - 4);
+                all.emplace_back(std::move(base), *src);
+            }
+        }
+        std::sort(all.begin(), all.end(),
+                  [](const auto& a, const auto& b) {
+                      return strcasecmp(a.first.c_str(), b.first.c_str()) < 0;
+                  });
+        for (const auto& [name, dir] : all) {
+            mapList.addEntry(name);
+            mapEntryDirectories_.push_back(dir);
+        }
+    } else {
+        switch(buttonID) {
+            case 0: currentMapDirectory = spDataDir; break;
+            case 1: currentMapDirectory = spUserDir; break;
+            case 2: currentMapDirectory = mpDataDir; break;
+            case 3: currentMapDirectory = mpUserDir; break;
+        }
+
+        for(const std::string& file : getFileNamesList(currentMapDirectory, "ini", true, FileListOrder_Name_CaseInsensitive_Asc)) {
+            mapList.addEntry(file.substr(0, file.length() - 4));
+        }
     }
 
     if(mapList.getNumEntries() > 0) {
@@ -314,7 +383,7 @@ void CustomGameMenu::onMapListSelectionChange(bool bInteractive)
         return;
     }
 
-    std::string mapFilename = currentMapDirectory + mapList.getSelectedEntry() + ".ini";
+    std::string mapFilename = getSelectedMapPath();
     getCaseInsensitiveFilename(mapFilename);
 
     INIFile inimap(mapFilename);

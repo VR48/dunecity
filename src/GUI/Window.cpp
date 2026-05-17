@@ -49,6 +49,15 @@ void Window::openWindow(Window* pChildWindow) {
         return;
     }
 
+    // Drain any deferred closes from a previous interaction before
+    // queuing the new window. Without this, a child that was closed via
+    // closeChildWindow() but never reached processChildWindowOpenCloses()
+    // (e.g. the budget closed via the Close button, since GameInterface
+    // input flows through handleMouseLeft, not handleInput) would still
+    // count as the current child and the new window would be queued
+    // behind it indefinitely.
+    processChildWindowOpenCloses();
+
     if(this->pChildWindow != nullptr) {
         queuedChildWindows.push(pChildWindow);
         closeChildWindow();
@@ -77,11 +86,21 @@ bool Window::processChildWindowOpenCloses() {
     bool bClosed = false;
 
     while(closeChildWindowCounter > 0) {
-        onChildWindowClose(pChildWindow);
-        pChildWindow->destroy();
+        // Snapshot and advance state BEFORE invoking onChildWindowClose.
+        // The callback may call openWindow(), which calls back into
+        // processChildWindowOpenCloses() at the top — if we hadn't
+        // decremented the counter and cleared pChildWindow first, the
+        // re-entrant call would see the same "closing" state and invoke
+        // onChildWindowClose again with the same pChildWindow, recursing
+        // forever.
+        //
+        // Concrete crash that prompted this fix: map editor "Create
+        // Map" → NewMapWindow closes → onChildWindowClose calls
+        // onPlayers() → openWindow(PlayerSettingsWindow) →
+        // processChildWindowOpenCloses() → onChildWindowClose(same
+        // NewMapWindow) → recursion to ~18k frames → SIGSEGV.
+        Window* pClosing = pChildWindow;
         closeChildWindowCounter--;
-        bClosed = true;
-
         if(!queuedChildWindows.empty()) {
             pChildWindow = queuedChildWindows.front();
             queuedChildWindows.pop();
@@ -91,6 +110,9 @@ bool Window::processChildWindowOpenCloses() {
             pChildWindow = nullptr;
         }
 
+        onChildWindowClose(pClosing);
+        pClosing->destroy();
+        bClosed = true;
     }
 
     return bClosed;
@@ -154,10 +176,28 @@ void Window::handleInput(SDL_Event& event) {
     }
 }
 
+// Non-modal child: input is routed to the child only when it lands inside
+// the child's bounds. A press outside dismisses the child and the event
+// falls through to local handling so underlying UI stays interactive.
+static bool pointInsideChild(const Window* child, Sint32 x, Sint32 y) {
+    const Point cpos = const_cast<Window*>(child)->getPosition();
+    const Point csize = child->getSize();
+    return (x >= cpos.x && x < cpos.x + csize.x &&
+            y >= cpos.y && y < cpos.y + csize.y);
+}
+
 void Window::handleMouseMovement(Sint32 x, Sint32 y, bool insideOverlay) {
+    // Drain deferred closes so a hidden-but-not-destroyed child stops
+    // shadowing input on its way out.
+    processChildWindowOpenCloses();
+
     if(pChildWindow != nullptr) {
-        pChildWindow->handleMouseMovement(x, y);
-        return;
+        if (pChildWindow->isModal() || pointInsideChild(pChildWindow, x, y)) {
+            pChildWindow->handleMouseMovement(x, y);
+            return;
+        }
+        // Non-modal child + cursor outside its bounds: fall through to
+        // local handling so the underlying interface still gets hover.
     }
 
     if(isEnabled() && (pWindowWidget != nullptr)) {
@@ -167,8 +207,19 @@ void Window::handleMouseMovement(Sint32 x, Sint32 y, bool insideOverlay) {
 }
 
 bool Window::handleMouseLeft(Sint32 x, Sint32 y, bool pressed) {
+    processChildWindowOpenCloses();
+
     if(pChildWindow != nullptr) {
-        return pChildWindow->handleMouseLeft(x, y, pressed);
+        if (pChildWindow->isModal() || pointInsideChild(pChildWindow, x, y)) {
+            return pChildWindow->handleMouseLeft(x, y, pressed);
+        }
+        // Click outside non-modal child: dismiss it on press and process
+        // pending closes immediately so the click can fall through and
+        // reach the underlying widget on this same event.
+        if (pressed) {
+            closeChildWindow();
+            processChildWindowOpenCloses();
+        }
     }
 
     if(isEnabled() && (pWindowWidget != nullptr)) {
@@ -185,8 +236,16 @@ bool Window::handleMouseLeft(Sint32 x, Sint32 y, bool pressed) {
 }
 
 bool Window::handleMouseRight(Sint32 x, Sint32 y, bool pressed) {
+    processChildWindowOpenCloses();
+
     if(pChildWindow != nullptr) {
-        return pChildWindow->handleMouseRight(x, y, pressed);
+        if (pChildWindow->isModal() || pointInsideChild(pChildWindow, x, y)) {
+            return pChildWindow->handleMouseRight(x, y, pressed);
+        }
+        if (pressed) {
+            closeChildWindow();
+            processChildWindowOpenCloses();
+        }
     }
 
     if(isEnabled() && (pWindowWidget != nullptr)) {
@@ -198,8 +257,12 @@ bool Window::handleMouseRight(Sint32 x, Sint32 y, bool pressed) {
 }
 
 bool Window::handleMouseWheel(Sint32 x, Sint32 y, bool up)  {
+    processChildWindowOpenCloses();
+
     if(pChildWindow != nullptr) {
-        return pChildWindow->handleMouseWheel(x, y, up);
+        if (pChildWindow->isModal() || pointInsideChild(pChildWindow, x, y)) {
+            return pChildWindow->handleMouseWheel(x, y, up);
+        }
     }
 
     if(isEnabled() && (pWindowWidget != nullptr)) {

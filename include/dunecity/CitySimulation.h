@@ -40,8 +40,28 @@ public:
     int32_t getTotalFunds() const { return totalFunds_; }
     void setTotalFunds(int32_t v) { totalFunds_ = v; }
     int16_t getCityTax() const { return cityTax_; }
-    void setCityTax(int16_t v) { cityTax_ = v; }
+    /// Set the tax rate (percentage of population paid annually). Clamped
+    /// to [kMinTaxRate, kMaxTaxRate] — outside that band the budget either
+    /// stops collecting (0%) or crushes growth (20%+).
+    void setCityTax(int16_t v);
+    static constexpr int16_t kMinTaxRate = 0;
+    static constexpr int16_t kMaxTaxRate = 20;
     int getCityYear() const { return cityYear_; }
+    int getCityDay()  const { return cityDay_; }
+
+    /// Police-funding %: 0..100, default 100. Scales coverage from each
+    /// police-role structure proportionally and is also the share of
+    /// annual police cost actually paid into the budget.
+    int getPoliceFundingPercent() const { return policeFundingPercent_; }
+    void setPoliceFundingPercent(int v) {
+        if (v < 0)   v = 0;
+        if (v > 100) v = 100;
+        policeFundingPercent_ = v;
+    }
+    /// Last computed police annual expense (full nominal, before funding%).
+    int32_t getNominalPoliceCost() const { return nominalPoliceCost_; }
+    /// Last actual amount paid out (nominal * funding%/100).
+    int32_t getLastPoliceExpense() const { return lastPoliceExpense_; }
 
     int getMapWidth() const { return mapWidth_; }
     int getMapHeight() const { return mapHeight_; }
@@ -49,6 +69,11 @@ public:
     bool isPowerShortageJustStarted() const { return false; }
     int32_t getUnpoweredZoneCount() const { return 0; }
     int32_t getEconomicVictoryThreshold() const { return economicVictoryThreshold_; }
+
+    /// City Effects feature flag (Phase 6). When false, all effect scans
+    /// are skipped and the maps stay at zero. Set from Game options at init.
+    void setCityEffectsEnabled(bool enabled) { effectsEnabled_ = enabled; }
+    bool areCityEffectsEnabled() const { return effectsEnabled_; }
 
     const CityMapLayer<uint8_t>& getPowerGridMap() const { return powerGridMap_; }
     const CityMapLayer<uint8_t>& getTrafficDensityMap() const { return trafficDensityMap_; }
@@ -92,6 +117,12 @@ private:
     int mapWidth_  = 0;
     int mapHeight_ = 0;
 
+    /// Default tax rate used at game start. 7% sits between SC Classic's
+    /// suggested 6% and the punitive 10%+ band — keeps growth healthy
+    /// while making the budget meaningful. Player can adjust at runtime
+    /// via setCityTax() / the budget window.
+    static constexpr int16_t kDefaultTaxRate = 7;
+
     int resPop_ = 0;
     int comPop_ = 0;
     int indPop_ = 0;
@@ -99,9 +130,13 @@ private:
     int16_t comValve_ = 0;
     int16_t indValve_ = 0;
     int32_t totalFunds_ = 0;
-    int16_t cityTax_ = 7;
+    int16_t cityTax_ = kDefaultTaxRate;
     int cityYear_ = 0;
     int32_t economicVictoryThreshold_ = 500;
+
+    int     policeFundingPercent_ = 100;  ///< 0..100; scales police coverage AND expense
+    int32_t nominalPoliceCost_    = 0;    ///< Sum of getPoliceAnnualCost() across police-role structures
+    int32_t lastPoliceExpense_    = 0;    ///< Actually-paid-out portion (nominal * funding/100)
 
     CityMapLayer<uint8_t> powerGridMap_;
     CityMapLayer<uint8_t> trafficDensityMap_;
@@ -111,6 +146,26 @@ private:
     CityMapLayer<uint8_t> populationDensityMap_;
 
     CityBudget budget_;
+
+    bool      effectsEnabled_ = true;   ///< City effects feature flag
+    uint32_t  lastProcessedDay_ = 0;    ///< Last city-day number that ran a scan + growth roll
+    uint32_t  lastTaxYear_ = 0;         ///< Last year tax was collected (cityYear_ at collection)
+    int       cityDay_ = 0;             ///< Current city day (resets within the year, monotonic across years)
+
+    /// Full-map scan: rebuilds pollution, land value, crime maps and runs
+    /// zone growth from current map contents. Called from advancePhase()
+    /// at a slow cadence (every kEffectsScanCycles). Pure read of game
+    /// state, deterministic — safe in multiplayer.
+    void runEffectsScans();
+    void runZoneGrowth();
+
+    /// Year-tick budget pass: walks all structures on the map, aggregates
+    /// population and police cost per house, then applies (tax revenue -
+    /// funded police bill) to each house's credit pool. Every owner with
+    /// city-role structures pays their own bill — not just the local
+    /// player. Lives in CityEffectsRuntime.cpp so the test build doesn't
+    /// have to link House/pLocalHouse/StructureBase.
+    void runAnnualBudget();
 };
 
 } // namespace DuneCity

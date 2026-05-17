@@ -19,6 +19,7 @@
 #define REFINERYANDSILOINTERFACE_H
 
 #include "DefaultStructureInterface.h"
+#include "CityStatsBox.h"
 
 #include <FileClasses/FontManager.h>
 #include <FileClasses/TextManager.h>
@@ -50,6 +51,9 @@ protected:
         storedCreditsLabel.setTextFontSize(12);
         storedCreditsLabel.setTextColor(color);
         textVBox.addWidget(&storedCreditsLabel, 0.005);
+
+        cityStats_.attachTo(textVBox, color);
+
         textVBox.addWidget(Spacer::create(), 0.99);
     }
 
@@ -70,6 +74,8 @@ protected:
         capacityLabel.setText(" " + _("Capacity") + ": " + std::to_string(pOwner->getCapacity()));
         storedCreditsLabel.setText(" " + _("Stored") + ": " + std::to_string(lround(pOwner->getStoredCredits())));
 
+        cityStats_.update(dynamic_cast<StructureBase*>(pObject));
+
         return DefaultStructureInterface::update();
     }
 
@@ -78,6 +84,8 @@ private:
 
     Label   capacityLabel;
     Label   storedCreditsLabel;
+
+    CityStatsBox cityStats_;
 };
 
 #endif // REFINERYANDSILOINTERFACE_H

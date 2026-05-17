@@ -36,7 +36,13 @@
 #include <dunecity/CityBudget.h>
 #include <dunecity/CityEvaluation.h>
 
+#include <mod/ModManager.h>
+#include <mod/ModInfo.h>
+#include <config.h>
+
 #include <algorithm>
+#include <cstdlib>
+#include <string>
 
 GameInterface::GameInterface() : Window(0,0,0,0) {
     pObjectContainer = nullptr;
@@ -82,6 +88,16 @@ GameInterface::GameInterface() : Window(0,0,0,0) {
 
     topBarHBox.addWidget(Spacer::create());
 
+    // City sim only: a "Budget" text button next to Mentat. There's no
+    // dedicated UI texture so we use a TextButton; it's hidden in
+    // non-city games via setVisible() in draw().
+    budgetButton.setText(_("Budget"));
+    budgetButton.setTooltipText(_("Open city budget (Shift+B)"));
+    budgetButton.setOnClick(std::bind(&Game::onCityBudget, currentGame));
+    topBarHBox.addWidget(&budgetButton);
+
+    topBarHBox.addWidget(Spacer::create());
+
     // add radar
     const Point radarOrigin(getRendererWidth() - sideBar.getSize().x + SIDEBAR_COLUMN_WIDTH, 0);
     const Point radarSize = radarView.getMinimumSize();
@@ -105,6 +121,64 @@ GameInterface::GameInterface() : Window(0,0,0,0) {
 
     // add chat manager
     windowWidget.addWidget(&chatManager, Point(20, 60), Point(getRendererWidth() - sideBar.getSize().x, 360));
+
+    // Always-visible population pill (city sim mode only). Sits just below
+    // the top bar, left-aligned, so the player sees their city growing
+    // without having to open the Shift+C stats overlay.
+    {
+        populationLabel.setText("Pop: 0");
+        populationLabel.setTextFontSize(14);
+        populationLabel.setTextColor(COLOR_WHITE, COLOR_BLACK);
+        populationLabel.setAlignment(static_cast<Alignment_Enum>(Alignment_Left | Alignment_VCenter));
+
+        const int labelWidth  = 140;
+        const int labelHeight = 22;
+        windowWidget.addWidget(&populationLabel,
+                               Point(12, topBar.getSize().y - 4),
+                               Point(labelWidth, labelHeight));
+
+        // RCI demand readout immediately below the population pill. Same
+        // city-sim gating as populationLabel — only visible in city mode.
+        rciDemandLabel.setText("R --  C --  I --");
+        rciDemandLabel.setTextFontSize(12);
+        rciDemandLabel.setTextColor(COLOR_WHITE, COLOR_BLACK);
+        rciDemandLabel.setAlignment(static_cast<Alignment_Enum>(Alignment_Left | Alignment_VCenter));
+
+        const int rciWidth  = 200;
+        const int rciHeight = 18;
+        windowWidget.addWidget(&rciDemandLabel,
+                               Point(12, topBar.getSize().y - 4 + labelHeight),
+                               Point(rciWidth, rciHeight));
+    }
+
+    // Bottom-right watermark: <active mod display name> over v<VERSION>.
+    // Mirrors the main menu so the active mod is visible mid-game too.
+    {
+        std::string modDisplayName = "Vanilla";
+        ModManager& modManager = ModManager::instance();
+        if (modManager.isInitialized()) {
+            ModInfo info = modManager.getModInfo(modManager.getActiveModName());
+            if (!info.displayName.empty()) {
+                modDisplayName = info.displayName;
+            } else if (!info.name.empty()) {
+                modDisplayName = info.name;
+            }
+        }
+
+        modVersionLabel.setText(modDisplayName + "\nv" + std::string(VERSION));
+        modVersionLabel.setTextFontSize(14);
+        modVersionLabel.setTextColor(COLOR_WHITE, COLOR_BLACK);
+        modVersionLabel.setAlignment(static_cast<Alignment_Enum>(Alignment_Left | Alignment_VCenter));
+
+        const int labelWidth  = 200;
+        const int labelHeight = 44;
+        const int marginX     = 8;
+        const int marginY     = 6;
+        windowWidget.addWidget(&modVersionLabel,
+                               Point(marginX,
+                                     getRendererHeight() - labelHeight - marginY),
+                               Point(labelWidth, labelHeight));
+    }
 }
 
 GameInterface::~GameInterface() {
@@ -112,6 +186,47 @@ GameInterface::~GameInterface() {
 }
 
 void GameInterface::draw(Point position) {
+    // Refresh the population pill from the live city sim. We only show the
+    // label when city sim is active; outside city mode it would just be
+    // visual noise reading "Pop: 0".
+    {
+        auto* citySim = currentGame ? currentGame->getCitySimulation() : nullptr;
+        if (citySim && citySim->isInitialized()) {
+            const int totalPop = citySim->getTotalPop();
+            if (totalPop != lastShownPopulation) {
+                populationLabel.setText(fmt::sprintf("Pop: %d", totalPop));
+                lastShownPopulation = totalPop;
+            }
+            populationLabel.setVisible(true);
+
+            // RCI demand line. Valves are signed: positive means demand
+            // (zones want to grow), negative means oversupply (zones may
+            // decline). Show with arrows so the player can read the
+            // direction at a glance without parsing magnitudes.
+            const int r = citySim->getResValve();
+            const int c = citySim->getComValve();
+            const int i = citySim->getIndValve();
+            if (r != lastShownResValve || c != lastShownComValve || i != lastShownIndValve) {
+                auto fmtValve = [](int v) {
+                    const char* arrow = (v > 0) ? "+" : ((v < 0) ? "-" : "=");
+                    return std::string(arrow) + std::to_string(std::abs(v));
+                };
+                rciDemandLabel.setText("R " + fmtValve(r) +
+                                       "  C " + fmtValve(c) +
+                                       "  I " + fmtValve(i));
+                lastShownResValve = r;
+                lastShownComValve = c;
+                lastShownIndValve = i;
+            }
+            rciDemandLabel.setVisible(true);
+            budgetButton.setVisible(true);
+        } else {
+            populationLabel.setVisible(false);
+            rciDemandLabel.setVisible(false);
+            budgetButton.setVisible(false);
+        }
+    }
+
     Window::draw(position);
 
     // Update and draw disaster notifications (top center, stacked vertically)

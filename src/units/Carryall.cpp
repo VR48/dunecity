@@ -354,40 +354,41 @@ void Carryall::releaseTarget() {
 
 void Carryall::engageTarget()
 {
-    if(target && (target.getObjPointer() == nullptr)) {
+    ObjectBase* pTarget = target.getObjPointer();
+    if(pTarget == nullptr) {
         // the target does not exist anymore
         releaseTarget();
         return;
     }
 
-    if(target && (target.getObjPointer()->isActive() == false)) {
+    if(pTarget->isActive() == false) {
         // the target changed its state to inactive
         releaseTarget();
         return;
     }
 
-    if(target && target.getObjPointer()->isAGroundUnit() && !static_cast<GroundUnit*>(target.getObjPointer())->isAwaitingPickup()) {
+    if(pTarget->isAGroundUnit() && !static_cast<GroundUnit*>(pTarget)->isAwaitingPickup()) {
         // the target changed its state to not awaiting pickup anymore
         releaseTarget();
         return;
     }
 
-    if(target && (target.getObjPointer()->getOwner()->getTeamID() != owner->getTeamID())) {
+    if(pTarget->getOwner()->getTeamID() != owner->getTeamID()) {
         // the target changed its owner (e.g. was deviated)
         releaseTarget();
         return;
     }
 
     Coord targetLocation;
-    if(target.getObjPointer()->getItemID() == Structure_Refinery) {
-        targetLocation = target.getObjPointer()->getLocation() + Coord(2,0);
-    } else if(target.getObjPointer()->isAUnit()) {
+    if(pTarget->getItemID() == Structure_Refinery) {
+        targetLocation = pTarget->getLocation() + Coord(2,0);
+    } else if(pTarget->isAUnit()) {
         // For units (like harvesters), use their exact location, not getClosestPoint
         // getClosestPoint recalculates every frame causing circular flight patterns
-        targetLocation = target.getObjPointer()->getLocation();
+        targetLocation = pTarget->getLocation();
     } else {
         // For multi-tile structures, use closest point
-        targetLocation = target.getObjPointer()->getClosestPoint(location);
+        targetLocation = pTarget->getClosestPoint(location);
     }
 
     Coord realLocation = Coord(lround(realX), lround(realY));
@@ -430,7 +431,7 @@ void Carryall::engageTarget()
     // Original: TILESIZE/32 = 3.125% was too strict, Dynasty uses ~6.25%
     if (targetDistance <= TILESIZE/10) {
         if(hasCargo()) {
-            if(target.getObjPointer()->isAStructure()) {
+            if(pTarget->isAStructure()) {
                 while(pickedUpUnitList.begin() != pickedUpUnitList.end()) {
                     deployUnit(*(pickedUpUnitList.begin()) );
                 }
@@ -467,6 +468,10 @@ void Carryall::pickupTarget()
     setSpeeds();
 
     ObjectBase* pTarget = target.getObjPointer();
+    if(pTarget == nullptr) {
+        releaseTarget();
+        return;
+    }
 
     if(pTarget->isAGroundUnit()) {
         GroundUnit* pGroundUnitTarget = static_cast<GroundUnit*>(pTarget);
@@ -505,11 +510,21 @@ void Carryall::pickupTarget()
             if(newTarget && (newTarget->getItemID() == Structure_Refinery)) {
                 pGroundUnitTarget->setGuardPoint(pGroundUnitTarget->getLocation());
                 setTarget(newTarget);
-                setDestination(target.getObjPointer()->getLocation() + Coord(2,0));
+                ObjectBase* pNewTarget = target.getObjPointer();
+                if(pNewTarget != nullptr) {
+                    setDestination(pNewTarget->getLocation() + Coord(2,0));
+                } else {
+                    releaseTarget();
+                }
             } else if(newTarget && (newTarget->getItemID() == Structure_RepairYard)) {
                 pGroundUnitTarget->setGuardPoint(pGroundUnitTarget->getLocation());
                 setTarget(newTarget);
-                setDestination(target.getObjPointer()->getClosestPoint(location));
+                ObjectBase* pNewTarget = target.getObjPointer();
+                if(pNewTarget != nullptr) {
+                    setDestination(pNewTarget->getClosestPoint(location));
+                } else {
+                    releaseTarget();
+                }
             } else if (pGroundUnitTarget->getDestination().isValid()) {
                 setDestination(pGroundUnitTarget->getDestination());
             }
@@ -525,39 +540,40 @@ void Carryall::pickupTarget()
         }
     } else {
         // get unit from structure
-        ObjectBase* pObject = target.getObjPointer();
-        if(pObject->getItemID() == Structure_Refinery) {
+        if(pTarget->getItemID() == Structure_Refinery) {
             // get harvester
-            static_cast<Refinery*>(pObject)->deployHarvester(this);
-        } else if(pObject->getItemID() == Structure_RepairYard) {
+            static_cast<Refinery*>(pTarget)->deployHarvester(this);
+        } else if(pTarget->getItemID() == Structure_RepairYard) {
             // get repaired unit
-            static_cast<RepairYard*>(pObject)->deployRepairUnit(this);
+            static_cast<RepairYard*>(pTarget)->deployRepairUnit(this);
         }
     }
 }
 
 void Carryall::setTarget(const ObjectBase* newTarget) {
-    if(target.getObjPointer() != nullptr
+    ObjectBase* oldTarget = target.getObjPointer();
+    if(oldTarget != nullptr
         && targetFriendly
-        && target.getObjPointer()->isAGroundUnit()
-        && (static_cast<GroundUnit*>(target.getObjPointer())->getCarrier() == this))
+        && oldTarget->isAGroundUnit()
+        && (static_cast<GroundUnit*>(oldTarget)->getCarrier() == this))
     {
-        static_cast<GroundUnit*>(target.getObjPointer())->bookCarrier(nullptr);
+        static_cast<GroundUnit*>(oldTarget)->bookCarrier(nullptr);
     }
 
-    if(target.getObjPointer() != nullptr && (target.getObjPointer()->getItemID() == Structure_Refinery)) {
-        static_cast<Refinery*>(target.getObjPointer())->unBook();
+    if(oldTarget != nullptr && (oldTarget->getItemID() == Structure_Refinery)) {
+        static_cast<Refinery*>(oldTarget)->unBook();
     }
 
     UnitBase::setTarget(newTarget);
 
-    if(target.getObjPointer() != nullptr && (target.getObjPointer()->getItemID() == Structure_Refinery))
+    ObjectBase* pTarget = target.getObjPointer();
+    if(pTarget != nullptr && (pTarget->getItemID() == Structure_Refinery))
     {
-        static_cast<Refinery*>(target.getObjPointer())->book();
+        static_cast<Refinery*>(pTarget)->book();
     }
 
-    if(target && targetFriendly && target.getObjPointer()->isAGroundUnit()) {
-        static_cast<GroundUnit*>(target.getObjPointer())->setAwaitingPickup(true);
+    if(pTarget != nullptr && targetFriendly && pTarget->isAGroundUnit()) {
+        static_cast<GroundUnit*>(pTarget)->setAwaitingPickup(true);
     }
 }
 

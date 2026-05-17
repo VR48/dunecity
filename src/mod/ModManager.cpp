@@ -39,6 +39,7 @@ static const char* OBJECT_DATA_FILE = "ObjectData.ini";
 static const char* QUANTBOT_CONFIG_FILE = "QuantBot Config.ini";
 static const char* GAME_OPTIONS_FILE = "GameOptions.ini";
 static const char* VANILLA_MOD_NAME = "vanilla";
+static const char* DUNECITY_MOD_NAME = "dunecity";
 
 // Install config file names (with .default suffix)
 static const char* OBJECT_DATA_DEFAULT = "ObjectData.ini.default";
@@ -78,6 +79,11 @@ void ModManager::initialize() {
     if (!modExists(VANILLA_MOD_NAME) || vanillaNeedsReseed()) {
         seedVanillaFromDefaults();
     }
+
+    // Seed built-in dunecity mod if needed
+    if (!modExists(DUNECITY_MOD_NAME) || dunecityNeedsReseed()) {
+        seedDunecityFromDefaults();
+    }
     
     // Load active mod from file
     loadActiveMod();
@@ -95,6 +101,16 @@ void ModManager::initialize() {
 
 std::string ModManager::getActiveModName() const {
     return activeMod;
+}
+
+bool ModManager::isCityModeActive() const {
+    if (!initialized) {
+        return false;
+    }
+    if (!modExists(activeMod)) {
+        return false;
+    }
+    return getModInfo(activeMod).enablesCityMode;
 }
 
 bool ModManager::setActiveMod(const std::string& name) {
@@ -283,6 +299,7 @@ SettingsClass::GameOptionsClass ModManager::loadEffectiveGameOptions(
             else if (key == "Manual Carryall Drops") result.manualCarryallDrops = parseBool(value);
             else if (key == "Maximum Number of Units Override") result.maximumNumberOfUnitsOverride = std::stoi(value);
             else if (key == "Maximum Number of Harvesters Override") result.maximumNumberOfHarvestersOverride = std::stoi(value);
+            else if (key == "City Effects") result.cityEffects = parseBool(value);
         }
         
         file.close();
@@ -303,70 +320,73 @@ ModChecksums ModManager::getEffectiveChecksums() const {
     return cachedChecksums;
 }
 
+std::string ModManager::hashFileCanonical(const std::string& path) {
+    // Compute canonical FNV-1a hash of an INI-style file.
+    // "Canonical" means: skip comments, skip empty lines, trim whitespace,
+    // so cosmetic edits don't change the hash.
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        return "FILE_NOT_FOUND";
+    }
+
+    std::string contents;
+    std::string line;
+    while (std::getline(file, line)) {
+        if (!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
+
+        size_t start = line.find_first_not_of(" \t");
+        if (start == std::string::npos) {
+            continue;
+        }
+        size_t end = line.find_last_not_of(" \t");
+        line = line.substr(start, end - start + 1);
+
+        if (line.empty() || line[0] == ';' || line[0] == '#') {
+            continue;
+        }
+
+        // Strip inline " ;" comments (whitespace-prefixed semicolon).
+        size_t commentPos = line.find(" ;");
+        if (commentPos != std::string::npos) {
+            line = line.substr(0, commentPos);
+            end = line.find_last_not_of(" \t");
+            if (end != std::string::npos) {
+                line = line.substr(0, end + 1);
+            }
+        }
+
+        if (!line.empty()) {
+            contents += line + '\n';
+        }
+    }
+    file.close();
+
+    uint64_t hash = 14695981039346656037ULL;
+    const uint64_t prime = 1099511628211ULL;
+    for (char c : contents) {
+        hash ^= static_cast<uint64_t>(static_cast<unsigned char>(c));
+        hash *= prime;
+    }
+
+    char hashStr[17];
+    snprintf(hashStr, sizeof(hashStr), "%016llx", (unsigned long long)hash);
+    return std::string(hashStr);
+}
+
+bool ModManager::installedObjectDataDiffersFromDefaults(const std::string& modName) const {
+    const std::string installed = getModPath(modName) + "/" + OBJECT_DATA_FILE;
+    const std::string defaults = getInstallConfigPath() + "/" + OBJECT_DATA_DEFAULT;
+
+    if (!existsFile(installed) || !existsFile(defaults)) {
+        return false;  // Existence check already triggers reseed; don't double-fire.
+    }
+
+    return hashFileCanonical(installed) != hashFileCanonical(defaults);
+}
+
 void ModManager::updateChecksums() {
-    // Compute canonical checksums from the config files that will be used
-    // "Canonical" means: skip comments, skip empty lines, trim whitespace
-    // This ensures cosmetic changes don't affect checksums
-    
-    auto hashFileCanonical = [](const std::string& path) -> std::string {
-        std::ifstream file(path);
-        if (!file.is_open()) {
-            return "FILE_NOT_FOUND";
-        }
-        
-        // Read and canonicalize: skip comments, skip empty lines, trim whitespace
-        std::string contents;
-        std::string line;
-        while (std::getline(file, line)) {
-            // Remove trailing \r if present
-            if (!line.empty() && line.back() == '\r') {
-                line.pop_back();
-            }
-            
-            // Trim leading/trailing whitespace
-            size_t start = line.find_first_not_of(" \t");
-            if (start == std::string::npos) {
-                continue;  // Empty or whitespace-only line
-            }
-            size_t end = line.find_last_not_of(" \t");
-            line = line.substr(start, end - start + 1);
-            
-            // Skip comment lines
-            if (line.empty() || line[0] == ';' || line[0] == '#') {
-                continue;
-            }
-            
-            // Strip inline comments (but be careful with strings)
-            // For INI files, we'll strip anything after ; that's preceded by whitespace
-            size_t commentPos = line.find(" ;");
-            if (commentPos != std::string::npos) {
-                line = line.substr(0, commentPos);
-                // Re-trim
-                end = line.find_last_not_of(" \t");
-                if (end != std::string::npos) {
-                    line = line.substr(0, end + 1);
-                }
-            }
-            
-            if (!line.empty()) {
-                contents += line + '\n';
-            }
-        }
-        file.close();
-        
-        // FNV-1a hash
-        uint64_t hash = 14695981039346656037ULL;
-        const uint64_t prime = 1099511628211ULL;
-        for (char c : contents) {
-            hash ^= static_cast<uint64_t>(static_cast<unsigned char>(c));
-            hash *= prime;
-        }
-        
-        char hashStr[17];
-        snprintf(hashStr, sizeof(hashStr), "%016llx", (unsigned long long)hash);
-        return std::string(hashStr);
-    };
-    
     cachedChecksums.objectData = hashFileCanonical(getActiveObjectDataPath());
     cachedChecksums.quantBotConfig = hashFileCanonical(getActiveQuantBotConfigPath());
 
@@ -685,6 +705,7 @@ void ModManager::seedVanillaFromDefaults() {
         gameOptionsFile << "Manual Carryall Drops = false\n";
         gameOptionsFile << "Maximum Number of Units Override = 0\n";
         gameOptionsFile << "Maximum Number of Harvesters Override = -1\n";
+        gameOptionsFile << "City Effects = false\n";
         gameOptionsFile.close();
         SDL_Log("ModManager: Created %s", GAME_OPTIONS_FILE);
     }
@@ -696,9 +717,123 @@ void ModManager::seedVanillaFromDefaults() {
     info.author = "Dune City";
     info.description = "Default game settings";
     info.gameVersion = VERSION;
+    info.enablesCityMode = false;
     writeModInfo(vanillaPath, info);
-    
+
     SDL_Log("ModManager: Vanilla mod seeded successfully");
+}
+
+void ModManager::seedDunecityFromDefaults() {
+    SDL_Log("ModManager: Seeding dunecity mod from install defaults...");
+
+    std::string dunecityPath = getModPath(DUNECITY_MOD_NAME);
+    std::string installConfigPath = getInstallConfigPath();
+
+    createDir(dunecityPath);
+
+    // Copy ObjectData.ini.default -> ObjectData.ini
+    std::string srcObjectData = installConfigPath + "/" + OBJECT_DATA_DEFAULT;
+    std::string dstObjectData = dunecityPath + "/" + OBJECT_DATA_FILE;
+    if (existsFile(srcObjectData)) {
+        copyFile(srcObjectData, dstObjectData);
+        SDL_Log("ModManager: Copied %s (dunecity)", OBJECT_DATA_FILE);
+    } else {
+        SDL_Log("ModManager: Warning - %s not found at %s", OBJECT_DATA_DEFAULT, srcObjectData.c_str());
+    }
+
+    // Copy QuantBot Config.ini.default -> QuantBot Config.ini
+    std::string srcQuantBot = installConfigPath + "/" + QUANTBOT_CONFIG_DEFAULT;
+    std::string dstQuantBot = dunecityPath + "/" + QUANTBOT_CONFIG_FILE;
+    if (existsFile(srcQuantBot)) {
+        copyFile(srcQuantBot, dstQuantBot);
+        SDL_Log("ModManager: Copied %s (dunecity)", QUANTBOT_CONFIG_FILE);
+    } else {
+        SDL_Log("ModManager: Warning - %s not found at %s", QUANTBOT_CONFIG_DEFAULT, srcQuantBot.c_str());
+    }
+
+    // GameOptions.ini: dunecity tunes a handful of switches relative to vanilla
+    // (open map, instant build, sandworm respawn/spice, manual carryall, no
+    // concrete cost). The city-mode toggle itself lives in mod.ini.
+    std::string gameOptionsPath = dunecityPath + "/" + GAME_OPTIONS_FILE;
+    std::ofstream gameOptionsFile(gameOptionsPath);
+    if (gameOptionsFile.is_open()) {
+        gameOptionsFile << "# Dune City Game Options (default values)\n";
+        gameOptionsFile << "[Game Options]\n";
+        gameOptionsFile << "Game Speed = 16\n";
+        gameOptionsFile << "Concrete Required = false\n";
+        gameOptionsFile << "Structures Degrade On Concrete = true\n";
+        gameOptionsFile << "Fog of War = false\n";
+        gameOptionsFile << "Start with Explored Map = true\n";
+        gameOptionsFile << "Instant Build = true\n";
+        gameOptionsFile << "Only One Palace = false\n";
+        gameOptionsFile << "Rocket-Turrets Need Power = false\n";
+        gameOptionsFile << "Sandworms Respawn = true\n";
+        gameOptionsFile << "Killed Sandworms Drop Spice = true\n";
+        gameOptionsFile << "Manual Carryall Drops = true\n";
+        gameOptionsFile << "Maximum Number of Units Override = 0\n";
+        gameOptionsFile << "Maximum Number of Harvesters Override = -1\n";
+        gameOptionsFile << "City Effects = true\n";  // dunecity mod opts in
+        gameOptionsFile.close();
+        SDL_Log("ModManager: Created %s (dunecity)", GAME_OPTIONS_FILE);
+    }
+
+    ModInfo info;
+    info.name = DUNECITY_MOD_NAME;
+    info.displayName = "Dune City";
+    info.author = "Dune City";
+    info.description = "Hybrid RTS + city-builder mode (zones, overlays, city sim).";
+    info.gameVersion = VERSION;
+    info.enablesCityMode = true;
+    writeModInfo(dunecityPath, info);
+
+    SDL_Log("ModManager: Dunecity mod seeded successfully");
+}
+
+bool ModManager::dunecityNeedsReseed() const {
+    std::string dunecityPath = getModPath(DUNECITY_MOD_NAME);
+
+    std::string objectDataPath = dunecityPath + "/" + OBJECT_DATA_FILE;
+    std::string quantBotPath = dunecityPath + "/" + QUANTBOT_CONFIG_FILE;
+    std::string gameOptionsPath = dunecityPath + "/" + GAME_OPTIONS_FILE;
+    std::string modIniPath = dunecityPath + "/" + MOD_INI_FILE;
+
+    if (!existsFile(objectDataPath)) {
+        SDL_Log("ModManager: Dunecity missing %s, needs reseed", OBJECT_DATA_FILE);
+        return true;
+    }
+    if (!existsFile(quantBotPath)) {
+        SDL_Log("ModManager: Dunecity missing %s, needs reseed", QUANTBOT_CONFIG_FILE);
+        return true;
+    }
+    if (!existsFile(gameOptionsPath)) {
+        SDL_Log("ModManager: Dunecity missing %s, needs reseed", GAME_OPTIONS_FILE);
+        return true;
+    }
+    if (!existsFile(modIniPath)) {
+        SDL_Log("ModManager: Dunecity missing %s, needs reseed", MOD_INI_FILE);
+        return true;
+    }
+
+    ModInfo info = readModIni(dunecityPath);
+    if (info.gameVersion != VERSION) {
+        SDL_Log("ModManager: Dunecity version mismatch (%s vs %s), needs reseed",
+                info.gameVersion.c_str(), VERSION);
+        return true;
+    }
+
+    // Self-heal: if a previous build wrote the mod.ini without the city-mode
+    // flag set, reseed so it gets the correct metadata.
+    if (!info.enablesCityMode) {
+        SDL_Log("ModManager: Dunecity mod.ini missing 'Enables City Mode = true', needs reseed");
+        return true;
+    }
+
+    if (installedObjectDataDiffersFromDefaults(DUNECITY_MOD_NAME)) {
+        SDL_Log("ModManager: Dunecity %s drifted from defaults, needs reseed", OBJECT_DATA_FILE);
+        return true;
+    }
+
+    return false;
 }
 
 bool ModManager::vanillaNeedsReseed() const {
@@ -730,11 +865,16 @@ bool ModManager::vanillaNeedsReseed() const {
     // Also reseed if game version doesn't match
     ModInfo info = readModIni(vanillaPath);
     if (info.gameVersion != VERSION) {
-        SDL_Log("ModManager: Vanilla version mismatch (%s vs %s), needs reseed", 
+        SDL_Log("ModManager: Vanilla version mismatch (%s vs %s), needs reseed",
                 info.gameVersion.c_str(), VERSION);
         return true;
     }
-    
+
+    if (installedObjectDataDiffersFromDefaults(VANILLA_MOD_NAME)) {
+        SDL_Log("ModManager: Vanilla %s drifted from defaults, needs reseed", OBJECT_DATA_FILE);
+        return true;
+    }
+
     return false;
 }
 
@@ -813,6 +953,9 @@ ModInfo ModManager::readModIni(const std::string& modPath) const {
         else if (key == "Description") info.description = value;
         else if (key == "Version") info.version = value;
         else if (key == "Game Version") info.gameVersion = value;
+        else if (key == "Enables City Mode") {
+            info.enablesCityMode = (value == "true" || value == "1" || value == "yes");
+        }
     }
     
     file.close();
@@ -834,7 +977,8 @@ void ModManager::writeModInfo(const std::string& modPath, const ModInfo& info) c
     file << "Description = " << info.description << "\n";
     file << "Version = " << info.version << "\n";
     file << "Game Version = " << info.gameVersion << "\n";
-    
+    file << "Enables City Mode = " << (info.enablesCityMode ? "true" : "false") << "\n";
+
     file.close();
 }
 

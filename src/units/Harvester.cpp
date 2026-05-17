@@ -606,6 +606,11 @@ void Harvester::setSpeeds()
     FixPoint percentFull = spice/HARVESTERMAXSPICE;
     speed = speed * (1 - MAXIMUMHARVESTERSLOWDOWN*percentFull);
 
+    if(currentGameMap->getTile(location)->isRoad()) {
+        // Roads double ground-unit travel speed (city-sim feature).
+        speed *= 2;
+    }
+
     switch(drawnAngle){
         case LEFT:      xSpeed = -speed;                    ySpeed = 0;         break;
         case LEFTUP:    xSpeed = -speed*DIAGONALSPEEDCONST; ySpeed = xSpeed;    break;

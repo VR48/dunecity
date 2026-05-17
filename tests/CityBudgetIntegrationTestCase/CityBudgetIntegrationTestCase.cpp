@@ -100,68 +100,54 @@ TEST_CASE("CityBudget: spendCityFunds fails when exact amount would zero out", "
 }
 
 // =============================================================================
-// Road and PowerLine Price Constants
+// Structure ID Stability
 // =============================================================================
 
-TEST_CASE("CityBudget: Road and PowerLine structure IDs are sequential", "[citybudget][prices]") {
-    // Roads and power lines must be the last structure IDs
-    REQUIRE(Structure_Road == Structure_PowerLine - 1);
-    REQUIRE(Structure_PowerLine == Structure_LastID);
-}
-
-TEST_CASE("CityBudget: Road structure ID is within expected range", "[citybudget][prices]") {
-    REQUIRE(Structure_Road >= Structure_FirstID);
-    REQUIRE(Structure_Road <= Structure_LastID);
-    REQUIRE(Structure_PowerLine >= Structure_FirstID);
-    REQUIRE(Structure_PowerLine <= Structure_LastID);
+TEST_CASE("CityBudget: Road and PowerLine enum IDs are preserved", "[citybudget][ids]") {
+    // Enum values remain stable (no renumbering)
+    REQUIRE(Structure_Road == 23);
+    REQUIRE(Structure_PowerLine == 24);
+    REQUIRE(Structure_LastID == 26);  // PoliceStation (26) is now the last structure
 }
 
 // =============================================================================
-// City Budget Deduction Flow Tests (Road = 25 credits)
+// City Budget Deduction Flow Tests
 // =============================================================================
 
-TEST_CASE("CityBudget: Road cost of 25 deducted from city funds", "[citybudget][road]") {
+TEST_CASE("CityBudget: spending 25 credits deducted from city funds", "[citybudget][spend]") {
     DuneCity::CitySimulation sim;
 
     sim.setTotalFunds(100);
     REQUIRE(sim.getTotalFunds() == 100);
 
-    // Road costs 25 credits
     REQUIRE(sim.spendCityFunds(25) == true);
     REQUIRE(sim.getTotalFunds() == 75);
 }
 
-TEST_CASE("CityBudget: Insufficient funds blocks road placement", "[citybudget][road][insufficient]") {
+TEST_CASE("CityBudget: insufficient funds blocks spending", "[citybudget][spend][insufficient]") {
     DuneCity::CitySimulation sim;
 
-    sim.setTotalFunds(24);  // One short of road cost (25)
+    sim.setTotalFunds(24);
 
-    // Placement should be blocked
     REQUIRE(sim.spendCityFunds(25) == false);
     REQUIRE(sim.getTotalFunds() == 24);  // Funds unchanged
 }
 
-// =============================================================================
-// City Budget Deduction Flow Tests (PowerLine = 15 credits)
-// =============================================================================
-
-TEST_CASE("CityBudget: PowerLine cost of 15 deducted from city funds", "[citybudget][powerline]") {
+TEST_CASE("CityBudget: spending 15 credits deducted from city funds", "[citybudget][spend]") {
     DuneCity::CitySimulation sim;
 
     sim.setTotalFunds(100);
     REQUIRE(sim.getTotalFunds() == 100);
 
-    // Power line costs 15 credits
     REQUIRE(sim.spendCityFunds(15) == true);
     REQUIRE(sim.getTotalFunds() == 85);
 }
 
-TEST_CASE("CityBudget: Insufficient funds blocks power line placement", "[citybudget][powerline][insufficient]") {
+TEST_CASE("CityBudget: insufficient funds blocks small spending", "[citybudget][spend][insufficient]") {
     DuneCity::CitySimulation sim;
 
-    sim.setTotalFunds(14);  // One short of power line cost (15)
+    sim.setTotalFunds(14);
 
-    // Placement should be blocked
     REQUIRE(sim.spendCityFunds(15) == false);
     REQUIRE(sim.getTotalFunds() == 14);  // Funds unchanged
 }

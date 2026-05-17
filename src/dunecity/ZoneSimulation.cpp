@@ -34,7 +34,7 @@ bool ZoneSimulation::hasNearbyRoad(int x, int y) const {
             if (dx == 0 && dy == 0) continue; // skip center (the zone tile itself)
             if (m->tileExists(x + dx, y + dy)) {
                 const Tile* tile = m->getTile(x + dx, y + dy);
-                if (tile && tile->isCityConductive()) {
+                if (tile && tile->isRoad()) {
                     return true;
                 }
             }

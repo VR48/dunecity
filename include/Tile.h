@@ -459,8 +459,14 @@ public:
     void setCityZoneDensity(uint8_t d) noexcept { cityZoneDensity_ = d; }
     bool isCityPowered() const noexcept { return cityPowered_; }
     void setCityPowered(bool p) noexcept { cityPowered_ = p; }
-    bool isCityConductive() const noexcept { return cityConductive_; }
-    void setCityConductive(bool c) noexcept { cityConductive_ = c; }
+    /// True if a player-placed Road structure occupies this tile. Roads are a
+    /// build-menu item (like concrete slabs): they mutate tile state rather
+    /// than spawning an object, so they aren't selectable and units traverse
+    /// them via the underlying terrain. Power in DuneCity flows globally
+    /// based on produced-vs-required totals, so this flag is no longer about
+    /// electrical conductivity — it strictly tracks "is there a road here".
+    bool isRoad() const noexcept { return isRoad_; }
+    void setRoad(bool r) noexcept { isRoad_ = r; }
     bool hasCityZone() const noexcept { return cityZoneType_ != DuneCity::ZoneType::None; }
 
 
@@ -507,8 +513,8 @@ private:
     DuneCity::ZoneType  cityZoneType_ = DuneCity::ZoneType::None;
     uint8_t             cityZoneDensity_ = 0;   ///< population level within zone (0-8)
     uint16_t            cityTileId_ = 0;        ///< Micropolis-style tile character
-    bool                cityPowered_ = false;   ///< connected to power grid
-    bool                cityConductive_ = false; ///< can conduct power (roads, structures, power lines)
+    bool                cityPowered_ = false;   ///< connected to power grid (legacy; power flows globally now)
+    bool                isRoad_ = false;        ///< a player-placed Road structure occupies this tile
 
     void update_impl();
 

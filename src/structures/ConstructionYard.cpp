@@ -22,8 +22,6 @@
 #include <FileClasses/GFXManager.h>
 #include <House.h>
 #include <Game.h>
-#include <Command.h>
-#include <dunecity/CitySimulation.h>
 
 ConstructionYard::ConstructionYard(House* newOwner) : BuilderBase(newOwner) {
     ConstructionYard::init();
@@ -55,36 +53,6 @@ ConstructionYard::~ConstructionYard() = default;
 
 bool ConstructionYard::doPlaceStructure(int x, int y) {
     if(isWaitingToPlace()) {
-        Uint32 itemID = getCurrentProducedItem();
-
-        // Handle city infrastructure items (roads, power lines) - they modify tiles, not placed as structures
-        if(itemID == Structure_Road || itemID == Structure_PowerLine) {
-            // Get price from object data
-            int price = currentGame->objectData.data[itemID][originalHouseID].price;
-
-            // Check city budget has sufficient funds
-            auto* citySim = currentGame->getCitySimulation();
-            if (!citySim || !citySim->spendCityFunds(price)) {
-                // Insufficient city funds - refund credits and fail
-                getOwner()->returnCredits(price);
-                unSetWaitingToPlace();
-                currentProducedItem = ItemID_Invalid;
-                return false;
-            }
-
-            // Send city tool command directly via the local player
-            int toolType = (itemID == Structure_Road) ? 1 : 2;
-            if (pLocalPlayer) {
-                DuneCity::CitySimulation::executeCityCommand(
-                    pLocalPlayer->getPlayerID(), CMD_CITY_TOOL, x, y, toolType);
-            }
-
-            // Clear production since we consumed it immediately
-            unSetWaitingToPlace();
-            currentProducedItem = ItemID_Invalid;
-            return true;
-        }
-
         return (getOwner()->placeStructure(getObjectID(), getCurrentProducedItem(), x, y) != nullptr);
     } else {
         return false;

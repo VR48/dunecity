@@ -303,31 +303,34 @@ Prerequisite = Windtrap, Refinery
 
 [Residential Zone]
 Enabled = true
-HitPoints = 300
+HitPoints = 200
 Price = 100
 Power = 0
 ViewRange = 2
-BuildTime = 40
+BuildTime = 1
+InfSpawnProp = 0
 Builder = Construction Yard
 TechLevel = 1
 
 [Commercial Zone]
 Enabled = true
-HitPoints = 300
+HitPoints = 200
 Price = 100
 Power = 0
 ViewRange = 2
-BuildTime = 40
+BuildTime = 1
+InfSpawnProp = 0
 Builder = Construction Yard
 TechLevel = 1
 
 [Industrial Zone]
 Enabled = true
-HitPoints = 300
+HitPoints = 200
 Price = 100
 Power = 0
 ViewRange = 2
-BuildTime = 40
+BuildTime = 1
+InfSpawnProp = 0
 Builder = Construction Yard
 TechLevel = 1
 
@@ -335,17 +338,23 @@ TechLevel = 1
 
 [Road]
 Enabled = true
-Price = 25
-ViewRange = 1
-BuildTime = 10
+HitPoints = 1
+Price = 10
+Power = 0
+ViewRange = 0
+BuildTime = 4
+InfSpawnProp = 0
 Builder = Construction Yard
 TechLevel = 1
 
 [Power Line]
-Enabled = true
+Enabled = false
+HitPoints = 1
 Price = 15
-ViewRange = 1
-BuildTime = 8
+Power = 0
+ViewRange = 0
+BuildTime = 4
+InfSpawnProp = 0
 Builder = Construction Yard
 TechLevel = 1
 
@@ -401,6 +410,33 @@ InfSpawnProp = 25
 Builder = Construction Yard
 TechLevel = 1
 
+[Nuclear Plant]
+Enabled = true
+HitPoints = 600
+Price = 1500
+Power = -1000		# 10x WindTrap, single nuclear powers a Dune base + city
+ViewRange = 3
+BuildTime = 144
+InfSpawnProp = 25
+Builder = Construction Yard
+TechLevel = 6
+Prerequisite = Windtrap, Refinery
+
+[Police Station]
+# DuneCity city-mode-only. Sole source of police coverage — Barracks/WOR
+# no longer count toward crime reduction. Price matches SimCity Classic's
+# TOOL_POLICESTATION (tool.cpp gCostOf[4] = 500).
+Enabled = true
+HitPoints = 400
+Price = 500
+Power = 20
+ViewRange = 2
+BuildTime = 80
+InfSpawnProp = 0
+Builder = Construction Yard
+TechLevel = 1
+Prerequisite = Windtrap
+
 [WOR]
 Enabled = true
 HitPoints = 400
@@ -415,63 +451,6 @@ TechLevel = 5
 TechLevel(H) = 2
 Prerequisite = Windtrap, Radar, Barracks
 Prerequisite(H) = Windtrap, Radar
-
-### DuneCity zone structures ###
-
-[Residential Zone]
-Enabled = true
-HitPoints = 200
-Price = 100
-Power = 0
-ViewRange = 2
-BuildTime = 48
-InfSpawnProp = 0
-Builder = Construction Yard
-TechLevel = 1
-
-[Commercial Zone]
-Enabled = true
-HitPoints = 200
-Price = 100
-Power = 0
-ViewRange = 2
-BuildTime = 48
-InfSpawnProp = 0
-Builder = Construction Yard
-TechLevel = 1
-
-[Industrial Zone]
-Enabled = true
-HitPoints = 200
-Price = 100
-Power = 0
-ViewRange = 2
-BuildTime = 48
-InfSpawnProp = 0
-Builder = Construction Yard
-TechLevel = 1
-
-[Road]
-Enabled = true
-HitPoints = 1
-Price = 25
-Power = 0
-ViewRange = 0
-BuildTime = 8
-InfSpawnProp = 0
-Builder = Construction Yard
-TechLevel = 1
-
-[Power Line]
-Enabled = true
-HitPoints = 1
-Price = 15
-Power = 0
-ViewRange = 0
-BuildTime = 4
-InfSpawnProp = 0
-Builder = Construction Yard
-TechLevel = 1
 
 ### default unit ###
 

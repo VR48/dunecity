@@ -19,8 +19,10 @@
 #define REPAIRYARDINTERFACE_H
 
 #include "DefaultStructureInterface.h"
+#include "CityStatsBox.h"
 
 #include <GUI/ProgressBar.h>
+#include <GUI/VBox.h>
 
 #include <units/UnitBase.h>
 
@@ -36,6 +38,15 @@ public:
 
 protected:
     explicit RepairYardInterface(int objectID) : DefaultStructureInterface(objectID) {
+        // Left half: city-sim stats column (only relevant in city mode but
+        // harmless otherwise — labels just show em-dashes).
+        Uint32 color = SDL2RGB(palette[houseToPaletteIndex[pLocalHouse->getHouseID()]+3]);
+        mainHBox.addWidget(&textVBox);
+        cityStats_.attachTo(textVBox, color);
+        textVBox.addWidget(Spacer::create(), 0.99);
+
+        // Right half: the repair-unit progress icon. A spacer separates it
+        // from the text so the icon never sits underneath the labels.
         mainHBox.addWidget(Spacer::create());
         mainHBox.addWidget(&repairUnitProgressBar);
         mainHBox.addWidget(Spacer::create());
@@ -66,11 +77,15 @@ protected:
             }
         }
 
+        cityStats_.update(dynamic_cast<StructureBase*>(pObject));
+
         return DefaultStructureInterface::update();
     }
 
 private:
     PictureProgressBar  repairUnitProgressBar;
+    VBox                textVBox;
+    CityStatsBox        cityStats_;
 };
 
 #endif // REPAIRYARDINTERFACE_H
