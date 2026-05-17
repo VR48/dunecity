@@ -37,7 +37,7 @@ jobs:
       - name: Upload Installer
         uses: actions/upload-artifact@v4
         with:
-          name: DuneLegacy-Windows-Installer
+          name: DuneCity-Windows-Installer
           path: build/*.zip
 
   build-macos:
@@ -65,7 +65,7 @@ jobs:
       - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
-          name: DuneLegacy-macOS-DMG
+          name: DuneCity-macOS-DMG
           path: build/*.dmg
 
   build-linux:
@@ -107,7 +107,7 @@ jobs:
       - name: Upload Packages
         uses: actions/upload-artifact@v4
         with:
-          name: DuneLegacy-Linux-Packages
+          name: DuneCity-Linux-Packages
           path: |
             build/*.deb
             build/*.rpm

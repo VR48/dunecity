@@ -123,42 +123,49 @@ int VersionChecker::checkThreadMain(void* data) {
     VersionInfo info;
     info.updateAvailable = false;
     info.latestVersion = VERSION;
-    info.downloadURL = "https://dunelegacy.com/#download";
+    info.downloadURL = "https://github.com/svan058/dunecity/releases/latest";
+
+    // Dune City's update channel is GitHub Releases on the project repo.
+    // We query api.github.com/repos/.../releases/latest and parse the
+    // tag_name field (expected form: "v1.0.0"). Stripping the leading
+    // 'v' gives a SemVer string we can compare against the build's
+    // VERSION macro. No auth needed for public repos.
+    //
+    // The old upstream-Dune-Legacy metaServer call was removed: it
+    // would forever respond with "Latest=0.99.5" which is upstream's
+    // last release, not a Dune City update.
+    const std::string api =
+        "https://api.github.com/repos/svan058/dunecity/releases/latest";
 
     try {
-        std::map<std::string, std::string> parameters;
-        parameters["command"] = "version";
-        parameters["gameversion"] = VERSION;
+        std::string response = loadFromHttp(api);
 
-        std::string result = loadFromHttp(pChecker->metaServerURL, parameters);
-
-        // Parse response: "OK\n<version>\t<download_url>\n"
-        std::istringstream resultstream(result);
-        std::string status;
-        resultstream >> status;
-
-        if(status == "OK") {
-            resultstream >> std::ws; // Skip whitespace
-
-            std::string line;
-            if(std::getline(resultstream, line)) {
-                std::vector<std::string> parts = splitStringToStringVector(line, "\\t");
-                if(parts.size() >= 1) {
-                    info.latestVersion = parts[0];
-                    if(parts.size() >= 2) {
-                        info.downloadURL = parts[1];
-                    }
-
-                    // Check if update is available
-                    info.updateAvailable = (compareVersions(info.latestVersion, VERSION) > 0);
-
-                    SDL_Log("VersionChecker: Current=%s, Latest=%s, UpdateAvailable=%s",
-                            VERSION, info.latestVersion.c_str(),
-                            info.updateAvailable ? "yes" : "no");
+        // GitHub returns JSON; we only need tag_name. A full JSON parser
+        // would be overkill — find the field by substring. Format:
+        //   "tag_name":"v1.0.0"
+        const std::string tagKey = "\"tag_name\":\"";
+        const size_t tagPos = response.find(tagKey);
+        if (tagPos != std::string::npos) {
+            const size_t start = tagPos + tagKey.size();
+            const size_t end   = response.find('"', start);
+            if (end != std::string::npos) {
+                std::string tag = response.substr(start, end - start);
+                // Strip leading 'v' if present (v1.0.0 → 1.0.0).
+                if (!tag.empty() && (tag.front() == 'v' || tag.front() == 'V')) {
+                    tag.erase(0, 1);
                 }
+                info.latestVersion   = tag;
+                info.updateAvailable = (compareVersions(tag, VERSION) > 0);
+
+                SDL_Log("VersionChecker: Current=%s, Latest=%s, UpdateAvailable=%s",
+                        VERSION, info.latestVersion.c_str(),
+                        info.updateAvailable ? "yes" : "no");
             }
         } else {
-            SDL_Log("VersionChecker: Server returned non-OK status: %s", status.c_str());
+            // No tag_name in the response — most likely there are no
+            // releases yet (404 path turned into an empty body, or the
+            // repo really has nothing tagged). Treat as "no update".
+            SDL_Log("VersionChecker: no releases found on GitHub yet");
         }
 
     } catch(std::exception& e) {
