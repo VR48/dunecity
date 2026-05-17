@@ -339,8 +339,11 @@ else()
     set(CPACK_RPM_PACKAGE_GROUP "Amusements/Games")
     set(CPACK_PACKAGE_FILE_NAME "DuneCity-${PROJECT_VERSION}-Linux-x64")
     
-    # Add custom target for Linux packages
-    add_custom_target(package
+    # Add custom target for Linux packages. CMake reserves the target
+    # name "package" when CPack is enabled (newer CMake versions error
+    # out at configure time), so use "linux-packages" instead. Update
+    # BUILD.md and .vscode/tasks.json to match.
+    add_custom_target(linux-packages
         COMMAND ${CMAKE_COMMAND} -E echo "Cleaning CPack cache and install directory..."
         COMMAND ${CMAKE_COMMAND} -E remove_directory ${CMAKE_BINARY_DIR}/_CPack_Packages
         COMMAND ${CMAKE_COMMAND} -E remove ${CMAKE_BINARY_DIR}/*.deb ${CMAKE_BINARY_DIR}/*.rpm ${CMAKE_BINARY_DIR}/*.tar.gz

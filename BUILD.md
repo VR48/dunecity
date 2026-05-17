@@ -32,7 +32,7 @@ cmake --build build --target dmg --config Release
 cmake --build build --target installer --config Release
 
 # Linux: Build + Create Packages
-cmake --build build --target package --config Release
+cmake --build build --target linux-packages --config Release
 ```
 
 **Why?** The installer build:
@@ -278,7 +278,7 @@ cpack -G ZIP   # For portable zip
 
 **Quick method** (builds + packages all formats):
 ```bash
-cmake --build build --target package
+cmake --build build --target linux-packages
 ```
 
 **Output**:

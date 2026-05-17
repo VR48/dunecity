@@ -11,7 +11,7 @@
                 "command": "cmake --build build-vcpkg --target dmg --config Release"
             },
             "linux": {
-                "command": "cmake --build build --target package --config Release"
+                "command": "cmake --build build --target linux-packages --config Release"
             },
             "group": {
                 "kind": "build",
