@@ -142,6 +142,43 @@ A few simulation rules that are not obvious from the UI:
 
 ---
 
+## Troubleshooting
+
+### macOS: "dunecity.app is damaged and can't be opened"
+
+This appears the first time you run the macOS build downloaded from a
+browser. It is **not** actually damaged — macOS Gatekeeper is rejecting
+the app because the GitHub-built bundle is ad-hoc signed (not signed
+with a paid Apple Developer ID). Any file downloaded from the internet
+is also stamped with a `com.apple.quarantine` attribute, and macOS will
+not run ad-hoc-signed apps that carry that flag.
+
+**Fix it once, in Terminal:**
+
+```bash
+xattr -cr /Applications/dunecity.app
+```
+
+After that the app opens normally and will keep working across reboots.
+You only need to do this once per install (or after each new version
+you drag in).
+
+If you'd rather not use Terminal, you can also do:
+
+1. Right-click `dunecity.app` → **Open**
+2. macOS will refuse the first time; close the dialog
+3. Right-click again → **Open** → click **Open Anyway** in the dialog
+
+The first method (`xattr -cr`) is the most reliable on recent macOS
+versions.
+
+### Linux/Windows
+
+No equivalent issue — Linux packages and the Windows ZIP run without any
+quarantine fuss.
+
+---
+
 ## Getting help
 
 - Bug reports / feature requests: <https://github.com/svan058/dunecity/issues>
