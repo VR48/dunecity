@@ -1,5 +1,5 @@
-/* Dunelegacy application icon */
+/* Dune City application icon */
 #include <windows.h>
 
 /* Icon */
-MAINICON ICON "../dunelegacy.ico" 
+MAINICON ICON "../dunecity.ico" 
