@@ -1,4 +1,4 @@
-AC_INIT(dunecity, 1.0.3, https://github.com/svan058/dunecity/issues)
+AC_INIT(dunecity, 1.0.4, https://github.com/svan058/dunecity/issues)
 
 AC_CANONICAL_BUILD
 

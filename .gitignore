@@ -55,24 +55,9 @@ DuneCity-*-Setup.nsi
 /data/SDL2.dll
 /data/SDL2_mixer.dll
 /data/SDL2_ttf.dll
-/data/SCENARIO.PAK
-/data/ORDOS.PAK
-/data/ENGLISH.PAK
 /data/maps/WinSCP-5.21.6-Setup.exe
-/data/FINALE.PAK
-/data/FRENCH.PAK
-/data/GERMAN.PAK
-/data/INTRO.PAK
-/data/HARK.PAK
-/data/INTROVOC.PAK
-/data/MENTAT.PAK
-/data/MERC.PAK
 /IDE/VC/packages
 /DuneCity *.exe
-/data/ATRE.PAK
-/data/DUNE.PAK
-/data/SOUND.PAK
-/data/VOC.PAK
 *.exe
 *.dmg
 
