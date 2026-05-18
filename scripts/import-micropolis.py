@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+import sys
+if sys.stdout.encoding and sys.stdout.encoding.lower() not in ('utf-8', 'utf_8'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 """
 Extract tile sprites from the Micropolis (open-source SimCity) tileset.
 

@@ -113,7 +113,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             autoconf autoconf-archive automake libtool libltdl-dev \
-            build-essential pkg-config bison flex
+            build-essential pkg-config bison flex \
+            libsystemd-dev
 
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
