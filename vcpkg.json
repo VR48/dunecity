@@ -5,7 +5,7 @@
   "description": "Dune City - A modern OpenSource Dune 2 engine with city simulation",
   "homepage": "https://dunelegacy.sourceforge.net",
   "dependencies": [
-    "sdl2",
+    { "name": "sdl2", "default-features": false, "features": ["x11", "wayland", "ibus"] },
     "sdl2-mixer",
     "sdl2-ttf",
     "curl",
