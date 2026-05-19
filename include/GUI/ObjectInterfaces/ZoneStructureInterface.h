@@ -53,15 +53,15 @@ protected:
 
         zoneNameLabel.setTextFontSize(12);
         zoneNameLabel.setTextColor(color);
-        textVBox.addWidget(&zoneNameLabel, 0.005);
+        textVBox.addWidget(&zoneNameLabel, (Sint32)18);
 
         densityLabel.setTextFontSize(12);
         densityLabel.setTextColor(color);
-        textVBox.addWidget(&densityLabel, 0.005);
+        textVBox.addWidget(&densityLabel, (Sint32)18);
 
         poweredLabel.setTextFontSize(12);
         poweredLabel.setTextColor(color);
-        textVBox.addWidget(&poweredLabel, 0.005);
+        textVBox.addWidget(&poweredLabel, (Sint32)18);
 
         cityStats_.attachTo(textVBox, color, /*isZone=*/true);
 

@@ -47,10 +47,10 @@ protected:
 
         friendlyUnitsLabel.setTextFontSize(12);
         friendlyUnitsLabel.setTextColor(color);
-        textVBox.addWidget(&friendlyUnitsLabel, 0.005);
+        textVBox.addWidget(&friendlyUnitsLabel, (Sint32)18);
         enemyUnitsLabel.setTextFontSize(12);
         enemyUnitsLabel.setTextColor(color);
-        textVBox.addWidget(&enemyUnitsLabel, 0.005);
+        textVBox.addWidget(&enemyUnitsLabel, (Sint32)18);
 
         cityStats_.attachTo(textVBox, color);
 

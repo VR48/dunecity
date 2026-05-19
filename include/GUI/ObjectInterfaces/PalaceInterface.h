@@ -70,11 +70,11 @@ protected:
 
         levelLabel.setTextFontSize(12);
         levelLabel.setTextColor(color);
-        palaceVBox.addWidget(&levelLabel, 0.005);
+        palaceVBox.addWidget(&levelLabel, (Sint32)18);
 
         poweredLabel.setTextFontSize(12);
         poweredLabel.setTextColor(color);
-        palaceVBox.addWidget(&poweredLabel, 0.005);
+        palaceVBox.addWidget(&poweredLabel, (Sint32)18);
 
         cityStats_.attachTo(palaceVBox, color, /*isZone=*/false);
 

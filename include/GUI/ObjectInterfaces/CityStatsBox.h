@@ -56,11 +56,12 @@ public:
         pollutionLabel_.setTextColor(color);
         crimeLabel_    .setTextColor(color);
 
-        parent.addWidget(&roleLabel_, 0.005);
-        parent.addWidget(&populationLabel_, 0.005);
-        parent.addWidget(&landValueLabel_, 0.005);
-        parent.addWidget(&pollutionLabel_, 0.005);
-        parent.addWidget(&crimeLabel_,     0.005);
+        const Sint32 lineH = 16;
+        parent.addWidget(&roleLabel_, lineH);
+        parent.addWidget(&populationLabel_, lineH);
+        parent.addWidget(&landValueLabel_, lineH);
+        parent.addWidget(&pollutionLabel_, lineH);
+        parent.addWidget(&crimeLabel_,     lineH);
     }
 
     void update(StructureBase* pStructure) {

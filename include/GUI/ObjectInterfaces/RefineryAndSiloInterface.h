@@ -47,10 +47,10 @@ protected:
 
         capacityLabel.setTextFontSize(12);
         capacityLabel.setTextColor(color);
-        textVBox.addWidget(&capacityLabel, 0.005);
+        textVBox.addWidget(&capacityLabel, (Sint32)18);
         storedCreditsLabel.setTextFontSize(12);
         storedCreditsLabel.setTextColor(color);
-        textVBox.addWidget(&storedCreditsLabel, 0.005);
+        textVBox.addWidget(&storedCreditsLabel, (Sint32)18);
 
         cityStats_.attachTo(textVBox, color);
 

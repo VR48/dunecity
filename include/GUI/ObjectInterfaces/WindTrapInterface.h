@@ -47,10 +47,10 @@ protected:
 
         requiredEnergyLabel.setTextFontSize(12);
         requiredEnergyLabel.setTextColor(color);
-        textVBox.addWidget(&requiredEnergyLabel, 0.005);
+        textVBox.addWidget(&requiredEnergyLabel, (Sint32)18);
         producedEnergyLabel.setTextFontSize(12);
         producedEnergyLabel.setTextColor(color);
-        textVBox.addWidget(&producedEnergyLabel, 0.005);
+        textVBox.addWidget(&producedEnergyLabel, (Sint32)18);
 
         cityStats_.attachTo(textVBox, color);
 
