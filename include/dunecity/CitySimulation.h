@@ -81,6 +81,7 @@ public:
     const CityMapLayer<uint8_t>& getLandValueMap() const { return landValueMap_; }
     const CityMapLayer<uint8_t>& getCrimeRateMap() const { return crimeRateMap_; }
     const CityMapLayer<uint8_t>& getPopulationDensityMap() const { return populationDensityMap_; }
+    const CityMapLayer<int8_t>&  getGrowthRateMap() const { return growthRateMap_; }
 
     CityBudget& getCityBudget() { return budget_; }
     const CityBudget& getCityBudget() const { return budget_; }
@@ -147,6 +148,7 @@ private:
     CityMapLayer<uint8_t> landValueMap_;
     CityMapLayer<uint8_t> crimeRateMap_;
     CityMapLayer<uint8_t> populationDensityMap_;
+    CityMapLayer<int8_t>  growthRateMap_;
 
     CityBudget budget_;
 
@@ -154,6 +156,12 @@ private:
     uint32_t  lastProcessedDay_ = 0;    ///< Last city-day number that ran a scan + growth roll
     uint32_t  lastTaxYear_ = 0;         ///< Last year tax was collected (cityYear_ at collection)
     int       cityDay_ = 0;             ///< Current city day (resets within the year, monotonic across years)
+
+    /// Civic building presence flags, refreshed each scan.
+    bool hasStadium_  = false;
+    bool hasPalace_   = false;
+    bool hasAirport_  = false;
+    bool hasStarport_ = false;
 
     /// Full-map scan: rebuilds pollution, land value, crime maps and runs
     /// zone growth from current map contents. Called from advancePhase()
@@ -169,6 +177,9 @@ private:
     /// player. Lives in CityEffectsRuntime.cpp so the test build doesn't
     /// have to link House/pLocalHouse/StructureBase.
     void runAnnualBudget();
+
+    /// Decay growth rate map toward zero each scan tick.
+    void decayGrowthRateMap();
 };
 
 } // namespace DuneCity

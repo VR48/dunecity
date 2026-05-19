@@ -51,7 +51,7 @@ public:
     inline int getTeamID() const { return teamID; }
 
     inline bool isAI() const { return ai; }
-    inline bool isAlive() const { return (teamID == 0) || !(((numStructures - numItem[Structure_Wall]) <= 0) && (((numUnits - numItem[Unit_Carryall] - numItem[Unit_Harvester] - numItem[Unit_Frigate] - numItem[Unit_Sandworm]) <= 0))); }
+    inline bool isAlive() const { return (teamID == 0) || !(((numStructures - numItem[Structure_Wall]) <= 0) && (((numUnits - numItem[Unit_Carryall] - numItem[Unit_Harvester] - numItem[Unit_Frigate] - numItem[Unit_Sandworm] - numItem[Unit_AmbientAirplane] - numItem[Unit_AmbientHelicopter]) <= 0))); }
 
     inline bool hasCarryalls() const { return (numItem[Unit_Carryall] > 0); }
     inline bool hasBarracks() const { return (numItem[Structure_Barracks] > 0); }

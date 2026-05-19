@@ -299,6 +299,7 @@ SettingsClass::GameOptionsClass ModManager::loadEffectiveGameOptions(
             else if (key == "Manual Carryall Drops") result.manualCarryallDrops = parseBool(value);
             else if (key == "Maximum Number of Units Override") result.maximumNumberOfUnitsOverride = std::stoi(value);
             else if (key == "Maximum Number of Harvesters Override") result.maximumNumberOfHarvestersOverride = std::stoi(value);
+            else if (key == "Immortal Human Player") result.immortalHumanPlayer = parseBool(value);
             else if (key == "City Effects") result.cityEffects = parseBool(value);
         }
         
@@ -751,27 +752,28 @@ void ModManager::seedDunecityFromDefaults() {
         SDL_Log("ModManager: Warning - %s not found at %s", QUANTBOT_CONFIG_DEFAULT, srcQuantBot.c_str());
     }
 
-    // GameOptions.ini: dunecity tunes a handful of switches relative to vanilla
-    // (open map, instant build, sandworm respawn/spice, manual carryall, no
-    // concrete cost). The city-mode toggle itself lives in mod.ini.
+    // GameOptions.ini: dunecity tunes game switches for city-builder play
+    // (open map, sandworm respawn/spice, concrete required, rocket-turrets
+    // need power). The city-mode toggle itself lives in mod.ini.
     std::string gameOptionsPath = dunecityPath + "/" + GAME_OPTIONS_FILE;
     std::ofstream gameOptionsFile(gameOptionsPath);
     if (gameOptionsFile.is_open()) {
         gameOptionsFile << "# Dune City Game Options (default values)\n";
         gameOptionsFile << "[Game Options]\n";
         gameOptionsFile << "Game Speed = 16\n";
-        gameOptionsFile << "Concrete Required = false\n";
-        gameOptionsFile << "Structures Degrade On Concrete = true\n";
+        gameOptionsFile << "Concrete Required = true\n";
+        gameOptionsFile << "Structures Degrade On Concrete = false\n";
         gameOptionsFile << "Fog of War = false\n";
         gameOptionsFile << "Start with Explored Map = true\n";
-        gameOptionsFile << "Instant Build = true\n";
+        gameOptionsFile << "Instant Build = false\n";
         gameOptionsFile << "Only One Palace = false\n";
-        gameOptionsFile << "Rocket-Turrets Need Power = false\n";
+        gameOptionsFile << "Rocket-Turrets Need Power = true\n";
         gameOptionsFile << "Sandworms Respawn = true\n";
         gameOptionsFile << "Killed Sandworms Drop Spice = true\n";
-        gameOptionsFile << "Manual Carryall Drops = true\n";
+        gameOptionsFile << "Manual Carryall Drops = false\n";
         gameOptionsFile << "Maximum Number of Units Override = 0\n";
         gameOptionsFile << "Maximum Number of Harvesters Override = -1\n";
+        gameOptionsFile << "Immortal Human Player = false\n";
         gameOptionsFile << "City Effects = true\n";  // dunecity mod opts in
         gameOptionsFile.close();
         SDL_Log("ModManager: Created %s (dunecity)", GAME_OPTIONS_FILE);

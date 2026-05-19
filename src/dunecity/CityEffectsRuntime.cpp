@@ -10,6 +10,8 @@
 
 #include <dunecity/CitySimulation.h>
 #include <dunecity/CityEffects.h>
+#include <dunecity/CityConstants.h>
+#include <dunecity/TrafficSimulation.h>
 #include <dunecity/ZonePower.h>
 
 #include <globals.h>
@@ -329,8 +331,12 @@ void CitySimulation::runEffectsScans() {
     forEachStructureOrigin(map, [&](int x, int y, const StructureBase* pStruct) {
         const int parkBonus = getParkLandValueBonus(pStruct->getItemID());
         if (parkBonus > 0) {
+            // Stadium radiates its bonus over a wider area (8 tiles vs 3
+            // for walls/turrets) to match its civic-amenity role.
+            const int radius = (pStruct->getItemID() == Structure_Stadium)
+                ? 8 : kParkBonusRadius;
             stampFalloff(landValueMap_, x, y,
-                         kParkBonusRadius, parkBonus, kMaxLandValue);
+                         radius, parkBonus, kMaxLandValue);
         }
     });
 
@@ -422,29 +428,37 @@ void CitySimulation::runEffectsScans() {
     });
     nominalPoliceCost_ = nominalCost;
 
-    // Traffic density map — populated for the City Overlay UI only (the
-    // population density map is built earlier, before the crime scan).
-    // Traffic is a stand-in for "commute load": every developed city-role
-    // structure radiates traffic proportional to its level (low-density R
-    // hardly moves; tier-3 commercial pulls a lot). Roads absorb traffic
-    // in the loop below, so a road grid visibly reduces overlay load.
+    // Detect civic buildings for demand cap computation.
+    hasStadium_ = false;
+    hasPalace_  = false;
+    hasAirport_ = false;
+    hasStarport_ = false;
+    forEachStructureOrigin(map, [&](int /*x*/, int /*y*/, const StructureBase* pStruct) {
+        switch (pStruct->getItemID()) {
+            case Structure_Stadium: hasStadium_ = true; break;
+            case Structure_Palace:  hasPalace_  = true; break;
+            case Structure_Airport: hasAirport_ = true; break;
+            case Structure_StarPort: hasStarport_ = true; break;
+            default: break;
+        }
+    });
+
+    // Traffic density map — now driven by actual BFS connectivity results
+    // during runZoneGrowth(). The overlay starts from a base stamp (every
+    // city-role structure radiates proportional to level) then BFS-connected
+    // paths add density on top, and roads absorb load.
     trafficDensityMap_.init(mapWidth_, mapHeight_, trafficDensityMap_.getBlockSize());
     forEachStructureOrigin(map, [&](int x, int y, const StructureBase* pStruct) {
         const Tile* originTile = map.getTile(x, y);
         const int level = cityLevelOf(originTile, pStruct);
         if (level <= 0) return;
         if (getStructureCityRole(pStruct->getItemID()) == CityRole::None) return;
-        // Tier-1 zones contribute a small amount; tier-3 a lot. Radius 3
-        // keeps the stamp local — traffic is a near-zone phenomenon.
         const int trafficValue = level * 25;
         stampFalloff(trafficDensityMap_, x, y,
                      /*radius*/ 3, trafficValue, /*max*/ 255);
     });
 
-    // Roads absorb traffic: each road tile reduces traffic in its block.
-    // This is what makes a road grid feel useful in practice — without
-    // it, late-game C/I clusters look the same in the overlay whether
-    // they're connected by road or not.
+    // Roads absorb traffic.
     const int trafficBlockSize = trafficDensityMap_.getBlockSize();
     for (int wy = 0; wy < mapHeight_; ++wy) {
         for (int wx = 0; wx < mapWidth_; ++wx) {
@@ -458,6 +472,9 @@ void CitySimulation::runEffectsScans() {
             trafficDensityMap_.set(bx, by, static_cast<uint8_t>(v));
         }
     }
+
+    // Decay growth rate map toward zero.
+    decayGrowthRateMap();
 }
 
 void CitySimulation::runZoneGrowth() {
@@ -478,6 +495,7 @@ void CitySimulation::runZoneGrowth() {
         int            level;
         int            maxLevel;
         int            supplyR, supplyC, supplyI;
+        bool           isDuneStructure;  // true for non-zone city-role (don't destroy)
     };
     std::vector<CityNode> nodes;
 
@@ -495,10 +513,6 @@ void CitySimulation::runZoneGrowth() {
             if (role == CityRole::None) continue;
 
             ZoneStructure* pZone = dynamic_cast<ZoneStructure*>(pStruct);
-            // Non-zone city-role structures get a level-1 floor: they were
-            // hand-placed by the player, so they should immediately count as
-            // tier-1 supply instead of sitting at 0 jobs until residents
-            // (which can't move in without jobs) trigger them.
             const int level = pZone ? t->getCityZoneDensity()
                                     : std::max<int>(1, pStruct->getCityOccupancy());
             const int maxLevel = getStructureMaxLevel(itemID);
@@ -508,14 +522,11 @@ void CitySimulation::runZoneGrowth() {
                 getResidentialSupply(itemID, level),
                 getCommercialSupply (itemID, level),
                 getIndustrialSupply (itemID, level),
+                pZone == nullptr,
             });
         }
     }
 
-    // Track residents that haven't yet been "claimed" by a job. A C/I
-    // structure can only grow into level L if there's a free resident
-    // pool large enough — otherwise factories sitting next to nothing
-    // would magically staff up.
     int totalResidentialSupply = 0;
     int totalJobSupply = 0;
     for (const auto& n : nodes) {
@@ -524,14 +535,54 @@ void CitySimulation::runZoneGrowth() {
     }
     int freeResidents = std::max(0, totalResidentialSupply - totalJobSupply);
 
+    // ---- Compute RCI demand valves BEFORE the growth loop ----
+    // Uses the Micropolis-shaped employment/migration/births model with
+    // civic cap influence from Stadium/Palace/Airport/Starport.
+    {
+        int curRes = 0, curCom = 0, curInd = 0;
+        for (const auto& n : nodes) {
+            const int pop = getZonePopulation(n.pStruct->getItemID(), n.level);
+            switch (n.role) {
+                case CityRole::Residential: curRes += pop; break;
+                case CityRole::Commercial:  curCom += pop; break;
+                case CityRole::Industrial:  curInd += pop; break;
+                default: break;
+            }
+        }
+
+        ValveInputs vi;
+        vi.resPop = curRes;
+        vi.comPop = curCom;
+        vi.indPop = curInd;
+        vi.taxRate = cityTax_;
+        vi.hasStadium  = hasStadium_;
+        vi.hasPalace   = hasPalace_;
+        vi.hasAirport  = hasAirport_;
+        vi.hasStarport = hasStarport_;
+        vi.popThreshold = 2000;
+
+        const ValveOutputs vo = computeDemandValves(vi);
+        resValve_ = vo.resValve;
+        comValve_ = vo.comValve;
+        indValve_ = vo.indValve;
+    }
+
+    // Traffic connectivity engine (BFS along road network).
+    TrafficSimulation trafficSim;
+    trafficSim.init(this);
+
+    // Initialize growth rate map if needed.
+    if (growthRateMap_.getBlockSize() == 0 || mapWidth_ == 0) {
+        growthRateMap_.init(mapWidth_, mapHeight_, 2);
+    }
+
     for (auto& n : nodes) {
         const Coord pos = n.pStruct->getLocation();
         if (pos.isInvalid()) continue;
 
         const int targetLevel = n.level + 1;
 
-        // Local supply within kSupplyRadius — same Chebyshev radius for
-        // zones and non-zone city-role structures.
+        // Local supply within kSupplyRadius.
         int localComm = 0, localInd = 0, localRes = 0;
         for (const auto& s : nodes) {
             const int dist = std::max(std::abs(s.x - pos.x), std::abs(s.y - pos.y));
@@ -542,42 +593,81 @@ void CitySimulation::runZoneGrowth() {
         }
 
         const int landValue = landValueMap_.get(pos.x / bs, pos.y / bs);
+        const int pollution = pollutionDensityMap_.get(
+            pos.x / pollutionDensityMap_.getBlockSize(),
+            pos.y / pollutionDensityMap_.getBlockSize());
+        const int crime = crimeRateMap_.get(
+            pos.x / crimeRateMap_.getBlockSize(),
+            pos.y / crimeRateMap_.getBlockSize());
         const bool powered = n.pStruct->getOwner() &&
                              n.pStruct->getOwner()->getProducedPower() >=
                              n.pStruct->getOwner()->getPowerRequirement();
 
         bool grew = false;
-        // Stochastic growth, SimCity Classic style: each city day every
-        // eligible zone rolls. A 1-in-16 gate (halved from the original
-        // 1-in-8) — playtesting showed population was climbing too fast
-        // per in-game year, so growth needed to be nerfed by half. SC
-        // uses similar getRandom16()&7 gates inside doResidential/etc.;
-        // we run twice as slowly so a zone takes ~16 days on average to
-        // advance one density level (~a third of a city year). The
-        // L0→L1 bootstrap skips the gate so freshly zoned plots still
-        // show their first building quickly. The hash mixes the zone's
-        // position with the current day counter so growth is spread
-        // across days and stays deterministic for multiplayer.
+        bool declined = false;
+
+        // Traffic connectivity attempt: BFS along road network to find
+        // the complementary zone type. R->C, C->I, I->R.
+        TrafficResult traffic = TrafficResult::Connected;  // default for L0
+        if (n.level > 0) {
+            ZoneType destZone = ZoneType::None;
+            switch (n.role) {
+                case CityRole::Residential: destZone = ZoneType::Commercial;  break;
+                case CityRole::Commercial:  destZone = ZoneType::Industrial;  break;
+                case CityRole::Industrial:  destZone = ZoneType::Residential; break;
+                default: break;
+            }
+            if (destZone != ZoneType::None) {
+                const int trafResult = trafficSim.makeTraffic(pos.x, pos.y, destZone);
+                if (trafResult < 0)     traffic = TrafficResult::NoRoad;
+                else if (trafResult == 0) traffic = TrafficResult::NoDestination;
+                else                      traffic = TrafficResult::Connected;
+
+                // Successful traffic stamps density along all visited road
+                // tiles, matching SC's addToTrafficDensityMap() pattern.
+                if (traffic == TrafficResult::Connected) {
+                    const int tbs = trafficDensityMap_.getBlockSize();
+                    for (const auto& pt : trafficSim.getLastPath()) {
+                        const int tbx = pt.x / tbs;
+                        const int tby = pt.y / tbs;
+                        int tv = trafficDensityMap_.get(tbx, tby) + 50;
+                        if (tv > 240) tv = 240;  // SC cap
+                        trafficDensityMap_.set(tbx, tby, static_cast<uint8_t>(tv));
+                    }
+                }
+            }
+        }
+
+        // Zone score: globalValve + local evaluation (now includes traffic,
+        // pollution, crime, and land value per zone type).
+        const int valve = (n.role == CityRole::Residential) ? resValve_
+                        : (n.role == CityRole::Commercial)  ? comValve_
+                        :                                     indValve_;
+        int localEval = computeLocalEval(n.role, landValue, pollution,
+                                         crime, traffic);
+        // Commercial zones get supply-side and airport adjustments on top
+        // of the base local eval (spec Section D: commercial desirability).
+        if (n.role == CityRole::Commercial) {
+            localEval += computeCommercialRate(localRes, localInd, hasAirport_);
+        }
+        const int zscore = computeZscore(valve, localEval, powered);
+
+        // Stochastic growth gate: 1-in-16 chance per day.
+        // L0->L1 bootstrap skips the gate.
         const uint32_t roll = (static_cast<uint32_t>(pos.x) * 73u
                              + static_cast<uint32_t>(pos.y) * 149u
                              + lastProcessedDay_) % 16u;
-        const bool growthRolled = (n.level == 0) || (roll == 0);
-        if (powered && n.level < n.maxLevel && growthRolled) {
+        const bool pollutionBlocked = isPollutionBlockingGrowth(pollution, n.role, targetLevel);
+        const bool pollutionSlowed  = isPollutionSlowingGrowth(pollution, n.role);
+        const bool growthRolled = (n.level == 0)
+            || (roll == 0 && (!pollutionSlowed || (lastProcessedDay_ % 2u == 0)));
+
+        // --- Growth attempt: requires zscore above threshold ---
+        if (zscore > kZscoreGrowthGate && n.level < n.maxLevel
+            && growthRolled && !pollutionBlocked) {
             const int lvFloor = getDemandLandValueFloor(targetLevel);
             if (landValue >= lvFloor) {
                 bool meets = false;
-                // L0→L1 (empty lot → first building) bypasses the supply
-                // checks: there are no jobs/residents anywhere yet on a
-                // fresh placement, so requiring them would deadlock every
-                // zone at the empty-lot sprite forever.
-                //
-                // The freeResidents > 0 gate that used to live here for
-                // C/I growth turns out to deadlock the moment supplies
-                // balance: if total R supply == total C+I supply, neither
-                // C nor I can ever level up, even though SimCity would
-                // happily keep growing. Drop it and let density walk all
-                // the way to L3 as long as the local supply numbers meet
-                // the demand threshold.
                 const bool bootstrapping = (n.level == 0);
                 switch (n.role) {
                     case CityRole::Residential:
@@ -595,6 +685,12 @@ void CitySimulation::runZoneGrowth() {
                         break;
                     default: break;
                 }
+                // Transport gate: growth beyond level 1 requires road
+                // connectivity (not just adjacency). No road = no growth.
+                if (meets && !bootstrapping && traffic == TrafficResult::NoRoad) {
+                    meets = false;
+                }
+
                 if (meets) {
                     if (n.pZone) {
                         for (int dy = 0; dy < n.pZone->getStructureSizeY(); ++dy) {
@@ -609,7 +705,6 @@ void CitySimulation::runZoneGrowth() {
                     }
                     n.level = targetLevel;
                     if (n.role != CityRole::Residential) {
-                        // Consume residents claimed by this new C/I level
                         const int newSupply = (n.role == CityRole::Commercial)
                             ? getCommercialSupply (n.pStruct->getItemID(), targetLevel)
                             : getIndustrialSupply (n.pStruct->getItemID(), targetLevel);
@@ -618,39 +713,126 @@ void CitySimulation::runZoneGrowth() {
                         freeResidents = std::max(0, freeResidents - delta);
                     }
                     grew = true;
+
+                    // Update growth rate map.
+                    {
+                        const int gbs = growthRateMap_.getBlockSize();
+                        const int gbx = pos.x / gbs;
+                        const int gby = pos.y / gbs;
+                        int gr = growthRateMap_.get(gbx, gby) + kGrowthRateIncrement;
+                        if (gr > 127) gr = 127;
+                        growthRateMap_.set(gbx, gby, static_cast<int8_t>(gr));
+                    }
+
                     SDL_Log("[CitySim] %s GREW (%d,%d) item=%d %d->%d "
-                            "lv=%d localR=%d localC=%d localI=%d freeRes=%d",
+                            "zscore=%d valve=%d lv=%d poll=%d crime=%d traf=%d",
                             n.pZone ? "zone" : "bldg",
                             pos.x, pos.y, n.pStruct->getItemID(),
                             n.level - 1, n.level,
-                            landValue, localRes, localComm, localInd, freeResidents);
+                            zscore, valve, landValue, pollution, crime,
+                            static_cast<int>(traffic));
                 }
             }
         }
 
-        if (!grew && !powered && n.level > 1) {
-            const int newLevel = n.level - 1;
-            if (n.pZone) {
-                for (int dy = 0; dy < n.pZone->getStructureSizeY(); ++dy) {
-                    for (int dx = 0; dx < n.pZone->getStructureSizeX(); ++dx) {
-                        Tile* zt = currentGameMap->getTile(pos.x + dx, pos.y + dy);
-                        if (zt) zt->setCityZoneDensity(static_cast<uint8_t>(newLevel));
+        // --- Demand-based decline ---
+        // Non-zone Dune structures (Refinery, Silo, etc.) decline in
+        // occupancy but are never destroyed. Zones can go to L0 (vacant).
+        if (!grew && n.level > 0) {
+            const uint32_t declineRoll = (static_cast<uint32_t>(pos.x) * 97u
+                                        + static_cast<uint32_t>(pos.y) * 173u
+                                        + lastProcessedDay_) % 16u;
+            if (shouldZoneDecline(zscore, n.level, declineRoll)) {
+                // Non-zone Dune structures floor at level 1 (never destroyed).
+                const int floorLevel = n.isDuneStructure ? 1 : 0;
+                const int newLevel = std::max(floorLevel, n.level - 1);
+                if (newLevel < n.level) {
+                    if (n.pZone) {
+                        for (int dy = 0; dy < n.pZone->getStructureSizeY(); ++dy) {
+                            for (int dx = 0; dx < n.pZone->getStructureSizeX(); ++dx) {
+                                Tile* zt = currentGameMap->getTile(pos.x + dx, pos.y + dy);
+                                if (zt) zt->setCityZoneDensity(static_cast<uint8_t>(newLevel));
+                            }
+                        }
+                        n.pZone->refreshZonePowerDraw();
+                    } else {
+                        n.pStruct->setCityOccupancy(static_cast<uint8_t>(newLevel));
                     }
+                    n.level = newLevel;
+                    declined = true;
+
+                    // Update growth rate map (negative).
+                    {
+                        const int gbs = growthRateMap_.getBlockSize();
+                        const int gbx = pos.x / gbs;
+                        const int gby = pos.y / gbs;
+                        int gr = growthRateMap_.get(gbx, gby) + kGrowthRateDecrement;
+                        if (gr < -128) gr = -128;
+                        growthRateMap_.set(gbx, gby, static_cast<int8_t>(gr));
+                    }
+
+                    SDL_Log("[CitySim] %s DECLINED (%d,%d) item=%d %d->%d "
+                            "zscore=%d valve=%d lv=%d poll=%d crime=%d traf=%d (demand)",
+                            n.pZone ? "zone" : "bldg",
+                            pos.x, pos.y, n.pStruct->getItemID(),
+                            n.level + 1, n.level,
+                            zscore, valve, landValue, pollution, crime,
+                            static_cast<int>(traffic));
                 }
-                n.pZone->refreshZonePowerDraw();
-            } else {
-                n.pStruct->setCityOccupancy(static_cast<uint8_t>(newLevel));
             }
-            n.level = newLevel;
-            SDL_Log("[CitySim] %s DECLINED (%d,%d) item=%d %d->%d (power-starved)",
-                    n.pZone ? "zone" : "bldg",
-                    pos.x, pos.y, n.pStruct->getItemID(),
-                    n.level + 1, n.level);
+        }
+
+        // Power-starved decline: guaranteed drop when unpowered.
+        // Non-zone Dune structures floor at level 1.
+        if (!grew && !declined && !powered && n.level > 1) {
+            const int floorLevel = n.isDuneStructure ? 1 : 1;  // both floor at 1 for power
+            const int newLevel = std::max(floorLevel, n.level - 1);
+            if (newLevel < n.level) {
+                if (n.pZone) {
+                    for (int dy = 0; dy < n.pZone->getStructureSizeY(); ++dy) {
+                        for (int dx = 0; dx < n.pZone->getStructureSizeX(); ++dx) {
+                            Tile* zt = currentGameMap->getTile(pos.x + dx, pos.y + dy);
+                            if (zt) zt->setCityZoneDensity(static_cast<uint8_t>(newLevel));
+                        }
+                    }
+                    n.pZone->refreshZonePowerDraw();
+                } else {
+                    n.pStruct->setCityOccupancy(static_cast<uint8_t>(newLevel));
+                }
+                n.level = newLevel;
+                SDL_Log("[CitySim] %s DECLINED (%d,%d) item=%d %d->%d (power-starved)",
+                        n.pZone ? "zone" : "bldg",
+                        pos.x, pos.y, n.pStruct->getItemID(),
+                        n.level + 1, n.level);
+            }
         }
     }
 
-    // Recompute population totals from all city-role structures (zones +
-    // non-zone Refinery/Silo/Radar/etc., each at its current level).
+    // Traffic pollution: road blocks with heavy traffic density contribute
+    // pollution, closing SC's feedback loop where busy roads degrade nearby
+    // residential value. Applied after all BFS trips have stamped density.
+    {
+        const int tbs = trafficDensityMap_.getBlockSize();
+        const int pbs = pollutionDensityMap_.getBlockSize();
+        const int tw = (mapWidth_  + tbs - 1) / tbs;
+        const int th = (mapHeight_ + tbs - 1) / tbs;
+        for (int tby = 0; tby < th; ++tby) {
+            for (int tbx = 0; tbx < tw; ++tbx) {
+                const int tp = getTrafficPollution(trafficDensityMap_.get(tbx, tby));
+                if (tp <= 0) continue;
+                // Map traffic block coords to pollution block coords.
+                const int wx = tbx * tbs;
+                const int wy = tby * tbs;
+                const int pbx = wx / pbs;
+                const int pby = wy / pbs;
+                int p = pollutionDensityMap_.get(pbx, pby) + tp;
+                if (p > kMaxPollution) p = kMaxPollution;
+                pollutionDensityMap_.set(pbx, pby, static_cast<uint8_t>(p));
+            }
+        }
+    }
+
+    // Recompute population totals.
     int newRes = 0, newCom = 0, newInd = 0;
     for (const auto& n : nodes) {
         const int pop = getZonePopulation(n.pStruct->getItemID(), n.level);
@@ -669,25 +851,26 @@ void CitySimulation::runZoneGrowth() {
     resPop_ = newRes;
     comPop_ = newCom;
     indPop_ = newInd;
+}
 
-    // RCI demand valves. These mirror SimCity's RCI bar: positive means
-    // unmet demand (zones want to grow), negative means oversupply.
-    // We derive them from the simple supply/demand balance the rest of
-    // the sim already uses. Clamped to [-2000, +2000] like SC Classic.
-    auto clampValve = [](int v) -> int16_t {
-        if (v >  2000) v =  2000;
-        if (v < -2000) v = -2000;
-        return static_cast<int16_t>(v);
-    };
-    // Residential demand: more jobs than people => want more housing.
-    const int totalJobs = newCom + newInd;
-    resValve_ = clampValve((totalJobs - newRes) * 10);
-    // Commercial demand: residents need shops; oversupplied if many C
-    // jobs already exist.
-    comValve_ = clampValve((newRes - newCom * 2) * 10);
-    // Industrial demand: residents need raw work; oversupplied if many
-    // I jobs already exist.
-    indValve_ = clampValve((newRes - newInd * 2) * 10);
+void CitySimulation::decayGrowthRateMap() {
+    const int gbs = growthRateMap_.getBlockSize();
+    if (gbs <= 0) return;
+    const int gw = (mapWidth_  + gbs - 1) / gbs;
+    const int gh = (mapHeight_ + gbs - 1) / gbs;
+    for (int by = 0; by < gh; ++by) {
+        for (int bx = 0; bx < gw; ++bx) {
+            int v = growthRateMap_.get(bx, by);
+            if (v > 0) {
+                v -= kGrowthRateDecay;
+                if (v < 0) v = 0;
+            } else if (v < 0) {
+                v += kGrowthRateDecay;
+                if (v > 0) v = 0;
+            }
+            growthRateMap_.set(bx, by, static_cast<int8_t>(v));
+        }
+    }
 }
 
 void CitySimulation::runAnnualBudget() {

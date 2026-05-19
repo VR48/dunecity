@@ -32,11 +32,15 @@ public:
      */
     int makeTraffic(int x, int y, ZoneType destZone);
 
+    struct Pos { int x, y; };
+
+    /// Road tiles visited during the last successful makeTraffic call.
+    /// Empty if the last call returned NoRoad or NoDestination.
+    const std::vector<Pos>& getLastPath() const { return pathTiles_; }
+
 private:
     bool findPerimeterRoad(int zoneX, int zoneY, int& roadX, int& roadY) const;
     bool tryDrive(int startX, int startY, ZoneType destZone);
-
-    struct Pos { int x, y; };
 
     /**
      * Try to move from current position in a direction that isn't "lastDir".
@@ -50,6 +54,7 @@ private:
     CitySimulation* sim_ = nullptr;
 
     std::vector<Pos> driveStack_;
+    std::vector<Pos> pathTiles_;  ///< road tiles visited on last successful drive
     static constexpr int DX[4] = { 0, 1, 0, -1 };
     static constexpr int DY[4] = { -1, 0, 1, 0 };
 };

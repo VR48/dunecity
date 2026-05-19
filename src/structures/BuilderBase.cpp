@@ -36,6 +36,7 @@ const int BuilderBase::itemOrder[] = {    Structure_Slab4, Structure_Slab1, Stru
                                            Structure_Barracks, Structure_Wall, Structure_LightFactory,
                                            Structure_Silo, Structure_Radar, Structure_Refinery, Structure_WindTrap,
                                            Structure_NuclearPlant, Structure_PoliceStation, Structure_Palace,
+                                           Structure_Stadium, Structure_Airport,
                                            Structure_ZoneResidential, Structure_ZoneCommercial, Structure_ZoneIndustrial,
                                            Unit_SonicTank, Unit_Devastator, Unit_Deviator, Unit_Special,
                                            Unit_Launcher, Unit_SiegeTank, Unit_Tank, Unit_MCV, Unit_Harvester,
@@ -315,7 +316,9 @@ void BuilderBase::updateBuildList()
                               || itemID2Add == Structure_ZoneCommercial
                               || itemID2Add == Structure_ZoneIndustrial
                               || itemID2Add == Structure_Road
-                              || itemID2Add == Structure_PoliceStation);
+                              || itemID2Add == Structure_PoliceStation
+                              || itemID2Add == Structure_Stadium
+                              || itemID2Add == Structure_Airport);
         if (isCityOnly && !currentGame->isCitySimEnabled()) {
             removeItem(buildList, iter, itemID2Add);
             continue;

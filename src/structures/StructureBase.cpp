@@ -120,6 +120,11 @@ void StructureBase::assignToMap(const Coord& pos) {
             if(currentGameMap->tileExists(i, j)) {
                 Tile* pTile = currentGameMap->getTile(i,j);
                 pTile->assignNonInfantryGroundObject(getObjectID());
+                // Clear road flag when a structure is placed on a road tile,
+                // so the tile is no longer rendered/treated as a road.
+                if(pTile->isRoad()) {
+                    pTile->setRoad(false);
+                }
                 if(!pTile->isConcrete() && currentGame->getGameInitSettings().getGameOptions().concreteRequired && (currentGame->gameState != GameState::Start)) {
                     bFoundNonConcreteTile = true;
 

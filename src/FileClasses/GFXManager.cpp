@@ -125,6 +125,8 @@ static const Coord objPicTiles[] {
     { 16, 1 },  // ObjPic_CityRoad (16 connection variants, indexed by neighbor mask)
     { 8, 1 },   // ObjPic_NuclearPlant (8 frame slots for build-animation parity; all identical)
     { 4, 1 },   // ObjPic_PoliceStation (4 frame slots, all identical; 2x2 footprint)
+    { 4, 1 },   // ObjPic_Stadium (4 frame slots, all identical; 3x3 footprint)
+    { 4, 1 },   // ObjPic_Airport (4 frame slots, all identical; 3x3 footprint)
 };
 
 
@@ -503,7 +505,7 @@ GFXManager::GFXManager() {
             // rather than a black square.
             if (atlas) {
                 SDL_FillRect(atlas.get(), nullptr,
-                             SDL_MapRGBA(atlas->format, 63, 63, 63, 255));
+                             SDL_MapRGBA(atlas->format, 90, 90, 90, 255));
             }
 
             int roadsLoaded = 0;
@@ -558,8 +560,11 @@ GFXManager::GFXManager() {
                                 const bool isBluePure  = (cr == 0 && cg == 0 && cb == 230);
                                 const bool isGray      = (cr == 127 && cg == 127 && cb == 127);
                                 const bool isRed       = (cr == 255 && cg == 0 && cb == 0);
-                                if (isPeachCurb || isGrass || isBlueCond || isBluePure || isGray || isRed) {
-                                    *px = SDL_MapRGBA(rgba->format, 63, 63, 63, 255);
+                                // Also catch brownish terrain pixels that leak
+                                // through on some Micropolis road tiles.
+                                const bool isBrown = (cr > 120 && cg < cr && cb < cg);
+                                if (isPeachCurb || isGrass || isBlueCond || isBluePure || isGray || isRed || isBrown) {
+                                    *px = SDL_MapRGBA(rgba->format, 90, 90, 90, 255);
                                 } else if (isLightMark) {
                                     *px = SDL_MapRGBA(rgba->format, 255, 255, 255, 255);
                                 } else if (isBlack) {
@@ -833,7 +838,178 @@ GFXManager::GFXManager() {
                 SDL_Log("Police station sprite not found at imported_sprites/micropolis/composites_2x2/police_station_2x2.png");
             }
         }
+
+    // ----- DuneCity stadium sprite -----
+    // Stadium is a 3x3 footprint civic building. Source art is the
+    // Micropolis 4x4 stadium composite (64×64) scaled to 48×48.
+    {
+        std::vector<std::string> stadiumDirs = {
+            getDuneLegacyDataDir() + "imported_sprites/micropolis/composites_special/",
+            binDir + "imported_sprites/micropolis/composites_special/",
+            binDir + "../../imported_sprites/micropolis/composites_special/",
+            binDir + "../../../../../imported_sprites/micropolis/composites_special/",
+        };
+        if (srcDirEnv && srcDirEnv[0]) {
+            std::string srcDir = srcDirEnv;
+            if (srcDir.back() != '/' && srcDir.back() != '\\') srcDir += '/';
+            stadiumDirs.push_back(srcDir + "imported_sprites/micropolis/composites_special/");
+        }
+
+        const int frameW = 3 * D2_TILESIZE;
+        const int frameH = 3 * D2_TILESIZE;
+        const int numFrames = 4;
+        sdl2::surface_ptr atlas{ SDL_CreateRGBSurface(0, numFrames * frameW, frameH,
+            SCREEN_BPP, RMASK, GMASK, BMASK, AMASK) };
+        if (atlas) SDL_FillRect(atlas.get(), nullptr, SDL_MapRGBA(atlas->format, 0, 0, 0, 0));
+
+        sdl2::surface_ptr stadiumSrc;
+        for (const auto& dir : stadiumDirs) {
+            // Prefer the "full" stadium (animated/occupied look)
+            std::string path = dir + "stadium_full_4x4.png";
+            auto rwops = sdl2::RWops_ptr{ SDL_RWFromFile(path.c_str(), "rb") };
+            if (rwops) {
+                stadiumSrc = LoadPNG_RW(rwops.get());
+                if (stadiumSrc) { SDL_Log("Loaded stadium sprite from: %s", path.c_str()); break; }
+            }
+            path = dir + "stadium_4x4.png";
+            rwops = sdl2::RWops_ptr{ SDL_RWFromFile(path.c_str(), "rb") };
+            if (rwops) {
+                stadiumSrc = LoadPNG_RW(rwops.get());
+                if (stadiumSrc) { SDL_Log("Loaded stadium sprite from: %s", path.c_str()); break; }
+            }
+        }
+
+        if (atlas && stadiumSrc) {
+            SDL_SetSurfaceBlendMode(stadiumSrc.get(), SDL_BLENDMODE_NONE);
+            for (int f = 0; f < numFrames; ++f) {
+                SDL_Rect dst = { f * frameW, 0, frameW, frameH };
+                SDL_BlitScaled(stadiumSrc.get(), nullptr, atlas.get(), &dst);
+            }
+            objPic[ObjPic_Stadium][HOUSE_HARKONNEN][0] = std::move(atlas);
+            objPic[ObjPic_Stadium][HOUSE_HARKONNEN][1] = scaleRGBASurface(objPic[ObjPic_Stadium][HOUSE_HARKONNEN][0].get(), 2);
+            objPic[ObjPic_Stadium][HOUSE_HARKONNEN][2] = scaleRGBASurface(objPic[ObjPic_Stadium][HOUSE_HARKONNEN][0].get(), 3);
+            for (int h = 1; h < NUM_HOUSES; h++) {
+                for (int z = 0; z < NUM_ZOOMLEVEL; z++) {
+                    if (objPic[ObjPic_Stadium][HOUSE_HARKONNEN][z]) {
+                        objPic[ObjPic_Stadium][h][z] = sdl2::surface_ptr{
+                            SDL_ConvertSurface(objPic[ObjPic_Stadium][HOUSE_HARKONNEN][z].get(),
+                                               objPic[ObjPic_Stadium][HOUSE_HARKONNEN][z]->format, 0)
+                        };
+                    }
+                }
+            }
+        } else {
+            SDL_Log("Stadium sprite not found; Stadium will fall back to Palace art");
+            SDL_Surface* fallback = objPic[ObjPic_Palace][HOUSE_HARKONNEN][0].get();
+            if (atlas && fallback) {
+                const int fbFrames = objPicTiles[ObjPic_Palace].x;
+                const int fbFrameW = fallback->w / fbFrames;
+                const int fbFrameH = fallback->h / objPicTiles[ObjPic_Palace].y;
+                for (int f = 0; f < numFrames; ++f) {
+                    int sourceFrame = f % fbFrames;
+                    SDL_Rect src = { sourceFrame * fbFrameW, 0, fbFrameW, fbFrameH };
+                    SDL_Rect dst = { f * frameW, 0, frameW, frameH };
+                    SDL_BlitScaled(fallback, &src, atlas.get(), &dst);
+                }
+                objPic[ObjPic_Stadium][HOUSE_HARKONNEN][0] = std::move(atlas);
+                objPic[ObjPic_Stadium][HOUSE_HARKONNEN][1] = scaleRGBASurface(objPic[ObjPic_Stadium][HOUSE_HARKONNEN][0].get(), 2);
+                objPic[ObjPic_Stadium][HOUSE_HARKONNEN][2] = scaleRGBASurface(objPic[ObjPic_Stadium][HOUSE_HARKONNEN][0].get(), 3);
+                for (int h = 1; h < NUM_HOUSES; h++) {
+                    for (int z = 0; z < NUM_ZOOMLEVEL; z++) {
+                        if (objPic[ObjPic_Stadium][HOUSE_HARKONNEN][z]) {
+                            objPic[ObjPic_Stadium][h][z] = sdl2::surface_ptr{
+                                SDL_ConvertSurface(objPic[ObjPic_Stadium][HOUSE_HARKONNEN][z].get(),
+                                                   objPic[ObjPic_Stadium][HOUSE_HARKONNEN][z]->format, 0)
+                            };
+                        }
+                    }
+                }
+            }
+        }
     }
+
+    // ----- DuneCity airport sprite -----
+    // Airport is a 3x3 footprint economic building. Source art is the
+    // Micropolis 6x6 airport composite (96×96) scaled to 48×48.
+    {
+        std::vector<std::string> airportDirs = {
+            getDuneLegacyDataDir() + "imported_sprites/micropolis/composites_special/",
+            binDir + "imported_sprites/micropolis/composites_special/",
+            binDir + "../../imported_sprites/micropolis/composites_special/",
+            binDir + "../../../../../imported_sprites/micropolis/composites_special/",
+        };
+        if (srcDirEnv && srcDirEnv[0]) {
+            std::string srcDir = srcDirEnv;
+            if (srcDir.back() != '/' && srcDir.back() != '\\') srcDir += '/';
+            airportDirs.push_back(srcDir + "imported_sprites/micropolis/composites_special/");
+        }
+
+        const int frameW = 3 * D2_TILESIZE;
+        const int frameH = 3 * D2_TILESIZE;
+        const int numFrames = 4;
+        sdl2::surface_ptr atlas{ SDL_CreateRGBSurface(0, numFrames * frameW, frameH,
+            SCREEN_BPP, RMASK, GMASK, BMASK, AMASK) };
+        if (atlas) SDL_FillRect(atlas.get(), nullptr, SDL_MapRGBA(atlas->format, 0, 0, 0, 0));
+
+        sdl2::surface_ptr airportSrc;
+        for (const auto& dir : airportDirs) {
+            std::string path = dir + "airport_6x6.png";
+            auto rwops = sdl2::RWops_ptr{ SDL_RWFromFile(path.c_str(), "rb") };
+            if (rwops) {
+                airportSrc = LoadPNG_RW(rwops.get());
+                if (airportSrc) { SDL_Log("Loaded airport sprite from: %s", path.c_str()); break; }
+            }
+        }
+
+        if (atlas && airportSrc) {
+            SDL_SetSurfaceBlendMode(airportSrc.get(), SDL_BLENDMODE_NONE);
+            for (int f = 0; f < numFrames; ++f) {
+                SDL_Rect dst = { f * frameW, 0, frameW, frameH };
+                SDL_BlitScaled(airportSrc.get(), nullptr, atlas.get(), &dst);
+            }
+            objPic[ObjPic_Airport][HOUSE_HARKONNEN][0] = std::move(atlas);
+            objPic[ObjPic_Airport][HOUSE_HARKONNEN][1] = scaleRGBASurface(objPic[ObjPic_Airport][HOUSE_HARKONNEN][0].get(), 2);
+            objPic[ObjPic_Airport][HOUSE_HARKONNEN][2] = scaleRGBASurface(objPic[ObjPic_Airport][HOUSE_HARKONNEN][0].get(), 3);
+            for (int h = 1; h < NUM_HOUSES; h++) {
+                for (int z = 0; z < NUM_ZOOMLEVEL; z++) {
+                    if (objPic[ObjPic_Airport][HOUSE_HARKONNEN][z]) {
+                        objPic[ObjPic_Airport][h][z] = sdl2::surface_ptr{
+                            SDL_ConvertSurface(objPic[ObjPic_Airport][HOUSE_HARKONNEN][z].get(),
+                                               objPic[ObjPic_Airport][HOUSE_HARKONNEN][z]->format, 0)
+                        };
+                    }
+                }
+            }
+        } else {
+            SDL_Log("Airport sprite not found; Airport will fall back to Starport art");
+            SDL_Surface* fallback = objPic[ObjPic_Starport][HOUSE_HARKONNEN][0].get();
+            if (atlas && fallback) {
+                const int fbFrames = objPicTiles[ObjPic_Starport].x;
+                const int fbFrameW = fallback->w / fbFrames;
+                const int fbFrameH = fallback->h / objPicTiles[ObjPic_Starport].y;
+                for (int f = 0; f < numFrames; ++f) {
+                    int sourceFrame = f % fbFrames;
+                    SDL_Rect src = { sourceFrame * fbFrameW, 0, fbFrameW, fbFrameH };
+                    SDL_Rect dst = { f * frameW, 0, frameW, frameH };
+                    SDL_BlitScaled(fallback, &src, atlas.get(), &dst);
+                }
+                objPic[ObjPic_Airport][HOUSE_HARKONNEN][0] = std::move(atlas);
+                objPic[ObjPic_Airport][HOUSE_HARKONNEN][1] = scaleRGBASurface(objPic[ObjPic_Airport][HOUSE_HARKONNEN][0].get(), 2);
+                objPic[ObjPic_Airport][HOUSE_HARKONNEN][2] = scaleRGBASurface(objPic[ObjPic_Airport][HOUSE_HARKONNEN][0].get(), 3);
+                for (int h = 1; h < NUM_HOUSES; h++) {
+                    for (int z = 0; z < NUM_ZOOMLEVEL; z++) {
+                        if (objPic[ObjPic_Airport][HOUSE_HARKONNEN][z]) {
+                            objPic[ObjPic_Airport][h][z] = sdl2::surface_ptr{
+                                SDL_ConvertSurface(objPic[ObjPic_Airport][HOUSE_HARKONNEN][z].get(),
+                                                   objPic[ObjPic_Airport][HOUSE_HARKONNEN][z]->format, 0)
+                            };
+                        }
+                    }
+                }
+            }
+        }
+    }
+    } // end city-sprite loading scope (binDir, srcDirEnv, scaleRGBASurface)
 
     objPic[ObjPic_Bullet_SmallRocket][HOUSE_HARKONNEN][0] = units->getPictureArray(16,1,ROCKET_ROW(35));
     objPic[ObjPic_Bullet_MediumRocket][HOUSE_HARKONNEN][0] = units->getPictureArray(16,1,ROCKET_ROW(20));
@@ -892,6 +1068,8 @@ GFXManager::GFXManager() {
                                      || id == ObjPic_CityRoad
                                      || id == ObjPic_NuclearPlant
                                      || id == ObjPic_PoliceStation
+                                     || id == ObjPic_Stadium
+                                     || id == ObjPic_Airport
                                      || id == ObjPic_Star);
 
         for(int h = 0; h < (int) NUM_HOUSES; h++) {
@@ -1035,7 +1213,7 @@ GFXManager::GFXManager() {
         SDL_Surface* roadAtlas = objPic[ObjPic_CityRoad][HOUSE_HARKONNEN][0].get();
         if (roadAtlas) {
             const int crossFrame = 15;  // four-way intersection — most "road"-looking glyph
-            sdl2::surface_ptr crossTile = getSubPicture(roadAtlas, crossFrame * TILESIZE, 0, TILESIZE, TILESIZE);
+            sdl2::surface_ptr crossTile = getSubPicture(roadAtlas, crossFrame * D2_TILESIZE, 0, D2_TILESIZE, D2_TILESIZE);
             if (crossTile) {
                 sdl2::surface_ptr canvas{ SDL_CreateRGBSurface(0, 91, 55,
                     SCREEN_BPP, RMASK, GMASK, BMASK, AMASK) };
@@ -1068,6 +1246,52 @@ GFXManager::GFXManager() {
         smallDetailPicTex[Picture_Road]        = extractSmallDetailPic("SLAB.WSA");
     }
     smallDetailPicTex[Picture_PowerLine]       = extractSmallDetailPic("SLAB.WSA");
+
+    // Nuclear plant, police, stadium, airport build-menu icons — pull
+    // first frame from their Micropolis atlases so they're recognizable.
+    {
+        auto makeStructDetailPic = [&](int objPicID, int frameW, int frameH) -> sdl2::texture_ptr {
+            SDL_Surface* src = objPic[objPicID][HOUSE_HARKONNEN][0].get();
+            if (!src) return sdl2::texture_ptr{};
+            sdl2::surface_ptr cell = getSubPicture(src, 0, 0, frameW, frameH);
+            if (!cell) return sdl2::texture_ptr{};
+            sdl2::surface_ptr canvas{ SDL_CreateRGBSurface(0, 91, 55,
+                SCREEN_BPP, RMASK, GMASK, BMASK, AMASK) };
+            if (!canvas) return sdl2::texture_ptr{};
+            SDL_FillRect(canvas.get(), nullptr, SDL_MapRGBA(canvas->format, 0, 0, 0, 0));
+            const int leftGutter = 16, bottomGutter = 14, topMargin = 2, rightMargin = 4;
+            const int usableW = 91 - leftGutter - rightMargin;
+            const int usableH = 55 - topMargin - bottomGutter;
+            float scale = std::min(static_cast<float>(usableW) / frameW,
+                                   static_cast<float>(usableH) / frameH);
+            if (scale > 1.5f) scale = 1.5f;
+            int destW = static_cast<int>(frameW * scale);
+            int destH = static_cast<int>(frameH * scale);
+            int destX = leftGutter + (usableW - destW) / 2;
+            int destY = topMargin  + (usableH - destH) / 2;
+            SDL_Rect destRect = { destX, destY, destW, destH };
+            SDL_SetSurfaceBlendMode(cell.get(), SDL_BLENDMODE_NONE);
+            SDL_BlitScaled(cell.get(), nullptr, canvas.get(), &destRect);
+            auto tex = convertSurfaceToTexture(canvas.get());
+            if (tex) SDL_SetTextureBlendMode(tex.get(), SDL_BLENDMODE_BLEND);
+            return tex;
+        };
+        auto nucTex = makeStructDetailPic(ObjPic_NuclearPlant, 3 * D2_TILESIZE, 3 * D2_TILESIZE);
+        if (nucTex) smallDetailPicTex[Picture_NuclearPlant] = std::move(nucTex);
+        else        smallDetailPicTex[Picture_NuclearPlant] = extractSmallDetailPic("HTEC.WSA");
+
+        auto polTex = makeStructDetailPic(ObjPic_PoliceStation, 2 * D2_TILESIZE, 2 * D2_TILESIZE);
+        if (polTex) smallDetailPicTex[Picture_PoliceStation] = std::move(polTex);
+        else        smallDetailPicTex[Picture_PoliceStation] = extractSmallDetailPic("BARRAC.WSA");
+
+        auto stadTex = makeStructDetailPic(ObjPic_Stadium, 3 * D2_TILESIZE, 3 * D2_TILESIZE);
+        if (stadTex) smallDetailPicTex[Picture_Stadium] = std::move(stadTex);
+        else         smallDetailPicTex[Picture_Stadium] = extractSmallDetailPic("PALACE.WSA");
+
+        auto airTex = makeStructDetailPic(ObjPic_Airport, 3 * D2_TILESIZE, 3 * D2_TILESIZE);
+        if (airTex) smallDetailPicTex[Picture_Airport] = std::move(airTex);
+        else        smallDetailPicTex[Picture_Airport] = extractSmallDetailPic("STARPORT.WSA");
+    }
 
     // unused: FARTR.WSA, FHARK.WSA, FORDOS.WSA
 
@@ -1664,6 +1888,7 @@ SDL_Texture* GFXManager::getZoomedObjPic(unsigned int id, int house, unsigned in
         if(id == ObjPic_ZoneResidential || id == ObjPic_ZoneCommercial
            || id == ObjPic_ZoneIndustrial || id == ObjPic_CityRoad
            || id == ObjPic_NuclearPlant || id == ObjPic_PoliceStation
+           || id == ObjPic_Stadium || id == ObjPic_Airport
            || id == ObjPic_Star) {
             if(objPicTex[id][house][z]) {
                 SDL_SetTextureBlendMode(objPicTex[id][house][z].get(), SDL_BLENDMODE_BLEND);

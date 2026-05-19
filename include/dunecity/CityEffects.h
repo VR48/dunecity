@@ -3,6 +3,10 @@
 
 #include <data.h>
 
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+
 namespace DuneCity {
 
 // =============================================================================
@@ -185,8 +189,10 @@ inline int getPollutionEmission(int itemID, int level) {
     if (level > 3) level = 3;
     if (getStructureCityRole(itemID) != CityRole::Industrial) return 0;
 
-    // Per spec: WindTrap, Nuclear, Starport, all civic/commercial,
-    // and all defensive structures emit zero (handled by the role check).
+    // Starport is Industrial for jobs/demand but does not pollute (it's a
+    // trade hub, not a factory). Per spec override.
+    if (itemID == Structure_StarPort) return 0;
+
     // Industrial pollution scales with level: 10 / 25 / 50.
     static constexpr int kIndustrialPollution[3] = { 10, 25, 50 };
     return kIndustrialPollution[level - 1];
@@ -482,6 +488,316 @@ inline int getZonePopulation(int itemID, int level) {
         default:                    return 0;
     }
 }
+
+// --- Traffic connectivity result ---------------------------------------------
+
+enum class TrafficResult {
+    NoRoad,          // no perimeter road found around the structure
+    NoDestination,   // road found but cannot reach the needed complementary zone
+    Connected,       // reachable destination found via road network
+};
+
+/// Maximum BFS distance (in road tiles) for a traffic attempt.
+/// Micropolis uses MAX_TRAFFIC_DISTANCE = 30; we use 20 for smaller maps.
+constexpr int kMaxTrafficDistance = 20;
+
+// --- Zone score for growth/decline decisions ---------------------------------
+//
+// SimCity Classic computes zscore = globalValve + localEval per zone.
+// Growth requires zscore > -350; decline is likely when zscore < 350.
+// When unpowered, zscore = -500 (hard-coded in SC). DuneCity ports these
+// semantics so that negative RCI demand valves actively suppress growth
+// and trigger residential shrink.
+
+/// Zone-score threshold above which growth attempts are allowed.
+/// SimCity Classic uses -350 (doResidential guard in zone.cpp).
+constexpr int kZscoreGrowthGate  = -350;
+
+/// Zone-score threshold below which decline can trigger.
+/// SimCity Classic: decline roll starts when zscore < 350.
+constexpr int kZscoreDeclineGate = 350;
+
+/// Local zone evaluation inspired by SimCity's evalRes/evalCom/evalInd.
+/// Now consumes traffic connectivity result alongside land value, pollution,
+/// and crime. Each zone type weights these inputs differently:
+///
+/// Residential: high sensitivity to pollution and crime, needs traffic to
+///   commercial, land value helps. evalRes = clamp((lv - poll)*32, 0, 6000)
+///   - 3000; traffic failure = -3000. Scaled down by /4 for DuneCity's
+///   +-2000 valve range.
+///
+/// Commercial: land value and traffic to industrial matter, crime hurts,
+///   pollution hurts moderately. Uses comRate-style calculation.
+///
+/// Industrial: traffic to residential dominates, pollution is output not
+///   blocker, local conditions mostly irrelevant.
+inline int computeLocalEval(CityRole role, int landValue, int pollution,
+                            int crime, TrafficResult traffic) {
+    switch (role) {
+        case CityRole::Residential: {
+            // SC evalRes: clamp((lv - poll) * 32, 0, 6000) - 3000
+            // Scale /4 to fit DuneCity's valve range: max +750, min -750
+            int raw = (landValue - pollution) * 32;
+            if (raw < 0)    raw = 0;
+            if (raw > 6000) raw = 6000;
+            int v = (raw - 3000) / 4;
+            // Crime penalty: high crime areas are undesirable for residents
+            if (crime > 150) v -= 200;
+            else if (crime > 100) v -= 100;
+            // Traffic: no road = moderate penalty, no destination = large
+            if (traffic == TrafficResult::NoRoad) v -= 300;
+            else if (traffic == TrafficResult::NoDestination) v -= 600;
+            return v;
+        }
+        case CityRole::Commercial: {
+            // Commercial values: land value, connectivity, low crime
+            int v = landValue * 2;
+            if (crime > 120) v -= 150;
+            else if (crime > 80) v -= 75;
+            // Pollution hurts moderately (less than residential)
+            if (pollution > 100) v -= 100;
+            else if (pollution > 50) v -= 50;
+            // Traffic to industrial is important
+            if (traffic == TrafficResult::NoRoad) v -= 200;
+            else if (traffic == TrafficResult::NoDestination) v -= 400;
+            return v;
+        }
+        case CityRole::Industrial: {
+            // Industrial: traffic to residential dominates
+            // Pollution is output, not a self-blocker
+            int v = 0;
+            if (traffic == TrafficResult::NoRoad) v -= 200;
+            else if (traffic == TrafficResult::NoDestination) v -= 300;
+            return v;
+        }
+        default:
+            return 0;
+    }
+}
+
+/// Commercial-rate adjustment: adjusts the base commercial local eval
+/// with supply-side and infrastructure factors not available to the pure
+/// local-eval function. Matches the spec's "computeCommercialRate(node)"
+/// helper (Section D).
+///
+/// nearbyRes: residential supply within kSupplyRadius
+/// nearbyInd: industrial supply within kSupplyRadius
+/// hasAirport: whether an Airport exists in the city
+///
+/// Returns an additive adjustment to the commercial zscore.
+inline int computeCommercialRate(int nearbyRes, int nearbyInd, bool hasAirport) {
+    int adj = 0;
+    // Commercial zones thrive near residential population (customers)
+    // and industrial output (goods to sell). Each 10 supply adds +10.
+    adj += std::min(200, nearbyRes);
+    adj += std::min(100, nearbyInd / 2);
+    // Airport unlocks trade capacity — flat bonus when present.
+    if (hasAirport) adj += 100;
+    return adj;
+}
+
+/// Backward-compatible overload for tests that don't supply traffic/crime.
+inline int computeLocalEval(CityRole role, int landValue, int pollution,
+                            bool hasRoad) {
+    TrafficResult tr = hasRoad ? TrafficResult::Connected : TrafficResult::NoRoad;
+    return computeLocalEval(role, landValue, pollution, 0, tr);
+}
+
+/// Compute the zone score for growth/decline decisions.
+/// zscore = globalValve + localEval; if unpowered, returns -500.
+inline int computeZscore(int globalValve, int localEval, bool powered) {
+    if (!powered) return -500;
+    return globalValve + localEval;
+}
+
+/// Determine if a zone should decline based on its zscore and current level.
+/// The roll parameter should be a deterministic hash in [0, 16).
+///
+/// Probability tiers (per tick):
+///   zscore <= -1000: 25% (roll < 4)
+///   zscore <= -500:  12.5% (roll < 2)
+///   zscore < 0:      6.25% (roll == 0)
+///   zscore in [0, kZscoreDeclineGate): no decline (buffer zone)
+///
+/// L1->L0 (back to vacant) only fires when zscore <= -1500, avoiding
+/// flicker on freshly placed zones during the bootstrap grace period.
+inline bool shouldZoneDecline(int zscore, int level, uint32_t roll) {
+    if (level <= 0) return false;
+    if (zscore >= kZscoreDeclineGate) return false;
+
+    bool decline = false;
+    if      (zscore <= -1000) decline = (roll < 4);   // 25%
+    else if (zscore <= -500)  decline = (roll < 2);   // 12.5%
+    else if (zscore < 0)      decline = (roll == 0);  // 6.25%
+
+    // Protect L1 from declining to vacant unless conditions are extreme.
+    if (decline && level == 1 && zscore > -1500) decline = false;
+
+    return decline;
+}
+
+// --- Micropolis-shaped demand valve computation ------------------------------
+//
+// SimCity Classic's setValves() derives demand from employment, migration,
+// births, labour base, internal/external market, and tax. DuneCity adapts
+// this for its smaller maps and slower cadence.
+
+/// Micropolis tax table (21 entries, indexed by min(cityTax + gameLevel, 20)).
+/// Values range from 200 (low tax) to -600 (high tax). Source: simulate.cpp.
+inline int getTaxTableEntry(int taxRate) {
+    static constexpr int kTaxTable[21] = {
+        200, 150, 120, 100, 80, 50, 30, 0, -10, -40,
+        -100, -150, -200, -250, -300, -350, -400, -450, -500, -550, -600
+    };
+    if (taxRate < 0) taxRate = 0;
+    if (taxRate > 20) taxRate = 20;
+    return kTaxTable[taxRate];
+}
+
+/// Compute RCI demand valves from population state, matching Micropolis'
+/// setValves() shape. Returns valves clamped to [-2000, 2000].
+///
+/// resPop/comPop/indPop: current population counts (from zone scan)
+/// taxRate: city tax percentage (0-20)
+/// hasStadium/hasPalace/hasAirport/hasStarport: civic building presence
+/// popThreshold: population above which missing civics caps positive demand
+struct ValveInputs {
+    int resPop = 0;
+    int comPop = 0;
+    int indPop = 0;
+    int taxRate = 7;
+    bool hasStadium = false;
+    bool hasPalace  = false;
+    bool hasAirport = false;
+    bool hasStarport = false;
+    int popThreshold = 2000;  // when civic caps start mattering
+};
+
+struct ValveOutputs {
+    int16_t resValve = 0;
+    int16_t comValve = 0;
+    int16_t indValve = 0;
+};
+
+inline ValveOutputs computeDemandValves(const ValveInputs& in) {
+    auto clampValve = [](int v) -> int16_t {
+        if (v >  2000) v =  2000;
+        if (v < -2000) v = -2000;
+        return static_cast<int16_t>(v);
+    };
+
+    const int totalPop = in.resPop + in.comPop + in.indPop;
+
+    // Bootstrap: empty or near-empty city gets small positive R demand to
+    // attract initial settlers. Without this the employment/migration formula
+    // produces negative demand for a city that doesn't exist yet.
+    if (totalPop < 100) {
+        const int taxAdj = getTaxTableEntry(in.taxRate);
+        return { clampValve(200 + taxAdj),
+                 clampValve(100 + taxAdj),
+                 clampValve(100 + taxAdj) };
+    }
+
+    // Normalize residential population (SC uses /8)
+    const double normResPop = std::max(1.0, static_cast<double>(in.resPop) / 8.0);
+
+    // Employment ratio: jobs / normalized residents
+    const double totalJobs = static_cast<double>(in.comPop + in.indPop);
+    const double employment = totalJobs / normResPop;
+
+    // Migration and births (SC model)
+    const double migration = normResPop * (employment - 1.0);
+    const double births = normResPop * 0.02;
+    const double projectedResPop = normResPop + migration + births;
+
+    // Labour base (capped at 1.3)
+    double laborBase = 1.0;
+    if (totalJobs > 0) {
+        laborBase = static_cast<double>(in.resPop) / totalJobs;
+        if (laborBase > 1.3) laborBase = 1.3;
+        if (laborBase < 0.0) laborBase = 0.0;
+    }
+
+    // Internal market
+    const double internalMarket = (normResPop + in.comPop + in.indPop) / 3.7;
+
+    // Projected populations
+    const double projectedComPop = internalMarket * laborBase;
+    const double projectedIndPop = std::max(5.0, static_cast<double>(in.indPop)) * laborBase;
+
+    // Growth ratios (clamped to max 2.0)
+    double resRatio = (normResPop > 0) ? projectedResPop / normResPop : 1.0;
+    double comRatio = (in.comPop > 0) ? projectedComPop / in.comPop : 1.0;
+    double indRatio = (in.indPop > 0) ? projectedIndPop / in.indPop : 1.0;
+    if (resRatio > 2.0) resRatio = 2.0;
+    if (comRatio > 2.0) comRatio = 2.0;
+    if (indRatio > 2.0) indRatio = 2.0;
+
+    // Tax adjustment. Multiplier is 1500 (not SC's 600) because DuneCity
+    // computes valves fresh each tick rather than accumulating like SC.
+    // SC accumulates over many cycles; we need a single computation to
+    // produce a valve strong enough that extreme imbalance (R >> C+I)
+    // overcomes max local eval (+750) and stays below growth gate (-350).
+    // Requires M > 1342 for the 10k-R/100-C/100-I invariant.
+    const int taxAdj = getTaxTableEntry(in.taxRate);
+    int resRaw = static_cast<int>((resRatio - 1.0) * 1500.0) + taxAdj;
+    int comRaw = static_cast<int>((comRatio - 1.0) * 1500.0) + taxAdj;
+    int indRaw = static_cast<int>((indRatio - 1.0) * 1500.0) + taxAdj;
+
+    // Civic caps: when population exceeds threshold and civic building is
+    // missing, clamp positive demand to a soft ceiling. This makes Stadium,
+    // Airport, and Starport matter for growth without hard-blocking.
+    constexpr int kCivicCapCeiling = 200;  // soft cap when civic missing
+
+    if (in.resPop > in.popThreshold) {
+        if (!in.hasStadium && !in.hasPalace && resRaw > kCivicCapCeiling) {
+            resRaw = kCivicCapCeiling;
+        }
+    }
+    if (in.comPop > in.popThreshold / 2) {
+        if (!in.hasAirport && comRaw > kCivicCapCeiling) {
+            comRaw = kCivicCapCeiling;
+        }
+    }
+    if (in.indPop > in.popThreshold / 2) {
+        if (!in.hasStarport && indRaw > kCivicCapCeiling) {
+            indRaw = kCivicCapCeiling;
+        }
+    }
+
+    return { clampValve(resRaw), clampValve(comRaw), clampValve(indRaw) };
+}
+
+// --- Traffic pollution -------------------------------------------------------
+//
+// SC Classic's traffic density feeds into the pollution scan: road segments
+// with heavy traffic contribute pollution proportional to density. Light
+// traffic (density < threshold) contributes a small amount; heavy traffic
+// (density >= threshold) contributes more. This closes the feedback loop:
+// zones that generate traffic also generate pollution along the roads they
+// use, penalizing dense residential areas near busy corridors.
+
+constexpr int kTrafficPollutionLightThreshold = 64;   // density >= this → light traffic pollution
+constexpr int kTrafficPollutionHeavyThreshold = 150;  // density >= this → heavy traffic pollution
+constexpr int kTrafficPollutionLight = 2;   // per-block pollution contribution from light traffic
+constexpr int kTrafficPollutionHeavy = 6;   // per-block pollution contribution from heavy traffic
+
+/// Compute traffic pollution contribution for a block given its traffic density.
+inline int getTrafficPollution(int trafficDensity) {
+    if (trafficDensity >= kTrafficPollutionHeavyThreshold) return kTrafficPollutionHeavy;
+    if (trafficDensity >= kTrafficPollutionLightThreshold) return kTrafficPollutionLight;
+    return 0;
+}
+
+// --- Growth rate tracking ----------------------------------------------------
+
+/// Growth-rate delta to apply when a zone grows or declines. Positive for
+/// growth, negative for decline. The rate map decays toward zero each scan.
+constexpr int kGrowthRateIncrement = 4;
+constexpr int kGrowthRateDecrement = -4;
+
+/// Decay amount subtracted from absolute growth rate each city day.
+constexpr int kGrowthRateDecay = 1;
 
 // --- Tax / city-year cadence -------------------------------------------------
 

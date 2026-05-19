@@ -91,6 +91,22 @@ cmake --build build --target dunelegacy_tests
 ./build/tests/dunelegacy_tests
 ```
 
+For every Claude implementation run that changes gameplay, UI, assets, config,
+or release/version behaviour, leave a locally built version in Stefan's dev
+checkout before reporting completion:
+
+```bash
+cd /Users/stefanclaw/development/dunecity
+cmake --build build --target dunelegacy
+open build/bin/dunecity.app
+```
+
+The `open` command is optional and only for manual smoke testing; the required
+deliverable is that `build/bin/dunecity.app` is rebuilt in the dev folder so
+Stefan can launch it. If the local build tree is stale or the target names have
+drifted, fix the build-tree issue or report the exact blocker instead of
+claiming the feature is done.
+
 If those fail because the local build tree is stale or target names differ, inspect `README.md`, `BUILD.md`, `CMakeLists.txt`, and `tests/CMakeLists.txt` before changing build configuration.
 
 ## Style of work

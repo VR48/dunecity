@@ -33,7 +33,8 @@ target_sources(dunelegacy_tests
         CityEffectsRuntime_test_stub.cpp
         ${CMAKE_SOURCE_DIR}/src/dunecity/PowerGrid.cpp
         ${CMAKE_SOURCE_DIR}/src/dunecity/ZoneSimulation.cpp
-        ${CMAKE_SOURCE_DIR}/src/dunecity/TrafficSimulation.cpp
+        # TrafficSimulation.cpp excluded: it pulls in Tile/Map/StructureBase
+        # and is only used by CityEffectsRuntime (which is stubbed in tests).
         ${CMAKE_SOURCE_DIR}/src/dunecity/CityBudget.cpp
         ${CMAKE_SOURCE_DIR}/src/dunecity/CityScanner.cpp
         ${CMAKE_SOURCE_DIR}/src/dunecity/CityEvaluation.cpp

@@ -119,6 +119,8 @@ typedef enum {
     ObjPic_CityRoad,
     ObjPic_NuclearPlant,   ///< DuneCity: Micropolis nuclear-plant sprite (3x3 footprint)
     ObjPic_PoliceStation,  ///< DuneCity: Micropolis police-station sprite (2x2 footprint)
+    ObjPic_Stadium,        ///< DuneCity: Micropolis stadium sprite (3x3 footprint)
+    ObjPic_Airport,        ///< DuneCity: Micropolis airport sprite (3x3 footprint)
     NUM_OBJPICS
 } ObjPic_enum;
 
@@ -132,7 +134,8 @@ static const std::array<std::string, NUM_OBJPICS> ObjPicNames =  { { "Tank_Base"
     "ExplosionMedium2", "ExplosionLarge1", "ExplosionLarge2", "ExplosionSmallUnit", "ExplosionFlames", "ExplosionSpiceBloom",
     "DeadInfantry", "DeadAirUnit", "Smoke", "SandwormShimmerMask", "SandwormShimmerTemp", "Terrain", "DestroyedStructure", "RockDamage",
     "SandDamage", "Terrain_Hidden", "Terrain_HiddenFog", "Terrain_Tracks", "Star",
-    "ZoneResidential", "ZoneCommercial", "ZoneIndustrial", "CityRoad", "NuclearPlant", "PoliceStation" } };
+    "ZoneResidential", "ZoneCommercial", "ZoneIndustrial", "CityRoad", "NuclearPlant", "PoliceStation",
+    "Stadium", "Airport" } };
 
 #define GROUNDUNIT_ROW(i) (i+2)|TILE_NORMAL,(i+1)|TILE_NORMAL,i|TILE_NORMAL,(i+1)|TILE_FLIPV,(i+2)|TILE_FLIPV,(i+3)|TILE_FLIPV, (i+4)|TILE_NORMAL,(i+3)|TILE_NORMAL
 #define AIRUNIT_ROW(i) (i+2)|TILE_NORMAL,(i+1)|TILE_NORMAL,i|TILE_NORMAL,(i+1)|TILE_FLIPV,(i+2)|TILE_FLIPV,(i+1)|TILE_ROTATE, i|TILE_FLIPH,(i+1)|TILE_FLIPH
@@ -192,6 +195,10 @@ typedef enum {
     Picture_ZoneIndustrial,
     Picture_Road,
     Picture_PowerLine,
+    Picture_NuclearPlant,
+    Picture_PoliceStation,
+    Picture_Stadium,
+    Picture_Airport,
     NUM_SMALLDETAILPICS
 } SmallDetailPics_Enum;
 

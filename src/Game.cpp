@@ -77,6 +77,9 @@ std::mutex Game::performanceLogMutex;
 #include <structures/Palace.h>
 #include <units/Harvester.h>
 #include <units/InfantryBase.h>
+#include <units/AmbientAirplane.h>
+#include <units/AmbientHelicopter.h>
+#include <structures/Airport.h>
 
 #include <algorithm>
 #include <exception>
@@ -2542,6 +2545,60 @@ void Game::updateGameState() {
                 setGameWon();
             }
         }
+
+        // Ambient aircraft spawning — every ~10s (625 cycles at 62.5Hz),
+        // deterministically check each Airport for spawning an airplane or
+        // helicopter.  Cap at 3 ambient units per house.
+        static constexpr Uint32 kAmbientSpawnInterval = 625;
+        if (gameCycleCount > 0 && (gameCycleCount % kAmbientSpawnInterval) == 0) {
+            for (StructureBase* pStruct : structureList) {
+                if (pStruct->getItemID() != Structure_Airport) continue;
+
+                House* pOwner = pStruct->getOwner();
+                if (!pOwner) continue;
+
+                // Count existing ambient units for this house
+                int ambientCount = pOwner->getNumItems(Unit_AmbientAirplane)
+                                 + pOwner->getNumItems(Unit_AmbientHelicopter);
+                if (ambientCount >= 3) continue;
+
+                // Deterministic "random" choice based on cycle + airport position
+                const Coord airportPos = pStruct->getLocation();
+                Uint32 seed = gameCycleCount * 7u
+                            + static_cast<Uint32>(airportPos.x) * 131u
+                            + static_cast<Uint32>(airportPos.y) * 257u;
+
+                // Only spawn ~50% of the time
+                if ((seed % 4u) < 2u) continue;
+
+                bool spawnAirplane = (seed % 3u) != 0;  // 2/3 airplanes, 1/3 helicopters
+                int unitType = spawnAirplane ? Unit_AmbientAirplane : Unit_AmbientHelicopter;
+
+                UnitBase* pUnit = pOwner->createUnit(unitType);
+                if (!pUnit) continue;
+
+                Coord center = airportPos + Coord(1, 1);  // center of 3x3 airport
+
+                if (spawnAirplane) {
+                    // Airplane: spawn at a map edge, fly across the airport, exit other side
+                    Coord edgeStart = currentGameMap->findClosestEdgePoint(center, Coord(1, 1));
+                    pUnit->deploy(edgeStart);
+                    pUnit->setDestination(center);
+                    // guardPoint set to opposite edge for exit path
+                    int exitX = currentGameMap->getSizeX() - 1 - edgeStart.x;
+                    int exitY = currentGameMap->getSizeY() - 1 - edgeStart.y;
+                    pUnit->setGuardPoint(Coord(exitX, exitY));
+                    // Face toward destination
+                    if (edgeStart.x == 0) pUnit->setAngle(RIGHT);
+                    else if (edgeStart.x == currentGameMap->getSizeX() - 1) pUnit->setAngle(LEFT);
+                    else if (edgeStart.y == 0) pUnit->setAngle(DOWN);
+                    else pUnit->setAngle(UP);
+                } else {
+                    // Helicopter: spawn at airport, orbit nearby
+                    pUnit->deploy(center);
+                }
+            }
+        }
     }
 
     if((indicatorFrame != NONE_ID) && (--indicatorTimer <= 0)) {
@@ -4486,6 +4543,14 @@ void Game::drawCityOverlay(int x1, int y1, int x2, int y2) {
 void Game::drawCityRoads(int x1, int y1, int x2, int y2) {
     if (!citySimulation_) {
         return;
+    }
+
+    // The proper road atlas (ObjPic_CityRoad) is rendered in Tile::blitGround
+    // with auto-tiled sprites and white center markings. This placeholder
+    // brown-rectangle overlay is only needed when the atlas failed to load.
+    SDL_Texture* roadAtlas = pGFXManager->getZoomedObjPic(ObjPic_CityRoad, currentZoomlevel);
+    if (roadAtlas) {
+        return;  // atlas handles rendering; skip brown overlay
     }
 
     const int zoomedTileSize = world2zoomedWorld(TILESIZE);

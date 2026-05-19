@@ -33,6 +33,7 @@ void CitySimulation::init(int width, int height) {
     landValueMap_.init(width, height, 2);
     crimeRateMap_.init(width, height, 2);
     populationDensityMap_.init(width, height, 2);
+    growthRateMap_.init(width, height, 2);
 
     initialized_ = true;
 }

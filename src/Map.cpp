@@ -353,6 +353,12 @@ bool Map::okayToPlaceStructure(int x, int y, int buildingSizeX, int buildingSize
             if (!pTile)
                 return false;
 
+            // Block placement on city zone tiles (residential/commercial/industrial).
+            // Road tiles are allowed — the road flag will be cleared on placement.
+            if(pTile->hasCityZone()) {
+                return false;
+            }
+
             if(!pTile->isRock() || (tilesRequired && !pTile->isConcrete()) || (!bIgnoreUnits && pTile->isBlocked())) {
                 return false;
             }
@@ -378,6 +384,11 @@ bool Map::okayToPlaceStructure(int x, int y, int buildingSizeX, int buildingSize
 
             if(!pTile)
                 return false;
+
+            // Zone structures cannot overlap existing city zones.
+            if(pTile->hasCityZone()) {
+                return false;
+            }
 
             if(pTile->isMountain() || (!bIgnoreUnits && pTile->isBlocked())) {
                 return false;

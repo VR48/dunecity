@@ -151,7 +151,7 @@ private:
             case Structure_HeavyFactory:     return "Role: I-high";
             case Structure_RepairYard:       return "Role: I-high";
             case Structure_StarPort:         return "Role: Airport";
-            case Structure_Palace:           return "Role: Stadium";
+            case Structure_Palace:           return "Role: Palace (Residential)";
             case Structure_Barracks:         return "Role: Police";
             case Structure_WOR:              return "Role: Police HQ";
             case Structure_GunTurret:        return "Role: Park + 1/4 Police";

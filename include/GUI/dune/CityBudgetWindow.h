@@ -35,6 +35,8 @@ public:
     CityBudgetWindow();
     virtual ~CityBudgetWindow();
 
+    void draw(Point position) override;
+
     void onClose();
     void onTaxIncrease();
     void onTaxDecrease();

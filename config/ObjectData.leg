@@ -141,7 +141,7 @@ Prerequisite = Windtrap, Refinery
 [Palace]
 Enabled = true
 HitPoints = 1000
-Price = 999
+Price = 2000
 Power = 100
 ViewRange = 5
 BuildTime = 130

@@ -959,7 +959,7 @@ Coord QuantBot::findPlaceLocation(Uint32 itemID) {
 		for (int placeLocationY = 0; placeLocationY <= getMap().getSizeY() - newSizeY; placeLocationY++) {
 			// First check if this location is valid for building
 			if (getMap().okayToPlaceStructure(placeLocationX, placeLocationY, newSizeX, newSizeY,
-				false, (itemID == Structure_ConstructionYard) ? nullptr : getHouse())) {
+				false, (itemID == Structure_ConstructionYard) ? nullptr : getHouse(), false, itemID)) {
 
 				int locationScore = 0;
 				int placeLocationEndX = placeLocationX + newSizeX;
@@ -1229,17 +1229,17 @@ Coord QuantBot::findTurretPlaceLocation(Uint32 itemID) {
 	
 	FixPoint bestScore = -FixPt_MAX;
 	Coord bestLocation = Coord::Invalid();
-	
+
 	// Check every tile on the map for valid placement
 	for (int x = 0; x <= getMap().getSizeX() - newSizeX; x++) {
 		for (int y = 0; y <= getMap().getSizeY() - newSizeY; y++) {
 			// First check if this location is valid for building
-			if (getMap().okayToPlaceStructure(x, y, newSizeX, newSizeY, false, 
-				(itemID == Structure_ConstructionYard) ? nullptr : getHouse())) {
-				
+			if (getMap().okayToPlaceStructure(x, y, newSizeX, newSizeY, false,
+				(itemID == Structure_ConstructionYard) ? nullptr : getHouse(), false, itemID)) {
+
 				FixPoint score = 0;
 				Coord candidatePos(x, y);
-				
+
 				// 1. Favor being CLOSE to base center (integrated into base, not perimeter)
 				FixPoint distanceFromBase = blockDistance(candidatePos, baseCenter);
 				score -= distanceFromBase * 2; // Penalty for being far from center
@@ -1312,19 +1312,19 @@ Coord QuantBot::findPlaceLocationSimple(Uint32 itemID) {
 	int newSizeY = getStructureSize(itemID).y;
 	
 	squadRallyLocation = findSquadRallyLocation();
-	
+
 	FixPoint bestScore = -FixPt_MAX;
 	Coord bestLocation = Coord::Invalid();
-	
+
 	// Check every tile on the map for valid placement
 	for (int x = 0; x <= getMap().getSizeX() - newSizeX; x++) {
 		for (int y = 0; y <= getMap().getSizeY() - newSizeY; y++) {
 			// First check if this location is valid for building
-			if (getMap().okayToPlaceStructure(x, y, newSizeX, newSizeY, false, 
-				(itemID == Structure_ConstructionYard) ? nullptr : getHouse())) {
-				
+			if (getMap().okayToPlaceStructure(x, y, newSizeX, newSizeY, false,
+				(itemID == Structure_ConstructionYard) ? nullptr : getHouse(), false, itemID)) {
+
 				FixPoint score = 0;
-				
+
 				// Base scoring - favor being close to existing buildings
 				FixPoint closestOwnBuildingDistance = FixPt_MAX;
 				for (const StructureBase* pStructure : getStructureList()) {
@@ -2625,7 +2625,7 @@ void QuantBot::build(int militaryValue) {
 						Coord itemsize = getStructureSize(itemToBePlaced);
 						
 						// Verify the location is still valid
-						if (getMap().okayToPlaceStructure(location.x, location.y, itemsize.x, itemsize.y, false, getHouse())) {
+						if (getMap().okayToPlaceStructure(location.x, location.y, itemsize.x, itemsize.y, false, getHouse(), false, itemToBePlaced)) {
 							placeLocations.pop_front();
 							logDebug("PRODUCTION: Using pre-stored location (%d,%d) for itemID: %d", location.x, location.y, itemToBePlaced);
 						} else if (itemToBePlaced == Structure_Slab1 || itemToBePlaced == Structure_Slab4) {

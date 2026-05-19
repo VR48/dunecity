@@ -23,8 +23,9 @@ bool CitySimulation::spendCityFunds(int32_t amount) {
     return false;
 }
 
-void CitySimulation::runEffectsScans() {}
-void CitySimulation::runZoneGrowth()   {}
-void CitySimulation::runAnnualBudget() {}
+void CitySimulation::runEffectsScans()    {}
+void CitySimulation::runZoneGrowth()      {}
+void CitySimulation::runAnnualBudget()    {}
+void CitySimulation::decayGrowthRateMap() {}
 
 }  // namespace DuneCity

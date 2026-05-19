@@ -1,4 +1,13 @@
-# Configure config.h
+# Set DUNELEGACY_DATADIR only for Linux FHS installs (with trailing slash so
+# callers that concatenate subdirs without a separator still work, e.g.
+# GFXManager's imported_sprites paths). Windows and macOS leave it unset so
+# getDuneLegacyDataDir() falls through to SDL_GetBasePath() at runtime,
+# making the install relocatable.
+if(NOT WIN32 AND NOT APPLE)
+    set(DUNELEGACY_DATADIR "${CMAKE_INSTALL_FULL_DATADIR}/${PROJECT_NAME}/")
+endif()
+
+# Configure config.h (must come after DUNELEGACY_DATADIR is conditionally set)
 configure_file(
     ${CMAKE_SOURCE_DIR}/include/config.h.in
     ${CMAKE_BINARY_DIR}/include/config.h
@@ -245,6 +254,8 @@ target_sources(dunecity
         structures/WOR.cpp
         structures/NuclearPlant.cpp
         structures/PoliceStation.cpp
+        structures/Stadium.cpp
+        structures/Airport.cpp
         structures/ZoneStructure.cpp
 
         # Units
@@ -272,6 +283,8 @@ target_sources(dunecity
         units/Tank.cpp
         units/Trike.cpp
         units/Trooper.cpp
+        units/AmbientAirplane.cpp
+        units/AmbientHelicopter.cpp
 
         # CutScenes
         CutScenes/CutScene.cpp
@@ -626,19 +639,5 @@ else()
     )
 endif()
 
-# Define data directory path for runtime
-# On macOS bundles, don't define DUNECITY_DATADIR so SDL_GetBasePath() is used (points to Resources/)
-if(NOT APPLE)
-    if(WIN32)
-        # Windows: data files are in the same directory as the executable (root install dir)
-        # Don't define DUNECITY_DATADIR so it uses SDL_GetBasePath() which points to executable directory
-        # This matches the installation structure where PAK files are in root, not share/DuneCity
-    else()
-        # Linux: use FHS structure with share/DuneCity
-        target_compile_definitions(dunecity
-            PRIVATE
-                DATA_DIRECTORY="${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}"
-                DUNECITY_DATADIR="${CMAKE_INSTALL_FULL_DATADIR}/${PROJECT_NAME}"
-        )
-    endif()
-endif() 
+# DUNELEGACY_DATADIR is set at the top of this file (before configure_file)
+# only for Linux. Windows and macOS use SDL_GetBasePath() at runtime.

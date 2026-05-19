@@ -45,13 +45,13 @@ CityBudgetWindow::CityBudgetWindow()
     mainVBox.addWidget(&titleLabel);
     mainVBox.addWidget(VSpacer::create(15));
 
-    // Top: year + treasury at-a-glance.
+    // Top: year + current player credits at-a-glance.
     yearLabel.setText("Year: 0");
     yearLabel.setTextColor(COLOR_WHITE);
     mainVBox.addWidget(&yearLabel);
     mainVBox.addWidget(VSpacer::create(4));
 
-    treasuryLabel.setText("Treasury: 0");
+    treasuryLabel.setText("Credits: 0");
     treasuryLabel.setTextColor(COLOR_WHITE);
     mainVBox.addWidget(&treasuryLabel);
     mainVBox.addWidget(VSpacer::create(12));
@@ -165,6 +165,11 @@ CityBudgetWindow::CityBudgetWindow()
 
 CityBudgetWindow::~CityBudgetWindow() = default;
 
+void CityBudgetWindow::draw(Point position) {
+    updateDisplay();
+    Window::draw(position);
+}
+
 void CityBudgetWindow::onClose() {
     Window* pParentWindow = dynamic_cast<Window*>(getParent());
     if(pParentWindow != nullptr) {
@@ -227,19 +232,20 @@ void CityBudgetWindow::updateDisplay() {
     }
 
     yearLabel.setText(fmt::sprintf("Year: %d", citySim->getCityYear()));
-    treasuryLabel.setText(fmt::sprintf("Treasury: %d", citySim->getTotalFunds()));
+    treasuryLabel.setText(fmt::sprintf("Credits: %d", citySim->getTotalFunds()));
 
-    // Annual revenue = current pop * tax rate / 100. We project, rather
-    // than show the most recent collection — projection is what the
-    // player needs to plan, the historical figure rolls in on year tick.
+    // Annual revenue = current pop * selected tax rate / 100. We project,
+    // rather than show the most recent collection — projection is what the
+    // player needs to plan, including pending slider changes.
     const int totalPop  = citySim->getTotalPop();
-    const int taxRate   = citySim->getCityTax();
+    const int taxRate   = pendingTaxRate;
     const int projected = (totalPop * taxRate) / 100;
     incomeLabel.setText(fmt::sprintf("Tax Revenue: +%d/yr (proj.)", projected));
 
-    // Police: nominal cost is full-funded; actual paid is scaled.
+    // Police: nominal cost is full-funded; actual paid is scaled by the
+    // selected funding percentage, including pending slider changes.
     const int32_t nominal = citySim->getNominalPoliceCost();
-    const int32_t paying  = (nominal * citySim->getPoliceFundingPercent()) / 100;
+    const int32_t paying  = (nominal * pendingPolicePercent) / 100;
     policeCostLabel.setText(fmt::sprintf("Police: -%d/yr (of %d at 100%%)",
                                          paying, nominal));
 

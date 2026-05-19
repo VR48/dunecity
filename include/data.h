@@ -79,7 +79,7 @@ typedef enum {
     Structure_PowerLine = 24,         ///< DuneCity: Power line tile (15 credits)
     Structure_NuclearPlant = 25,      ///< DuneCity: Nuclear power plant (1500 credits, -1000 power)
     Structure_PoliceStation = 26,     ///< DuneCity: Police station (500 credits — SC TOOL_POLICESTATION). Sole source of police coverage in city mode.
-    Structure_LastID = 26,
+    Structure_LastID = 26,            ///< End of contiguous structure range (save-compat boundary)
 
     Unit_FirstID = 27,
     Unit_Carryall = 27,
@@ -104,7 +104,20 @@ typedef enum {
     Unit_Infantry = 46,
     Unit_Troopers = 47,
     Unit_LastID = 47,
-    ItemID_LastID = 47,
+
+    // Extended structure IDs — placed after units to preserve save-compat
+    // for all pre-existing IDs.  isStructure() handles the gap.
+    Structure_Stadium = 48,           ///< DuneCity: Stadium civic building (land-value boost, 3x3)
+    Structure_Airport = 49,           ///< DuneCity: Airport economic building (commercial boost, 3x3)
+    Structure_ExtLastID = 49,
+
+    // Extended unit IDs — placed after extended structures to preserve
+    // save-compat for all pre-existing IDs.  isUnit() handles the gap.
+    Unit_AmbientAirplane = 50,        ///< DuneCity: Ambient city airplane (non-combat, spawned by Airport)
+    Unit_AmbientHelicopter = 51,      ///< DuneCity: Ambient city helicopter (non-combat, spawned by Airport)
+    Unit_ExtLastID = 51,
+
+    ItemID_LastID = 51,
 
     Num_ItemID
 } ItemID_enum;
@@ -145,14 +158,14 @@ typedef enum {
     \param itemID   the ID of the item (e.g. Unit_Harvester)
     \return true if it is an unit, false otherwise
 */
-inline bool isUnit(int itemID) { return (itemID >= Unit_FirstID && itemID <= Unit_LastID); }
+inline bool isUnit(int itemID) { return (itemID >= Unit_FirstID && itemID <= Unit_LastID) || (itemID >= Unit_AmbientAirplane && itemID <= Unit_ExtLastID); }
 
 /**
     This function determines if the specified itemID is a structure or not.
     \param itemID   the ID of the item (e.g. Structure_ConstructionYard)
     \return true if it is a structure, false otherwise
 */
-inline bool isStructure(int itemID) { return (itemID >= Structure_FirstID && itemID <= Structure_LastID); }
+inline bool isStructure(int itemID) { return (itemID >= Structure_FirstID && itemID <= Structure_LastID) || (itemID >= Structure_Stadium && itemID <= Structure_ExtLastID); }
 
 /**
     This function determines if the specified itemID is a DuneCity zone structure.
@@ -167,7 +180,14 @@ inline bool isZoneStructure(int itemID) { return (itemID == Structure_ZoneReside
     \param itemID   the ID of the item (e.g. Unit_Carryall)
     \return true if it is a flying unit, false otherwise
 */
-inline bool isFlyingUnit(int itemID) { return (itemID == Unit_Carryall) || (itemID == Unit_Ornithopter) || (itemID == Unit_Frigate); }
+inline bool isFlyingUnit(int itemID) { return (itemID == Unit_Carryall) || (itemID == Unit_Ornithopter) || (itemID == Unit_Frigate) || (itemID == Unit_AmbientAirplane) || (itemID == Unit_AmbientHelicopter); }
+
+/**
+    This function determines if the specified itemID is an ambient city aircraft.
+    \param itemID   the ID of the item
+    \return true if it is an ambient aircraft, false otherwise
+*/
+inline bool isAmbientUnit(int itemID) { return (itemID == Unit_AmbientAirplane) || (itemID == Unit_AmbientHelicopter); }
 
 /**
     This function determines if the specified itemID is an infantry unit or not.

@@ -19,6 +19,7 @@
 #define PALACEINTERFACE_H
 
 #include "DefaultStructureInterface.h"
+#include "CityStatsBox.h"
 
 #include <FileClasses/FontManager.h>
 #include <FileClasses/TextManager.h>
@@ -27,6 +28,9 @@
 #include <GUI/ProgressBar.h>
 #include <GUI/VBox.h>
 
+#include <House.h>
+#include <Map.h>
+#include <Tile.h>
 #include <structures/Palace.h>
 #include <dunecity/CityEffects.h>
 
@@ -63,9 +67,16 @@ protected:
         weaponSelectButton.setOnClick(std::bind(&PalaceInterface::onSpecial, this));
 
         Uint32 color = SDL2RGB(palette[houseToPaletteIndex[pLocalHouse->getHouseID()]+3]);
-        populationLabel.setTextFontSize(12);
-        populationLabel.setTextColor(color);
-        palaceVBox.addWidget(&populationLabel, 0.005);
+
+        levelLabel.setTextFontSize(12);
+        levelLabel.setTextColor(color);
+        palaceVBox.addWidget(&levelLabel, 0.005);
+
+        poweredLabel.setTextFontSize(12);
+        poweredLabel.setTextColor(color);
+        palaceVBox.addWidget(&poweredLabel, 0.005);
+
+        cityStats_.attachTo(palaceVBox, color, /*isZone=*/false);
 
         palaceVBox.addWidget(Spacer::create(), 0.99);
     }
@@ -114,8 +125,13 @@ protected:
 
             int level = static_cast<int>(pPalace->getCityOccupancy());
             if (level < 1) level = 1;
-            int pop = DuneCity::getZonePopulation(Structure_Palace, level);
-            populationLabel.setText(" " + _("People") + ": " + std::to_string(pop));
+            int maxLevel = DuneCity::getStructureMaxLevel(Structure_Palace);
+            levelLabel.setText(" Level: " + std::to_string(level) + "/" + std::to_string(maxLevel));
+
+            const bool powered = pPalace->getOwner()->hasPower();
+            poweredLabel.setText(std::string(" ") + (powered ? _("Powered") : _("UNPOWERED")));
+
+            cityStats_.update(pPalace);
         }
 
         return DefaultStructureInterface::update();
@@ -142,7 +158,9 @@ private:
     StaticContainer     weaponBox;
     PictureProgressBar  weaponProgressBar;
     PictureButton       weaponSelectButton;
-    Label               populationLabel;
+    Label               levelLabel;
+    Label               poweredLabel;
+    CityStatsBox        cityStats_;
 };
 
 #endif // PALACEINTERFACE_H
