@@ -187,7 +187,7 @@ TEST_CASE("ConstructionYardResolver: All structure IDs up to Structure_LastID ar
         // Skip Structure_FirstID, Structure_LastID — these are range markers
         auto end = dataH.find_first_of(" \t=,\n\r();/", pos);
         std::string name = dataH.substr(pos, end - pos);
-        if (name != "Structure_FirstID" && name != "Structure_LastID") {
+        if (name != "Structure_FirstID" && name != "Structure_LastID" && name != "Structure_ExtLastID") {
             structureEnums.push_back(name);
         }
         pos = end;
