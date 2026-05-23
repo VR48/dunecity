@@ -1105,59 +1105,119 @@ Coord QuantBot::findPlaceLocation(Uint32 itemID) {
 			locationScore -= lround(blockDistance(baseCenter, Coord(placeLocationX, placeLocationY)));
 		}
 
-		// City-mode road-spacing: all buildings need at least one side
-		// with a road or open tile (for future road). Penalise direct
-		// adjacency to other structures so a 1-tile road gap is left.
+		// === CITY MODE: grid alignment + road spacing + zone-type scoring ===
 		if (currentGame && currentGame->isCitySimEnabled()) {
+
+			// Grid alignment: snap to a 3-cell grid (2-tile footprint +
+			// 1-tile road gap) anchored on the base centre. Positions
+			// that land on grid intersections get a massive bonus so the
+			// AI naturally builds in neat rows with roads between.
+			int gridOffsetX = ((placeLocationX - baseCenter.x) % 3 + 3) % 3;
+			int gridOffsetY = ((placeLocationY - baseCenter.y) % 3 + 3) % 3;
+			if (gridOffsetX == 0 && gridOffsetY == 0) {
+				locationScore += 80;  // strong grid alignment bonus
+			} else {
+				locationScore -= 40;  // off-grid penalty
+			}
+
+			// Road-spacing: check 4 sides for road / open / structure.
 			int sidesWithRoad = 0;
-			int sidesWithOpen = 0;  // rock/slab with no structure — road can go here
+			int sidesWithOpen = 0;
 			int sidesTouchingStructure = 0;
 
-			// Check each of the 4 sides
 			struct SideCheck { int startI, startJ, endI, endJ; };
 			SideCheck sides[4] = {
-				{ placeLocationX, placeLocationY - 1, placeLocationEndX, placeLocationY },     // north
-				{ placeLocationX, placeLocationEndY, placeLocationEndX, placeLocationEndY + 1 }, // south
-				{ placeLocationX - 1, placeLocationY, placeLocationX, placeLocationEndY },       // west
-				{ placeLocationEndX, placeLocationY, placeLocationEndX + 1, placeLocationEndY }  // east
+				{ placeLocationX, placeLocationY - 1, placeLocationEndX, placeLocationY },
+				{ placeLocationX, placeLocationEndY, placeLocationEndX, placeLocationEndY + 1 },
+				{ placeLocationX - 1, placeLocationY, placeLocationX, placeLocationEndY },
+				{ placeLocationEndX, placeLocationY, placeLocationEndX + 1, placeLocationEndY }
 			};
 
 			for (const auto& side : sides) {
-				bool sideHasRoad = false;
-				bool sideHasOpen = false;
-				bool sideTouchesStructure = false;
+				bool sideHasRoad = false, sideHasOpen = false, sideTouchesStruct = false;
 				for (int si = side.startI; si < side.endI; si++) {
 					for (int sj = side.startJ; sj < side.endJ; sj++) {
 						if (!getMap().tileExists(si, sj)) continue;
 						const Tile* t = getMap().getTile(si, sj);
-						if (t->isRoad()) {
-							sideHasRoad = true;
-						} else if (t->hasAStructure() || t->hasCityZone()) {
-							sideTouchesStructure = true;
-						} else if (t->isRock() && !t->isMountain() && !t->hasAGroundObject()) {
-							sideHasOpen = true;
-						}
+						if (t->isRoad()) sideHasRoad = true;
+						else if (t->hasAStructure() || t->hasCityZone()) sideTouchesStruct = true;
+						else if (t->isRock() && !t->isMountain() && !t->hasAGroundObject()) sideHasOpen = true;
 					}
 				}
 				if (sideHasRoad) sidesWithRoad++;
 				if (sideHasOpen) sidesWithOpen++;
-				if (sideTouchesStructure) sidesTouchingStructure++;
+				if (sideTouchesStruct) sidesTouchingStructure++;
 			}
 
-			// Must have at least one side that has road or can have road
 			if (sidesWithRoad == 0 && sidesWithOpen == 0) {
-				continue;  // skip — zone would be landlocked
+				continue;  // landlocked — skip
 			}
-
-			// Big bonus for road adjacency (connects to road network)
 			locationScore += sidesWithRoad * 25;
-
-			// Bonus for open sides (future road space)
 			locationScore += sidesWithOpen * 5;
-
-			// Penalty for each side directly touching another structure
-			// (no road gap). Strong enough to override the +10 adjacency bonus.
 			locationScore -= sidesTouchingStructure * 30;
+
+			// Zone-type proximity scoring:
+			// R/C avoid industrial pollution (radius 5) but want it
+			// within supply range (16). I clusters with itself and
+			// wants residential nearby for workers.
+			bool isResidential = (itemID == Structure_ZoneResidential);
+			bool isCommercial  = (itemID == Structure_ZoneCommercial);
+			bool isIndustrial  = (itemID == Structure_ZoneIndustrial);
+
+			if (isResidential || isCommercial || isIndustrial) {
+				int closestIndDist = 100;
+				int nearbyRes = 0, nearbyCom = 0, nearbyInd = 0;
+
+				for (const StructureBase* pStruct : getStructureList()) {
+					if (pStruct->getOwner() != getHouse()) continue;
+					int dist = lround(blockDistance(
+						Coord(placeLocationX, placeLocationY), pStruct->getLocation()));
+					if (dist > 16) continue;  // outside supply radius
+
+					int sid = pStruct->getItemID();
+					if (sid == Structure_ZoneIndustrial) {
+						nearbyInd++;
+						if (dist < closestIndDist) closestIndDist = dist;
+					}
+					if (sid == Structure_ZoneResidential) nearbyRes++;
+					if (sid == Structure_ZoneCommercial) nearbyCom++;
+				}
+
+				if (isResidential || isCommercial) {
+					// Penalty if within pollution radius of industrial
+					if (closestIndDist <= 5) {
+						locationScore -= 50;
+					}
+					// Bonus if industrial is reachable but outside pollution
+					else if (closestIndDist <= 16) {
+						locationScore += 20;
+					}
+					// R ↔ C synergy
+					if (isResidential && nearbyCom > 0) locationScore += 15;
+					if (isCommercial && nearbyRes > 0)  locationScore += 15;
+					if (isCommercial && nearbyInd > 0)  locationScore += 10;
+				}
+
+				if (isIndustrial) {
+					// I clusters with other I (pollution doesn't affect I)
+					locationScore += nearbyInd * 10;
+					// I wants residential workers nearby (within supply)
+					if (nearbyRes > 0) locationScore += 10;
+					// I should stay away from R/C cluster to avoid
+					// polluting them — bonus for being 6+ tiles from R
+					int closestResDist = 100;
+					for (const StructureBase* pStruct : getStructureList()) {
+						if (pStruct->getOwner() != getHouse()) continue;
+						if (pStruct->getItemID() != Structure_ZoneResidential) continue;
+						int dist = lround(blockDistance(
+							Coord(placeLocationX, placeLocationY), pStruct->getLocation()));
+						if (dist < closestResDist) closestResDist = dist;
+					}
+					if (closestResDist >= 6 && closestResDist <= 16) {
+						locationScore += 20;  // sweet spot: outside pollution, within supply
+					}
+				}
+			}
 		}
 
 				// Pick this location if it has the best score
