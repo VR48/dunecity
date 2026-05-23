@@ -1105,6 +1105,64 @@ Coord QuantBot::findPlaceLocation(Uint32 itemID) {
 			locationScore -= lround(blockDistance(baseCenter, Coord(placeLocationX, placeLocationY)));
 		}
 
+		// Zone road-spacing: zones need at least one side with a road
+		// or open tile (for future road). Penalise direct adjacency to
+		// other structures so a 1-tile road gap is left between them.
+		bool isZoneStructure = (itemID == Structure_ZoneResidential
+			|| itemID == Structure_ZoneCommercial
+			|| itemID == Structure_ZoneIndustrial);
+		if (isZoneStructure && currentGame && currentGame->isCitySimEnabled()) {
+			int sidesWithRoad = 0;
+			int sidesWithOpen = 0;  // rock/slab with no structure — road can go here
+			int sidesTouchingStructure = 0;
+
+			// Check each of the 4 sides
+			struct SideCheck { int startI, startJ, endI, endJ; };
+			SideCheck sides[4] = {
+				{ placeLocationX, placeLocationY - 1, placeLocationEndX, placeLocationY },     // north
+				{ placeLocationX, placeLocationEndY, placeLocationEndX, placeLocationEndY + 1 }, // south
+				{ placeLocationX - 1, placeLocationY, placeLocationX, placeLocationEndY },       // west
+				{ placeLocationEndX, placeLocationY, placeLocationEndX + 1, placeLocationEndY }  // east
+			};
+
+			for (const auto& side : sides) {
+				bool sideHasRoad = false;
+				bool sideHasOpen = false;
+				bool sideTouchesStructure = false;
+				for (int si = side.startI; si < side.endI; si++) {
+					for (int sj = side.startJ; sj < side.endJ; sj++) {
+						if (!getMap().tileExists(si, sj)) continue;
+						const Tile* t = getMap().getTile(si, sj);
+						if (t->isRoad()) {
+							sideHasRoad = true;
+						} else if (t->hasAStructure() || t->hasCityZone()) {
+							sideTouchesStructure = true;
+						} else if (t->isRock() && !t->isMountain() && !t->hasAGroundObject()) {
+							sideHasOpen = true;
+						}
+					}
+				}
+				if (sideHasRoad) sidesWithRoad++;
+				if (sideHasOpen) sidesWithOpen++;
+				if (sideTouchesStructure) sidesTouchingStructure++;
+			}
+
+			// Must have at least one side that has road or can have road
+			if (sidesWithRoad == 0 && sidesWithOpen == 0) {
+				continue;  // skip — zone would be landlocked
+			}
+
+			// Big bonus for road adjacency (connects to road network)
+			locationScore += sidesWithRoad * 25;
+
+			// Bonus for open sides (future road space)
+			locationScore += sidesWithOpen * 5;
+
+			// Penalty for each side directly touching another structure
+			// (no road gap). Strong enough to override the +10 adjacency bonus.
+			locationScore -= sidesTouchingStructure * 30;
+		}
+
 				// Pick this location if it has the best score
 				if (locationScore > bestLocationScore) {
 					bestLocationScore = locationScore;
@@ -3806,9 +3864,13 @@ void QuantBot::manageCityBuilding() {
     // Road placement remains here: roads are tile-level and don't need the
     // Construction Yard pipeline.
 
+    // Place roads in the gaps between zones/structures. A tile gets a road
+    // when it is adjacent to a zone or structure on at least one side AND
+    // adjacent to an existing road or zone on at least one side (keeps the
+    // network continuous). Scan outward from base center.
     int roadsPlaced = 0;
-    constexpr int MAX_ROADS_PER_ROUND = 6;
-    constexpr int CITY_RADIUS = 15;
+    constexpr int MAX_ROADS_PER_ROUND = 8;
+    constexpr int CITY_RADIUS = 20;
 
     static constexpr int dx4[] = { 0, 1, 0, -1 };
     static constexpr int dy4[] = { -1, 0, 1, 0 };
@@ -3832,22 +3894,25 @@ void QuantBot::manageCityBuilding() {
             if (!currentGameMap->tileExists(tx, ty)) continue;
 
             Tile* tile = currentGameMap->getTile(tx, ty);
-            if (tile->isRoad() || tile->hasCityZone()) continue;
-            if (tile->hasAStructure()) continue;
+            // Skip tiles that already have road, zone, structure, or aren't buildable
+            if (tile->isRoad() || tile->hasCityZone() || tile->hasAStructure()) continue;
+            if (!tile->isRock() || tile->isMountain() || tile->hasAGroundObject()) continue;
 
-            bool nearZone = false;
+            bool nearZoneOrStructure = false;
+            bool nearRoadOrZone = false;
             for (int d = 0; d < 4; d++) {
                 int nx = tx + dx4[d];
                 int ny = ty + dy4[d];
-                if (nx >= 0 && nx < currentGameMap->getSizeX() && ny >= 0 && ny < currentGameMap->getSizeY()) {
-                    if (currentGameMap->tileExists(nx, ny) && currentGameMap->getTile(nx, ny)->hasCityZone()) {
-                        nearZone = true;
-                        break;
-                    }
-                }
+                if (nx < 0 || nx >= currentGameMap->getSizeX() || ny < 0 || ny >= currentGameMap->getSizeY()) continue;
+                if (!currentGameMap->tileExists(nx, ny)) continue;
+                const Tile* nb = currentGameMap->getTile(nx, ny);
+                if (nb->hasCityZone() || nb->hasAStructure()) nearZoneOrStructure = true;
+                if (nb->isRoad() || nb->hasCityZone()) nearRoadOrZone = true;
             }
 
-            if (nearZone && (r % 3 == 0 || (tx + ty) % 4 == 0)) {
+            // Place road if tile is between structures/zones AND connects
+            // to existing road network (or is the first road next to a zone)
+            if (nearZoneOrStructure && nearRoadOrZone) {
                 currentGame->getCommandManager().addCommand(
                     Command(getPlayerID(), CMD_CITY_TOOL,
                             static_cast<Uint32>(tx), static_cast<Uint32>(ty),
