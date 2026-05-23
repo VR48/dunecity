@@ -2229,38 +2229,33 @@ void QuantBot::build(int militaryValue) {
 					int powerDeficit = getHouse()->getPowerRequirement() - getHouse()->getProducedPower();
 					logDebug("POWER-RECOVERY: Building windtrap to recover from power deficit (%d)", powerDeficit);
 				}
-				// 1c. City-mode aggressive power buffer.
+				// 1c. City-mode proportional power buffer.
 				//
-				// City zones consume power proportional to their density:
-				// ~24 power per industrial-density-3 zone, with hundreds of
-				// zones in a typical city. A single Windtrap (+100) can't
-				// keep up — by the time the deficit-recovery rule above
-				// fires, zones are already power-starved and DECLINING
-				// (CityEffectsRuntime.cpp:582 power-starved demotion path).
-				// So in city mode we proactively build power whenever the
-				// buffer drops below 1000, preferring Nuclear Plants
-				// (+1000 each) and falling back to Windtraps if the tech
-				// or placement isn't available.
+				// Buffer scales with zone power demand: 10% surplus over
+				// current powerRequirement. No zones → no buffer needed
+				// (step 1 already builds the first windtrap). This avoids
+				// the AI blowing its entire bank on windtraps at game start
+				// when there are no zones yet.
 				if (itemID == NONE_ID && !skipRemainingStructureLogic
 					&& currentGame && currentGame->isCitySimEnabled()) {
 					const int produced  = getHouse()->getProducedPower();
 					const int required  = getHouse()->getPowerRequirement();
 					const int buffer    = produced - required;
-					constexpr int kCityPowerBuffer = 1000;
-					if (buffer < kCityPowerBuffer) {
+					const int targetBuffer = required / 10;  // 10% surplus
+					if (required > 0 && buffer < targetBuffer) {
 						// Prefer Nuclear: one plant = 10 Windtraps, and a
 						// city packed with zones has limited rock left for
 						// more Windtrap footprints.
 						if (pBuilder->isAvailableToBuild(Structure_NuclearPlant)
 							&& findPlaceLocation(Structure_NuclearPlant).isValid()) {
 							itemID = Structure_NuclearPlant;
-							logDebug("CITY-POWER: Building Nuclear Plant (buffer=%d, threshold=%d)",
-									 buffer, kCityPowerBuffer);
+							logDebug("CITY-POWER: Building Nuclear Plant (buffer=%d, target=%d, required=%d)",
+									 buffer, targetBuffer, required);
 						} else if (pBuilder->isAvailableToBuild(Structure_WindTrap)
 							&& findPlaceLocation(Structure_WindTrap).isValid()) {
 							itemID = Structure_WindTrap;
-							logDebug("CITY-POWER: Building Windtrap (no Nuclear available, buffer=%d)",
-									 buffer);
+							logDebug("CITY-POWER: Building Windtrap (no Nuclear available, buffer=%d, target=%d)",
+									 buffer, targetBuffer);
 						}
 					}
 				}
@@ -2535,10 +2530,13 @@ void QuantBot::build(int militaryValue) {
 				// requires an actual structure object, so tile-flag placement
 				// (CMD_CITY_PLACE_ZONE without a structure) does not work.
 				// Target ratio: ~3 R : 1 C : 1 I.
+				// Only start zoning after core base is established.
 				if (itemID == NONE_ID && !skipRemainingStructureLogic
 					&& currentGame && currentGame->isCitySimEnabled()
 					&& money > 200
-					&& itemCount[Structure_WindTrap] > 0) {
+					&& itemCount[Structure_WindTrap] > 0
+					&& itemCount[Structure_Refinery] > 0
+					&& (itemCount[Structure_LightFactory] > 0 || itemCount[Structure_HeavyFactory] > 0)) {
 					int resCount = itemCount[Structure_ZoneResidential];
 					int comCount = itemCount[Structure_ZoneCommercial];
 					int indCount = itemCount[Structure_ZoneIndustrial];
