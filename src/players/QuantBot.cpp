@@ -1978,11 +1978,10 @@ void QuantBot::build(int militaryValue) {
 							}
 						}
 						else if (gameMode == GameMode::Custom
-							&& (itemCount[Structure_ConstructionYard] + itemCount[Unit_MCV]) * (currentGame && currentGame->isCitySimEnabled() ? 5000 : 10000) < money
+							&& (itemCount[Structure_ConstructionYard] + itemCount[Unit_MCV]) * 4000 < money
 							&& pBuilder->isAvailableToBuild(Unit_MCV)
-							&& itemCount[Structure_ConstructionYard] + itemCount[Unit_MCV] < (currentGame && currentGame->isCitySimEnabled() ? 8 : 4)
 							&& !getHouse()->isGroundUnitLimitReached()) {
-							// Build MCVs for expansion — more aggressively in city sim where CYs scale zone income
+							// Build MCVs for expansion — scales with money, no cap
 							produceItemWithLogging(Unit_MCV);
 							itemCount[Unit_MCV]++;
 						}
