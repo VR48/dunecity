@@ -2455,9 +2455,9 @@ void QuantBot::build(int militaryValue) {
 					}
 				}
 				// 4b. Early R/I/C zones when spice is scarce AND money is low
-				//     Only promotes zones above military when the bot actually needs
-				//     income. With money available, rules 5-17 build military first
-				//     and zones fire at normal priority (rule 18, relaxed for low spice).
+				//     Only promotes zones above military when the bot needs income.
+				//     On normal maps, the caps on rules 12/14/15 ensure zones fire
+				//     at rule 18 without needing early promotion.
 				if (itemID == NONE_ID && !skipRemainingStructureLogic
 					&& lowSpiceEconomy
 					&& money < 1000
@@ -2671,8 +2671,10 @@ void QuantBot::build(int militaryValue) {
 						// Tech 4: No prerequisites (just money and need)
 						// Tech 5-6: Require Repair Yard
 						// Tech 7+: Require Repair Yard + IX
+						// City sim: cap at 2 so zones get built
 				if (itemID == NONE_ID && !skipRemainingStructureLogic
 								&& money > 3000 && pBuilder->isAvailableToBuild(Structure_HeavyFactory)
+								&& !(currentGame && currentGame->isCitySimEnabled() && itemCount[Structure_HeavyFactory] >= 2)
 								&& (activeHeavyFactoryCount >= itemCount[Structure_HeavyFactory] || itemCount[Structure_HeavyFactory] < money / 4000)) {
 								
 								int techLevel = currentGame ? currentGame->techLevel : 8;
@@ -2710,16 +2712,18 @@ void QuantBot::build(int militaryValue) {
 							itemCount[Unit_Harvester]++;
 						}
 					}
-				// 14. Additional Repair Yards (1 per 6000 military value)
+				// 14. Additional Repair Yards (1 per 6000 military value, cap 2 in city sim)
 				if (itemID == NONE_ID && !skipRemainingStructureLogic
 							&& pBuilder->isAvailableToBuild(Structure_RepairYard) && money > 2000
+							&& !(currentGame && currentGame->isCitySimEnabled() && itemCount[Structure_RepairYard] >= 2)
 							&& itemCount[Structure_RepairYard] * 6000 < militaryValue) {
 							itemID = Structure_RepairYard;
 							logDebug("Build Repair Yard: have %d, need %d (military: %d)", itemCount[Structure_RepairYard], (militaryValue / 6000) + 1, militaryValue);
 						}
-				// 15. Additional High Tech Factories (if all existing ones are busy)
+				// 15. Additional High Tech Factories (if all existing ones are busy, cap 1 in city sim)
 				if (itemID == NONE_ID && !skipRemainingStructureLogic
 									&& money > 3000 && pBuilder->isAvailableToBuild(Structure_HighTechFactory)
+									&& !(currentGame && currentGame->isCitySimEnabled() && itemCount[Structure_HighTechFactory] >= 1)
 									&& itemCount[Structure_HighTechFactory] > 0 && activeHighTechFactoryCount >= itemCount[Structure_HighTechFactory]) {
 									itemID = Structure_HighTechFactory;
 								}
