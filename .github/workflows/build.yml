@@ -8,6 +8,10 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # Gate: on v* tag builds, verify that the source-controlled version metadata
   # (CMakeLists.txt, include/config.h, vcpkg.json) already matches the tag.
