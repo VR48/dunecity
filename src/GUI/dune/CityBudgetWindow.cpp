@@ -20,6 +20,7 @@
 #include <globals.h>
 #include <Game.h>
 #include <dunecity/CitySimulation.h>
+#include <dunecity/CityEffects.h>
 #include <Command.h>
 
 #include <FileClasses/TextManager.h>
@@ -92,6 +93,11 @@ CityBudgetWindow::CityBudgetWindow()
     netLabel.setText("Net: 0/yr");
     netLabel.setTextColor(COLOR_WHITE);
     mainVBox.addWidget(&netLabel);
+    mainVBox.addWidget(VSpacer::create(4));
+
+    perSecondLabel.setText("Income: 0 credits/sec");
+    perSecondLabel.setTextColor(COLOR_WHITE);
+    mainVBox.addWidget(&perSecondLabel);
     mainVBox.addWidget(VSpacer::create(15));
 
     // Police funding slider — the only player-adjustable lever.
@@ -249,7 +255,10 @@ void CityBudgetWindow::updateDisplay() {
     policeCostLabel.setText(fmt::sprintf("Police: -%d/yr (of %d at 100%%)",
                                          paying, nominal));
 
-    netLabel.setText(fmt::sprintf("Net: %+d/yr", projected - paying));
+    const int32_t netAnnual = projected - paying;
+    netLabel.setText(fmt::sprintf("Net: %+d/yr", netAnnual));
+    const int32_t perSec = netAnnual / DuneCity::kBudgetTicksPerYear;
+    perSecondLabel.setText(fmt::sprintf("Income: %+d credits/sec", perSec));
 
     // The slider's pending value is seeded once in the constructor so
     // subsequent +/- clicks edit the pending copy without being clobbered.

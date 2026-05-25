@@ -815,6 +815,12 @@ constexpr uint32_t kCyclesPerCityYear = 3750;
 constexpr int      kCityDaysPerYear   = 48;
 constexpr uint32_t kCyclesPerCityDay  = kCyclesPerCityYear / kCityDaysPerYear;
 
+/// Budget tick cadence: 1 tick per second of wall-clock time at default
+/// game speed (16 ms/cycle → 62 cycles ≈ 1.0 s). Each tick pays 1/50th
+/// of the annual budget for smooth income.
+constexpr uint32_t kCyclesPerBudgetTick = 62;
+constexpr int      kBudgetTicksPerYear  = 50;
+
 /// Compute annual tax revenue (in credits) for a city of `totalPopulation`
 /// at the given tax rate (0-100, but realistically 1-20 in-game).
 inline int32_t computeAnnualTaxRevenue(int totalPopulation, int taxRatePct) {

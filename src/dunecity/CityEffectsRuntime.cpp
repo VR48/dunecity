@@ -881,9 +881,8 @@ void CitySimulation::runDailyBudget() {
     // police annual cost (for the bill). Walked once across the map so
     // each owner's bill is independent of the others — every player,
     // human or AI, pays for their own police and collects their own
-    // taxes. Revenue and costs are divided by kCityDaysPerYear (48) so
-    // that the daily tick delivers 1/48th of the annual amount, giving
-    // smooth income instead of a yearly lump sum.
+    // taxes. Revenue and costs are divided by kBudgetTicksPerYear (50)
+    // so each 1-second tick delivers 1/50th of the annual amount.
     struct HouseBudget {
         int     pop       = 0;
         int32_t policeCost = 0;
@@ -924,8 +923,8 @@ void CitySimulation::runDailyBudget() {
         const int fundingPct = (house == pLocalHouse) ? policeFundingPercent_ : 100;
         const int32_t annualPaid = (hb.policeCost * fundingPct) / 100;
 
-        const int32_t dailyRevenue = annualRevenue / kCityDaysPerYear;
-        const int32_t dailyPaid    = annualPaid    / kCityDaysPerYear;
+        const int32_t dailyRevenue = annualRevenue / kBudgetTicksPerYear;
+        const int32_t dailyPaid    = annualPaid    / kBudgetTicksPerYear;
         const int32_t net = dailyRevenue - dailyPaid;
 
         if (net > 0) {

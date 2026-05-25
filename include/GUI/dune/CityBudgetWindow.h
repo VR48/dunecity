@@ -62,6 +62,7 @@ private:
     Label incomeLabel;
     Label policeCostLabel;
     Label netLabel;
+    Label perSecondLabel;
 
     HBox taxHBox;
     Label taxLabel;

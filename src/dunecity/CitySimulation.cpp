@@ -59,6 +59,8 @@ void CitySimulation::load(InputStream& stream) {
     cityDay_                 = stream.readSint32();
     lastProcessedDay_        = stream.readUint32();
     lastTaxYear_             = stream.readUint32();
+    // Derive lastBudgetTick_ from lastProcessedDay_ for save compatibility
+    lastBudgetTick_          = (lastProcessedDay_ * kCyclesPerCityDay) / kCyclesPerBudgetTick;
     economicVictoryThreshold_= stream.readSint32();
 
     policeFundingPercent_ = stream.readSint32();
@@ -117,16 +119,21 @@ void CitySimulation::advancePhase(uint32_t gameCycleCount) {
     cityYear_ = static_cast<int>(totalDays / kCityDaysPerYear);
     cityDay_  = static_cast<int>(totalDays % kCityDaysPerYear);
 
+    // Budget tick: runs every ~1 second (62 cycles), pays 1/50th of the
+    // annual budget. Decoupled from the day-tick so income is smooth.
+    const uint32_t budgetTick = gameCycleCount / kCyclesPerBudgetTick;
+    if (budgetTick > lastBudgetTick_) {
+        lastBudgetTick_ = budgetTick;
+        runDailyBudget();
+    }
+
     // Day tick: run effects scans + roll for zone growth. Growth is
     // gated stochastically per zone inside runZoneGrowth() so a city
     // population creeps up day by day rather than jumping in big steps.
-    // Budget is also distributed per day-tick (1/48 of annual) for
-    // smoother income instead of a yearly lump sum.
     if (totalDays > lastProcessedDay_) {
         lastProcessedDay_ = totalDays;
         runEffectsScans();
         runZoneGrowth();
-        runDailyBudget();
 
         // Diagnostic snapshot every 8 city days (~1/6 city year). Logs
         // average/max land value, crime, pollution across DEVELOPED

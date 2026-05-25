@@ -154,7 +154,8 @@ private:
 
     bool      effectsEnabled_ = true;   ///< City effects feature flag
     uint32_t  lastProcessedDay_ = 0;    ///< Last city-day number that ran a scan + growth roll
-    uint32_t  lastTaxYear_ = 0;         ///< Last year tax was collected (cityYear_ at collection)
+    uint32_t  lastTaxYear_ = 0;         ///< Legacy (unused) — kept for save-file compatibility
+    uint32_t  lastBudgetTick_ = 0;      ///< Last budget tick number (1 per second, pays 1/50 annual)
     int       cityDay_ = 0;             ///< Current city day (resets within the year, monotonic across years)
 
     /// Civic building presence flags, refreshed each scan.
