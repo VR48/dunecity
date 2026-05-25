@@ -365,22 +365,14 @@ void BuilderList::resize(Uint32 width, Uint32 height) {
 
     StaticContainer::resize(width,height);
 
-
-    // move list to show currently produced item
+    // Clamp scroll position to valid bounds (don't reset to produced item —
+    // that steals the human player's scroll when QuantBot AI triggers relayout)
     BuilderBase* pBuilder = dynamic_cast<BuilderBase*>(currentGame->getObjectManager().getObject(builderObjectID));
     if(pBuilder != nullptr) {
         auto& buildList = pBuilder->getBuildList();
-        auto currentProducedItemIter = std::find_if(buildList.begin(),
-                                                    buildList.end(),
-                                                    [pBuilder](const BuildItem& buildItem) {
-                                                        return (buildItem.itemID == pBuilder->getCurrentProducedItem());
-                                                    });
-
-        if(currentProducedItemIter != buildList.end()) {
-            const int shiftFromTopPos = 1;
-            int biggestLegalPosition = ((int)buildList.size()) - getNumButtons(getSize().y);
-            int currentProducedItemPos = std::distance(buildList.begin(), currentProducedItemIter);
-            currentListPos = std::max(0, std::min(currentProducedItemPos-shiftFromTopPos,biggestLegalPosition));
+        int biggestLegalPosition = std::max(0, ((int)buildList.size()) - getNumButtons(getSize().y));
+        if(currentListPos > biggestLegalPosition) {
+            currentListPos = biggestLegalPosition;
         }
     }
 }
