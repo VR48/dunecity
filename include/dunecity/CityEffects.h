@@ -458,28 +458,26 @@ inline int getZoneValueTier(int landValue, int numTiers) {
 // --- Population accounting ---------------------------------------------------
 
 /// People (R) or jobs (C/I) contributed by one city-role structure at the
-/// given level. Used by CitySimulation to recompute resPop_/comPop_/indPop_
-/// each scan. Returns 0 for non-role itemIDs and level==0.
+/// given level. Values match SimCity Classic (Micropolis) exactly:
+///   R: getResZonePop  → CzDen*8+16 → 16, 24, 32, 40
+///   C: getComZonePop  → CzDen+1    → 1, 2, 3, 4, 5
+///   I: getIndZonePop  → CzDen+1    → 1, 2, 3, 4
+/// DuneCity maps levels 1/2/3 to SC's low/mid/high density tiers.
+/// Fewer zones on Dune maps means smaller absolute populations — by design.
 inline int getZonePopulation(int itemID, int level) {
     if (level <= 0) return 0;
     if (level > 3) level = 3;
 
-    // Palace is a super residential — high-capacity civic residence that
-    // grows slowly via the same occupancy path. Caps at 1000 people.
+    // Palace is a super residential civic structure.
     if (itemID == Structure_Palace) {
-        static constexpr int kPalace[3] = { 250, 500, 1000 };
+        static constexpr int kPalace[3] = { 16, 32, 48 };
         return kPalace[level - 1];
     }
 
-    // Residential is people; Commercial/Industrial are jobs. R skews higher
-    // so a city feels inhabited before it feels saturated with jobs.
-    // Numbers are tuned so 20-30 zones on a typical Dune map produce
-    // SC-Classic-style totals (tens of thousands of residents); Dune maps
-    // hold ~10x fewer zones than SC's 120x100 grid so per-zone has to do
-    // proportionally more work.
-    static constexpr int kResidential[3] = { 100, 300, 800 };
-    static constexpr int kCommercial [3] = {  60, 200, 500 };
-    static constexpr int kIndustrial [3] = {  60, 200, 500 };
+    // SC Classic values (mapped to 3 DuneCity levels):
+    static constexpr int kResidential[3] = { 16, 24, 40 };
+    static constexpr int kCommercial [3] = {  1,  3,  5 };
+    static constexpr int kIndustrial [3] = {  1,  3,  4 };
 
     switch (getStructureCityRole(itemID)) {
         case CityRole::Residential: return kResidential[level - 1];
@@ -654,23 +652,29 @@ inline int getTaxTableEntry(int taxRate) {
     return kTaxTable[taxRate];
 }
 
-/// Compute RCI demand valves from population state, matching Micropolis'
-/// setValves() shape. Returns valves clamped to [-2000, 2000].
+/// Accumulating demand valve computation matching Micropolis setValves().
+/// Each tick computes a delta from population ratios and ADDS it to the
+/// existing valve (velocity model). This matches SC Classic exactly:
+///   valve = clamp(valve + delta, -range, range)
 ///
 /// resPop/comPop/indPop: current population counts (from zone scan)
-/// taxRate: city tax percentage (0-20)
-/// hasStadium/hasPalace/hasAirport/hasStarport: civic building presence
-/// popThreshold: population above which missing civics caps positive demand
+/// prevResPop/prevComPop/prevIndPop: previous tick values (for employment/labor)
+/// resValve/comValve/indValve: current valve values to accumulate onto
 struct ValveInputs {
     int resPop = 0;
     int comPop = 0;
     int indPop = 0;
+    int prevResPop = 0;   // previous tick (SC uses resHist[1])
+    int prevComPop = 0;   // previous tick (SC uses comHist[1])
+    int prevIndPop = 0;   // previous tick (SC uses indHist[1])
+    int16_t resValve = 0; // current valve to accumulate onto
+    int16_t comValve = 0;
+    int16_t indValve = 0;
     int taxRate = 7;
     bool hasStadium = false;
     bool hasPalace  = false;
     bool hasAirport = false;
     bool hasStarport = false;
-    int popThreshold = 2000;  // when civic caps start mattering
 };
 
 struct ValveOutputs {
@@ -679,93 +683,118 @@ struct ValveOutputs {
     int16_t indValve = 0;
 };
 
+/// Valve ranges matching Micropolis: R=2000, C=1500, I=1500
+constexpr int kResValveRange = 2000;
+constexpr int kComValveRange = 1500;
+constexpr int kIndValveRange = 1500;
+
 inline ValveOutputs computeDemandValves(const ValveInputs& in) {
-    auto clampValve = [](int v) -> int16_t {
-        if (v >  2000) v =  2000;
-        if (v < -2000) v = -2000;
-        return static_cast<int16_t>(v);
-    };
 
-    const int totalPop = in.resPop + in.comPop + in.indPop;
+    // Micropolis constants (from simulate.cpp)
+    constexpr int    resPopDenom = 8;
+    constexpr double birthRate = 0.02;
+    constexpr double laborBaseMax = 1.3;
+    constexpr double internalMarketDenom = 3.7;
+    constexpr double projectedIndPopMin = 5.0;
+    constexpr double resRatioDefault = 1.3;
+    constexpr double resRatioMax = 2.0;
+    constexpr double comRatioMax = 2.0;
+    constexpr double indRatioMax = 2.0;
+    constexpr double taxTableScale = 600.0;
 
-    // Bootstrap: empty or near-empty city gets small positive R demand to
-    // attract initial settlers. Without this the employment/migration formula
-    // produces negative demand for a city that doesn't exist yet.
-    if (totalPop < 100) {
-        const int taxAdj = getTaxTableEntry(in.taxRate);
-        return { clampValve(200 + taxAdj),
-                 clampValve(100 + taxAdj),
-                 clampValve(100 + taxAdj) };
+    // Normalize residential population (SC divides by 8)
+    const double normResPop = std::max(1.0, static_cast<double>(in.resPop) / resPopDenom);
+
+    // Employment uses previous-tick C+I values (SC: comHist[1] + indHist[1])
+    const double prevJobs = static_cast<double>(in.prevComPop + in.prevIndPop);
+    double employment;
+    if (in.resPop > 0) {
+        employment = prevJobs / normResPop;
+    } else {
+        employment = 1.0;
     }
 
-    // Normalize residential population (SC uses /8)
-    const double normResPop = std::max(1.0, static_cast<double>(in.resPop) / 8.0);
-
-    // Employment ratio: jobs / normalized residents
-    const double totalJobs = static_cast<double>(in.comPop + in.indPop);
-    const double employment = totalJobs / normResPop;
-
-    // Migration and births (SC model)
+    // Migration and births
     const double migration = normResPop * (employment - 1.0);
-    const double births = normResPop * 0.02;
+    const double births = normResPop * birthRate;
     const double projectedResPop = normResPop + migration + births;
 
-    // Labour base (capped at 1.3)
-    double laborBase = 1.0;
-    if (totalJobs > 0) {
-        laborBase = static_cast<double>(in.resPop) / totalJobs;
-        if (laborBase > 1.3) laborBase = 1.3;
-        if (laborBase < 0.0) laborBase = 0.0;
+    // Labour base uses previous-tick values (SC: resHist[1] / (comHist[1]+indHist[1]))
+    double laborBase;
+    if (prevJobs > 0.0) {
+        laborBase = static_cast<double>(in.prevResPop) / prevJobs;
+    } else {
+        laborBase = 1.0;
     }
+    if (laborBase > laborBaseMax) laborBase = laborBaseMax;
+    if (laborBase < 0.0) laborBase = 0.0;
 
     // Internal market
-    const double internalMarket = (normResPop + in.comPop + in.indPop) / 3.7;
+    const double internalMarket = (normResPop + in.comPop + in.indPop) / internalMarketDenom;
 
     // Projected populations
     const double projectedComPop = internalMarket * laborBase;
-    const double projectedIndPop = std::max(5.0, static_cast<double>(in.indPop)) * laborBase;
+    const double projectedIndPop = std::max(projectedIndPopMin,
+        static_cast<double>(in.indPop)) * laborBase;
 
-    // Growth ratios (clamped to max 2.0)
-    double resRatio = (normResPop > 0) ? projectedResPop / normResPop : 1.0;
-    double comRatio = (in.comPop > 0) ? projectedComPop / in.comPop : 1.0;
-    double indRatio = (in.indPop > 0) ? projectedIndPop / in.indPop : 1.0;
-    if (resRatio > 2.0) resRatio = 2.0;
-    if (comRatio > 2.0) comRatio = 2.0;
-    if (indRatio > 2.0) indRatio = 2.0;
+    // Growth ratios (SC defaults resRatio to 1.3 when resPop is 0)
+    double resRatio, comRatio, indRatio;
+    if (normResPop > 0) {
+        resRatio = projectedResPop / normResPop;
+    } else {
+        resRatio = resRatioDefault;
+    }
+    if (in.comPop > 0) {
+        comRatio = projectedComPop / in.comPop;
+    } else {
+        comRatio = projectedComPop;  // SC uses raw projected when 0
+    }
+    if (in.indPop > 0) {
+        indRatio = projectedIndPop / in.indPop;
+    } else {
+        indRatio = projectedIndPop;  // SC uses raw projected when 0
+    }
+    if (resRatio > resRatioMax) resRatio = resRatioMax;
+    if (comRatio > comRatioMax) comRatio = comRatioMax;
+    if (indRatio > indRatioMax) indRatio = indRatioMax;
 
-    // Tax adjustment. Multiplier is 1500 (not SC's 600) because DuneCity
-    // computes valves fresh each tick rather than accumulating like SC.
-    // SC accumulates over many cycles; we need a single computation to
-    // produce a valve strong enough that extreme imbalance (R >> C+I)
-    // overcomes max local eval (+750) and stays below growth gate (-350).
-    // Requires M > 1342 for the 10k-R/100-C/100-I invariant.
+    // Tax adjustment — SC uses min(cityTax + gameLevel, 20) but DuneCity
+    // has no game level concept, so we just use taxRate directly.
     const int taxAdj = getTaxTableEntry(in.taxRate);
-    int resRaw = static_cast<int>((resRatio - 1.0) * 1500.0) + taxAdj;
-    int comRaw = static_cast<int>((comRatio - 1.0) * 1500.0) + taxAdj;
-    int indRaw = static_cast<int>((indRatio - 1.0) * 1500.0) + taxAdj;
+    int resDelta = static_cast<int>((resRatio - 1.0) * taxTableScale) + taxAdj;
+    int comDelta = static_cast<int>((comRatio - 1.0) * taxTableScale) + taxAdj;
+    int indDelta = static_cast<int>((indRatio - 1.0) * taxTableScale) + taxAdj;
 
-    // Civic caps: when population exceeds threshold and civic building is
-    // missing, clamp positive demand to a soft ceiling. This makes Stadium,
-    // Airport, and Starport matter for growth without hard-blocking.
-    constexpr int kCivicCapCeiling = 200;  // soft cap when civic missing
+    // Accumulate onto existing valves (SC: valve = clamp(valve + delta))
+    int newRes = in.resValve + resDelta;
+    int newCom = in.comValve + comDelta;
+    int newInd = in.indValve + indDelta;
 
-    if (in.resPop > in.popThreshold) {
-        if (!in.hasStadium && !in.hasPalace && resRaw > kCivicCapCeiling) {
-            resRaw = kCivicCapCeiling;
-        }
+    // Civic caps (SC thresholds from message.cpp):
+    //   resCap: resPop > 500 && no stadium/palace → valve capped to 0
+    //   comCap: comPop > 100 && no airport        → valve capped to 0
+    //   indCap: indPop > 70  && no seaport/starport → valve capped to 0
+    if (in.resPop > 500 && !in.hasStadium && !in.hasPalace && newRes > 0) {
+        newRes = 0;
     }
-    if (in.comPop > in.popThreshold / 2) {
-        if (!in.hasAirport && comRaw > kCivicCapCeiling) {
-            comRaw = kCivicCapCeiling;
-        }
+    if (in.comPop > 100 && !in.hasAirport && newCom > 0) {
+        newCom = 0;
     }
-    if (in.indPop > in.popThreshold / 2) {
-        if (!in.hasStarport && indRaw > kCivicCapCeiling) {
-            indRaw = kCivicCapCeiling;
-        }
+    if (in.indPop > 70 && !in.hasStarport && newInd > 0) {
+        newInd = 0;
     }
 
-    return { clampValve(resRaw), clampValve(comRaw), clampValve(indRaw) };
+    // Clamp to SC ranges
+    if (newRes >  kResValveRange) newRes =  kResValveRange;
+    if (newRes < -kResValveRange) newRes = -kResValveRange;
+    if (newCom >  kComValveRange) newCom =  kComValveRange;
+    if (newCom < -kComValveRange) newCom = -kComValveRange;
+    if (newInd >  kIndValveRange) newInd =  kIndValveRange;
+    if (newInd < -kIndValveRange) newInd = -kIndValveRange;
+
+    return { static_cast<int16_t>(newRes),
+             static_cast<int16_t>(newCom),
+             static_cast<int16_t>(newInd) };
 }
 
 // --- Traffic pollution -------------------------------------------------------

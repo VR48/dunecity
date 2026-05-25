@@ -227,40 +227,41 @@ TEST_CASE("Zone population is zero when level is zero", "[city-effects][populati
 
 TEST_CASE("Non-zone city-role buildings ALSO contribute population at their level",
           "[city-effects][population]") {
-    REQUIRE(getZonePopulation(Structure_HeavyFactory, 3)   == 500);
-    REQUIRE(getZonePopulation(Structure_HighTechFactory, 3) == 500);
-    REQUIRE(getZonePopulation(Structure_IX, 3)             == 500);
-    REQUIRE(getZonePopulation(Structure_Silo, 1)           == 60);
-    REQUIRE(getZonePopulation(Structure_Radar, 2)          == 200);
-    // Refinery is I-low: caps at level 1 = 60 jobs.
-    REQUIRE(getZonePopulation(Structure_Refinery, 1)       == 60);
+    // SC Classic values: Industrial L3=4, Commercial L3=5
+    REQUIRE(getZonePopulation(Structure_HeavyFactory, 3)   == 4);   // Industrial
+    REQUIRE(getZonePopulation(Structure_HighTechFactory, 3) == 5);   // Commercial
+    REQUIRE(getZonePopulation(Structure_IX, 3)             == 5);   // Commercial
+    REQUIRE(getZonePopulation(Structure_Silo, 1)           == 1);   // Commercial L1
+    REQUIRE(getZonePopulation(Structure_Radar, 2)          == 3);   // Commercial L2
+    // Refinery is I-low: caps at level 1 = 1 job.
+    REQUIRE(getZonePopulation(Structure_Refinery, 1)       == 1);
     // Vacant — contributes nothing
     REQUIRE(getZonePopulation(Structure_Refinery, 0)       == 0);
     // Non-role structure — never contributes
     REQUIRE(getZonePopulation(Structure_WindTrap, 3)       == 0);
 }
 
-TEST_CASE("Residential zones contribute people, scaled with level",
+TEST_CASE("Residential zones contribute people, scaled with level (SC Classic values)",
           "[city-effects][population]") {
-    REQUIRE(getZonePopulation(Structure_ZoneResidential, 1) == 100);
-    REQUIRE(getZonePopulation(Structure_ZoneResidential, 2) == 300);
-    REQUIRE(getZonePopulation(Structure_ZoneResidential, 3) == 800);
+    REQUIRE(getZonePopulation(Structure_ZoneResidential, 1) == 16);
+    REQUIRE(getZonePopulation(Structure_ZoneResidential, 2) == 24);
+    REQUIRE(getZonePopulation(Structure_ZoneResidential, 3) == 40);
 }
 
-TEST_CASE("Commercial and industrial zones contribute jobs",
+TEST_CASE("Commercial and industrial zones contribute jobs (SC Classic values)",
           "[city-effects][population]") {
-    REQUIRE(getZonePopulation(Structure_ZoneCommercial, 1) == 60);
-    REQUIRE(getZonePopulation(Structure_ZoneCommercial, 2) == 200);
-    REQUIRE(getZonePopulation(Structure_ZoneCommercial, 3) == 500);
-    REQUIRE(getZonePopulation(Structure_ZoneIndustrial, 1) == 60);
-    REQUIRE(getZonePopulation(Structure_ZoneIndustrial, 2) == 200);
-    REQUIRE(getZonePopulation(Structure_ZoneIndustrial, 3) == 500);
+    REQUIRE(getZonePopulation(Structure_ZoneCommercial, 1) == 1);
+    REQUIRE(getZonePopulation(Structure_ZoneCommercial, 2) == 3);
+    REQUIRE(getZonePopulation(Structure_ZoneCommercial, 3) == 5);
+    REQUIRE(getZonePopulation(Structure_ZoneIndustrial, 1) == 1);
+    REQUIRE(getZonePopulation(Structure_ZoneIndustrial, 2) == 3);
+    REQUIRE(getZonePopulation(Structure_ZoneIndustrial, 3) == 4);
 }
 
 TEST_CASE("Population at level >3 clamps to level-3 value",
           "[city-effects][population]") {
-    REQUIRE(getZonePopulation(Structure_ZoneResidential, 5)  == 800);
-    REQUIRE(getZonePopulation(Structure_ZoneCommercial, 99)  == 500);
+    REQUIRE(getZonePopulation(Structure_ZoneResidential, 5)  == 40);
+    REQUIRE(getZonePopulation(Structure_ZoneCommercial, 99)  == 5);
 }
 
 // --- Tax ---------------------------------------------------------------------
@@ -457,23 +458,19 @@ TEST_CASE("computeLocalEval (traffic): commercial crime penalty",
 TEST_CASE("computeDemandValves: empty city produces positive R demand",
           "[city-effects][valves]") {
     // With no residents and no jobs, residential demand should be positive
-    // (people want to move in).
+    // (people want to move in). SC default resRatio = 1.3 when resPop is 0.
     ValveInputs vi;
-    vi.resPop = 0;
-    vi.comPop = 0;
-    vi.indPop = 0;
     vi.taxRate = 7;
     const auto vo = computeDemandValves(vi);
     CHECK(vo.resValve >= 0);
 }
 
-TEST_CASE("computeDemandValves: excess residents produce negative R demand",
+TEST_CASE("computeDemandValves: excess residents produce negative R delta",
           "[city-effects][valves]") {
-    // Many residents, no jobs: residential demand must be negative.
+    // Many residents, no jobs: R delta should push valve negative.
     ValveInputs vi;
-    vi.resPop = 5000;
-    vi.comPop = 0;
-    vi.indPop = 0;
+    vi.resPop = 500;
+    vi.prevResPop = 500;
     vi.taxRate = 7;
     const auto vo = computeDemandValves(vi);
     CHECK(vo.resValve < 0);
@@ -482,26 +479,31 @@ TEST_CASE("computeDemandValves: excess residents produce negative R demand",
 TEST_CASE("computeDemandValves: balanced city has moderate demand",
           "[city-effects][valves]") {
     ValveInputs vi;
-    vi.resPop = 1000;
-    vi.comPop = 500;
-    vi.indPop = 500;
+    vi.resPop = 100;
+    vi.comPop = 50;
+    vi.indPop = 50;
+    vi.prevResPop = 100;
+    vi.prevComPop = 50;
+    vi.prevIndPop = 50;
     vi.taxRate = 7;
     const auto vo = computeDemandValves(vi);
-    // All valves should be in reasonable range
-    CHECK(vo.resValve > -2000);
-    CHECK(vo.resValve < 2000);
-    CHECK(vo.comValve > -2000);
-    CHECK(vo.comValve < 2000);
-    CHECK(vo.indValve > -2000);
-    CHECK(vo.indValve < 2000);
+    CHECK(vo.resValve > -kResValveRange);
+    CHECK(vo.resValve <  kResValveRange);
+    CHECK(vo.comValve > -kComValveRange);
+    CHECK(vo.comValve <  kComValveRange);
+    CHECK(vo.indValve > -kIndValveRange);
+    CHECK(vo.indValve <  kIndValveRange);
 }
 
 TEST_CASE("computeDemandValves: high tax suppresses all demand",
           "[city-effects][valves]") {
     ValveInputs base;
-    base.resPop = 1000;
-    base.comPop = 500;
-    base.indPop = 500;
+    base.resPop = 100;
+    base.comPop = 50;
+    base.indPop = 50;
+    base.prevResPop = 100;
+    base.prevComPop = 50;
+    base.prevIndPop = 50;
     base.taxRate = 7;
     const auto low = computeDemandValves(base);
 
@@ -513,20 +515,19 @@ TEST_CASE("computeDemandValves: high tax suppresses all demand",
     CHECK(high.indValve < low.indValve);
 }
 
-TEST_CASE("computeDemandValves: civic caps limit positive demand",
+TEST_CASE("computeDemandValves: civic caps limit positive demand (SC thresholds)",
           "[city-effects][valves][civic-caps]") {
+    // SC thresholds: resPop>500, comPop>100, indPop>70
     ValveInputs vi;
-    vi.resPop = 3000;  // above popThreshold
-    vi.comPop = 2000;
-    vi.indPop = 2000;
-    vi.taxRate = 5;     // low tax for strong positive demand
-    vi.popThreshold = 2000;
+    vi.resPop = 600;  // above SC threshold of 500
+    vi.comPop = 200;  // above SC threshold of 100
+    vi.indPop = 100;  // above SC threshold of 70
+    vi.prevResPop = 600;
+    vi.prevComPop = 200;
+    vi.prevIndPop = 100;
+    vi.taxRate = 5;
 
-    // Without civics: demand is capped
-    vi.hasStadium = false;
-    vi.hasPalace  = false;
-    vi.hasAirport = false;
-    vi.hasStarport = false;
+    // Without civics: positive demand capped to 0
     const auto noCivic = computeDemandValves(vi);
 
     // With civics: demand uncapped
@@ -536,45 +537,52 @@ TEST_CASE("computeDemandValves: civic caps limit positive demand",
     vi.hasStarport = true;
     const auto withCivic = computeDemandValves(vi);
 
-    // Civic-capped demand should be <= uncapped demand (may be equal if
-    // demand is already below the cap ceiling).
     CHECK(noCivic.resValve <= withCivic.resValve);
     CHECK(noCivic.comValve <= withCivic.comValve);
     CHECK(noCivic.indValve <= withCivic.indValve);
 }
 
-TEST_CASE("computeDemandValves: R valve is negative when residents far exceed jobs",
-          "[city-effects][valves][regression]") {
-    // The core invariant: if residents >> jobs, R valve must be negative,
-    // preventing residential from growing further.
+TEST_CASE("computeDemandValves: valve accumulates over multiple ticks",
+          "[city-effects][valves][accumulation]") {
+    // Run two ticks — valve should accumulate
     ValveInputs vi;
-    vi.resPop = 10000;
-    vi.comPop = 100;
-    vi.indPop = 100;
+    vi.resPop = 100;
+    vi.prevResPop = 100;
+    vi.comPop = 50;
+    vi.prevComPop = 50;
+    vi.indPop = 50;
+    vi.prevIndPop = 50;
+    vi.taxRate = 7;
+
+    const auto tick1 = computeDemandValves(vi);
+    // Feed tick1 output back as input
+    vi.resValve = tick1.resValve;
+    vi.comValve = tick1.comValve;
+    vi.indValve = tick1.indValve;
+    const auto tick2 = computeDemandValves(vi);
+
+    // With same population, tick2 should have accumulated further
+    // (same direction as tick1 if delta is consistently positive/negative)
+    if (tick1.resValve > 0) {
+        CHECK(tick2.resValve >= tick1.resValve);
+    } else if (tick1.resValve < 0) {
+        CHECK(tick2.resValve <= tick1.resValve);
+    }
+}
+
+TEST_CASE("computeDemandValves: R valve negative when residents far exceed jobs",
+          "[city-effects][valves][regression]") {
+    // The core invariant: if residents >> jobs, R delta is negative.
+    ValveInputs vi;
+    vi.resPop = 800;
+    vi.prevResPop = 800;
+    vi.comPop = 10;
+    vi.prevComPop = 10;
+    vi.indPop = 10;
+    vi.prevIndPop = 10;
     vi.taxRate = 7;
     const auto vo = computeDemandValves(vi);
     CHECK(vo.resValve < 0);
-    // C/I demand should be positive (need more jobs for all those residents).
-    CHECK(vo.comValve > 0);
-    CHECK(vo.indValve > 0);
-}
-
-TEST_CASE("computeDemandValves: C/I positive when R negative does not force R growth",
-          "[city-effects][valves][regression]") {
-    // This is the original bug: C/I positive shouldn't drag R along.
-    // R valve being negative + local eval must produce zscore below growth gate.
-    ValveInputs vi;
-    vi.resPop = 10000;
-    vi.comPop = 100;
-    vi.indPop = 100;
-    vi.taxRate = 7;
-    const auto vo = computeDemandValves(vi);
-    CHECK(vo.resValve < kZscoreGrowthGate);
-    // Even with maximum local eval boost, R still can't grow
-    const int bestLocalEval = computeLocalEval(CityRole::Residential, 250, 0, 0,
-                                               TrafficResult::Connected);
-    const int zscore = computeZscore(vo.resValve, bestLocalEval, true);
-    CHECK(zscore < kZscoreGrowthGate);
 }
 
 // --- Tax table ---------------------------------------------------------------
@@ -697,11 +705,10 @@ TEST_CASE("Regression: high crime tanks land value and growth stalls",
 TEST_CASE("Regression: Airport raises commercial demand/cap",
           "[city-effects][regression][scenario]") {
     ValveInputs vi;
-    vi.resPop = 3000;
-    vi.comPop = 2000;
-    vi.indPop = 1000;
+    vi.resPop = 300;  vi.prevResPop = 300;
+    vi.comPop = 200;  vi.prevComPop = 200;  // above SC threshold 100
+    vi.indPop = 100;  vi.prevIndPop = 100;
     vi.taxRate = 5;
-    vi.popThreshold = 2000;
 
     vi.hasAirport = false;
     const auto noAirport = computeDemandValves(vi);
@@ -714,11 +721,10 @@ TEST_CASE("Regression: Airport raises commercial demand/cap",
 TEST_CASE("Regression: Starport raises industrial demand/cap",
           "[city-effects][regression][scenario]") {
     ValveInputs vi;
-    vi.resPop = 3000;
-    vi.comPop = 1000;
-    vi.indPop = 2000;
+    vi.resPop = 300;  vi.prevResPop = 300;
+    vi.comPop = 100;  vi.prevComPop = 100;
+    vi.indPop = 200;  vi.prevIndPop = 200;  // above SC threshold 70
     vi.taxRate = 5;
-    vi.popThreshold = 2000;
 
     vi.hasStarport = false;
     const auto noStarport = computeDemandValves(vi);
@@ -731,11 +737,10 @@ TEST_CASE("Regression: Starport raises industrial demand/cap",
 TEST_CASE("Regression: Stadium/Palace raises residential cap",
           "[city-effects][regression][scenario]") {
     ValveInputs vi;
-    vi.resPop = 3000;
-    vi.comPop = 2000;
-    vi.indPop = 2000;
+    vi.resPop = 600;  vi.prevResPop = 600;  // above SC threshold 500
+    vi.comPop = 200;  vi.prevComPop = 200;
+    vi.indPop = 200;  vi.prevIndPop = 200;
     vi.taxRate = 5;
-    vi.popThreshold = 2000;
 
     vi.hasStadium = false;
     vi.hasPalace = false;

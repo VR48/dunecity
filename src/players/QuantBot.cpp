@@ -2832,7 +2832,7 @@ void QuantBot::build(int militaryValue) {
 					if (auto* citySim = currentGame->getCitySimulation()) {
 						cityPop = citySim->getTotalPop();
 					}
-					palaceAllowed = (itemCount[Structure_Palace] < 1 + cityPop / 30000);
+					palaceAllowed = (itemCount[Structure_Palace] < 1 + cityPop / 500);
 				} else {
 					palaceAllowed = (itemCount[Structure_Palace] == 0 || !getGameInitSettings().getGameOptions().onlyOnePalace);
 				}

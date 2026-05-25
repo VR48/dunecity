@@ -130,6 +130,9 @@ private:
     int resPop_ = 0;
     int comPop_ = 0;
     int indPop_ = 0;
+    int prevResPop_ = 0;   ///< Previous tick population (SC: resHist[1])
+    int prevComPop_ = 0;   ///< Previous tick population (SC: comHist[1])
+    int prevIndPop_ = 0;   ///< Previous tick population (SC: indHist[1])
     int16_t resValve_ = 0;
     int16_t comValve_ = 0;
     int16_t indValve_ = 0;

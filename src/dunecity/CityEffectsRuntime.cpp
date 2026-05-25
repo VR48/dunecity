@@ -554,17 +554,27 @@ void CitySimulation::runZoneGrowth() {
         vi.resPop = curRes;
         vi.comPop = curCom;
         vi.indPop = curInd;
+        vi.prevResPop = prevResPop_;
+        vi.prevComPop = prevComPop_;
+        vi.prevIndPop = prevIndPop_;
+        vi.resValve = resValve_;
+        vi.comValve = comValve_;
+        vi.indValve = indValve_;
         vi.taxRate = cityTax_;
         vi.hasStadium  = hasStadium_;
         vi.hasPalace   = hasPalace_;
         vi.hasAirport  = hasAirport_;
         vi.hasStarport = hasStarport_;
-        vi.popThreshold = 2000;
 
         const ValveOutputs vo = computeDemandValves(vi);
         resValve_ = vo.resValve;
         comValve_ = vo.comValve;
         indValve_ = vo.indValve;
+
+        // Store current as previous for next tick (SC: miscHist)
+        prevResPop_ = curRes;
+        prevComPop_ = curCom;
+        prevIndPop_ = curInd;
     }
 
     // Traffic connectivity engine (BFS along road network).

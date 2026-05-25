@@ -49,6 +49,9 @@ void CitySimulation::load(InputStream& stream) {
     resPop_ = stream.readSint32();
     comPop_ = stream.readSint32();
     indPop_ = stream.readSint32();
+    prevResPop_ = resPop_;  // Initialize from current (no save format change)
+    prevComPop_ = comPop_;
+    prevIndPop_ = indPop_;
     resValve_ = stream.readSint16();
     comValve_ = stream.readSint16();
     indValve_ = stream.readSint16();
