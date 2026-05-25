@@ -2023,8 +2023,8 @@ void QuantBot::build(int militaryValue) {
 
 			case Structure_LightFactory: {
 				if (!pBuilder->isUpgrading()
-					&& gameMode == GameMode::Campaign
-					&& money > 1000
+					&& (gameMode == GameMode::Campaign || (currentGame && currentGame->isCitySimEnabled()))
+					&& money > (currentGame && currentGame->isCitySimEnabled() ? 500 : 1000)
 					&& itemCount[Structure_HeavyFactory] == 0  // Only produce from Light Factory if no Heavy Factory exists
 					&& pBuilder->getProductionQueueSize() < 1
 					&& pBuilder->getBuildListSize() > 0
@@ -2169,8 +2169,8 @@ void QuantBot::build(int militaryValue) {
 								doRepair(pBuilder);
 							}
 						}
-						else if (money > 2000 && militaryValue < militaryValueLimit && !getHouse()->isGroundUnitLimitReached()) {
-							// TODO: This entire section needs to be refactored to make it more generic
+						else if (money > (currentGame && currentGame->isCitySimEnabled() ? 500 : 2000)
+							&& militaryValue < militaryValueLimit && !getHouse()->isGroundUnitLimitReached()) {
 							// Limit enemy military units based on difficulty
 
 							// Calculate current value of units
