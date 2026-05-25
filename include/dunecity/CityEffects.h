@@ -35,21 +35,21 @@ namespace DuneCity {
 //   Slab/Slab4         -> Road
 //   WindTrap           -> Coal Power (no pollution)
 //   Nuclear Plant      -> Nuclear Power (no pollution, no meltdown)
-//   Refinery           -> Industrial low (small factory, density 1 only)
+//   Refinery           -> Industrial medium
 //   Light Factory      -> Industrial medium
 //   Heavy Factory      -> Industrial high
+//   HighTech Factory   -> Industrial high
 //   Repair Yard        -> Industrial high
-//   Spice Silo         -> Commercial low
+//   Spice Silo         -> Industrial low
 //   Radar              -> Commercial medium
-//   HighTech Factory   -> Commercial high
 //   House IX           -> Commercial high
 //   Starport           -> Shipyard / Industrial high (jobs, economic role)
-//   Palace             -> Super Residential (3x pop, slow growth)
+//   Palace             -> Civic dual: 2x Residential + 2x Commercial pop, land-value boost
 //   Stadium            -> Civic amenity (large land-value boost)
 //   Airport            -> Commercial high (transport/trade boost)
-//   Barracks           -> Police Station
-//   WOR                -> Police Station (HQ)
-//   Gun/Rocket Turret  -> Park bonus + 1/4 Police
+//   Barracks           -> Residential high (infantry garrison = population)
+//   WOR                -> Residential high (heavy infantry garrison = population)
+//   Gun/Rocket Turret  -> Park bonus + 1/4 Police + land-value boost
 //   Wall               -> Park bonus only
 //   Sand (terrain)     -> Water (land-value bonus)
 // =============================================================================
@@ -124,26 +124,30 @@ enum class CityRole {
 };
 
 /// What SC-Classic role this Dune structure plays in the city sim, if any.
-/// Palace → super residential (high-capacity, caps at 1000 people, slow growth).
+/// Palace → civic dual (contributes to BOTH R and C pop — handled specially).
+///   For growth purposes Palace uses Residential role.
 /// StarPort → shipyard / industrial high (jobs + economic role).
 /// Airport → commercial high (transport/trade boost).
+/// Barracks/WOR → residential high (infantry garrisons = population).
 inline CityRole getStructureCityRole(int itemID) {
     switch (itemID) {
         case Structure_ZoneResidential:
         case Structure_Palace:
+        case Structure_Barracks:
+        case Structure_WOR:
             return CityRole::Residential;
         case Structure_ZoneCommercial:
-        case Structure_Silo:
         case Structure_Radar:
-        case Structure_HighTechFactory:
         case Structure_IX:
         case Structure_Airport:
             return CityRole::Commercial;
         case Structure_ZoneIndustrial:
         case Structure_LightFactory:
         case Structure_HeavyFactory:
+        case Structure_HighTechFactory:
         case Structure_RepairYard:
         case Structure_Refinery:
+        case Structure_Silo:
         case Structure_StarPort:
             return CityRole::Industrial;
         default:
@@ -152,28 +156,29 @@ inline CityRole getStructureCityRole(int itemID) {
 }
 
 /// Maximum "level" this city-role structure can reach. Zones go 1..3.
-/// Non-zone city-role structures cap at the tier they map to (a Silo is
-/// inherently low-density commercial, so it tops out at level 1).
+/// Non-zone city-role structures cap at the tier they map to.
 inline int getStructureMaxLevel(int itemID) {
     switch (itemID) {
         case Structure_ZoneResidential:
         case Structure_ZoneCommercial:
         case Structure_ZoneIndustrial:
-        case Structure_Palace:          // super residential — caps at 1000 people, grows slowly
+        case Structure_Palace:          // civic dual — grows to max density
             return 3;
-        case Structure_Silo:
-        case Structure_Refinery:
-            return 1;  // low (Silo = C-low, Refinery = I-low / small factory)
-        case Structure_Radar:
-        case Structure_LightFactory:
-            return 2;  // medium
-        case Structure_HighTechFactory:
-        case Structure_IX:
-        case Structure_HeavyFactory:
-        case Structure_RepairYard:
+        case Structure_Silo:            // industrial low
+            return 1;
+        case Structure_Radar:           // commercial medium
+        case Structure_LightFactory:    // industrial medium
+        case Structure_Refinery:        // industrial medium
+            return 2;
+        case Structure_HighTechFactory: // industrial high
+        case Structure_IX:              // commercial high
+        case Structure_HeavyFactory:    // industrial high
+        case Structure_RepairYard:      // industrial high
         case Structure_StarPort:        // shipyard — industrial high
         case Structure_Airport:         // transport hub — commercial high
-            return 3;  // high
+        case Structure_Barracks:        // residential high (infantry)
+        case Structure_WOR:             // residential high (heavy infantry)
+            return 3;
         default:
             return 0;
     }
@@ -275,10 +280,10 @@ inline int getPoliceAnnualCost(int itemID) {
 inline int getParkLandValueBonus(int itemID) {
     switch (itemID) {
         case Structure_Wall:            return kParkLandValueBonus;
-        case Structure_GunTurret:       return kParkLandValueBonus;
-        case Structure_RocketTurret:    return kParkLandValueBonus;
+        case Structure_GunTurret:       return kParkLandValueBonus * 2;  // turrets raise land value
+        case Structure_RocketTurret:    return kParkLandValueBonus * 2;  // turrets raise land value
         case Structure_Stadium:         return kStadiumLandValueBonus;
-        case Structure_Palace:          return kParkLandValueBonus;
+        case Structure_Palace:          return kStadiumLandValueBonus;   // civic building — large boost
         default:                        return 0;
     }
 }
@@ -464,14 +469,18 @@ inline int getZoneValueTier(int landValue, int numTiers) {
 ///   I: getIndZonePop  → CzDen+1    → 1, 2, 3, 4
 /// DuneCity maps levels 1/2/3 to SC's low/mid/high density tiers.
 /// Fewer zones on Dune maps means smaller absolute populations — by design.
+///
+/// Palace is a civic dual structure that contributes to BOTH R and C.
+/// getZonePopulation returns the residential portion; use
+/// getPalaceCommercialPopulation() for the commercial half.
 inline int getZonePopulation(int itemID, int level) {
     if (level <= 0) return 0;
     if (level > 3) level = 3;
 
-    // Palace is a super residential civic structure.
+    // Palace residential portion (2x residential zone).
     if (itemID == Structure_Palace) {
-        static constexpr int kPalace[3] = { 16, 32, 48 };
-        return kPalace[level - 1];
+        static constexpr int kPalaceRes[3] = { 32, 48, 80 };  // 2× R values
+        return kPalaceRes[level - 1];
     }
 
     // SC Classic values (mapped to 3 DuneCity levels):
@@ -485,6 +494,15 @@ inline int getZonePopulation(int itemID, int level) {
         case CityRole::Industrial:  return kIndustrial [level - 1];
         default:                    return 0;
     }
+}
+
+/// Palace commercial population contribution (2x commercial zone values).
+/// Separate from getZonePopulation so the main loop can add this to comPop.
+inline int getPalaceCommercialPopulation(int level) {
+    if (level <= 0) return 0;
+    if (level > 3) level = 3;
+    static constexpr int kPalaceCom[3] = { 2, 6, 10 };  // 2× C values
+    return kPalaceCom[level - 1];
 }
 
 // --- Traffic connectivity result ---------------------------------------------
@@ -701,6 +719,9 @@ inline ValveOutputs computeDemandValves(const ValveInputs& in) {
     constexpr double comRatioMax = 2.0;
     constexpr double indRatioMax = 2.0;
     constexpr double taxTableScale = 600.0;
+    // Game difficulty: SC Classic's extMarketParamTable = {1.2, 1.1, 0.98}.
+    // DuneCity uses Easy (1.2) — boosts industrial growth.
+    constexpr double extMarketParam = 1.2;
 
     // Normalize residential population (SC divides by 8)
     const double normResPop = std::max(1.0, static_cast<double>(in.resPop) / resPopDenom);
@@ -735,7 +756,7 @@ inline ValveOutputs computeDemandValves(const ValveInputs& in) {
     // Projected populations
     const double projectedComPop = internalMarket * laborBase;
     const double projectedIndPop = std::max(projectedIndPopMin,
-        static_cast<double>(in.indPop)) * laborBase;
+        static_cast<double>(in.indPop)) * laborBase * extMarketParam;
 
     // Growth ratios (SC defaults resRatio to 1.3 when resPop is 0)
     double resRatio, comRatio, indRatio;
@@ -850,12 +871,60 @@ constexpr uint32_t kCyclesPerCityDay  = kCyclesPerCityYear / kCityDaysPerYear;
 constexpr uint32_t kCyclesPerBudgetTick = 62;
 constexpr int      kBudgetTicksPerYear  = 50;
 
-/// Compute annual tax revenue (in credits) for a city of `totalPopulation`
-/// (in raw SC units) at the given tax rate (0-100). Revenue is scaled by
-/// kPopDisplayMultiplier so credits match the displayed population scale.
-inline int32_t computeAnnualTaxRevenue(int totalPopulation, int taxRatePct) {
+/// Compute annual tax revenue (in credits). Revenue scales with population,
+/// tax rate, AND average land value — richer neighbourhoods pay more tax,
+/// matching SimCity Classic's `taxFund = cityTax * totalPop * landValueAvg / 120`.
+/// `avgLandValue` is 0..250; at 128 (midpoint) the multiplier is ~1.0x.
+/// When avgLandValue is 0 (unknown / not passed), falls back to the
+/// population-only formula for backward compatibility.
+inline int32_t computeAnnualTaxRevenue(int totalPopulation, int taxRatePct,
+                                       int avgLandValue = 0) {
     if (totalPopulation <= 0 || taxRatePct <= 0) return 0;
-    return (totalPopulation * 20 * taxRatePct) / 100;
+    int32_t base = (totalPopulation * 20 * taxRatePct) / 100;
+    if (avgLandValue > 0) {
+        // Scale by land value: 128 → 1.0x, 250 → ~2.0x, 30 → ~0.23x
+        base = static_cast<int32_t>((static_cast<int64_t>(base) * avgLandValue) / 128);
+    }
+    return base;
+}
+
+// --- Hospital and Church demand (SC Classic census) -------------------------
+//
+// SC Classic tracks hospital and church need based on residential population:
+//   needHospital = (resPop >> 8) - hospitalPop   (1 hospital per 256 res)
+//   needChurch   = (resPop >> 8) - churchPop     (1 church per 256 res)
+// Positive = need more; negative = too many; zero = balanced.
+// DuneCity tracks the NEED so the player knows when to build civic buildings.
+
+/// Residential population per hospital needed (SC: resPop >> 8 = resPop / 256).
+constexpr int kResPopPerHospital = 256;
+/// Residential population per church needed.
+constexpr int kResPopPerChurch   = 256;
+
+/// Compute how many hospitals are needed for the given residential population.
+inline int computeHospitalNeed(int resPop, int hospitalCount) {
+    const int needed = resPop / kResPopPerHospital;
+    return needed - hospitalCount;  // positive = need more
+}
+
+/// Compute how many churches are needed.
+inline int computeChurchNeed(int resPop, int churchCount) {
+    const int needed = resPop / kResPopPerChurch;
+    return needed - churchCount;
+}
+
+// --- Unemployment -----------------------------------------------------------
+
+/// Compute unemployment rate as a percentage (0-100).
+/// Uses SC Classic's employment formula: employment = jobs / (resPop/8).
+/// Unemployment = max(0, 1.0 - employment) * 100.
+inline int computeUnemploymentRate(int resPop, int comPop, int indPop) {
+    if (resPop <= 0) return 0;
+    const double normRes = static_cast<double>(resPop) / 8.0;
+    const double jobs = static_cast<double>(comPop + indPop);
+    const double employment = jobs / normRes;
+    if (employment >= 1.0) return 0;
+    return static_cast<int>((1.0 - employment) * 100.0);
 }
 
 } // namespace DuneCity

@@ -80,6 +80,9 @@ private:
     Label comPopLabel;
     Label indPopLabel;
     Label totalPopLabel;
+    Label unemploymentLabel;
+    Label hospitalLabel;
+    Label churchLabel;
 
     HBox buttonsHBox;
     TextButton applyButton;

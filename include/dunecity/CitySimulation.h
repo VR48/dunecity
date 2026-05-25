@@ -78,6 +78,16 @@ public:
     int32_t getUnpoweredZoneCount() const { return 0; }
     int32_t getEconomicVictoryThreshold() const { return economicVictoryThreshold_; }
 
+    /// Average land value across developed blocks (0-250), refreshed each scan.
+    int getAvgLandValue() const { return avgLandValue_; }
+
+    /// Unemployment rate (0-100%), refreshed each zone growth pass.
+    int getUnemploymentRate() const { return unemploymentRate_; }
+
+    /// Hospital/church need: positive = need more, 0 = balanced, negative = surplus.
+    int getHospitalNeed() const { return hospitalNeed_; }
+    int getChurchNeed() const { return churchNeed_; }
+
     /// City Effects feature flag (Phase 6). When false, all effect scans
     /// are skipped and the maps stay at zero. Set from Game options at init.
     void setCityEffectsEnabled(bool enabled) { effectsEnabled_ = enabled; }
@@ -152,6 +162,11 @@ private:
     int     policeFundingPercent_ = 100;  ///< 0..100; scales police coverage AND expense
     int32_t nominalPoliceCost_    = 0;    ///< Sum of getPoliceAnnualCost() across police-role structures
     int32_t lastPoliceExpense_    = 0;    ///< Actually-paid-out portion (nominal * funding/100)
+
+    int     avgLandValue_         = 0;    ///< Average land value across developed blocks (0-250)
+    int     unemploymentRate_     = 0;    ///< Unemployment percentage (0-100)
+    int     hospitalNeed_         = 0;    ///< Hospitals needed (positive = need more)
+    int     churchNeed_           = 0;    ///< Churches needed (positive = need more)
 
     CityMapLayer<uint8_t> powerGridMap_;
     CityMapLayer<uint8_t> trafficDensityMap_;

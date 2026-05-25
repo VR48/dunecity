@@ -331,9 +331,10 @@ void CitySimulation::runEffectsScans() {
     forEachStructureOrigin(map, [&](int x, int y, const StructureBase* pStruct) {
         const int parkBonus = getParkLandValueBonus(pStruct->getItemID());
         if (parkBonus > 0) {
-            // Stadium radiates its bonus over a wider area (8 tiles vs 3
-            // for walls/turrets) to match its civic-amenity role.
-            const int radius = (pStruct->getItemID() == Structure_Stadium)
+            // Stadium and Palace radiate their bonus over a wider area
+            // (8 tiles vs 3 for walls/turrets) to match their civic role.
+            const int itemID = pStruct->getItemID();
+            const int radius = (itemID == Structure_Stadium || itemID == Structure_Palace)
                 ? 8 : kParkBonusRadius;
             stampFalloff(landValueMap_, x, y,
                          radius, parkBonus, kMaxLandValue);
@@ -473,6 +474,25 @@ void CitySimulation::runEffectsScans() {
         }
     }
 
+    // Compute average land value across developed blocks for tax formula.
+    {
+        const int bsLv = landValueMap_.getBlockSize();
+        const int bwLv = (mapWidth_  + bsLv - 1) / bsLv;
+        const int bhLv = (mapHeight_ + bsLv - 1) / bsLv;
+        int devCount = 0;
+        long long lvTotal = 0;
+        for (int by = 0; by < bhLv; ++by) {
+            for (int bx = 0; bx < bwLv; ++bx) {
+                const int lv = landValueMap_.get(bx, by);
+                if (lv > 0) {
+                    ++devCount;
+                    lvTotal += lv;
+                }
+            }
+        }
+        avgLandValue_ = devCount > 0 ? static_cast<int>(lvTotal / devCount) : 0;
+    }
+
     // Decay growth rate map toward zero.
     decayGrowthRateMap();
 }
@@ -541,12 +561,17 @@ void CitySimulation::runZoneGrowth() {
     {
         int curRes = 0, curCom = 0, curInd = 0;
         for (const auto& n : nodes) {
-            const int pop = getZonePopulation(n.pStruct->getItemID(), n.level);
+            const int itemID = n.pStruct->getItemID();
+            const int pop = getZonePopulation(itemID, n.level);
             switch (n.role) {
                 case CityRole::Residential: curRes += pop; break;
                 case CityRole::Commercial:  curCom += pop; break;
                 case CityRole::Industrial:  curInd += pop; break;
                 default: break;
+            }
+            // Palace dual-role: also contributes commercial population.
+            if (itemID == Structure_Palace) {
+                curCom += getPalaceCommercialPopulation(n.level);
             }
         }
 
@@ -842,15 +867,22 @@ void CitySimulation::runZoneGrowth() {
         }
     }
 
-    // Recompute population totals.
+    // Recompute population totals. Palace is dual-role: its residential
+    // portion comes from getZonePopulation(), its commercial portion from
+    // getPalaceCommercialPopulation().
     int newRes = 0, newCom = 0, newInd = 0;
     for (const auto& n : nodes) {
-        const int pop = getZonePopulation(n.pStruct->getItemID(), n.level);
+        const int itemID = n.pStruct->getItemID();
+        const int pop = getZonePopulation(itemID, n.level);
         switch (n.role) {
             case CityRole::Residential: newRes += pop; break;
             case CityRole::Commercial:  newCom += pop; break;
             case CityRole::Industrial:  newInd += pop; break;
             default: break;
+        }
+        // Palace dual-role: also contributes commercial population.
+        if (itemID == Structure_Palace) {
+            newCom += getPalaceCommercialPopulation(n.level);
         }
     }
     if (newRes != resPop_ || newCom != comPop_ || newInd != indPop_) {
@@ -861,6 +893,18 @@ void CitySimulation::runZoneGrowth() {
     resPop_ = newRes;
     comPop_ = newCom;
     indPop_ = newInd;
+
+    // Unemployment rate (SC Classic employment formula).
+    unemploymentRate_ = computeUnemploymentRate(newRes, newCom, newInd);
+
+    // Hospital/church need (SC Classic census). Count hospital/church
+    // structures on the map — currently no dedicated structures exist,
+    // so need is always positive once population grows.
+    // TODO: Add Structure_Hospital and Structure_Church when building types exist.
+    int hospitalCount = 0;
+    int churchCount = 0;
+    hospitalNeed_ = computeHospitalNeed(newRes, hospitalCount);
+    churchNeed_   = computeChurchNeed(newRes, churchCount);
 }
 
 void CitySimulation::decayGrowthRateMap() {
@@ -928,8 +972,9 @@ void CitySimulation::runDailyBudget() {
     bool    localTouched = false;
 
     for (auto& [house, hb] : houseBudgets) {
-        // Annual values divided by days-per-year for smooth daily payout
-        const int32_t annualRevenue = computeAnnualTaxRevenue(hb.pop, cityTax_);
+        // Annual values divided by days-per-year for smooth daily payout.
+        // Revenue scales with average land value — richer cities earn more.
+        const int32_t annualRevenue = computeAnnualTaxRevenue(hb.pop, cityTax_, avgLandValue_);
         const int fundingPct = (house == pLocalHouse) ? policeFundingPercent_ : 100;
         const int32_t annualPaid = (hb.policeCost * fundingPct) / 100;
 

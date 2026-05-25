@@ -28,7 +28,7 @@
 #include <misc/format.h>
 
 CityBudgetWindow::CityBudgetWindow()
- : Window(100, 100, 400, 380) {
+ : Window(100, 100, 400, 460) {
 
     // Non-modal: clicks outside this window dismiss it and pass through to
     // the underlying interface, so the player can still hit build buttons,
@@ -142,6 +142,21 @@ CityBudgetWindow::CityBudgetWindow()
     totalPopLabel.setText("Total Population: 0");
     totalPopLabel.setTextColor(COLOR_WHITE);
     mainVBox.addWidget(&totalPopLabel);
+    mainVBox.addWidget(VSpacer::create(4));
+
+    unemploymentLabel.setText("Unemployment: 0%");
+    unemploymentLabel.setTextColor(COLOR_WHITE);
+    mainVBox.addWidget(&unemploymentLabel);
+    mainVBox.addWidget(VSpacer::create(4));
+
+    hospitalLabel.setText("Hospitals needed: 0");
+    hospitalLabel.setTextColor(COLOR_WHITE);
+    mainVBox.addWidget(&hospitalLabel);
+    mainVBox.addWidget(VSpacer::create(4));
+
+    churchLabel.setText("Churches needed: 0");
+    churchLabel.setTextColor(COLOR_WHITE);
+    mainVBox.addWidget(&churchLabel);
     mainVBox.addWidget(VSpacer::create(15));
 
     applyButton.setText("Apply");
@@ -240,10 +255,11 @@ void CityBudgetWindow::updateDisplay() {
     yearLabel.setText(fmt::sprintf("Year: %d", citySim->getCityYear()));
     treasuryLabel.setText(fmt::sprintf("Credits: %d", citySim->getTotalFunds()));
 
-    // Projected annual revenue using the pending tax slider.
+    // Projected annual revenue using the pending tax slider and land value.
     const int totalPop  = citySim->getTotalPop();
     const int taxRate   = pendingTaxRate;
-    const int projected = DuneCity::computeAnnualTaxRevenue(totalPop, taxRate);
+    const int avgLV     = citySim->getAvgLandValue();
+    const int projected = DuneCity::computeAnnualTaxRevenue(totalPop, taxRate, avgLV);
     incomeLabel.setText(fmt::sprintf("Tax Revenue: +%d/yr (proj.)", projected));
 
     // Police: nominal cost is full-funded; actual paid is scaled by the
@@ -266,4 +282,24 @@ void CityBudgetWindow::updateDisplay() {
     comPopLabel.setText(fmt::sprintf("Commercial: %d", citySim->getDisplayComPop()));
     indPopLabel.setText(fmt::sprintf("Industrial: %d", citySim->getDisplayIndPop()));
     totalPopLabel.setText(fmt::sprintf("Total Population: %d", citySim->getDisplayTotalPop()));
+
+    // Unemployment
+    const int unemp = citySim->getUnemploymentRate();
+    unemploymentLabel.setText(fmt::sprintf("Unemployment: %d%%", unemp));
+    unemploymentLabel.setTextColor(unemp > 20 ? COLOR_RGB(255,80,80) : COLOR_WHITE);
+
+    // Hospital/church need (positive = need more buildings)
+    const int hospNeed = citySim->getHospitalNeed();
+    if (hospNeed > 0)
+        hospitalLabel.setText(fmt::sprintf("Hospitals needed: %d", hospNeed));
+    else
+        hospitalLabel.setText("Hospitals: OK");
+    hospitalLabel.setTextColor(hospNeed > 0 ? COLOR_RGB(255,200,80) : COLOR_WHITE);
+
+    const int churchNeed = citySim->getChurchNeed();
+    if (churchNeed > 0)
+        churchLabel.setText(fmt::sprintf("Churches needed: %d", churchNeed));
+    else
+        churchLabel.setText("Churches: OK");
+    churchLabel.setTextColor(churchNeed > 0 ? COLOR_RGB(255,200,80) : COLOR_WHITE);
 }
