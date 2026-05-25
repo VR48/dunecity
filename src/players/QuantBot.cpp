@@ -2736,9 +2736,12 @@ void QuantBot::build(int militaryValue) {
 						// Tech 4: No prerequisites (just money and need)
 						// Tech 5-6: Require Repair Yard
 						// Tech 7+: Require Repair Yard + IX
+						// City sim: cap at 3 — economy comes from zones, not factories
+				{
+				int heavyFactoryCap = (currentGame && currentGame->isCitySimEnabled()) ? 3 : (1 + money / 4000);
 				if (itemID == NONE_ID && !skipRemainingStructureLogic
 								&& money > 3000 && pBuilder->isAvailableToBuild(Structure_HeavyFactory)
-								&& (activeHeavyFactoryCount >= itemCount[Structure_HeavyFactory] || itemCount[Structure_HeavyFactory] < 1 + money / 4000)) {
+								&& (activeHeavyFactoryCount >= itemCount[Structure_HeavyFactory] || itemCount[Structure_HeavyFactory] < heavyFactoryCap)) {
 								
 								int techLevel = currentGame ? currentGame->techLevel : 8;
 								bool prerequisitesMet = false;
@@ -2758,10 +2761,11 @@ void QuantBot::build(int militaryValue) {
 							
 								if (prerequisitesMet) {
 									itemID = Structure_HeavyFactory;
-									logDebug("PRIORITY Heavy Factory - active: %d  total: %d  money: %d  capacity_limit: %d  tech: %d",
-										activeHeavyFactoryCount, getHouse()->getNumItems(Structure_HeavyFactory), money, 1 + money / 4000, techLevel);
+									logDebug("PRIORITY Heavy Factory - active: %d  total: %d  money: %d  cap: %d  tech: %d",
+										activeHeavyFactoryCount, getHouse()->getNumItems(Structure_HeavyFactory), money, heavyFactoryCap, techLevel);
 								}
 							}
+				}
 				// 13. Refineries for harvester ratio — skip when no spice
 				if (itemID == NONE_ID && !skipRemainingStructureLogic
 						&& !lowSpiceEconomy
@@ -2826,14 +2830,26 @@ void QuantBot::build(int militaryValue) {
 					}
 				}
 				// 17b. Palace (after military infrastructure)
+				//       City sim: only 1 palace, and require some R/I/C zones first
+				{
+				bool palaceAllowed = true;
+				if (currentGame && currentGame->isCitySimEnabled()) {
+					int totalZones = itemCount[Structure_ZoneResidential]
+						+ itemCount[Structure_ZoneCommercial]
+						+ itemCount[Structure_ZoneIndustrial];
+					palaceAllowed = (itemCount[Structure_Palace] == 0 && totalZones >= 3);
+				} else {
+					palaceAllowed = (itemCount[Structure_Palace] == 0 || !getGameInitSettings().getGameOptions().onlyOnePalace);
+				}
 				if (itemID == NONE_ID && !skipRemainingStructureLogic
 									&& money > 5000
 									&& pBuilder->isAvailableToBuild(Structure_Palace)
-									&& (itemCount[Structure_Palace] == 0 || !getGameInitSettings().getGameOptions().onlyOnePalace)
+									&& palaceAllowed
 									&& itemCount[Structure_HeavyFactory] > 0
 									&& itemCount[Structure_LightFactory] > 0) {
 								itemID = Structure_Palace;
 							}
+				}
 				// 18. City zone structures (when city sim is active)
 				// Zones are 2x2 structures built via the CY; runZoneGrowth()
 				// requires an actual structure object, so tile-flag placement
