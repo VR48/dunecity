@@ -280,8 +280,8 @@ inline int getPoliceAnnualCost(int itemID) {
 inline int getParkLandValueBonus(int itemID) {
     switch (itemID) {
         case Structure_Wall:            return kParkLandValueBonus;
-        case Structure_GunTurret:       return 20;  // turrets raise land value
-        case Structure_RocketTurret:    return 20;  // turrets raise land value
+        case Structure_GunTurret:       return 5;   // turrets raise land value slightly
+        case Structure_RocketTurret:    return 5;   // turrets raise land value slightly
         case Structure_Stadium:         return kStadiumLandValueBonus;
         case Structure_Palace:          return kStadiumLandValueBonus;   // civic building — large boost
         default:                        return 0;

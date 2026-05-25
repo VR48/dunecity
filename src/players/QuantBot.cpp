@@ -1184,6 +1184,8 @@ Coord QuantBot::findPlaceLocation(Uint32 itemID) {
 				}
 
 				if (isResidential || isCommercial) {
+					auto* citySim = currentGame ? currentGame->getCitySimulation() : nullptr;
+
 					// Penalty if within pollution radius of industrial
 					if (closestIndDist <= 5) {
 						locationScore -= 50;
@@ -1193,19 +1195,28 @@ Coord QuantBot::findPlaceLocation(Uint32 itemID) {
 						locationScore += 20;
 					}
 
-					// Actual pollution density penalty (uses city sim layer)
-					auto* citySim = currentGame ? currentGame->getCitySimulation() : nullptr;
+					// Pollution density penalty (city sim layer)
 					if (citySim) {
 						const auto& polMap = citySim->getPollutionDensityMap();
-						// Sample pollution across the structure footprint
 						int totalPollution = 0;
 						for (int px = placeLocationX; px < placeLocationEndX; px++) {
 							for (int py = placeLocationY; py < placeLocationEndY; py++) {
 								totalPollution += polMap.worldGet(px, py);
 							}
 						}
-						// Scale penalty: -1 per 10 pollution (uint8 range 0-255)
 						locationScore -= totalPollution / 10;
+					}
+
+					// Crime rate penalty (city sim layer)
+					if (citySim) {
+						const auto& crimeMap = citySim->getCrimeRateMap();
+						int totalCrime = 0;
+						for (int px = placeLocationX; px < placeLocationEndX; px++) {
+							for (int py = placeLocationY; py < placeLocationEndY; py++) {
+								totalCrime += crimeMap.worldGet(px, py);
+							}
+						}
+						locationScore -= totalCrime / 5;
 					}
 
 					// Sand adjacency bonus — higher land value near sand/desert
@@ -1222,29 +1233,56 @@ Coord QuantBot::findPlaceLocation(Uint32 itemID) {
 					}
 					locationScore += sandBonus;
 
-					// R ↔ C synergy
-					if (isResidential && nearbyCom > 0) locationScore += 15;
-					if (isCommercial && nearbyRes > 0)  locationScore += 15;
-					if (isCommercial && nearbyInd > 0)  locationScore += 10;
+					if (isResidential) {
+						// Employment access: bonus if C or I zones reachable
+						if (nearbyCom > 0 || nearbyInd > 0) locationScore += 20;
+						// Extra for having both (mixed economy nearby)
+						if (nearbyCom > 0 && nearbyInd > 0) locationScore += 10;
+						// R ↔ C synergy
+						if (nearbyCom > 0) locationScore += 15;
+					}
+
+					if (isCommercial) {
+						// Commercial wants both R (customers) and I (supply) nearby
+						if (nearbyRes > 0) locationScore += 20;
+						if (nearbyInd > 0) locationScore += 15;
+						// Strong bonus for being between R and I
+						if (nearbyRes > 0 && nearbyInd > 0) locationScore += 15;
+					}
 				}
 
 				if (isIndustrial) {
 					// I clusters with other I (pollution doesn't affect I)
 					locationScore += nearbyInd * 10;
-					// I wants residential workers nearby (within supply)
-					if (nearbyRes > 0) locationScore += 10;
-					// I should stay away from R/C cluster to avoid
-					// polluting them — bonus for being 6+ tiles from R
+
+					// I should stay away from R/C to avoid polluting them
+					// but within commute distance (6-16 tiles = sweet spot)
 					int closestResDist = 100;
+					int closestComDist = 100;
 					for (const StructureBase* pStruct : getStructureList()) {
 						if (pStruct->getOwner() != getHouse()) continue;
-						if (pStruct->getItemID() != Structure_ZoneResidential) continue;
+						int sid = pStruct->getItemID();
 						int dist = lround(blockDistance(
 							Coord(placeLocationX, placeLocationY), pStruct->getLocation()));
-						if (dist < closestResDist) closestResDist = dist;
+						if (sid == Structure_ZoneResidential && dist < closestResDist)
+							closestResDist = dist;
+						if (sid == Structure_ZoneCommercial && dist < closestComDist)
+							closestComDist = dist;
 					}
+
+					// Sweet spot: outside pollution radius but within commute
 					if (closestResDist >= 6 && closestResDist <= 16) {
-						locationScore += 20;  // sweet spot: outside pollution, within supply
+						locationScore += 25;
+					} else if (closestResDist < 6) {
+						locationScore -= 30;  // too close — will pollute residential
+					} else if (closestResDist > 16) {
+						locationScore -= 10;  // too far — no workers
+					}
+
+					if (closestComDist >= 6 && closestComDist <= 16) {
+						locationScore += 15;
+					} else if (closestComDist < 6) {
+						locationScore -= 20;  // too close to commercial
 					}
 				}
 			}
@@ -1458,39 +1496,30 @@ Coord QuantBot::findCityTurretPlaceLocation(Uint32 itemID) {
 
 	Coord baseCenter = findBaseCentre(getHouse()->getHouseID());
 
-	// Build a list of high-value structures to protect and R/C zones for coverage
-	struct ProtectTarget {
+	// Collect key Dune builder buildings and nuclear plants for proximity scoring
+	struct BuilderTarget {
 		Coord pos;
-		int priority; // higher = place turrets here first
+		int priority;
 	};
-	std::vector<ProtectTarget> targets;
+	std::vector<BuilderTarget> builders;
 
 	for (const StructureBase* pStructure : getStructureList()) {
 		if (!pStructure || !pStructure->getOwner() || pStructure->getOwner() != getHouse())
 			continue;
 		Uint32 sid = pStructure->getItemID();
 		int prio = 0;
-		if (sid == Structure_ConstructionYard)    prio = 100;
+		if (sid == Structure_ConstructionYard)    prio = 80;
 		else if (sid == Structure_NuclearPlant)   prio = 90;
-		else if (sid == Structure_HeavyFactory)   prio = 80;
-		else if (sid == Structure_HighTechFactory) prio = 70;
-		else if (sid == Structure_Palace)         prio = 60;
-		else if (sid == Structure_ZoneCommercial)  prio = 10;
-		else if (sid == Structure_ZoneResidential) prio = 10;
+		else if (sid == Structure_HeavyFactory)   prio = 70;
+		else if (sid == Structure_HighTechFactory) prio = 60;
 		else continue;
-		targets.push_back({pStructure->getLocation(), prio});
+		builders.push_back({pStructure->getLocation(), prio});
 	}
 
-	if (targets.empty()) return Coord::Invalid();
+	if (builders.empty()) return Coord::Invalid();
 
-	// Count existing turret positions for spread-out penalty
-	std::vector<Coord> existingTurrets;
-	for (const StructureBase* pStructure : getStructureList()) {
-		if (!pStructure || !pStructure->getOwner() || pStructure->getOwner() != getHouse())
-			continue;
-		if (pStructure->getItemID() == Structure_RocketTurret || pStructure->getItemID() == Structure_GunTurret)
-			existingTurrets.push_back(pStructure->getLocation());
-	}
+	// Get crime rate map for scoring
+	auto* citySim = currentGame ? currentGame->getCitySimulation() : nullptr;
 
 	FixPoint bestScore = -FixPt_MAX;
 	Coord bestLocation = Coord::Invalid();
@@ -1504,12 +1533,24 @@ Coord QuantBot::findCityTurretPlaceLocation(Uint32 itemID) {
 			FixPoint score = 0;
 			Coord candidatePos(x, y);
 
-			// Score based on proximity to high-value targets
-			for (const auto& target : targets) {
-				FixPoint dist = blockDistance(candidatePos, target.pos);
-				if (dist < 8) {
-					// Strong bonus for being close (within ~8 tiles) to high-priority buildings
-					score += FixPoint(target.priority) * (8 - dist) / 8;
+			// Crime rate: favour placing in high crime areas (turrets reduce crime)
+			if (citySim) {
+				const auto& crimeMap = citySim->getCrimeRateMap();
+				int totalCrime = 0;
+				for (int px = x; px < x + newSizeX; px++) {
+					for (int py = y; py < y + newSizeY; py++) {
+						totalCrime += crimeMap.worldGet(px, py);
+					}
+				}
+				// Strong bonus for high crime — +1 per 3 crime (uint8 0-255)
+				score += totalCrime / 3;
+			}
+
+			// Proximity to builder buildings and nuclear power
+			for (const auto& b : builders) {
+				FixPoint dist = blockDistance(candidatePos, b.pos);
+				if (dist < 10) {
+					score += FixPoint(b.priority) * (10 - dist) / 10;
 				}
 			}
 
@@ -1533,20 +1574,6 @@ Coord QuantBot::findCityTurretPlaceLocation(Uint32 itemID) {
 				}
 			}
 			score += adjacentOwn * 10;
-
-			// Spread-out: reduce score near existing turrets to encourage
-			// spreading across the city. Allow pairs (dist 2-3) but
-			// penalise clusters beyond that.
-			for (const auto& tPos : existingTurrets) {
-				FixPoint tDist = blockDistance(candidatePos, tPos);
-				if (tDist < 1) {
-					score -= 200; // don't stack on top
-				} else if (tDist <= 3) {
-					score += 3;   // slight pair bonus
-				} else if (tDist < 8) {
-					score -= 30;  // strong penalty — spread to other areas
-				}
-			}
 
 			if (score > bestScore) {
 				bestScore = score;
@@ -2797,9 +2824,8 @@ void QuantBot::build(int militaryValue) {
 				// 17. City protection turrets (city sim only) — before Palace
 				//     Floor: 1 turret per CY + nuclear + heavy factory
 				//     Scaling: +1 per 5000 population
-				//     Uses findCityTurretPlaceLocation which prioritises near
-				//     key buildings (CY, nuclear, heavy factory) and spreads
-				//     turrets in pairs across the city including near R/C zones.
+				//     Uses findCityTurretPlaceLocation which prioritises high
+				//     crime areas and proximity to builder buildings + nuclear.
 				if (itemID == NONE_ID && !skipRemainingStructureLogic
 					&& currentGame && currentGame->isCitySimEnabled()
 					&& money > 500
@@ -2849,6 +2875,34 @@ void QuantBot::build(int militaryValue) {
 				// Zones are 2x2 structures built via the CY; runZoneGrowth()
 				// requires an actual structure object, so tile-flag placement
 				// (CMD_CITY_PLACE_ZONE without a structure) does not work.
+				// 18b. Civic buildings: Stadium (resPop > 500) and Airport (comPop > 100)
+				//      Build these before more zones to unlock civic caps.
+				if (itemID == NONE_ID && !skipRemainingStructureLogic
+					&& currentGame && currentGame->isCitySimEnabled()
+					&& money > 500) {
+					auto* citySim = currentGame->getCitySimulation();
+					if (citySim) {
+						// Stadium: needed when resPop exceeds 500 (SC Classic civic cap)
+						if (!citySim->getHasStadium()
+							&& citySim->getResPop() > 500
+							&& pBuilder->isAvailableToBuild(Structure_Stadium)
+							&& findPlaceLocation(Structure_Stadium).isValid()) {
+							itemID = Structure_Stadium;
+							logDebug("CITY-CIVIC: Building Stadium (resPop=%d > 500, no stadium)",
+								citySim->getResPop());
+						}
+						// Airport: needed when comPop exceeds 100 (SC Classic civic cap)
+						else if (!citySim->getHasAirport()
+							&& citySim->getComPop() > 100
+							&& pBuilder->isAvailableToBuild(Structure_Airport)
+							&& findPlaceLocation(Structure_Airport).isValid()) {
+							itemID = Structure_Airport;
+							logDebug("CITY-CIVIC: Building Airport (comPop=%d > 100, no airport)",
+								citySim->getComPop());
+						}
+					}
+				}
+
 				// Zone type is chosen by demand valves: build whichever R/I/C
 				// has the highest positive demand. Falls back to R if all
 				// valves are equal or negative.

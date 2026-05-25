@@ -1,0 +1,21 @@
+NOTICE — Micropolis Tile Art
+=============================
+
+The tile artwork extracted by this script originates from Micropolis,
+the open-source release of the original city-building game.
+
+Original code and artwork:
+  Copyright (C) 1989 - 2007 Electronic Arts Inc.
+  Licensed under the GNU General Public License, version 3 or later.
+  https://github.com/SimHacker/micropolis
+
+Additional terms (from sim.h):
+  No trademark or publicity rights are granted.  This license does NOT
+  give you any right, title or interest in the trademark SimCity or any
+  other Electronic Arts trademark.  You may not distribute any
+  modification of this program using the trademark SimCity or claim any
+  affiliation or association with Electronic Arts Inc. or its employees.
+
+These sprite exports are generated for local development use in the
+DuneCity project.  If redistributing, comply with GPL-3.0+ and the
+additional terms above.

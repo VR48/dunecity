@@ -205,8 +205,8 @@ TEST_CASE("Police annual cost mirrors coverage; PoliceStation costs 500 (SC TOOL
 TEST_CASE("Park land-value bonus: Wall, Turrets, Palace, Stadium contribute",
           "[city-effects][park]") {
     REQUIRE(getParkLandValueBonus(Structure_Wall)         == kParkLandValueBonus);
-    REQUIRE(getParkLandValueBonus(Structure_GunTurret)    == 20);
-    REQUIRE(getParkLandValueBonus(Structure_RocketTurret) == 20);
+    REQUIRE(getParkLandValueBonus(Structure_GunTurret)    == 5);
+    REQUIRE(getParkLandValueBonus(Structure_RocketTurret) == 5);
     REQUIRE(getParkLandValueBonus(Structure_Palace)       == kStadiumLandValueBonus);
     REQUIRE(getParkLandValueBonus(Structure_Stadium)      == kStadiumLandValueBonus);
     REQUIRE(getParkLandValueBonus(Structure_HeavyFactory) == 0);

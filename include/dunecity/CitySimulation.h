@@ -88,6 +88,10 @@ public:
     int getHospitalCount() const { return hospitalCount_; }
     int getChurchCount() const { return churchCount_; }
 
+    /// Civic building presence flags (refreshed each scan).
+    bool getHasStadium() const { return hasStadium_; }
+    bool getHasAirport() const { return hasAirport_; }
+
     /// City Effects feature flag (Phase 6). When false, all effect scans
     /// are skipped and the maps stay at zero. Set from Game options at init.
     void setCityEffectsEnabled(bool enabled) { effectsEnabled_ = enabled; }
