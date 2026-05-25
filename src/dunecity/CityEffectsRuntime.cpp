@@ -873,7 +873,7 @@ void CitySimulation::decayGrowthRateMap() {
     }
 }
 
-void CitySimulation::runAnnualBudget() {
+void CitySimulation::runDailyBudget() {
     if (!currentGameMap) return;
     const Map& map = *currentGameMap;
 
@@ -881,8 +881,9 @@ void CitySimulation::runAnnualBudget() {
     // police annual cost (for the bill). Walked once across the map so
     // each owner's bill is independent of the others — every player,
     // human or AI, pays for their own police and collects their own
-    // taxes. Previously only pLocalHouse paid, which meant the AI got
-    // free police and could outspend a human whose budget had drained.
+    // taxes. Revenue and costs are divided by kCityDaysPerYear (48) so
+    // that the daily tick delivers 1/48th of the annual amount, giving
+    // smooth income instead of a yearly lump sum.
     struct HouseBudget {
         int     pop       = 0;
         int32_t policeCost = 0;
@@ -900,9 +901,6 @@ void CitySimulation::runAnnualBudget() {
     forEachStructureOrigin(map, [&](int x, int y, const StructureBase* pStruct) {
         const House* constOwner = pStruct->getOwner();
         if (!constOwner) return;
-        // The visitor sees a const StructureBase, but we mutate the
-        // owner's credit pool below — fetch the non-const House* from
-        // the global Game's house array by ID.
         House* owner = currentGame->getHouse(constOwner->getHouseID());
         if (!owner) return;
         const Tile* t = map.getTile(x, y);
@@ -921,13 +919,14 @@ void CitySimulation::runAnnualBudget() {
     bool    localTouched = false;
 
     for (auto& [house, hb] : houseBudgets) {
-        const int32_t revenue = computeAnnualTaxRevenue(hb.pop, cityTax_);
-        // Local player's police effectiveness scales with the funding
-        // slider; AI runs at 100% funding (no slider) so its bill is
-        // exactly the nominal cost.
+        // Annual values divided by days-per-year for smooth daily payout
+        const int32_t annualRevenue = computeAnnualTaxRevenue(hb.pop, cityTax_);
         const int fundingPct = (house == pLocalHouse) ? policeFundingPercent_ : 100;
-        const int32_t paid = (hb.policeCost * fundingPct) / 100;
-        const int32_t net  = revenue - paid;
+        const int32_t annualPaid = (hb.policeCost * fundingPct) / 100;
+
+        const int32_t dailyRevenue = annualRevenue / kCityDaysPerYear;
+        const int32_t dailyPaid    = annualPaid    / kCityDaysPerYear;
+        const int32_t net = dailyRevenue - dailyPaid;
 
         if (net > 0) {
             house->returnCredits(FixPoint(net));
@@ -936,22 +935,22 @@ void CitySimulation::runAnnualBudget() {
         }
 
         if (house == pLocalHouse) {
-            localRevenue = revenue;
-            localPaid    = paid;
+            // Store annualised figures for the budget UI
+            localRevenue = annualRevenue;
+            localPaid    = annualPaid;
             localTouched = true;
         }
 
-        SDL_Log("[CitySim] year=%d house=%d pop=%d rate=%d%% revenue=%d police=%d net=%+d",
-                cityYear_, house->getHouseID(), hb.pop, cityTax_,
-                revenue, paid, net);
+        // Log once per city year to avoid spam (48 ticks/year)
+        if (cityDay_ == 0) {
+            SDL_Log("[CitySim] year=%d house=%d pop=%d rate=%d%% annual_revenue=%d annual_police=%d daily_net=%+d",
+                    cityYear_, house->getHouseID(), hb.pop, cityTax_,
+                    annualRevenue, annualPaid, net);
+        }
     }
 
-    // Update local-player UI state from the local house's slice of the
-    // budget. If the local house has zero city structures (e.g. pre-
-    // development phase) we leave totals untouched.
-    // NOTE: totalFunds_ is NOT updated here — pLocalHouse->getCredits()
-    // is the single source of truth. The house->returnCredits/takeCredits
-    // calls above already adjusted the real credit pool.
+    // Update local-player UI state. Budget UI shows annualised figures;
+    // the actual credit pool gets the daily slice via returnCredits/takeCredits.
     if (localTouched) {
         lastPoliceExpense_ = localPaid;
         budget_.setLastTaxRevenue(localRevenue);

@@ -2736,16 +2736,13 @@ void QuantBot::build(int militaryValue) {
 						// Tech 4: No prerequisites (just money and need)
 						// Tech 5-6: Require Repair Yard
 						// Tech 7+: Require Repair Yard + IX
-						// City sim: cap at 3 — economy comes from zones, not factories
-				{
-				int heavyFactoryCap = (currentGame && currentGame->isCitySimEnabled()) ? 3 : (1 + money / 4000);
 				if (itemID == NONE_ID && !skipRemainingStructureLogic
 								&& money > 3000 && pBuilder->isAvailableToBuild(Structure_HeavyFactory)
-								&& (activeHeavyFactoryCount >= itemCount[Structure_HeavyFactory] || itemCount[Structure_HeavyFactory] < heavyFactoryCap)) {
-								
+								&& (activeHeavyFactoryCount >= itemCount[Structure_HeavyFactory] || itemCount[Structure_HeavyFactory] < 1 + money / 4000)) {
+
 								int techLevel = currentGame ? currentGame->techLevel : 8;
 								bool prerequisitesMet = false;
-							
+
 							if (techLevel <= 4) {
 								// Tech 4: Can build additional Heavy Factories without prerequisites
 								prerequisitesMet = true;
@@ -2758,14 +2755,13 @@ void QuantBot::build(int militaryValue) {
 								// Tech 7+: Require both Repair Yard and IX
 								prerequisitesMet = (itemCount[Structure_RepairYard] >= 1 && itemCount[Structure_IX] >= 1);
 							}
-							
+
 								if (prerequisitesMet) {
 									itemID = Structure_HeavyFactory;
-									logDebug("PRIORITY Heavy Factory - active: %d  total: %d  money: %d  cap: %d  tech: %d",
-										activeHeavyFactoryCount, getHouse()->getNumItems(Structure_HeavyFactory), money, heavyFactoryCap, techLevel);
+									logDebug("PRIORITY Heavy Factory - active: %d  total: %d  money: %d  limit: %d  tech: %d",
+										activeHeavyFactoryCount, getHouse()->getNumItems(Structure_HeavyFactory), money, 1 + money / 4000, techLevel);
 								}
 							}
-				}
 				// 13. Refineries for harvester ratio — skip when no spice
 				if (itemID == NONE_ID && !skipRemainingStructureLogic
 						&& !lowSpiceEconomy
@@ -2830,14 +2826,15 @@ void QuantBot::build(int militaryValue) {
 					}
 				}
 				// 17b. Palace (after military infrastructure)
-				//       City sim: only 1 palace, and require some R/I/C zones first
+				//       City sim: 1 palace per 30000 population
 				{
-				bool palaceAllowed = true;
+				bool palaceAllowed;
 				if (currentGame && currentGame->isCitySimEnabled()) {
-					int totalZones = itemCount[Structure_ZoneResidential]
-						+ itemCount[Structure_ZoneCommercial]
-						+ itemCount[Structure_ZoneIndustrial];
-					palaceAllowed = (itemCount[Structure_Palace] == 0 && totalZones >= 3);
+					int cityPop = 0;
+					if (auto* citySim = currentGame->getCitySimulation()) {
+						cityPop = citySim->getTotalPop();
+					}
+					palaceAllowed = (itemCount[Structure_Palace] < 1 + cityPop / 30000);
 				} else {
 					palaceAllowed = (itemCount[Structure_Palace] == 0 || !getGameInitSettings().getGameOptions().onlyOnePalace);
 				}

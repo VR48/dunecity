@@ -120,10 +120,13 @@ void CitySimulation::advancePhase(uint32_t gameCycleCount) {
     // Day tick: run effects scans + roll for zone growth. Growth is
     // gated stochastically per zone inside runZoneGrowth() so a city
     // population creeps up day by day rather than jumping in big steps.
+    // Budget is also distributed per day-tick (1/48 of annual) for
+    // smoother income instead of a yearly lump sum.
     if (totalDays > lastProcessedDay_) {
         lastProcessedDay_ = totalDays;
         runEffectsScans();
         runZoneGrowth();
+        runDailyBudget();
 
         // Diagnostic snapshot every 8 city days (~1/6 city year). Logs
         // average/max land value, crime, pollution across DEVELOPED
@@ -162,18 +165,6 @@ void CitySimulation::advancePhase(uint32_t gameCycleCount) {
                         resValve_, comValve_, indValve_);
             }
         }
-    }
-
-    // Annual block: every house with city-role structures collects its
-    // own taxes and pays its own police bill. The full implementation
-    // (per-house aggregation across the structure map) lives in
-    // CityEffectsRuntime.cpp where the heavy includes are available.
-    // The local player's totalFunds_/lastPoliceExpense_/UI state are
-    // updated inside runAnnualBudget() so the budget window stays
-    // accurate without a separate code path.
-    if (static_cast<uint32_t>(cityYear_) > lastTaxYear_) {
-        runAnnualBudget();
-        lastTaxYear_ = cityYear_;
     }
 }
 

@@ -172,11 +172,11 @@ private:
 
     /// Year-tick budget pass: walks all structures on the map, aggregates
     /// population and police cost per house, then applies (tax revenue -
-    /// funded police bill) to each house's credit pool. Every owner with
-    /// city-role structures pays their own bill — not just the local
-    /// player. Lives in CityEffectsRuntime.cpp so the test build doesn't
-    /// have to link House/pLocalHouse/StructureBase.
-    void runAnnualBudget();
+    /// Distribute 1/48th of the annual budget each city day-tick: tax
+    /// revenue minus funded police bill. Smooth income instead of a
+    /// yearly lump sum. Every owner with city-role structures pays
+    /// their own bill. Lives in CityEffectsRuntime.cpp.
+    void runDailyBudget();
 
     /// Decay growth rate map toward zero each scan tick.
     void decayGrowthRateMap();
