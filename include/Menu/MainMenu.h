@@ -79,7 +79,8 @@ private:
     PictureLabel    duneLegacy;
     PictureLabel    buttonBorder;
 
-    Label           modVersionLabel; ///< Bottom-right "<active mod>\nv<VERSION>" watermark.
+    Label           modVersionLabel; ///< Bottom-left "<active mod>\nv<VERSION>" watermark.
+    Label           cityInfoLabel;  ///< Left-side info text about DuneCity mod activation.
     std::string     lastShownModName; ///< Tracks last mod name written to modVersionLabel; avoids redundant setText.
 
     // Version checking

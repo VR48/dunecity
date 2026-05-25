@@ -154,7 +154,7 @@ MainMenu::MainMenu()
     quitButton.setOnClick(std::bind(&MainMenu::onQuit, this));
     MenuButtons.addWidget(&quitButton);
 
-    // Bottom-right watermark: <active mod display name> stacked over v<VERSION>.
+    // Bottom-left watermark: <active mod display name> stacked over v<VERSION>.
     {
         modVersionLabel.setTextFontSize(16);
         modVersionLabel.setTextColor(COLOR_WHITE, COLOR_BLACK);
@@ -169,6 +169,23 @@ MainMenu::MainMenu()
                                Point(marginX,
                                      getRendererHeight() - labelHeight - marginY),
                                Point(labelWidth, labelHeight));
+    }
+
+    // Left-side info text: tell players about the DuneCity mod.
+    {
+        cityInfoLabel.setTextFontSize(14);
+        cityInfoLabel.setTextColor(COLOR_YELLOW, COLOR_BLACK);
+        cityInfoLabel.setAlignment(static_cast<Alignment_Enum>(Alignment_Left | Alignment_Top));
+        cityInfoLabel.setText(_("DUNE CITY\nCity-building RTS mod\n\nActivate via MODS menu\nEnable 'dunecity' then\nstart a Custom game"));
+
+        const int infoWidth  = 180;
+        const int infoHeight = 110;
+        const int marginX    = 16;
+        // Align vertically with the menu buttons
+        const int menuY = getRendererHeight()/2 + 64;
+        windowWidget.addWidget(&cityInfoLabel,
+                               Point(marginX, menuY),
+                               Point(infoWidth, infoHeight));
     }
 }
 
