@@ -2168,6 +2168,15 @@ void QuantBot::build(int militaryValue) {
 							produceItemWithLogging(Unit_Harvester);
 							itemCount[Unit_Harvester]++;
 						}
+						else if ((money > 500) && (pBuilder->isUpgrading() == false) && (pBuilder->getCurrentUpgradeLevel() < pBuilder->getMaxUpgradeLevel())) {
+							// Upgrade before military — unlocks MCV(1), Launcher(2), SiegeTank(3)
+							if (pBuilder->getHealth() >= pBuilder->getMaxHealth()) {
+								doUpgrade(pBuilder);
+							}
+							else {
+								doRepair(pBuilder);
+							}
+						}
 						else if (money > (currentGame && currentGame->isCitySimEnabled() ? 500 : 2000)
 							&& militaryValue < militaryValueLimit && !getHouse()->isGroundUnitLimitReached()) {
 							// Limit enemy military units based on difficulty
@@ -2218,16 +2227,6 @@ void QuantBot::build(int militaryValue) {
 								itemCount[Unit_Tank]++;
 								money -= data[Unit_Tank][houseID].price;
 								militaryValue += data[Unit_Tank][houseID].price;
-							}
-						}
-						else if ((money > 500) && (pBuilder->isUpgrading() == false) && (pBuilder->getCurrentUpgradeLevel() < pBuilder->getMaxUpgradeLevel())) {
-							// Upgrade after military — on city sim, military production
-							// takes priority over upgrades to avoid HF sitting idle
-							if (pBuilder->getHealth() >= pBuilder->getMaxHealth()) {
-								doUpgrade(pBuilder);
-							}
-							else {
-								doRepair(pBuilder);
 							}
 						}
 					}
