@@ -3330,7 +3330,8 @@ void QuantBot::build(int militaryValue) {
 					Uint32 itemToBePlaced = pBuilder->getCurrentProducedItem();
 					logDebug("PRODUCTION: CY waiting to place itemID: %d, credits: %d, queued locations: %zu", itemToBePlaced, money, placeLocations.size());
 					Coord location;
-					
+					bool alreadyCancelled = false;
+
 					// Check if we have a pre-stored location (from concrete pre-placement)
 					if (!placeLocations.empty()) {
 						location = placeLocations.front();
@@ -3346,12 +3347,14 @@ void QuantBot::build(int militaryValue) {
 							placeLocations.pop_front();
 							logDebug("PRODUCTION: Cancelled concrete at (%d,%d) - already placed or invalid", location.x, location.y);
 							location = Coord::Invalid();
+							alreadyCancelled = true;
 						} else {
 							// Building location invalid, cancel
 							doCancelItem(pConstYard, itemToBePlaced);
 							placeLocations.pop_front();
 							logDebug("PRODUCTION: Cancelled building at (%d,%d) - location became invalid", location.x, location.y);
 							location = Coord::Invalid();
+							alreadyCancelled = true;
 						}
 					} else {
 						// No pre-stored location, find one dynamically
@@ -3376,7 +3379,7 @@ void QuantBot::build(int militaryValue) {
 							doPlaceStructure(pConstYard, location.x, location.y);
 							logDebug("PRODUCTION: Placed structure itemID: %d at (%d,%d)", itemToBePlaced, location.x, location.y);
 						}
-						else {
+						else if (!alreadyCancelled) {
 							logDebug("PRODUCTION ERROR: Failed to find placement location for item %d, cancelling", itemToBePlaced);
 							doCancelItem(pConstYard, itemToBePlaced);
 						}

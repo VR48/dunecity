@@ -508,7 +508,9 @@ void BuilderBase::removeBuiltItemFromProductionQueue() {
     }
 
     deployTimer = 0;
-    currentProductionQueue.pop_front();
+    if(!currentProductionQueue.empty()) {
+        currentProductionQueue.pop_front();
+    }
     produceNextAvailableItem();
 }
 
