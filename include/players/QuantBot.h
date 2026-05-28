@@ -25,6 +25,7 @@
 #include <DataTypes.h>
 #include <set>
 #include <map>
+#include <unordered_map>
 
 class QuantBot : public Player
 {
@@ -122,6 +123,7 @@ private:
 
     std::list<Coord> placeLocations;    ///< Where to place structures
     OrnithopterStrikeTeam ornithopterStrikeTeam;
+    std::unordered_map<Uint32, Coord> placementCache; ///< Per-build-cycle cache for findPlaceLocation results
 
     void checkAllUnits();
     void retreatAllUnits();

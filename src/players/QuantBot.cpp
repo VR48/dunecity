@@ -557,19 +557,21 @@ void QuantBot::update() {
 		logDebug("Initial spice calculation: %d spice remaining on map", lastCalculatedSpice);
 	}
 
-	// Recalculate spice every AI update cycle for both Campaign and Custom modes
-	// Do this BEFORE the AI update interval check so it always happens
-	lastCalculatedSpice = 0;
-	if (currentGameMap) {
-		const int mapSizeX = currentGameMap->getSizeX();
-		const int mapSizeY = currentGameMap->getSizeY();
-		
-		for (int x = 0; x < mapSizeX; x++) {
-			for (int y = 0; y < mapSizeY; y++) {
-				if (currentGameMap->tileExists(x, y)) {
-					Tile* pTile = currentGameMap->getTile(x, y);
-					if (pTile && pTile->hasSpice()) {
-						lastCalculatedSpice += pTile->getSpice().lround();
+	// Recalculate spice periodically (not every cycle — full map scan is O(N) on 65K+ tiles).
+	// Stagger by house ID so multiple AI players don't spike on the same frame.
+	if ((getGameCycleCount() + getHouse()->getHouseID() * 100) % 500 == 0) {
+		lastCalculatedSpice = 0;
+		if (currentGameMap) {
+			const int mapSizeX = currentGameMap->getSizeX();
+			const int mapSizeY = currentGameMap->getSizeY();
+
+			for (int x = 0; x < mapSizeX; x++) {
+				for (int y = 0; y < mapSizeY; y++) {
+					if (currentGameMap->tileExists(x, y)) {
+						Tile* pTile = currentGameMap->getTile(x, y);
+						if (pTile && pTile->hasSpice()) {
+							lastCalculatedSpice += pTile->getSpice().lround();
+						}
 					}
 				}
 			}
@@ -955,15 +957,21 @@ Coord QuantBot::findMcvPlaceLocation(const MCV* pMCV) {
 }
 
 Coord QuantBot::findPlaceLocation(Uint32 itemID) {
+	// Check per-build-cycle cache first
+	auto cacheIt = placementCache.find(itemID);
+	if (cacheIt != placementCache.end()) {
+		return cacheIt->second;
+	}
+
 	int newSizeX = getStructureSize(itemID).x;
 	int newSizeY = getStructureSize(itemID).y;
-	
+
 	squadRallyLocation = findSquadRallyLocation();
 	Coord baseCenter = findBaseCentre(getHouse()->getHouseID());
-	
+
 	int bestLocationScore = -10000;
 	Coord bestLocation = Coord::Invalid();
-	
+
 	bool itemIsBuilder = (itemID == Structure_HeavyFactory
 		|| itemID == Structure_RepairYard
 		|| itemID == Structure_LightFactory
@@ -971,9 +979,35 @@ Coord QuantBot::findPlaceLocation(Uint32 itemID) {
 		|| itemID == Structure_Barracks
 		|| itemID == Structure_StarPort);
 
-	// Check all map tiles for valid building placement
-	for (int placeLocationX = 0; placeLocationX <= getMap().getSizeX() - newSizeX; placeLocationX++) {
-		for (int placeLocationY = 0; placeLocationY <= getMap().getSizeY() - newSizeY; placeLocationY++) {
+	// Bound search to radius around base center instead of scanning entire map
+	int searchRadius = 50;
+	int mapW = getMap().getSizeX();
+	int mapH = getMap().getSizeY();
+	int startX = std::max(0, baseCenter.x - searchRadius);
+	int startY = std::max(0, baseCenter.y - searchRadius);
+	int endX = std::min(mapW - newSizeX, baseCenter.x + searchRadius);
+	int endY = std::min(mapH - newSizeY, baseCenter.y + searchRadius);
+
+	// Pre-collect spice tile positions for refinery placement (avoids O(N^2) inner loop)
+	std::vector<Coord> spiceTiles;
+	if (itemID == Structure_Refinery) {
+		// Only scan spice in a wider area around the base (no need for full map)
+		int spiceRadius = searchRadius + 30;
+		int spStartX = std::max(0, baseCenter.x - spiceRadius);
+		int spStartY = std::max(0, baseCenter.y - spiceRadius);
+		int spEndX = std::min(mapW - 1, baseCenter.x + spiceRadius);
+		int spEndY = std::min(mapH - 1, baseCenter.y + spiceRadius);
+		for (int sx = spStartX; sx <= spEndX; sx++) {
+			for (int sy = spStartY; sy <= spEndY; sy++) {
+				if (getMap().tileExists(sx, sy) && getMap().getTile(sx, sy)->hasSpice()) {
+					spiceTiles.emplace_back(sx, sy);
+				}
+			}
+		}
+	}
+
+	for (int placeLocationX = startX; placeLocationX <= endX; placeLocationX++) {
+		for (int placeLocationY = startY; placeLocationY <= endY; placeLocationY++) {
 			// First check if this location is valid for building
 			if (getMap().okayToPlaceStructure(placeLocationX, placeLocationY, newSizeX, newSizeY,
 				false, (itemID == Structure_ConstructionYard) ? nullptr : getHouse(), false, itemID)) {
@@ -1078,14 +1112,10 @@ Coord QuantBot::findPlaceLocation(Uint32 itemID) {
 		} else if (itemID == Structure_Refinery) {
 			// Refineries prefer being close to spice deposits
 			int closestSpiceDistance = 10000;
-			for (int spiceX = 0; spiceX < getMap().getSizeX(); spiceX++) {
-				for (int spiceY = 0; spiceY < getMap().getSizeY(); spiceY++) {
-					if (getMap().tileExists(spiceX, spiceY) && getMap().getTile(spiceX, spiceY)->hasSpice()) {
-						int spiceDistance = lround(blockDistance(Coord(placeLocationX, placeLocationY), Coord(spiceX, spiceY)));
-						if (spiceDistance < closestSpiceDistance) {
-							closestSpiceDistance = spiceDistance;
-						}
-					}
+			for (const auto& spiceCoord : spiceTiles) {
+				int spiceDistance = lround(blockDistance(Coord(placeLocationX, placeLocationY), spiceCoord));
+				if (spiceDistance < closestSpiceDistance) {
+					closestSpiceDistance = spiceDistance;
 				}
 			}
 			if (closestSpiceDistance < 10000) {
@@ -1314,6 +1344,7 @@ Coord QuantBot::findPlaceLocation(Uint32 itemID) {
 		}
 	}
 	
+	placementCache[itemID] = bestLocation;
 	return bestLocation;
 }
 
@@ -1650,6 +1681,8 @@ Coord QuantBot::findPlaceLocationSimple(Uint32 itemID) {
 
 	
 void QuantBot::build(int militaryValue) {
+	placementCache.clear();
+
 	int houseID = getHouse()->getHouseID();
 	auto& data = currentGame->objectData.data;
 

@@ -289,10 +289,10 @@ UpgradeLevel = 2
 [Spice Silo]
 Enabled = true
 HitPoints = 150
-Price = 150
+Price = 300
 Power = 5
 ViewRange = 2
-Capacity = 1000
+Capacity = 10000
 BuildTime = 48
 InfSpawnProp = 0
 Builder = Construction Yard

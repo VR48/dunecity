@@ -40,7 +40,7 @@ namespace DuneCity {
 //   Heavy Factory      -> Industrial high
 //   HighTech Factory   -> Industrial high
 //   Repair Yard        -> Industrial high
-//   Spice Silo         -> Industrial medium (no pollution)
+//   Spice Silo         -> Industrial high (no pollution)
 //   Construction Yard  -> Industrial high (acts as factory)
 //   Radar              -> Commercial medium
 //   House IX           -> Commercial high
@@ -168,9 +168,9 @@ inline int getStructureMaxLevel(int itemID) {
             return 3;
         case Structure_Radar:           // commercial medium
         case Structure_LightFactory:    // industrial medium
-        case Structure_Silo:            // industrial medium (no pollution)
             return 2;
         case Structure_Refinery:        // industrial high
+        case Structure_Silo:            // industrial high (no pollution)
         case Structure_HighTechFactory: // industrial high
         case Structure_IX:              // commercial high
         case Structure_ConstructionYard: // industrial high (acts as factory)
@@ -200,7 +200,7 @@ inline int getPollutionEmission(int itemID, int level) {
     // trade hub, not a factory). Per spec override.
     if (itemID == Structure_StarPort) return 0;
 
-    // Spice Silo is industrial-medium for jobs/demand but stores spice — no
+    // Spice Silo is industrial-high for jobs/demand but stores spice — no
     // smokestacks, no pollution.
     if (itemID == Structure_Silo) return 0;
 
@@ -902,14 +902,14 @@ constexpr int      kBudgetTicksPerYear  = static_cast<int>(kCyclesPerCityYear);
 /// When avgLandValue is 0 (unknown / not passed), falls back to the
 /// population-only formula for backward compatibility.
 ///
-/// Per-citizen contribution: 200 credits/year at 100% tax rate. 10× the
-/// original 20 — Dune City game-years are short enough that the older rate
-/// left the AI and the player perpetually starved, and we want zone income
-/// to fund military investment on a comparable timescale to spice harvest.
+/// Per-citizen contribution: 200/3 credits/year at 100% tax rate. This keeps
+/// city tax income useful without letting mature cities outpace spice harvest
+/// too aggressively.
 inline int32_t computeAnnualTaxRevenue(int totalPopulation, int taxRatePct,
                                        int avgLandValue = 0) {
     if (totalPopulation <= 0 || taxRatePct <= 0) return 0;
-    int32_t base = (totalPopulation * 200 * taxRatePct) / 100;
+    int32_t base = static_cast<int32_t>(
+        (static_cast<int64_t>(totalPopulation) * 200 * taxRatePct) / (100 * 3));
     if (avgLandValue > 0) {
         // Scale by land value: 128 → 1.0x, 250 → ~2.0x, 30 → ~0.23x
         base = static_cast<int32_t>((static_cast<int64_t>(base) * avgLandValue) / 128);

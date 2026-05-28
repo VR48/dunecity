@@ -80,8 +80,9 @@ public:
             if (currentGameMap->tileExists(loc.x, loc.y)) {
                 level = currentGameMap->getTile(loc.x, loc.y)->getCityZoneDensity();
             }
-        } else {
-            level = pStructure->getCityOccupancy();
+        } else if (role != DuneCity::CityRole::None) {
+            const int occupancy = pStructure->getCityOccupancy();
+            level = occupancy > 0 ? occupancy : 1;
         }
 
         roleLabel_.setText(" " + roleStringFor(itemID));
@@ -92,8 +93,15 @@ public:
         const bool showPop = forceShowPop_ || (role != DuneCity::CityRole::None);
         populationLabel_.setVisible(showPop);
         if (showPop) {
-            const int pop = DuneCity::getZonePopulation(itemID, level);
-            std::string text = " Pop: " + std::to_string(pop);
+            std::string text;
+            if (itemID == Structure_Palace) {
+                const int resPop = DuneCity::getZonePopulation(itemID, level);
+                const int comPop = DuneCity::getPalaceCommercialPopulation(level);
+                text = " R: " + std::to_string(resPop) + " C: " + std::to_string(comPop);
+            } else {
+                const int pop = DuneCity::getZonePopulation(itemID, level);
+                text = " Pop: " + std::to_string(pop);
+            }
             if (maxLevel > 0) {
                 text += " (lvl " + std::to_string(level) + "/" + std::to_string(maxLevel) + ")";
             }
@@ -144,7 +152,7 @@ private:
             case Structure_ZoneCommercial:   return "Role: Commercial";
             case Structure_ZoneIndustrial:   return "Role: Industrial";
             case Structure_Refinery:         return "Role: Seaport";
-            case Structure_Silo:             return "Role: C-low";
+            case Structure_Silo:             return "Role: I-high";
             case Structure_Radar:            return "Role: C-medium";
             case Structure_HighTechFactory:  return "Role: C-high";
             case Structure_IX:               return "Role: C-high";
@@ -152,7 +160,7 @@ private:
             case Structure_HeavyFactory:     return "Role: I-high";
             case Structure_RepairYard:       return "Role: I-high";
             case Structure_StarPort:         return "Role: Airport";
-            case Structure_Palace:           return "Role: Palace (Residential)";
+            case Structure_Palace:           return "Role: R+C Palace";
             case Structure_Barracks:         return "Role: Police";
             case Structure_WOR:              return "Role: Police HQ";
             case Structure_GunTurret:        return "Role: Park + 1/4 Police";
