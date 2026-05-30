@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Player Guide — DuneCity</title>
+  <meta name="description" content="Comprehensive player guide for DuneCity: zones, buildings, budget, overlays, and city growth strategies.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav>
+  <span class="logo">DUNECITY</span>
+  <div class="links">
+    <a href="index.html">Home</a>
+    <a href="guide.html" class="active">Guide</a>
+    <a href="index.html#downloads">Downloads</a>
+  </div>
+</nav>
+
+<div class="container guide-content">
+
+  <div class="hero" style="padding: 3rem 0 2rem;">
+    <h1 style="font-size: 2.5rem;">Player Guide</h1>
+    <p class="tagline">Everything you need to build and defend your city on Arrakis</p>
+  </div>
+
+  <!-- Getting Started -->
+  <h2>Getting Started</h2>
+
+  <h3>What is DuneCity?</h3>
+  <p>
+    DuneCity takes the classic Dune II RTS and integrates a full SimCity-style city simulation.
+    You still play Dune II &mdash; harvest spice, build military units, fight enemy houses &mdash;
+    but now you also manage a city with zoning, roads, taxes, and civic services.
+  </p>
+  <p>
+    The city economy runs parallel to the military economy. Tax revenue from your city supplements
+    spice income. A thriving city means more resources; a neglected city means deficits eating into
+    your war chest.
+  </p>
+
+  <!-- City Building Basics -->
+  <h2>City Building Basics</h2>
+
+  <h3>Zones</h3>
+  <p>
+    Place <strong>Residential (R)</strong>, <strong>Commercial (C)</strong>, and <strong>Industrial (I)</strong>
+    zones via the City build menu tab. Each zone costs <strong>100 credits</strong>.
+  </p>
+  <p>
+    Zones grow automatically based on demand, desirability, and infrastructure. Growth proceeds through
+    three density levels: <strong>L1 &rarr; L2 &rarr; L3</strong>, each with increasing population and output.
+  </p>
+
+  <h3>Roads</h3>
+  <p>
+    Place roads to connect zones. Zones adjacent to roads grow <strong>25% faster</strong>.
+    Road access is one of the simplest and most effective growth boosters &mdash; always build roads
+    next to your zones.
+  </p>
+
+  <h3>Power</h3>
+  <p>
+    Zones need power from Wind Traps to grow efficiently. Unpowered zones receive a heavy growth penalty.
+    Check the Power Grid overlay (<kbd>Shift</kbd>+<kbd>2</kbd>) to ensure coverage.
+  </p>
+
+  <!-- Zone Mechanics -->
+  <h2>Zone Mechanics</h2>
+
+  <h3>Residential Zones</h3>
+  <ul>
+    <li>Provide population (housing for your city)</li>
+    <li>Population per level: L1=16, L2=24, L3=40 (internal values, displayed as &times;20 in the UI)</li>
+    <li>Affected by: crime (negative), pollution (negative), land value (positive)</li>
+    <li><strong>Growth cap:</strong> population capped at 500 unless you build a Stadium or Palace</li>
+  </ul>
+
+  <h3>Commercial Zones</h3>
+  <ul>
+    <li>Provide jobs and commerce</li>
+    <li>Need customers (residential nearby) <strong>AND</strong> supply (industrial nearby)</li>
+    <li><strong>Growth cap:</strong> capped at pop 100 unless you build an Airport</li>
+    <li>Best placement: between residential and industrial areas</li>
+  </ul>
+
+  <h3>Industrial Zones</h3>
+  <ul>
+    <li>Provide jobs and manufactured goods</li>
+    <li>Generate pollution &mdash; keep them away from residential areas</li>
+    <li>Sweet spot: <strong>6&ndash;16 tiles</strong> from residential (close enough for commuters, far enough to avoid pollution)</li>
+    <li><strong>Growth cap:</strong> capped at pop 70 unless you build a Starport</li>
+    <li>Starport requires display population &ge; 20,000 to build</li>
+  </ul>
+
+  <!-- Budget & Economy -->
+  <h2>Budget &amp; Economy</h2>
+
+  <table>
+    <tr><th>Setting</th><th>Range</th><th>Default</th><th>Effect</th></tr>
+    <tr><td>Tax Rate</td><td>0&ndash;20%</td><td>7%</td><td>Higher = more revenue, slower growth</td></tr>
+    <tr><td>Police Funding</td><td>0&ndash;100%</td><td>100%</td><td>Controls police station effectiveness &amp; coverage radius</td></tr>
+  </table>
+
+  <p>
+    <strong>Tax revenue formula:</strong> population &times; land value &times; tax rate.
+    Wealthy neighborhoods (high land value) pay more tax per capita.
+  </p>
+  <p>
+    Budget ticks every city day (about 1.25 seconds real time). Revenue and expenses flow continuously.
+    If your city budget goes negative, the deficit is paid from your spice credits (military economy).
+  </p>
+  <p>Open the budget screen with <kbd>Shift</kbd>+<kbd>B</kbd>.</p>
+
+  <!-- Buildings -->
+  <h2>Buildings &mdash; What Changed from Dune Legacy</h2>
+
+  <h3>Rocket Turrets</h3>
+  <ul>
+    <li>Still fire rockets at ground and air targets (switches to shells at close range &lt; 3 tiles)</li>
+    <li><strong>NEW:</strong> Provide fractional police coverage &mdash; 10% crime reduction in 16-tile radius</li>
+    <li>No annual upkeep cost (unlike Police Stations at 500/year)</li>
+    <li>Good for light crime suppression around your base perimeter</li>
+    <li>Land value bonus: +5 in 3-tile radius</li>
+  </ul>
+
+  <h3>Gun Turrets</h3>
+  <ul>
+    <li>25% crime reduction in 16-tile radius (stronger than Rocket Turrets)</li>
+    <li>No annual upkeep cost</li>
+  </ul>
+
+  <h3>Police Station <span style="color: var(--text-dim);">(new)</span></h3>
+  <ul>
+    <li>Full police coverage: 100% crime reduction in 16-tile radius</li>
+    <li>Annual cost: 500 credits (affected by police funding slider)</li>
+    <li>Essential for keeping residential zones healthy in dense cities</li>
+  </ul>
+
+  <h3>Barracks &amp; WOR</h3>
+  <ul>
+    <li>Changed from military-only to residential population contributors</li>
+    <li>Each contributes residential population: L2=24, L3=40 people</li>
+    <li>Infantry garrisons count as population living there &mdash; building barracks genuinely grows your city</li>
+  </ul>
+
+  <h3>Refineries</h3>
+  <ul>
+    <li>Now classified as high-density industrial</li>
+    <li>Contribute industrial jobs and supply to the city economy</li>
+    <li>Still work exactly the same for harvesting &mdash; the spice must flow</li>
+  </ul>
+
+  <h3>Palace</h3>
+  <ul>
+    <li>Dual civic role: contributes to <strong>both</strong> residential and commercial population</li>
+    <li>Residential: 32/48/80 pop at L1/L2/L3</li>
+    <li>Commercial: 2/6/10 pop at L1/L2/L3</li>
+    <li>Massive land value bonus: +40</li>
+    <li>Unlocks both residential and commercial growth caps</li>
+  </ul>
+
+  <h3>Stadium <span style="color: var(--text-dim);">(civic)</span></h3>
+  <ul>
+    <li>Land value bonus: +40</li>
+    <li>Unlocks residential growth past 500 population</li>
+    <li>No population contribution &mdash; pure civic infrastructure</li>
+  </ul>
+
+  <h3>Airport <span style="color: var(--text-dim);">(civic)</span></h3>
+  <ul>
+    <li>Commercial role with 5 commercial jobs</li>
+    <li>Unlocks commercial growth past 100 population</li>
+    <li>Trade bonus: +100 commercial zone score when present</li>
+  </ul>
+
+  <h3>Starport</h3>
+  <ul>
+    <li>Now also an industrial building with 4 industrial jobs</li>
+    <li>Unlocks industrial growth past 70 population</li>
+    <li>Requires 20,000 displayed population to build</li>
+    <li>No pollution despite industrial role</li>
+  </ul>
+
+  <h3>Nuclear Plant</h3>
+  <ul>
+    <li>Power generation with no pollution</li>
+    <li>Output scales with health &mdash; damaged plants produce less power</li>
+  </ul>
+
+  <!-- Controls & Overlays -->
+  <h2>Controls &amp; Overlays</h2>
+
+  <h3>Key Bindings</h3>
+  <table>
+    <tr><th>Key</th><th>Action</th></tr>
+    <tr><td><kbd>Z</kbd></td><td>Enter/exit zone placement mode</td></tr>
+    <tr><td><kbd>1</kbd> / <kbd>2</kbd> / <kbd>3</kbd></td><td>Select R / C / I zone type (in zone mode)</td></tr>
+    <tr><td><kbd>Shift</kbd>+<kbd>R</kbd></td><td>Road placement mode</td></tr>
+    <tr><td><kbd>Shift</kbd>+<kbd>B</kbd></td><td>Budget screen</td></tr>
+    <tr><td><kbd>Shift</kbd>+<kbd>C</kbd></td><td>City stats HUD</td></tr>
+    <tr><td><kbd>Shift</kbd>+<kbd>1</kbd>&ndash;<kbd>8</kbd></td><td>Toggle data overlays (see below)</td></tr>
+  </table>
+
+  <h3>Data Overlays</h3>
+  <table>
+    <tr><th>Shortcut</th><th>Overlay</th></tr>
+    <tr><td><kbd>Shift</kbd>+<kbd>1</kbd></td><td>None (default)</td></tr>
+    <tr><td><kbd>Shift</kbd>+<kbd>2</kbd></td><td>Power Grid</td></tr>
+    <tr><td><kbd>Shift</kbd>+<kbd>3</kbd></td><td>Traffic Density</td></tr>
+    <tr><td><kbd>Shift</kbd>+<kbd>4</kbd></td><td>Pollution</td></tr>
+    <tr><td><kbd>Shift</kbd>+<kbd>5</kbd></td><td>Land Value</td></tr>
+    <tr><td><kbd>Shift</kbd>+<kbd>6</kbd></td><td>Crime Rate</td></tr>
+    <tr><td><kbd>Shift</kbd>+<kbd>7</kbd></td><td>Population Density</td></tr>
+    <tr><td><kbd>Shift</kbd>+<kbd>8</kbd></td><td>Wind Trap Radius</td></tr>
+  </table>
+
+  <!-- City Growth Tips -->
+  <h2>City Growth Tips</h2>
+
+  <ol class="tips">
+    <li>Build roads next to every zone &mdash; 25% faster growth for free</li>
+    <li>Keep industrial zones 6&ndash;16 tiles from residential to avoid pollution penalties</li>
+    <li>Place commercial zones between residential and industrial areas for maximum demand</li>
+    <li>Build a Stadium early to uncap residential growth (triggers at pop 500)</li>
+    <li>Build an Airport when commercial stalls (triggers at pop 100)</li>
+    <li>Rocket Turrets are cheap crime suppression &mdash; place them around your base perimeter</li>
+    <li>Tax rate of 7% is balanced; go lower for faster growth, higher when you need revenue</li>
+    <li>Watch the overlays! Crime and pollution kill zone desirability and stall growth</li>
+  </ol>
+
+  <!-- Disasters -->
+  <h2>Disasters</h2>
+
+  <ul>
+    <li><strong>Sandstorms:</strong> Damage city zones, reducing density levels</li>
+    <li><strong>Sandworm attacks:</strong> Target populated areas &mdash; keep military units ready</li>
+    <li><strong>Combat fire spread:</strong> Military combat near city zones can spread fire, reducing desirability and causing chain reactions in dense areas. Keep your front lines away from your city center.</li>
+  </ul>
+
+</div>
+
+<footer>
+  <p>
+    <a href="index.html">DuneCity</a> &mdash;
+    <a href="index.html#downloads">Downloads</a> &mdash;
+    <a href="https://github.com/svan058/dunecity">GitHub</a>
+  </p>
+</footer>
+
+</body>
+</html>
