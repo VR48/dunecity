@@ -174,7 +174,9 @@ jobs:
         run: cmake -B build -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
-        run: cmake --build build --config Release --parallel
+        # Limit to 2 parallel jobs — ubuntu-latest has 4 cores but only 7GB
+        # RAM, and 4 concurrent g++ -O2 processes on large TUs exceed that.
+        run: cmake --build build --config Release --parallel 2
 
       - name: Create Linux Packages
         run: |
