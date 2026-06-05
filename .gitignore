@@ -5,6 +5,7 @@ autom4te.cache
 bin/
 build/
 build-*/
+build_release/
 vcpkg/
 dist/
 install/

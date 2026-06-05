@@ -397,7 +397,7 @@ std::string resolveItemName(int itemID) {
         case Unit_Harvester:                return _("@DUNE.ENG|227#Harvester");           break;
         case Unit_Launcher:                 return _("@DUNE.ENG|209#Launcher");            break;
         case Unit_MCV:                      return _("@DUNE.ENG|229#MCV");                 break;
-        case Unit_Ornithopter:              return _("@DUNE.ENG|197#Ornithopter");         break;
+        case Unit_Ornithopter:              return _("Ornithopter");                       break;
         case Unit_Quad:                     return _("@DUNE.ENG|225#Quad");                break;
         case Unit_RaiderTrike:              return _("@DUNE.ENG|223#Raider Trike");        break;
         case Unit_SiegeTank:                return _("@DUNE.ENG|215#Siege Tank");          break;

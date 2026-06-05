@@ -584,6 +584,27 @@ elseif(NOT APPLE)
     )
 endif()
 
+# Install imported sprite assets (Micropolis-derived civic/zone PNGs).
+# macOS bundles already include these via the POST_BUILD copy above.
+# Windows and Linux packaged builds need an explicit install rule so CPack
+# bundles the PNGs into the installer — without this, getDuneLegacyDataDir()
+# + "imported_sprites/..." finds nothing and civic sprites fall back to
+# placeholders (or crash on older builds).
+set(IMPORTED_SPRITES_SRC "${CMAKE_SOURCE_DIR}/imported_sprites")
+if(EXISTS "${IMPORTED_SPRITES_SRC}")
+    if(WIN32)
+        install(
+            DIRECTORY "${IMPORTED_SPRITES_SRC}/"
+            DESTINATION imported_sprites
+        )
+    elseif(NOT APPLE)
+        install(
+            DIRECTORY "${IMPORTED_SPRITES_SRC}/"
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/imported_sprites
+        )
+    endif()
+endif()
+
 # Install executable
 if(WIN32)
     # Windows: install to root directory

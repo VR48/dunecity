@@ -1151,6 +1151,41 @@ GFXManager::GFXManager() {
     }
     } // end city-sprite loading scope (binDir, srcDirEnv, scaleRGBASurface)
 
+    // Final safety net: ensure every DuneCity civic sprite has a populated
+    // objPic for HOUSE_HARKONNEN at all zoom levels, and cloned for every
+    // house.  If ANY of the per-sprite load blocks above failed to populate
+    // (e.g. SDL_CreateRGBSurface returned null, or an unexpected code path),
+    // clone from ConstructionYard so getObjPic/getZoomedObjPic never throws.
+    {
+        static const unsigned int civicIds[] = {
+            ObjPic_NuclearPlant, ObjPic_PoliceStation, ObjPic_Stadium,
+            ObjPic_Airport, ObjPic_Hospital, ObjPic_Church
+        };
+        for (auto cid : civicIds) {
+            if (!objPic[cid][HOUSE_HARKONNEN][0]) {
+                SDL_Log("GFXManager: civic sprite ID %u still null after load — cloning ConstructionYard as fallback", cid);
+                for (int z = 0; z < NUM_ZOOMLEVEL; z++) {
+                    if (objPic[ObjPic_ConstructionYard][HOUSE_HARKONNEN][z]) {
+                        objPic[cid][HOUSE_HARKONNEN][z] = sdl2::surface_ptr{
+                            SDL_ConvertSurface(objPic[ObjPic_ConstructionYard][HOUSE_HARKONNEN][z].get(),
+                                               objPic[ObjPic_ConstructionYard][HOUSE_HARKONNEN][z]->format, 0)
+                        };
+                    }
+                }
+                for (int h = 1; h < NUM_HOUSES; h++) {
+                    for (int z = 0; z < NUM_ZOOMLEVEL; z++) {
+                        if (objPic[cid][HOUSE_HARKONNEN][z]) {
+                            objPic[cid][h][z] = sdl2::surface_ptr{
+                                SDL_ConvertSurface(objPic[cid][HOUSE_HARKONNEN][z].get(),
+                                                   objPic[cid][HOUSE_HARKONNEN][z]->format, 0)
+                            };
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     objPic[ObjPic_Bullet_SmallRocket][HOUSE_HARKONNEN][0] = units->getPictureArray(16,1,ROCKET_ROW(35));
     objPic[ObjPic_Bullet_MediumRocket][HOUSE_HARKONNEN][0] = units->getPictureArray(16,1,ROCKET_ROW(20));
     objPic[ObjPic_Bullet_LargeRocket][HOUSE_HARKONNEN][0] = units->getPictureArray(16,1,ROCKET_ROW(40));
@@ -2046,6 +2081,7 @@ SDL_Texture* GFXManager::getZoomedObjPic(unsigned int id, int house, unsigned in
            || id == ObjPic_ZoneIndustrial || id == ObjPic_CityRoad
            || id == ObjPic_NuclearPlant || id == ObjPic_PoliceStation
            || id == ObjPic_Stadium || id == ObjPic_Airport
+           || id == ObjPic_Hospital || id == ObjPic_Church
            || id == ObjPic_Star) {
             if(objPicTex[id][house][z]) {
                 SDL_SetTextureBlendMode(objPicTex[id][house][z].get(), SDL_BLENDMODE_BLEND);
