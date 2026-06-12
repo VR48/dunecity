@@ -318,6 +318,7 @@ void BuilderBase::updateBuildList()
                               || itemID2Add == Structure_ZoneCommercial
                               || itemID2Add == Structure_ZoneIndustrial
                               || itemID2Add == Structure_Road
+                              || itemID2Add == Structure_NuclearPlant
                               || itemID2Add == Structure_PoliceStation
                               || itemID2Add == Structure_Stadium
                               || itemID2Add == Structure_Airport);

@@ -2424,7 +2424,7 @@ void QuantBot::build(int militaryValue) {
 							else if ((getHouse()->getProducedPower() < getHouse()->getPowerRequirement())
 								&& pBuilder->getProductionQueueSize() == 0) {
 								// Prefer nuclear plant over windtrap
-								if (pBuilder->isAvailableToBuild(Structure_NuclearPlant)
+								if (currentGame->isCitySimEnabled() && pBuilder->isAvailableToBuild(Structure_NuclearPlant)
 									&& findPlaceLocation(Structure_NuclearPlant).isValid()) {
 									produceItemWithLogging(Structure_NuclearPlant);
 									itemCount[Structure_NuclearPlant]++;
@@ -2559,7 +2559,7 @@ void QuantBot::build(int militaryValue) {
 										logDebug("COUNTER-ORNITHOPTER: Building radar prerequisite (enemy ornis: %d)", maxEnemyOrnithopters);
 									} else if (!hasPowerBufferForTurret()) {
 										int powerExcess = getHouse()->getProducedPower() - getHouse()->getPowerRequirement();
-										if (pBuilder->isAvailableToBuild(Structure_NuclearPlant)
+										if (currentGame->isCitySimEnabled() && pBuilder->isAvailableToBuild(Structure_NuclearPlant)
 											&& findPlaceLocation(Structure_NuclearPlant).isValid()) {
 											itemID = Structure_NuclearPlant;
 											logDebug("COUNTER-ORNITHOPTER: Nuclear Plant for turret power (excess: %d)", powerExcess);
@@ -2600,7 +2600,7 @@ void QuantBot::build(int militaryValue) {
 				if (itemID == NONE_ID && !skipRemainingStructureLogic
 					&& getHouse()->getProducedPower() < getHouse()->getPowerRequirement()) {
 					int powerDeficit = getHouse()->getPowerRequirement() - getHouse()->getProducedPower();
-					if (pBuilder->isAvailableToBuild(Structure_NuclearPlant)
+					if (currentGame->isCitySimEnabled() && pBuilder->isAvailableToBuild(Structure_NuclearPlant)
 						&& findPlaceLocation(Structure_NuclearPlant).isValid()) {
 						itemID = Structure_NuclearPlant;
 						logDebug("POWER-RECOVERY: Building Nuclear Plant for power deficit (%d)", powerDeficit);
@@ -2891,7 +2891,7 @@ void QuantBot::build(int militaryValue) {
 					&& pBuilder->isAvailableToBuild(Structure_RocketTurret)
 					&& !hasPowerBufferForTurret()) {
 					int powerExcess = getHouse()->getProducedPower() - getHouse()->getPowerRequirement();
-					if (pBuilder->isAvailableToBuild(Structure_NuclearPlant)
+					if (currentGame->isCitySimEnabled() && pBuilder->isAvailableToBuild(Structure_NuclearPlant)
 						&& findPlaceLocation(Structure_NuclearPlant).isValid()) {
 						itemID = Structure_NuclearPlant;
 						logDebug("TURRET-POWER: Nuclear Plant for turret buffer (excess: %d, need: 225)", powerExcess);
