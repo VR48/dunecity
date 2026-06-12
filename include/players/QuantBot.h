@@ -27,9 +27,14 @@
 #include <set>
 #include <map>
 #include <unordered_map>
+#include <vector>
+
+struct MentatBuildStep;
 
 class QuantBot : public Player
 {
+    friend struct MentatBuildStep;  // Build order lambdas need access to private members
+
 public:
     enum class Difficulty {
         Easy = 0,
@@ -132,6 +137,9 @@ private:
     void build(int militaryValue);
     void attack(int militaryValue);
     void manageCityBuilding();
+
+    // --- Mentat refactor: CY build order vector ---
+    static const std::vector<MentatBuildStep>& getCYBuildOrder();
 
     // --- Mentat refactor: per-builder production handlers ---
     void handleCYProduction(const BuilderBase* pBuilder, const StructureBase* pStructure, QuantBotBuildContext& ctx, bool emitStatsLog);
