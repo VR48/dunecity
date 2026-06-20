@@ -599,7 +599,14 @@ std::string getDuneLegacyDataDir() {
 
         std::string dataDir;
 #ifdef DUNELEGACY_DATADIR
-        dataDir = DUNELEGACY_DATADIR;
+        // Only use the compile-time install path if it actually exists
+        // (i.e. the binary was installed, not run from a build directory)
+        struct stat dirCheck;
+        if (stat(DUNELEGACY_DATADIR, &dirCheck) == 0 && S_ISDIR(dirCheck.st_mode)) {
+            dataDir = DUNELEGACY_DATADIR;
+        } else {
+            SDL_Log("DUNELEGACY_DATADIR '%s' not found, falling through to SDL_GetBasePath()", DUNELEGACY_DATADIR);
+        }
 #endif
 
         if((dataDir.empty()) || (dataDir == ".") || (dataDir == "./") || (dataDir == ".\\")) {

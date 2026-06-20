@@ -527,6 +527,22 @@ else()
         COMMENT "Copying data directory to build directory"
     )
 
+    # Copy config template files next to the binary so the mod system can seed
+    # ObjectData.ini etc. For local builds, DUNELEGACY_DATADIR points at a
+    # non-existent install path; the fallback in FileSystem.cpp uses
+    # SDL_GetBasePath() which resolves to this directory.
+    add_custom_command(
+        TARGET dunecity
+        POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/config"
+        COMMAND ${CMAKE_COMMAND} -E copy
+            "${CMAKE_SOURCE_DIR}/config/ObjectData.ini.default"
+            "${CMAKE_SOURCE_DIR}/config/QuantBot Config.ini.default"
+            "${CMAKE_SOURCE_DIR}/config/Dune City.ini"
+            "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/config/"
+        COMMENT "Copying config template files to build output"
+    )
+
     # Copy imported zone sprites next to the binary for non-bundle builds
     set(IMPORTED_SPRITES_SRC "${CMAKE_SOURCE_DIR}/imported_sprites")
     if(EXISTS "${IMPORTED_SPRITES_SRC}")
