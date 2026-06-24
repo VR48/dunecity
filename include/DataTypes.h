@@ -180,6 +180,8 @@ public:
         int         preferredZoomLevel;
         std::string scaler;
         bool        rotateUnitGraphics;
+        bool        showWatermark;      ///< Show mod/version watermark during gameplay (default: true)
+        int         cursorScale;        ///< Cursor scale factor: 0=auto-detect, 1=1x, 2=2x, 3=3x, 4=4x
     } video;
 
     class AudioClass {

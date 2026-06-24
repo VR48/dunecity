@@ -816,6 +816,8 @@ int main(int argc, char *argv[]) {
             settings.video.preferredZoomLevel = myINIFile.getIntValue("Video","Preferred Zoom Level", 0);
             settings.video.scaler = myINIFile.getStringValue("Video","Scaler","ScaleHD");
             settings.video.rotateUnitGraphics = myINIFile.getBoolValue("Video","RotateUnitGraphics",false);
+            settings.video.showWatermark = myINIFile.getBoolValue("Video","Show Watermark",true);
+            settings.video.cursorScale = myINIFile.getIntValue("Video","Cursor Scale",0);
             settings.audio.musicType = myINIFile.getStringValue("Audio","Music Type","adl");
             settings.audio.playMusic = myINIFile.getBoolValue("Audio","Play Music", true);
             settings.audio.musicVolume = myINIFile.getIntValue("Audio","Music Volume", 64);

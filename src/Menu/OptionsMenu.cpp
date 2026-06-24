@@ -201,6 +201,27 @@ OptionsMenu::OptionsMenu() : MenuBase()
 
     mainVBox.addWidget(&videoHBox, 0.01);
 
+    mainVBox.addWidget(VSpacer::create(1));
+
+    videoHBox2.addWidget(Spacer::create(), 0.5);
+    showWatermarkCheckbox.setText(_("Show Watermark"));
+    showWatermarkCheckbox.setChecked(settings.video.showWatermark);
+    showWatermarkCheckbox.setOnClick(std::bind(&OptionsMenu::onChangeOption, this, true));
+    videoHBox2.addWidget(&showWatermarkCheckbox, 155);
+    videoHBox2.addWidget(Label::create(_("Cursor Scale")), 90);
+    cursorScaleDropDownBox.addEntry(_("Auto"), 0);
+    cursorScaleDropDownBox.addEntry("1x", 1);
+    cursorScaleDropDownBox.addEntry("2x", 2);
+    cursorScaleDropDownBox.addEntry("3x", 3);
+    cursorScaleDropDownBox.addEntry("4x", 4);
+    int cursorScaleIndex = settings.video.cursorScale >= 0 && settings.video.cursorScale <= 4 ? settings.video.cursorScale : 0;
+    cursorScaleDropDownBox.setSelectedItem(cursorScaleIndex);
+    cursorScaleDropDownBox.setOnSelectionChange(std::bind(&OptionsMenu::onChangeOption, this, std::placeholders::_1));
+    videoHBox2.addWidget(&cursorScaleDropDownBox, 65);
+    videoHBox2.addWidget(Spacer::create(), 0.5);
+
+    mainVBox.addWidget(&videoHBox2, 0.01);
+
     mainVBox.addWidget(Spacer::create(), 0.2);
 
     audioHBox.addWidget(Spacer::create(), 0.5);
@@ -308,6 +329,8 @@ void OptionsMenu::onChangeOption(bool bInteractive) {
     bChanged |= (settings.video.fullscreen != fullScreenCheckbox.isChecked());
     bChanged |= (settings.video.frameLimit != frameLimitCheckbox.isChecked());
     bChanged |= (settings.video.scaler != scalerDropDownBox.getSelectedEntry());
+    bChanged |= (settings.video.showWatermark != showWatermarkCheckbox.isChecked());
+    bChanged |= (settings.video.cursorScale != cursorScaleDropDownBox.getSelectedEntryIntData());
 
     bChanged |= (settings.audio.playSFX != playSFXCheckbox.isChecked());
     bChanged |= (settings.audio.playMusic != playMusicCheckbox.isChecked());
@@ -375,6 +398,8 @@ void OptionsMenu::onOptionsOK() {
     settings.video.scaler = scalerDropDownBox.getSelectedEntry();
     settings.video.fullscreen = fullScreenCheckbox.isChecked();
     settings.video.frameLimit = frameLimitCheckbox.isChecked();
+    settings.video.showWatermark = showWatermarkCheckbox.isChecked();
+    settings.video.cursorScale = cursorScaleDropDownBox.getSelectedEntryIntData();
 
     settings.audio.playSFX = playSFXCheckbox.isChecked();
     settings.audio.playMusic = playMusicCheckbox.isChecked();
@@ -442,6 +467,8 @@ void OptionsMenu::saveConfiguration2File() {
     myINIFile.setIntValue("Video","Preferred Zoom Level",settings.video.preferredZoomLevel);
     myINIFile.setStringValue("Video","Scaler",settings.video.scaler);
     myINIFile.setBoolValue("Video","RotateUnitGraphics",settings.video.rotateUnitGraphics);
+    myINIFile.setBoolValue("Video","Show Watermark",settings.video.showWatermark);
+    myINIFile.setIntValue("Video","Cursor Scale",settings.video.cursorScale);
 
     myINIFile.setStringValue("General","Player Name",settings.general.playerName);
     myINIFile.setStringValue("General","Language",settings.general.language);

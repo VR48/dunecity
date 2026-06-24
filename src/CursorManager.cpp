@@ -25,6 +25,50 @@
 #include <structures/Palace.h>
 
 namespace {
+
+// Scale an SDL_Surface up by an integer factor. Returns a new surface the
+// caller must SDL_FreeSurface() after use, or nullptr on failure.
+SDL_Surface* scaleSurface(SDL_Surface* src, int scale) {
+    if (!src || scale <= 1) {
+        return nullptr;
+    }
+    SDL_Surface* dst = SDL_CreateRGBSurfaceWithFormat(
+        0, src->w * scale, src->h * scale, src->format->BitsPerPixel, src->format->format);
+    if (!dst) {
+        return nullptr;
+    }
+    // Preserve color key on the scaled surface.
+    Uint32 colorKey = 0;
+    if (SDL_GetColorKey(src, &colorKey) == 0) {
+        SDL_SetColorKey(dst, SDL_TRUE, colorKey);
+    }
+    SDL_Rect srcRect = { 0, 0, src->w, src->h };
+    SDL_Rect dstRect = { 0, 0, src->w * scale, src->h * scale };
+    SDL_BlitScaled(src, &srcRect, dst, &dstRect);
+    return dst;
+}
+
+// Determine the effective cursor scale from settings. 0 = auto-detect from DPI.
+int getEffectiveCursorScale() {
+    const int configured = settings.video.cursorScale;
+    if (configured >= 1 && configured <= 4) {
+        return configured;
+    }
+    // Auto-detect: use the display's logical-to-physical pixel ratio.
+    // SDL_GetDisplayDPI gives horizontal DPI; 96 dpi is "1x" baseline.
+    float ddpi = 96.0f, hdpi = 96.0f, vdpi = 96.0f;
+    int displayIndex = window ? SDL_GetWindowDisplayIndex(window) : 0;
+    if (displayIndex < 0) displayIndex = 0;
+    SDL_GetDisplayDPI(displayIndex, &ddpi, &hdpi, &vdpi);
+    const float dpi = hdpi > 0.0f ? hdpi : ddpi;
+    SDL_LogVerbose(SDL_LOG_CATEGORY_APPLICATION,
+                   "CursorManager: display %d DPI=%.1f, auto-detecting cursor scale", displayIndex, dpi);
+    if (dpi >= 288.0f) return 4;  // 4K HiDPI (e.g. 4x retina)
+    if (dpi >= 192.0f) return 3;
+    if (dpi >= 144.0f) return 2;  // 2x Retina / 150% Windows
+    return 1;
+}
+
 struct CursorCache {
     SDL_Cursor* normal = nullptr;
     SDL_Cursor* move = nullptr;
@@ -139,6 +183,10 @@ void CursorManager::initialize() {
     auto& cache = getCursorCache();
 
     if(cache.normal == nullptr) {
+        const int scale = getEffectiveCursorScale();
+        SDL_LogVerbose(SDL_LOG_CATEGORY_APPLICATION,
+                       "CursorManager: using cursor scale %dx (setting=%d)", scale, settings.video.cursorScale);
+
         SDL_Surface* normalSurface = pGFXManager->getUIGraphicSurface(UI_CursorNormal);
         SDL_Surface* moveSurface = pGFXManager->getUIGraphicSurface(UI_CursorMove_Zoomlevel0);
         SDL_Surface* attackSurface = pGFXManager->getUIGraphicSurface(UI_CursorAttack_Zoomlevel0);
@@ -146,20 +194,51 @@ void CursorManager::initialize() {
         SDL_Surface* carryallDropSurface = pGFXManager->getUIGraphicSurface(UI_CursorCarryallDrop_Zoomlevel0);
 
         if (normalSurface) {
+            // Find hotspot on the original surface, then scale coordinates.
             SDL_Point hotspot = findTopLeftOpaquePixel(normalSurface);
-            cache.normal = SDL_CreateColorCursor(normalSurface, hotspot.x, hotspot.y);
+            SDL_Surface* scaled = scaleSurface(normalSurface, scale);
+            if (scaled) {
+                cache.normal = SDL_CreateColorCursor(scaled, hotspot.x * scale, hotspot.y * scale);
+                SDL_FreeSurface(scaled);
+            } else {
+                cache.normal = SDL_CreateColorCursor(normalSurface, hotspot.x, hotspot.y);
+            }
         }
         if (moveSurface) {
-            cache.move = SDL_CreateColorCursor(moveSurface, moveSurface->w / 2, moveSurface->h / 2);
+            SDL_Surface* scaled = scaleSurface(moveSurface, scale);
+            if (scaled) {
+                cache.move = SDL_CreateColorCursor(scaled, scaled->w / 2, scaled->h / 2);
+                SDL_FreeSurface(scaled);
+            } else {
+                cache.move = SDL_CreateColorCursor(moveSurface, moveSurface->w / 2, moveSurface->h / 2);
+            }
         }
         if (attackSurface) {
-            cache.attack = SDL_CreateColorCursor(attackSurface, attackSurface->w / 2, attackSurface->h / 2);
+            SDL_Surface* scaled = scaleSurface(attackSurface, scale);
+            if (scaled) {
+                cache.attack = SDL_CreateColorCursor(scaled, scaled->w / 2, scaled->h / 2);
+                SDL_FreeSurface(scaled);
+            } else {
+                cache.attack = SDL_CreateColorCursor(attackSurface, attackSurface->w / 2, attackSurface->h / 2);
+            }
         }
         if (captureSurface) {
-            cache.capture = SDL_CreateColorCursor(captureSurface, captureSurface->w / 2, captureSurface->h / 2);
+            SDL_Surface* scaled = scaleSurface(captureSurface, scale);
+            if (scaled) {
+                cache.capture = SDL_CreateColorCursor(scaled, scaled->w / 2, scaled->h / 2);
+                SDL_FreeSurface(scaled);
+            } else {
+                cache.capture = SDL_CreateColorCursor(captureSurface, captureSurface->w / 2, captureSurface->h / 2);
+            }
         }
         if (carryallDropSurface) {
-            cache.carryallDrop = SDL_CreateColorCursor(carryallDropSurface, carryallDropSurface->w / 2, carryallDropSurface->h / 2);
+            SDL_Surface* scaled = scaleSurface(carryallDropSurface, scale);
+            if (scaled) {
+                cache.carryallDrop = SDL_CreateColorCursor(scaled, scaled->w / 2, scaled->h / 2);
+                SDL_FreeSurface(scaled);
+            } else {
+                cache.carryallDrop = SDL_CreateColorCursor(carryallDropSurface, carryallDropSurface->w / 2, carryallDropSurface->h / 2);
+            }
         }
     }
 
