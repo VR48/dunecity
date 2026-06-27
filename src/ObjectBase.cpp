@@ -547,7 +547,7 @@ const ObjectBase* findTargetLegacy(const ObjectBase& seeker, int checkRange) {
             }
         }
 
-        if(closestTarget != nullptr) {
+        if(closestTarget != nullptr && !isDeprioritizedTarget(*closestTarget)) {
             break;
         }
     }
