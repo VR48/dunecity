@@ -311,14 +311,14 @@ void SinglePlayerSkirmishMenu::onHouseLeft()
 
 void SinglePlayerSkirmishMenu::onHouseRight()
 {
-    if(currentHouseChoiceScrollPos < 3) {
+    if(currentHouseChoiceScrollPos < 4) {
         currentHouseChoiceScrollPos++;
         selectedButton--;
         onSelectHouseButton(selectedButton);
         updateHouseChoice();
 
         houseLeftButton.setVisible(true);
-        houseRightButton.setVisible( (currentHouseChoiceScrollPos < 3) );
+        houseRightButton.setVisible( (currentHouseChoiceScrollPos < 4) );
     }
 }
 
