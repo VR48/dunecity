@@ -409,15 +409,6 @@ void INIMapLoader::loadHouses()
         std::string houseName = getHouseNameByNumber(houseID);
         convertToLower(houseName);
 
-        // The Neutral campaign reuses the Harkonnen scenarios, which only
-        // define a [Harkonnen] section. Let the Neutral player take over that
-        // section so the human house (and pLocalHouse) actually gets created.
-        if(houseID == HOUSE_NEUTRAL && (inifile->hasSection(houseName) == false)
-            && inifile->hasSection(getHouseNameByNumber(HOUSE_HARKONNEN))) {
-            houseName = getHouseNameByNumber(HOUSE_HARKONNEN);
-            convertToLower(houseName);
-        }
-
         if(inifile->hasSection(houseName) == false) {
             // select one of the Player sections
             if(playerSectionsOnMap.empty()) {

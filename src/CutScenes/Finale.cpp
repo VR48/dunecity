@@ -42,8 +42,8 @@
 
 Finale::Finale(int house) {
 
-    // Neutral and Mercenary use Ordos cutscenes
-    if(house == HOUSE_NEUTRAL || house == HOUSE_MERCENARY) house = HOUSE_ORDOS;
+    // Neutral uses Ordos cutscenes
+    if(house == HOUSE_NEUTRAL) house = HOUSE_ORDOS;
 
     switch(house) {
         case HOUSE_HARKONNEN: {

@@ -154,13 +154,6 @@ void SinglePlayerMenu::onCampaign() {
 
             init.addHouseInfo(humanHouseInfo);
         } else {
-            // The Neutral campaign reuses the Harkonnen scenarios, whose only
-            // human-house section is [Harkonnen]. The Neutral player claims that
-            // section (see INIMapLoader::loadHouses), so adding a Harkonnen AI
-            // here would steal it and leave the human house uncreated.
-            if(player == HOUSE_NEUTRAL && houseID == HOUSE_HARKONNEN) {
-                continue;
-            }
             GameInitSettings::HouseInfo aiHouseInfo((HOUSETYPE) houseID, 2);
             aiHouseInfo.addPlayerInfo( GameInitSettings::PlayerInfo(getHouseNameByNumber( (HOUSETYPE) houseID), enemyAIClass) );
             init.addHouseInfo(aiHouseInfo);
