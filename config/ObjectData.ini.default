@@ -558,6 +558,12 @@ WeaponReloadTime = 540
 MaxSpeed = 3.8400
 BuildTime = 80
 InfSpawnProp = 25
+Builder = Heavy Factory
+Builder(H) = Invalid
+Builder(A) = Invalid
+Builder(S) = Invalid
+Builder(M) = Invalid
+Builder(F) = Invalid
 Builder(O) = Heavy Factory
 Builder(N) = Invalid
 TechLevel = 1
@@ -646,6 +652,7 @@ TechLevel(H) = 1
 TechLevel(N) = 4
 UpgradeLevel = 1
 UpgradeLevel(H) = 0
+UpgradeLevel(N) = 0
 
 [Raider Trike]
 Enabled = true
@@ -702,6 +709,7 @@ TechLevel(O) = 7
 TechLevel(N) = 6
 UpgradeLevel = 3
 UpgradeLevel(O) = 2
+UpgradeLevel(N) = 2
 
 [Soldier]
 Enabled = true
