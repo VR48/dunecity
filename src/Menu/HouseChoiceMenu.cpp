@@ -176,7 +176,7 @@ void HouseChoiceMenu::onHouseButton(int button) {
         case HOUSE_HARKONNEN:   soundPlayer->playVoice(HouseHarkonnen, selectedHouse);     break;
         case HOUSE_ATREIDES:    soundPlayer->playVoice(HouseAtreides, selectedHouse);      break;
         case HOUSE_ORDOS:       soundPlayer->playVoice(HouseOrdos, selectedHouse);         break;
-        case HOUSE_NEUTRAL:     soundPlayer->playVoice(HouseAtreides, selectedHouse);      break;
+        case HOUSE_NEUTRAL:     soundPlayer->playVoice(HouseNeutral, selectedHouse);       break;
         default:                /* no sounds for the other houses avail.*/  break;
 
     }

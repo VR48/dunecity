@@ -828,12 +828,19 @@ sdl2::surface_ptr PictureFactory::createHeraldMerc(SDL_Surface* heraldAtre, SDL_
 }
 
 sdl2::surface_ptr PictureFactory::createHeraldNeu(SDL_Surface* heraldFre) const {
-    // Remap Fremen colors to Neutral white palette
+    if (pFileManager->exists("HeraldNeuMask.png")) {
+        auto pMask = LoadPNG_RW(pFileManager->openFile("HeraldNeuMask.png").get());
+        SDL_SetColorKey(pMask.get(), SDL_TRUE, 0);
+
+        auto pBase = mapSurfaceColorRange(heraldFre, PALCOLOR_FREMEN, PALCOLOR_NEUTRAL);
+        pBase = mapSurfaceColorRange(pBase.get(), PALCOLOR_FREMEN+1, PALCOLOR_NEUTRAL+1);
+        SDL_BlitSurface(pMask.get(), nullptr, pBase.get(), nullptr);
+        return pBase;
+    }
+
+    // Fallback: remap Fremen colors to Neutral white palette
     auto pRecolored = mapSurfaceColorRange(heraldFre, PALCOLOR_FREMEN, PALCOLOR_NEUTRAL);
-
-    // Also remap the secondary Fremen color block used for the border highlights
     pRecolored = mapSurfaceColorRange(pRecolored.get(), PALCOLOR_FREMEN+1, PALCOLOR_NEUTRAL+1);
-
     return pRecolored;
 }
 

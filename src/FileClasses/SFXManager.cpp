@@ -224,6 +224,9 @@ void SFXManager::loadEnglishVoice() {
 
         // "House Ordos"
         lngVoice[HouseOrdos*NUM_HOUSES+VoiceNum] = getChunkFromFile("MORDOS.VOC");
+
+        // "House Neutral"
+        lngVoice[HouseNeutral*NUM_HOUSES+VoiceNum] = getChunkFromFile("MNEU.VOC", "MATRE.VOC");
     }
 
     const auto bad_voice = std::find(lngVoice.cbegin(), lngVoice.cend(), nullptr);
@@ -324,6 +327,9 @@ void SFXManager::loadNonEnglishVoice(const std::string& languagePrefix) {
 
     // "House Harkonnen"
     lngVoice[HouseHarkonnen] = getChunkFromFile(languagePrefix + "HARK.VOC");
+
+    // "House Neutral"
+    lngVoice[HouseNeutral] = getChunkFromFile("MNEU.VOC", "MATRE.VOC");
 
     const auto bad_voice = std::find(lngVoice.cbegin(), lngVoice.cend(), nullptr);
 
