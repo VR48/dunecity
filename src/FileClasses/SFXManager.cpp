@@ -116,6 +116,8 @@ void SFXManager::loadEnglishVoice() {
                 HouseString = "O";
                 HouseNameChunk = getChunkFromFile(HouseString + "MERC.VOC");
                 break;
+            case HOUSE_NEUTRAL:
+                continue; // Neutral house has no voiceovers
             default:
                 break;
         }
