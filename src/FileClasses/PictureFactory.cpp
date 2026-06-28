@@ -827,7 +827,7 @@ sdl2::surface_ptr PictureFactory::createHeraldMerc(SDL_Surface* heraldAtre, SDL_
     return pSoldier;
 }
 
-sdl2::surface_ptr PictureFactory::createHeraldNeu(SDL_Surface* heraldFre) const {
+sdl2::surface_ptr PictureFactory::createHeraldNeu(SDL_Surface* heraldFre, SDL_Surface* /*launcherIcon*/) const {
     if (pFileManager->exists("HeraldNeuMask.png")) {
         auto pMask = LoadPNG_RW(pFileManager->openFile("HeraldNeuMask.png").get());
         SDL_SetColorKey(pMask.get(), SDL_TRUE, 0);

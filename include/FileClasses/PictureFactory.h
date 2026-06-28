@@ -57,7 +57,7 @@ public:
     sdl2::surface_ptr createHeraldFre(SDL_Surface* heraldHark) const;
     sdl2::surface_ptr createHeraldSard(SDL_Surface* heraldOrd, SDL_Surface* heraldAtre) const;
     sdl2::surface_ptr createHeraldMerc(SDL_Surface* heraldAtre, SDL_Surface* heraldOrd) const;
-    sdl2::surface_ptr createHeraldNeu(SDL_Surface* heraldFre) const;
+    sdl2::surface_ptr createHeraldNeu(SDL_Surface* heraldFre, SDL_Surface* launcherIcon = nullptr) const;
 
     static std::unique_ptr<Animation> createFremenPlanet(SDL_Surface* heraldFre);
     static std::unique_ptr<Animation> createSardaukarPlanet(Animation* ordosPlanetAnimation, SDL_Surface* heraldSard);
