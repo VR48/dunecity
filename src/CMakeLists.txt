@@ -594,6 +594,17 @@ if(WIN32)
         DIRECTORY ${CMAKE_SOURCE_DIR}/config
         DESTINATION .
     )
+
+    # Install Neutral campaign scenario and region files
+    install(
+        DIRECTORY ${DATA_DIR}/
+        DESTINATION .
+        FILES_MATCHING PATTERN "scenn*.ini"
+    )
+    install(
+        FILES "${DATA_DIR}/REGIONN.INI"
+        DESTINATION .
+    )
 elseif(NOT APPLE)
     # Linux: use FHS structure
     install(
