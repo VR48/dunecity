@@ -95,7 +95,8 @@ int BriefingMenu::showMenu()
                 } break;
 
                 case HOUSE_ATREIDES:
-                case HOUSE_FREMEN: {
+                case HOUSE_FREMEN:
+                case HOUSE_NEUTRAL: {
                     musicPlayer->changeMusic(MUSIC_WIN_A);
                 } break;
 
@@ -115,7 +116,8 @@ int BriefingMenu::showMenu()
                 } break;
 
                 case HOUSE_ATREIDES:
-                case HOUSE_FREMEN: {
+                case HOUSE_FREMEN:
+                case HOUSE_NEUTRAL: {
                     musicPlayer->changeMusic(MUSIC_LOSE_A);
                 } break;
 
@@ -135,7 +137,8 @@ int BriefingMenu::showMenu()
                 } break;
 
                 case HOUSE_ATREIDES:
-                case HOUSE_FREMEN: {
+                case HOUSE_FREMEN:
+                case HOUSE_NEUTRAL: {
                     musicPlayer->changeMusic(MUSIC_BRIEFING_A);
                 } break;
 

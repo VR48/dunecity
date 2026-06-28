@@ -827,6 +827,16 @@ sdl2::surface_ptr PictureFactory::createHeraldMerc(SDL_Surface* heraldAtre, SDL_
     return pSoldier;
 }
 
+sdl2::surface_ptr PictureFactory::createHeraldNeu(SDL_Surface* heraldFre) const {
+    // Remap Fremen colors to Neutral white palette
+    auto pRecolored = mapSurfaceColorRange(heraldFre, PALCOLOR_FREMEN, PALCOLOR_NEUTRAL);
+
+    // Also remap the secondary Fremen color block used for the border highlights
+    pRecolored = mapSurfaceColorRange(pRecolored.get(), PALCOLOR_FREMEN+1, PALCOLOR_NEUTRAL+1);
+
+    return pRecolored;
+}
+
 std::unique_ptr<Animation> PictureFactory::createFremenPlanet(SDL_Surface* heraldFre) {
     auto newAnimation = std::make_unique<Animation>();
 

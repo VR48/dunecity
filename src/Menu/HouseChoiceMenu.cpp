@@ -27,7 +27,7 @@
 #include <SoundPlayer.h>
 
 
-static const int houseOrder[] = { HOUSE_ATREIDES, HOUSE_ORDOS, HOUSE_HARKONNEN, HOUSE_MERCENARY, HOUSE_FREMEN, HOUSE_SARDAUKAR };
+static const int houseOrder[] = { HOUSE_ATREIDES, HOUSE_ORDOS, HOUSE_HARKONNEN, HOUSE_MERCENARY, HOUSE_FREMEN, HOUSE_SARDAUKAR, HOUSE_NEUTRAL };
 
 namespace {
 const char* const kSupportPlayerClasses[] = {
@@ -176,6 +176,7 @@ void HouseChoiceMenu::onHouseButton(int button) {
         case HOUSE_HARKONNEN:   soundPlayer->playVoice(HouseHarkonnen, selectedHouse);     break;
         case HOUSE_ATREIDES:    soundPlayer->playVoice(HouseAtreides, selectedHouse);      break;
         case HOUSE_ORDOS:       soundPlayer->playVoice(HouseOrdos, selectedHouse);         break;
+        case HOUSE_NEUTRAL:     soundPlayer->playVoice(HouseAtreides, selectedHouse);      break;
         default:                /* no sounds for the other houses avail.*/  break;
 
     }
@@ -206,7 +207,7 @@ void HouseChoiceMenu::onHouseLeft()
 
 void HouseChoiceMenu::onHouseRight()
 {
-    if(currentHouseChoiceScrollPos < 3) {
+    if(currentHouseChoiceScrollPos < 4) {
         currentHouseChoiceScrollPos++;
         updateHouseChoice();
     }
