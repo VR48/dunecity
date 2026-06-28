@@ -231,7 +231,7 @@ void SFXManager::loadEnglishVoice() {
         } else if (VoiceNum == HOUSE_ORDOS || VoiceNum == HOUSE_MERCENARY) {
             lngVoice[HouseNeutral*NUM_HOUSES+VoiceNum] = getChunkFromFile("ONEU.VOC", "MNEU.VOC", "MATRE.VOC");
         } else {
-            lngVoice[HouseNeutral*NUM_HOUSES+VoiceNum] = getChunkFromFile("MNEU.VOC", "MATRE.VOC");
+            lngVoice[HouseNeutral*NUM_HOUSES+VoiceNum] = getChunkFromFile("ANEU.VOC", "MNEU.VOC", "MATRE.VOC");
         }
     }
 
