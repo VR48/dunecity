@@ -1112,6 +1112,7 @@ Uint32 Tile::getRadarColor(House* pHouse, bool radar) {
             case HOUSE_FREMEN:      color = SDL2RGB(palette[PALCOLOR_FREMEN]);     break;
             case HOUSE_SARDAUKAR:   color = SDL2RGB(palette[PALCOLOR_SARDAUKAR]);  break;
             case HOUSE_MERCENARY:   color = SDL2RGB(palette[PALCOLOR_MERCENARY]);  break;
+            case HOUSE_NEUTRAL:     color = SDL2RGB(palette[PALCOLOR_NEUTRAL]);   break;
             default:                color = COLOR_BLACK;                           break;
             }
         }
