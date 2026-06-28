@@ -42,6 +42,9 @@
 
 Finale::Finale(int house) {
 
+    // Neutral uses Atreides cutscenes
+    if(house == HOUSE_NEUTRAL) house = HOUSE_ATREIDES;
+
     switch(house) {
         case HOUSE_HARKONNEN: {
             pPalace1 = std::make_unique<Wsafile>(pFileManager->openFile("HFINALA.WSA").get());
