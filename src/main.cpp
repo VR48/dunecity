@@ -1072,15 +1072,15 @@ int main(int argc, char *argv[]) {
                 // Give the renderer time to fully initialize
                 SDL_Delay(100);
                 
-                SDL_RendererInfo rendererInfo;
-                SDL_GetRendererInfo(renderer, &rendererInfo);
-                SDL_Log("Renderer: %s (max texture size: %dx%d)", rendererInfo.name, rendererInfo.max_texture_width, rendererInfo.max_texture_height);
-
                 // Verify renderer is valid before proceeding
                 if(renderer == nullptr) {
                     SDL_Log("Error: Renderer is null after setVideoMode!");
                     THROW(std::runtime_error, "Failed to create renderer during video mode initialization");
                 }
+
+                SDL_RendererInfo rendererInfo;
+                SDL_GetRendererInfo(renderer, &rendererInfo);
+                SDL_Log("Renderer: %s (max texture size: %dx%d)", rendererInfo.name, rendererInfo.max_texture_width, rendererInfo.max_texture_height);
 
                 SDL_Log("Loading fonts...");
                 pFontManager = std::make_unique<FontManager>();
