@@ -118,7 +118,7 @@ void SFXManager::loadEnglishVoice() {
                 break;
             case HOUSE_NEUTRAL:
                 HouseString = "A";
-                HouseNameChunk = getChunkFromFile("ANEU.VOC", "AATRE.VOC");
+                HouseNameChunk = getChunkFromFile("ANEU.VOC", "MNEU.VOC");
                 break; // Neutral uses Atreides action voices but its own house name
             default:
                 break;
