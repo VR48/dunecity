@@ -828,70 +828,63 @@ sdl2::surface_ptr PictureFactory::createHeraldMerc(SDL_Surface* heraldAtre, SDL_
 }
 
 sdl2::surface_ptr PictureFactory::createHeraldNeu(SDL_Surface* heraldFre, SDL_Surface* /*launcherIcon*/) const {
-    if (pFileManager->exists("HeraldNeuMask.png")) {
-        auto pMask = LoadPNG_RW(pFileManager->openFile("HeraldNeuMask.png").get());
-        SDL_SetColorKey(pMask.get(), SDL_TRUE, 0);
-
-        auto pBase = mapSurfaceColorRange(heraldFre, PALCOLOR_FREMEN, PALCOLOR_NEUTRAL);
-        pBase = mapSurfaceColorRange(pBase.get(), PALCOLOR_FREMEN+1, PALCOLOR_NEUTRAL+1);
-        // Remap Ordos green (decorative frame pixels from Harkonnen herald) to Neutral white/grey
-        pBase = mapSurfaceColorRange(pBase.get(), PALCOLOR_ORDOS, PALCOLOR_NEUTRAL);
-        SDL_BlitSurface(pMask.get(), nullptr, pBase.get(), nullptr);
-        return pBase;
-    }
-
-    // Primary path: blank grey banner, launcher unit centred, "Neutral" text at bottom
-    // (N in red, rest in white, matching Tornie Panther's house select spec)
     constexpr int BANNER_W = 83;
     constexpr int BANNER_H = 91;
-    constexpr int TEXT_AREA_H = 15; // pixels reserved at bottom for text
-    constexpr int IMAGE_AREA_H = BANNER_H - TEXT_AREA_H;
+    constexpr int BORDER_SIZE = 7;
+    constexpr int INTERIOR_W = BANNER_W - 2 * BORDER_SIZE;  // 69
+    constexpr int INTERIOR_H = BANNER_H - 2 * BORDER_SIZE;  // 77
+    constexpr int TEXT_AREA_H = 15;
+    constexpr int IMAGE_AREA_H = INTERIOR_H - TEXT_AREA_H;  // 62
 
-    sdl2::surface_ptr pBanner{ SDL_CreateRGBSurface(0, BANNER_W, BANNER_H, 8, 0, 0, 0, 0) };
-    // Copy the Dune palette from heraldFre so colour indices work correctly
-    SDL_SetPaletteColors(pBanner->format->palette, heraldFre->format->palette->colors, 0, 256);
-    SDL_FillRect(pBanner.get(), nullptr, PALCOLOR_NEUTRAL);
+    // Use the Fremen herald as the border frame base, remapping its colours to neutral grey
+    auto pFrame = mapSurfaceColorRange(heraldFre, PALCOLOR_FREMEN, PALCOLOR_NEUTRAL);
 
-    // Launcher graphic from RTANK.WSA frame 0 (same source as Picture_Launcher)
+    // Fill the interior with solid neutral grey (preserves the border frame)
+    SDL_Rect interiorRect{ BORDER_SIZE, BORDER_SIZE, INTERIOR_W, INTERIOR_H };
+    SDL_FillRect(pFrame.get(), &interiorRect, PALCOLOR_NEUTRAL);
+
+    // Launcher graphic from RTANK.WSA frame 0, scaled to fit within the image area
     if (pFileManager->exists("RTANK.WSA")) {
         auto launcherFrame = Wsafile(pFileManager->openFile("RTANK.WSA").get()).getPicture(0);
         if (launcherFrame && launcherFrame->w > 0 && launcherFrame->h > 0) {
-            // Scale to fit within the image area (50×IMAGE_AREA_H), maintaining aspect ratio
-            double ratioW = 50.0 / launcherFrame->w;
-            double ratioH = static_cast<double>(IMAGE_AREA_H) / launcherFrame->h;
+            double ratioW = static_cast<double>(INTERIOR_W - 4) / launcherFrame->w;
+            double ratioH = static_cast<double>(IMAGE_AREA_H - 4) / launcherFrame->h;
             double ratio = (ratioW < ratioH) ? ratioW : ratioH;
             auto launcherScaled = scaleSurface(launcherFrame.get(), ratio);
             if (launcherScaled) {
-                int destX = (BANNER_W - launcherScaled->w) / 2;
-                int destY = (IMAGE_AREA_H - launcherScaled->h) / 2;
-                if (destX < 0) destX = 0;
-                if (destY < 0) destY = 0;
+                int destX = BORDER_SIZE + (INTERIOR_W - launcherScaled->w) / 2;
+                int destY = BORDER_SIZE + (IMAGE_AREA_H - launcherScaled->h) / 2;
                 SDL_Rect destRect{ destX, destY, launcherScaled->w, launcherScaled->h };
-                SDL_BlitSurface(launcherScaled.get(), nullptr, pBanner.get(), &destRect);
+                SDL_BlitSurface(launcherScaled.get(), nullptr, pFrame.get(), &destRect);
             }
         }
     }
 
-    // "Neutral" text at the bottom: "N" in red, "eutral" in white
-    // createSurfaceWithText returns a 32-bit RGBA surface; SDL will map to the nearest
-    // palette entry when blitting onto the 8-bit banner.
+    // "Neutral" text at bottom of interior: "N" in red, "eutral" in white
     constexpr unsigned int kFontSize = 10;
     auto pN      = pFontManager->createSurfaceWithText("N",      COLOR_RED,   kFontSize);
     auto pEutral = pFontManager->createSurfaceWithText("eutral", COLOR_WHITE, kFontSize);
     if (pN && pEutral) {
         int totalTextW = pN->w + pEutral->w;
         int textX = (BANNER_W - totalTextW) / 2;
-        int textY = BANNER_H - pN->h - 2;
+        int textY = BANNER_H - BORDER_SIZE - pN->h - 2;
         if (textX < 0) textX = 0;
-
         SDL_Rect destN{ textX, textY, pN->w, pN->h };
-        SDL_BlitSurface(pN.get(), nullptr, pBanner.get(), &destN);
-
+        SDL_BlitSurface(pN.get(), nullptr, pFrame.get(), &destN);
         SDL_Rect destE{ textX + pN->w, textY, pEutral->w, pEutral->h };
-        SDL_BlitSurface(pEutral.get(), nullptr, pBanner.get(), &destE);
+        SDL_BlitSurface(pEutral.get(), nullptr, pFrame.get(), &destE);
     }
 
-    return pBanner;
+    // Apply custom mask if present (draws decorative overlay, same pattern as Fre/Sard/Merc)
+    if (pFileManager->exists("HeraldNeuMask.png")) {
+        auto pMask = LoadPNG_RW(pFileManager->openFile("HeraldNeuMask.png").get());
+        if (pMask) {
+            SDL_SetColorKey(pMask.get(), SDL_TRUE, 0);
+            SDL_BlitSurface(pMask.get(), nullptr, pFrame.get(), nullptr);
+        }
+    }
+
+    return pFrame;
 }
 
 std::unique_ptr<Animation> PictureFactory::createFremenPlanet(SDL_Surface* heraldFre) {

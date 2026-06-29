@@ -202,6 +202,7 @@ typedef enum {
     Picture_PoliceStation,
     Picture_Stadium,
     Picture_Airport,
+    Picture_AdvancedWindTrap,
     NUM_SMALLDETAILPICS
 } SmallDetailPics_Enum;
 

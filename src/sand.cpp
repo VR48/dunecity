@@ -72,7 +72,7 @@ SDL_Texture* resolveItemPicture(int itemID, HOUSETYPE house) {
         case Structure_PoliceStation:       newPicID = Picture_PoliceStation;       break;
         case Structure_Stadium:            newPicID = Picture_Stadium;             break;
         case Structure_Airport:            newPicID = Picture_Airport;             break;
-        case Structure_AdvancedWindTrap:   newPicID = Picture_WindTrap;            break;
+        case Structure_AdvancedWindTrap:   newPicID = Picture_AdvancedWindTrap;    break;
         case Structure_ZoneResidential:    newPicID = Picture_ZoneResidential;    break;
         case Structure_ZoneCommercial:     newPicID = Picture_ZoneCommercial;     break;
         case Structure_ZoneIndustrial:     newPicID = Picture_ZoneIndustrial;     break;

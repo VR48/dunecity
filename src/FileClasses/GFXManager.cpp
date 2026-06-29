@@ -1589,6 +1589,23 @@ GFXManager::GFXManager() {
         auto airTex = makeStructDetailPic(ObjPic_Airport, 3 * D2_TILESIZE, 3 * D2_TILESIZE);
         if (airTex) smallDetailPicTex[Picture_Airport] = std::move(airTex);
         else        smallDetailPicTex[Picture_Airport] = extractSmallDetailPic("STARPORT.WSA");
+
+        // Advanced Windtrap: load the custom PNG icon, fall back to AdvancedWindTrap sprite
+        if (pFileManager->exists("Tornie_AdvancedWindtrap_icon.png")) {
+            auto pngSurf = LoadPNG_RW(pFileManager->openFile("Tornie_AdvancedWindtrap_icon.png").get());
+            if (pngSurf) {
+                auto tex = convertSurfaceToTexture(pngSurf.get());
+                if (tex) {
+                    SDL_SetTextureBlendMode(tex.get(), SDL_BLENDMODE_BLEND);
+                    smallDetailPicTex[Picture_AdvancedWindTrap] = std::move(tex);
+                }
+            }
+        }
+        if (!smallDetailPicTex[Picture_AdvancedWindTrap]) {
+            auto advTex = makeStructDetailPic(ObjPic_AdvancedWindTrap, 3 * D2_TILESIZE, 3 * D2_TILESIZE);
+            if (advTex) smallDetailPicTex[Picture_AdvancedWindTrap] = std::move(advTex);
+            else        smallDetailPicTex[Picture_AdvancedWindTrap] = extractSmallDetailPic("WINDTRAP.WSA");
+        }
     }
 
     // unused: FARTR.WSA, FHARK.WSA, FORDOS.WSA

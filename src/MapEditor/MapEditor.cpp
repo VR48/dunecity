@@ -1604,7 +1604,7 @@ void MapEditor::drawMap(ScreenBorder* pScreenborder, bool bCompleteMap) {
                 case Structure_ZoneCommercial:      objectPic = ObjPic_ZoneCommercial;      break;
                 case Structure_ZoneIndustrial:      objectPic = ObjPic_ZoneIndustrial;      break;
                 case Structure_NuclearPlant:        objectPic = ObjPic_NuclearPlant;        break;
-                case Structure_AdvancedWindTrap:    objectPic = ObjPic_Windtrap;            break;
+                case Structure_AdvancedWindTrap:    objectPic = ObjPic_AdvancedWindTrap;    break;
                 default:                            objectPic = 0;                          break;
             }
 

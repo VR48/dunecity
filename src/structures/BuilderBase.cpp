@@ -37,6 +37,7 @@ const int BuilderBase::itemOrder[] = {    Structure_Slab4, Structure_Slab1, Stru
                                            Structure_RepairYard, Structure_GunTurret, Structure_WOR,
                                            Structure_Barracks, Structure_Wall, Structure_LightFactory,
                                            Structure_Silo, Structure_Radar, Structure_Refinery, Structure_WindTrap,
+                                           Structure_AdvancedWindTrap,
                                            Structure_NuclearPlant, Structure_PoliceStation, Structure_Palace,
                                            Structure_Stadium, Structure_Airport,
                                            Structure_ZoneResidential, Structure_ZoneCommercial, Structure_ZoneIndustrial,
