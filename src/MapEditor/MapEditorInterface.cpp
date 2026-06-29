@@ -487,6 +487,13 @@ MapEditorInterface::MapEditorInterface(MapEditor* pMapEditor)
     editorModeStructs_Palace.setOnClick(std::bind(&MapEditorInterface::onStructButton, this, Structure_Palace));
     editorModeStructs_HBox6.addWidget(&editorModeStructs_Palace);
 
+    editorModeStructs_HBox6.addWidget(HSpacer::create(2));
+
+    editorModeStructs_AdvancedWindTrap.setToggleButton(true);
+    editorModeStructs_AdvancedWindTrap.setTooltipText(resolveItemName(Structure_AdvancedWindTrap));
+    editorModeStructs_AdvancedWindTrap.setOnClick(std::bind(&MapEditorInterface::onStructButton, this, Structure_AdvancedWindTrap));
+    editorModeStructs_HBox6.addWidget(&editorModeStructs_AdvancedWindTrap);
+
 
     // DuneCity: expose SimCity-style buildings (R/C/I zones, Road, nuclear
     // plant) in the editor when the dune city mod is the active mod. Always
@@ -1111,6 +1118,7 @@ void MapEditorInterface::onStructButton(int structType) {
     editorModeStructs_RepairYard.setToggleState( (structType == Structure_RepairYard) );
     editorModeStructs_Starport.setToggleState( (structType == Structure_StarPort) );
     editorModeStructs_Palace.setToggleState( (structType == Structure_Palace) );
+    editorModeStructs_AdvancedWindTrap.setToggleState( (structType == Structure_AdvancedWindTrap) );
 
     editorModeStructs_ZoneResidential.setToggleState( (structType == Structure_ZoneResidential) );
     editorModeStructs_ZoneCommercial.setToggleState( (structType == Structure_ZoneCommercial) );
@@ -1357,6 +1365,7 @@ void MapEditorInterface::changeInterfaceColor(HOUSETYPE newHouse) {
     editorModeStructs_RepairYard.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_RepairYard, newHouse));
     editorModeStructs_Starport.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Starport, newHouse));
     editorModeStructs_Palace.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Palace, newHouse));
+    editorModeStructs_AdvancedWindTrap.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_AdvancedWindTrap, newHouse));
 
     editorModeStructs_ZoneResidential.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_ZoneResidential, newHouse));
     editorModeStructs_ZoneCommercial.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_ZoneCommercial, newHouse));

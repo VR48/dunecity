@@ -224,6 +224,7 @@ private:
     HBox                editorModeStructs_HBox6;
     SymbolButton        editorModeStructs_Starport;
     SymbolButton        editorModeStructs_Palace;
+    SymbolButton        editorModeStructs_AdvancedWindTrap;
     // DuneCity: SimCity-style buildings, only added to the picker when the
     // dune city mod is active. Buttons are always declared so the shared
     // setHouse symbol-wiring and onStructButton toggle reset can address

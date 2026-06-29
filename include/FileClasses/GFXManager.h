@@ -447,6 +447,7 @@ typedef enum {
     UI_MapEditor_ZoneIndustrial,    ///< DuneCity: map-editor icon for I zone
     UI_MapEditor_NuclearPlant,      ///< DuneCity: map-editor icon for nuclear plant
     UI_MapEditor_Road,              ///< DuneCity: map-editor icon for road tile
+    UI_MapEditor_AdvancedWindTrap,  ///< DuneCity: map-editor icon for advanced windtrap
     NUM_UIGRAPHICS
 } UIGraphics_Enum;
 

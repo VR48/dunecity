@@ -1825,6 +1825,7 @@ GFXManager::GFXManager() {
     uiGraphic[UI_MentatHouseChoiceInfoQuestion][HOUSE_SARDAUKAR] = PicFactory->createMentatHouseChoiceQuestion(HOUSE_SARDAUKAR, benePalette);
     uiGraphic[UI_MentatHouseChoiceInfoQuestion][HOUSE_FREMEN] = PicFactory->createMentatHouseChoiceQuestion(HOUSE_FREMEN, benePalette);
     uiGraphic[UI_MentatHouseChoiceInfoQuestion][HOUSE_MERCENARY] = PicFactory->createMentatHouseChoiceQuestion(HOUSE_MERCENARY, benePalette);
+    uiGraphic[UI_MentatHouseChoiceInfoQuestion][HOUSE_NEUTRAL] = PicFactory->createMentatHouseChoiceQuestion(HOUSE_NEUTRAL, benePalette);
 
     uiGraphic[UI_MentatYes][HOUSE_HARKONNEN] = Scaler::defaultDoubleSurface(mentat->getPicture(0).get());
     uiGraphic[UI_MentatYes_Pressed][HOUSE_HARKONNEN] = Scaler::defaultDoubleSurface(mentat->getPicture(1).get());
@@ -2110,6 +2111,16 @@ GFXManager::GFXManager() {
         } else {
             // Fall back to SLAB.WSA-style if the road atlas wasn't built.
             uiGraphic[UI_MapEditor_Road][h] = getSubPicture(objPic[ObjPic_Wall][HOUSE_HARKONNEN][0].get(), 2*D2_TILESIZE, 0, D2_TILESIZE, D2_TILESIZE);
+        }
+    }
+
+    // Advanced Windtrap: use the custom icon PNG if available, otherwise crop
+    // frame 0 of the sprite atlas (all 8 frames are identical).
+    for (int h = 0; h < (int)NUM_HOUSES; ++h) {
+        if (objPic[ObjPic_AdvancedWindTrap][HOUSE_HARKONNEN][0]) {
+            uiGraphic[UI_MapEditor_AdvancedWindTrap][h] = getSubPicture(objPic[ObjPic_AdvancedWindTrap][HOUSE_HARKONNEN][0].get(), 0, 0, 3*D2_TILESIZE, 3*D2_TILESIZE);
+        } else {
+            uiGraphic[UI_MapEditor_AdvancedWindTrap][h] = getSubPicture(objPic[ObjPic_Windtrap][HOUSE_HARKONNEN][0].get(), 2*2*D2_TILESIZE, 0, 2*D2_TILESIZE, 2*D2_TILESIZE);
         }
     }
 
