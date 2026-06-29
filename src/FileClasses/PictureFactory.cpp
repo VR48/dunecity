@@ -621,6 +621,10 @@ sdl2::surface_ptr PictureFactory::createHouseSelect(SDL_Surface* HouseChoice) co
 
 
 sdl2::surface_ptr PictureFactory::createGreyHouseChoice(SDL_Surface* HouseChoice) const {
+    if (!HouseChoice) {
+        return nullptr;
+    }
+
     static const unsigned char index2greyindex[] = {
         0, 0, 0, 13, 233, 127, 0, 131, 0, 0, 0, 0, 0, 13, 14, 15,
         15, 127, 127, 14, 14, 14, 14, 130, 24, 131, 131, 13, 13, 29, 30, 31,
@@ -736,7 +740,23 @@ sdl2::surface_ptr PictureFactory::createMentatHouseChoiceQuestion(int House, Pal
         case HOUSE_FREMEN:      pQuestionPart2 = Scaler::defaultDoubleSurface(LoadPNG_RW(pFileManager->openFile("Fremen.png").get()).get());      break;
         case HOUSE_SARDAUKAR:   pQuestionPart2 = Scaler::defaultDoubleSurface(LoadPNG_RW(pFileManager->openFile("Sardaukar.png").get()).get());   break;
         case HOUSE_MERCENARY:   pQuestionPart2 = Scaler::defaultDoubleSurface(LoadPNG_RW(pFileManager->openFile("Mercenary.png").get()).get());   break;
+        case HOUSE_NEUTRAL: {
+            // Neutral reuses the Ordos banner slot but remaps its green palette entries
+            // to the neutral grey palette range. This gives a visually consistent banner
+            // without requiring a separate Neutral.png asset.
+            auto pOrdosPart = getSubPicture(mentatHouseChoiceQuestionSurface.get(), 0, 144, 208, 48);
+            pQuestionPart2 = mapSurfaceColorRange(pOrdosPart.get(), PALCOLOR_ORDOS, PALCOLOR_NEUTRAL);
+        } break;
         default:    break;
+    }
+
+    if(pQuestionPart2 == nullptr) {
+        // Fallback: use an empty transparent strip rather than crashing on null dereference
+        pQuestionPart2 = sdl2::surface_ptr{ SDL_CreateRGBSurface(0, 208, 48, 8, 0, 0, 0, 0) };
+        if(pQuestionPart2 != nullptr) {
+            benePalette.applyToSurface(pQuestionPart2.get());
+            SDL_FillRect(pQuestionPart2.get(), nullptr, 0);
+        }
     }
 
     SDL_SetColorKey(pQuestionPart2.get(), SDL_TRUE, 0);

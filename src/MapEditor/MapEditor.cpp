@@ -1660,6 +1660,26 @@ void MapEditor::drawMap(ScreenBorder* pScreenborder, bool bCompleteMap) {
 
     }
 
+    // Draw animated corner flags at the four map corners (frame 0 in the editor).
+    {
+        SDL_Texture* flagTex = pGFXManager->getZoomedObjPic(ObjPic_CornerFlag, currentZoomlevel);
+        if (flagTex) {
+            const int corners[4][2] = {
+                {0,               0              },
+                {map.getSizeX()-1, 0              },
+                {0,               map.getSizeY()-1},
+                {map.getSizeX()-1, map.getSizeY()-1}
+            };
+            for (const auto& c : corners) {
+                const int screenX = pScreenborder->world2screenX(c[0] * TILESIZE);
+                const int screenY = pScreenborder->world2screenY(c[1] * TILESIZE);
+                SDL_Rect src = { 0, 0, zoomedTilesize, zoomedTilesize };
+                SDL_Rect dst = { screenX, screenY, zoomedTilesize, zoomedTilesize };
+                SDL_RenderCopy(renderer, flagTex, &src, &dst);
+            }
+        }
+    }
+
     for(const Unit& unit : units) {
 
         const Coord& position = unit.position;

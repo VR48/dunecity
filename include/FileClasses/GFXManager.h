@@ -124,6 +124,7 @@ typedef enum {
     ObjPic_Hospital,       ///< DuneCity: Micropolis hospital sprite (2x2, auto-placed on residential)
     ObjPic_Church,         ///< DuneCity: Micropolis church sprite (2x2, auto-placed on residential)
     ObjPic_AdvancedWindTrap,  ///< DuneCity: custom super power plant sprite
+    ObjPic_CornerFlag,        ///< DuneCity: animated decorative flag at map corners
     NUM_OBJPICS
 } ObjPic_enum;
 
@@ -138,7 +139,7 @@ static const std::array<std::string, NUM_OBJPICS> ObjPicNames =  { { "Tank_Base"
     "DeadInfantry", "DeadAirUnit", "Smoke", "SandwormShimmerMask", "SandwormShimmerTemp", "Terrain", "DestroyedStructure", "RockDamage",
     "SandDamage", "Terrain_Hidden", "Terrain_HiddenFog", "Terrain_Tracks", "Star",
     "ZoneResidential", "ZoneCommercial", "ZoneIndustrial", "CityRoad", "NuclearPlant", "PoliceStation",
-    "Stadium", "Airport", "Hospital", "Church", "AdvancedWindTrap" } };
+    "Stadium", "Airport", "Hospital", "Church", "AdvancedWindTrap", "CornerFlag" } };
 
 #define GROUNDUNIT_ROW(i) (i+2)|TILE_NORMAL,(i+1)|TILE_NORMAL,i|TILE_NORMAL,(i+1)|TILE_FLIPV,(i+2)|TILE_FLIPV,(i+3)|TILE_FLIPV, (i+4)|TILE_NORMAL,(i+3)|TILE_NORMAL
 #define AIRUNIT_ROW(i) (i+2)|TILE_NORMAL,(i+1)|TILE_NORMAL,i|TILE_NORMAL,(i+1)|TILE_FLIPV,(i+2)|TILE_FLIPV,(i+1)|TILE_ROTATE, i|TILE_FLIPH,(i+1)|TILE_FLIPH

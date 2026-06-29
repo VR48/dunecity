@@ -1396,6 +1396,9 @@ void Game::drawScreen()
                 screenborder->world2screenY(t.getLocation().y*TILESIZE));
         });
 
+    /* draw corner flags */
+    drawCornerFlags();
+
     /* draw underground units */
     currentGameMap->for_each(x1, y1, x2, y2,
         [](Tile& t) {
@@ -4746,6 +4749,35 @@ void Game::drawCityPlacementHint() {
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
 }
 
+
+void Game::drawCornerFlags() {
+    if (!currentGameMap) return;
+
+    SDL_Texture* flagTex = pGFXManager->getZoomedObjPic(ObjPic_CornerFlag, currentZoomlevel);
+    if (!flagTex) return;
+
+    const int zoomedTileSize = world2zoomedWorld(TILESIZE);
+    // Advance through 3 animation frames at ~8 game cycles each.
+    const int frame = (gameCycleCount / 8) % 3;
+
+    const int mapW = currentGameMap->getSizeX();
+    const int mapH = currentGameMap->getSizeY();
+
+    const int corners[4][2] = {
+        {0,        0       },
+        {mapW - 1, 0       },
+        {0,        mapH - 1},
+        {mapW - 1, mapH - 1}
+    };
+
+    for (const auto& c : corners) {
+        const int screenX = screenborder->world2screenX(c[0] * TILESIZE);
+        const int screenY = screenborder->world2screenY(c[1] * TILESIZE);
+        SDL_Rect src = { frame * zoomedTileSize, 0, zoomedTileSize, zoomedTileSize };
+        SDL_Rect dst = { screenX, screenY, zoomedTileSize, zoomedTileSize };
+        SDL_RenderCopy(renderer, flagTex, &src, &dst);
+    }
+}
 
 void Game::takeScreenshot() const {
     std::string screenshotFilename;

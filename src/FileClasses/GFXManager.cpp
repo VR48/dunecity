@@ -130,6 +130,7 @@ static const Coord objPicTiles[] {
     { 1, 1 },   // ObjPic_Hospital (single cell, 2x2 footprint, auto-placed on residential)
     { 1, 1 },   // ObjPic_Church   (single cell, 2x2 footprint, auto-placed on residential)
     { 8, 1 },   // ObjPic_AdvancedWindTrap (8 frame slots, all identical; 3x3 footprint)
+    { 3, 1 },   // ObjPic_CornerFlag (3 animation frames; 1x1 footprint)
 };
 
 
@@ -1273,6 +1274,107 @@ GFXManager::GFXManager() {
         }
     } // end city-sprite loading scope (binDir, srcDirEnv, scaleRGBASurface)
 
+    // ----- DuneCity corner flag sprite -----
+    // Tornie_CornerFlag.png: 48x16 RGBA strip with 3 animation frames (each 16x16).
+    // Displayed at the 4 map corner tiles; no gameplay footprint.
+    {
+        const int numFrames = 3;
+        const int frameW = D2_TILESIZE;
+        const int frameH = D2_TILESIZE;
+        const int atlasW = numFrames * frameW;
+        sdl2::surface_ptr flagAtlas{ SDL_CreateRGBSurface(0, atlasW, frameH,
+            SCREEN_BPP, RMASK, GMASK, BMASK, AMASK) };
+        if (flagAtlas) {
+            SDL_FillRect(flagAtlas.get(), nullptr, SDL_MapRGBA(flagAtlas->format, 0, 0, 0, 0));
+        }
+
+        sdl2::surface_ptr flagSrc;
+        if (pFileManager->exists("Tornie_CornerFlag.png")) {
+            flagSrc = LoadPNG_RW(pFileManager->openFile("Tornie_CornerFlag.png").get());
+        }
+
+        if (flagAtlas && flagSrc) {
+            // PNG is already a 3-frame atlas (48x16); blit it directly, scaling if needed.
+            SDL_SetSurfaceBlendMode(flagSrc.get(), SDL_BLENDMODE_NONE);
+            const int srcFrameW = flagSrc->w / numFrames;
+            for (int f = 0; f < numFrames; ++f) {
+                SDL_Rect srcR{ f * srcFrameW, 0, srcFrameW, flagSrc->h };
+                SDL_Rect dstR{ f * frameW, 0, frameW, frameH };
+                SDL_BlitScaled(flagSrc.get(), &srcR, flagAtlas.get(), &dstR);
+            }
+        } else if (flagAtlas) {
+            // Programmatic fallback: grey pole + cloth waving in 3 positions.
+            const Uint32 transparent = SDL_MapRGBA(flagAtlas->format, 0, 0, 0, 0);
+            const Uint32 poleColor   = SDL_MapRGBA(flagAtlas->format, 120, 120, 120, 255);
+            const Uint32 flagColor   = SDL_MapRGBA(flagAtlas->format, 155, 155, 165, 255);
+            const Uint32 flagHigh    = SDL_MapRGBA(flagAtlas->format, 185, 185, 200, 255);
+
+            auto setPixel = [&](SDL_Surface* s, int x, int y, Uint32 col) {
+                if (x < 0 || x >= s->w || y < 0 || y >= s->h) return;
+                Uint32* p = reinterpret_cast<Uint32*>(static_cast<Uint8*>(s->pixels) + y * s->pitch + x * 4);
+                *p = col;
+            };
+
+            // y-offset for flag cloth top edge per frame: raised, level, lowered
+            const int flagTopY[3] = { 1, 2, 3 };
+            const int flagHeight = 7;
+
+            for (int f = 0; f < numFrames; ++f) {
+                const int ox = f * frameW;
+                // Pole
+                for (int y = 0; y < frameH; ++y) {
+                    setPixel(flagAtlas.get(), ox + 0, y, poleColor);
+                    setPixel(flagAtlas.get(), ox + 1, y, poleColor);
+                }
+                // Flag cloth
+                const int topY = flagTopY[f];
+                for (int row = 0; row < flagHeight; ++row) {
+                    const int y = topY + row;
+                    if (y < 0 || y >= frameH) continue;
+                    const Uint32 col = (row == 0 || row == flagHeight - 1) ? flagColor : flagHigh;
+                    for (int col_x = 2; col_x <= 12; ++col_x) {
+                        setPixel(flagAtlas.get(), ox + col_x, y, col);
+                    }
+                    // Taper tip on last 2 cols for middle rows only
+                    if (row >= 2 && row <= flagHeight - 3) {
+                        setPixel(flagAtlas.get(), ox + 13, y, flagColor);
+                    }
+                }
+            }
+            (void)transparent;
+        }
+
+        if (flagAtlas) {
+            // scaleRGBASurface lambda is only in scope inside the city-sprite block above;
+            // replicate the scale logic here using SDL_BlitScaled into a fresh RGBA surface.
+            auto scaleFlag = [](SDL_Surface* src, int factor) -> sdl2::surface_ptr {
+                if (!src || factor <= 1) return sdl2::surface_ptr{};
+                sdl2::surface_ptr dst{ SDL_CreateRGBSurface(0, src->w * factor, src->h * factor,
+                    src->format->BitsPerPixel,
+                    src->format->Rmask, src->format->Gmask, src->format->Bmask, src->format->Amask) };
+                if (!dst) return dst;
+                SDL_SetSurfaceBlendMode(src, SDL_BLENDMODE_NONE);
+                SDL_BlitScaled(src, nullptr, dst.get(), nullptr);
+                return dst;
+            };
+
+            objPic[ObjPic_CornerFlag][HOUSE_HARKONNEN][0] = std::move(flagAtlas);
+            objPic[ObjPic_CornerFlag][HOUSE_HARKONNEN][1] = scaleFlag(objPic[ObjPic_CornerFlag][HOUSE_HARKONNEN][0].get(), 2);
+            objPic[ObjPic_CornerFlag][HOUSE_HARKONNEN][2] = scaleFlag(objPic[ObjPic_CornerFlag][HOUSE_HARKONNEN][0].get(), 3);
+
+            for (int h = 1; h < NUM_HOUSES; h++) {
+                for (int z = 0; z < NUM_ZOOMLEVEL; z++) {
+                    if (objPic[ObjPic_CornerFlag][HOUSE_HARKONNEN][z]) {
+                        objPic[ObjPic_CornerFlag][h][z] = sdl2::surface_ptr{
+                            SDL_ConvertSurface(objPic[ObjPic_CornerFlag][HOUSE_HARKONNEN][z].get(),
+                                               objPic[ObjPic_CornerFlag][HOUSE_HARKONNEN][z]->format, 0)
+                        };
+                    }
+                }
+            }
+        }
+    }
+
     // Final safety net: ensure every DuneCity civic sprite has a populated
     // objPic for HOUSE_HARKONNEN at all zoom levels, and cloned for every
     // house.  If ANY of the per-sprite load blocks above failed to populate
@@ -1281,7 +1383,8 @@ GFXManager::GFXManager() {
     {
         static const unsigned int civicIds[] = {
             ObjPic_NuclearPlant, ObjPic_PoliceStation, ObjPic_Stadium,
-            ObjPic_Airport, ObjPic_Hospital, ObjPic_Church, ObjPic_AdvancedWindTrap
+            ObjPic_Airport, ObjPic_Hospital, ObjPic_Church, ObjPic_AdvancedWindTrap,
+            ObjPic_CornerFlag
         };
         for (auto cid : civicIds) {
             if (!objPic[cid][HOUSE_HARKONNEN][0]) {
@@ -1368,6 +1471,7 @@ GFXManager::GFXManager() {
                                      || id == ObjPic_Stadium
                                      || id == ObjPic_Airport
                                      || id == ObjPic_AdvancedWindTrap
+                                     || id == ObjPic_CornerFlag
                                      || id == ObjPic_Star);
 
         for(int h = 0; h < (int) NUM_HOUSES; h++) {
@@ -1590,14 +1694,42 @@ GFXManager::GFXManager() {
         if (airTex) smallDetailPicTex[Picture_Airport] = std::move(airTex);
         else        smallDetailPicTex[Picture_Airport] = extractSmallDetailPic("STARPORT.WSA");
 
-        // Advanced Windtrap: load the custom PNG icon, fall back to AdvancedWindTrap sprite
+        // Advanced Windtrap: load the custom PNG icon (182×110), subsample it to
+        // 91×55 using the same stride-2 algorithm as extractSmallDetailPic() so it
+        // fits the sidebar portrait area.  Fall back to the sprite-derived icon.
         if (pFileManager->exists("Tornie_AdvancedWindtrap_icon.png")) {
             auto pngSurf = LoadPNG_RW(pFileManager->openFile("Tornie_AdvancedWindtrap_icon.png").get());
-            if (pngSurf) {
-                auto tex = convertSurfaceToTexture(pngSurf.get());
-                if (tex) {
-                    SDL_SetTextureBlendMode(tex.get(), SDL_BLENDMODE_BLEND);
-                    smallDetailPicTex[Picture_AdvancedWindTrap] = std::move(tex);
+            if (pngSurf && pngSurf->w >= 2 && pngSurf->h >= 2) {
+                const int srcW = pngSurf->w;
+                const int srcH = pngSurf->h;
+                const int dstW = srcW / 2;
+                const int dstH = srcH / 2;
+                sdl2::surface_ptr smallSurf{SDL_CreateRGBSurfaceWithFormat(0, dstW, dstH, 32, SDL_PIXELFORMAT_RGBA32)};
+                if (smallSurf && SDL_LockSurface(pngSurf.get()) == 0) {
+                    const int srcBpp = pngSurf->format->BytesPerPixel;
+                    SDL_LockSurface(smallSurf.get());
+                    for (int dy = 0; dy < dstH; ++dy) {
+                        const auto* srcRow = static_cast<const Uint8*>(pngSurf->pixels)
+                                             + (dy * 2) * pngSurf->pitch;
+                        auto* dstRow = static_cast<Uint8*>(smallSurf->pixels)
+                                       + dy * smallSurf->pitch;
+                        for (int dx = 0; dx < dstW; ++dx) {
+                            const auto* srcPx = srcRow + (dx * 2) * srcBpp;
+                            Uint8 r, g, b, a;
+                            SDL_GetRGBA(srcBpp == 4 ? *reinterpret_cast<const Uint32*>(srcPx)
+                                                    : (srcBpp == 3 ? (srcPx[0] | (srcPx[1] << 8) | (srcPx[2] << 16)) : *srcPx),
+                                        pngSurf->format, &r, &g, &b, &a);
+                            Uint32 dstPixel = SDL_MapRGBA(smallSurf->format, r, g, b, a);
+                            *reinterpret_cast<Uint32*>(dstRow + dx * 4) = dstPixel;
+                        }
+                    }
+                    SDL_UnlockSurface(smallSurf.get());
+                    SDL_UnlockSurface(pngSurf.get());
+                    auto tex = convertSurfaceToTexture(smallSurf.get());
+                    if (tex) {
+                        SDL_SetTextureBlendMode(tex.get(), SDL_BLENDMODE_BLEND);
+                        smallDetailPicTex[Picture_AdvancedWindTrap] = std::move(tex);
+                    }
                 }
             }
         }
@@ -2242,7 +2374,8 @@ SDL_Texture* GFXManager::getZoomedObjPic(unsigned int id, int house, unsigned in
            || id == ObjPic_NuclearPlant || id == ObjPic_PoliceStation
            || id == ObjPic_Stadium || id == ObjPic_Airport
            || id == ObjPic_Hospital || id == ObjPic_Church
-           || id == ObjPic_Star) {
+           || id == ObjPic_Star || id == ObjPic_AdvancedWindTrap
+           || id == ObjPic_CornerFlag) {
             if(objPicTex[id][house][z]) {
                 SDL_SetTextureBlendMode(objPicTex[id][house][z].get(), SDL_BLENDMODE_BLEND);
             }
