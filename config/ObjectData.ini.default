@@ -435,7 +435,7 @@ BuildTime = 96
 InfSpawnProp = 25
 Builder = Construction Yard
 TechLevel = 6
-Prerequisite = Windtrap, Radar
+Prerequisite = Windtrap
 
 [Police Station]
 # DuneCity city-mode-only. Sole source of police coverage — Barracks/WOR

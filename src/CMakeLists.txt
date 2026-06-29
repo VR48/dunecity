@@ -614,6 +614,11 @@ if(WIN32)
             "${DATA_DIR}/ONEU.VOC"
         DESTINATION .
     )
+    # Install Advanced Windtrap icon (custom PNG, loaded as a loose file by GFXManager)
+    install(
+        FILES "${DATA_DIR}/Tornie_AdvancedWindtrap_icon.png"
+        DESTINATION .
+    )
 elseif(NOT APPLE)
     # Linux: use FHS structure
     install(

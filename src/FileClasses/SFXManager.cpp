@@ -118,8 +118,8 @@ void SFXManager::loadEnglishVoice() {
                 break;
             case HOUSE_NEUTRAL:
                 HouseString = "A";
-                HouseNameChunk = getChunkFromFile("ANEU.VOC", "MNEU.VOC");
-                break; // Neutral uses Atreides action voices but its own house name
+                HouseNameChunk = getChunkFromFile("MNEU.VOC", "ANEU.VOC");
+                break; // Neutral uses Atreides action voices but its own house name (prefer MNEU)
             default:
                 break;
         }
@@ -241,7 +241,7 @@ void SFXManager::loadEnglishVoice() {
     // when built, deployed, or triggered.
     {
         const int n = HOUSE_NEUTRAL;
-        auto neuName = getChunkFromFile("ANEU.VOC", "AATRE.VOC");
+        auto neuName = getChunkFromFile("MNEU.VOC", "ANEU.VOC", "AATRE.VOC");
 
         { // HarvesterDeployed / UnitDeployed / UnitLaunched
             auto Harvester = getChunkFromFile("MHARVEST.VOC", "AHARVEST.VOC");
@@ -253,7 +253,8 @@ void SFXManager::loadEnglishVoice() {
             lngVoice[UnitLaunched*NUM_HOUSES      + n] = concat3Chunks(neuName.get(), Unit.get(),      Launched.get());
         }
 
-        lngVoice[ConstructionComplete*NUM_HOUSES + n] = getChunkFromFile("MCONST.VOC",   "ACONST.VOC");
+        // Fallback to MNEU.VOC ("Neutral") rather than Atreides ACONST.VOC when MCONST.VOC is absent
+        lngVoice[ConstructionComplete*NUM_HOUSES + n] = getChunkFromFile("MCONST.VOC", "MNEU.VOC", "ANEU.VOC");
 
         { // VehicleRepaired
             auto Vehicle  = getChunkFromFile("MVEHICLE.VOC", "AVEHICLE.VOC");
