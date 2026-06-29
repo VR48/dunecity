@@ -129,7 +129,7 @@ static const Coord objPicTiles[] {
     { 4, 1 },   // ObjPic_Airport (4 frame slots, all identical; 3x3 footprint)
     { 1, 1 },   // ObjPic_Hospital (single cell, 2x2 footprint, auto-placed on residential)
     { 1, 1 },   // ObjPic_Church   (single cell, 2x2 footprint, auto-placed on residential)
-    { 8, 1 },   // ObjPic_AdvancedWindTrap (8 frame slots, all identical; 3x3 footprint)
+    { 3, 1 },   // ObjPic_AdvancedWindTrap (3 frame slots, all identical; 3x3 footprint)
     { 3, 1 },   // ObjPic_CornerFlag (3 animation frames; 1x1 footprint)
 };
 
@@ -1154,9 +1154,10 @@ GFXManager::GFXManager() {
         // ----- DuneCity advanced wind trap (super power plant) sprite -----
         //
         // Tornie's custom super_power_plant.png art. 3x3 gameplay footprint,
-        // no real animation — we build an 8-frame horizontal atlas (all
+        // no real animation — we build a 3-frame horizontal atlas (all
         // identical) so StructureBase animation indexing has somewhere to
-        // land. Same approach as the nuclear plant above.
+        // land, and the building shows its own sprite statically. Same
+        // approach as the nuclear plant above.
         {
             std::vector<std::string> superDirs = {
                 getDuneLegacyDataDir(),
@@ -1172,7 +1173,7 @@ GFXManager::GFXManager() {
 
             const int frameW = 3 * D2_TILESIZE;
             const int frameH = 3 * D2_TILESIZE;
-            const int numFrames = 8;
+            const int numFrames = 3;
             const int atlasW = numFrames * frameW;
             const int atlasH = frameH;
             sdl2::surface_ptr atlas{ SDL_CreateRGBSurface(0, atlasW, atlasH,
@@ -1545,7 +1546,23 @@ GFXManager::GFXManager() {
     smallDetailPicTex[Picture_MCV] = extractSmallDetailPic("MCV.WSA");
     smallDetailPicTex[Picture_Ornithopter] = extractSmallDetailPic("ORNI.WSA");
     smallDetailPicTex[Picture_Palace] = extractSmallDetailPic("PALACE.WSA");
-    smallDetailPicTex[Picture_Quad] = extractSmallDetailPic("QUAD.WSA");
+    // Quad: the neutral Palace activation ability (PalaceInterface) uses
+    // Picture_Quad. Prefer the standalone QuadIcon.png in data/ — it ships at
+    // the exact 91×55 sidebar-slot size, so load it straight to a texture.
+    // Fall back to the QUAD.WSA build portrait if the PNG is absent.
+    if (pFileManager->exists("QuadIcon.png")) {
+        auto iconSurf = LoadPNG_RW(pFileManager->openFile("QuadIcon.png").get());
+        if (iconSurf) {
+            auto tex = convertSurfaceToTexture(iconSurf.get());
+            if (tex) {
+                SDL_SetTextureBlendMode(tex.get(), SDL_BLENDMODE_BLEND);
+                smallDetailPicTex[Picture_Quad] = std::move(tex);
+            }
+        }
+    }
+    if (!smallDetailPicTex[Picture_Quad]) {
+        smallDetailPicTex[Picture_Quad] = extractSmallDetailPic("QUAD.WSA");
+    }
     smallDetailPicTex[Picture_Radar] = extractSmallDetailPic("HEADQRTS.WSA");
     smallDetailPicTex[Picture_RaiderTrike] = extractSmallDetailPic("OTRIKE.WSA");
     smallDetailPicTex[Picture_Refinery] = extractSmallDetailPic("REFINERY.WSA");
@@ -1931,11 +1948,9 @@ GFXManager::GFXManager() {
     uiGraphic[UI_MentatBackground][HOUSE_FREMEN] = PictureFactory::mapMentatSurfaceToFremen(uiGraphic[UI_MentatBackground][HOUSE_ATREIDES].get());
     uiGraphic[UI_MentatBackground][HOUSE_SARDAUKAR] = PictureFactory::mapMentatSurfaceToSardaukar(uiGraphic[UI_MentatBackground][HOUSE_HARKONNEN].get());
     uiGraphic[UI_MentatBackground][HOUSE_MERCENARY] = PictureFactory::mapMentatSurfaceToMercenary(uiGraphic[UI_MentatBackground][HOUSE_ORDOS].get());
-    // House Neutral uses the Ordos (female) mentat directly — copy the Ordos
-    // background surface verbatim, with no palette remap to grey.
-    uiGraphic[UI_MentatBackground][HOUSE_NEUTRAL] = sdl2::surface_ptr{
-        SDL_ConvertSurface(uiGraphic[UI_MentatBackground][HOUSE_ORDOS].get(),
-                           uiGraphic[UI_MentatBackground][HOUSE_ORDOS]->format, 0)};
+    // House Neutral uses the Ordos (female) mentat shape remapped to neutral's
+    // own grey house colour.
+    uiGraphic[UI_MentatBackground][HOUSE_NEUTRAL] = PictureFactory::mapMentatSurfaceToNeutral(uiGraphic[UI_MentatBackground][HOUSE_ORDOS].get());
 
     uiGraphic[UI_MentatBackgroundBene][HOUSE_HARKONNEN] = Scaler::defaultDoubleSurface(LoadCPS_RW(pFileManager->openFile("MENTATM.CPS").get()).get());
     if(uiGraphic[UI_MentatBackgroundBene][HOUSE_HARKONNEN] != nullptr) {
@@ -2284,17 +2299,12 @@ GFXManager::GFXManager() {
     animation[Anim_MercenaryMouth] = PictureFactory::mapMentatAnimationToMercenary(animation[Anim_OrdosMouth].get());
     animation[Anim_MercenaryShoulder] = PictureFactory::mapMentatAnimationToMercenary(animation[Anim_OrdosShoulder].get());
     animation[Anim_MercenaryRing] = PictureFactory::mapMentatAnimationToMercenary(animation[Anim_OrdosRing].get());
-    // House Neutral uses the Ordos (female) mentat directly — load the same
-    // Ordos SHP frames with no colour transform to grey.
-    animation[Anim_NeutralEyes] = menshpo->getAnimation(0,4,true,true);
-    animation[Anim_NeutralEyes]->setFrameRate(0.5);
-    animation[Anim_NeutralMouth] = menshpo->getAnimation(5,9,true,true,true);
-    animation[Anim_NeutralMouth]->setFrameRate(5.0);
-    animation[Anim_NeutralShoulder] = menshpo->getAnimation(10,10,true,true);
-    animation[Anim_NeutralShoulder]->setFrameRate(1.0);
-    animation[Anim_NeutralRing] = menshpo->getAnimation(11,14,true,true,true);
-    animation[Anim_NeutralRing]->setNumLoops(1);
-    animation[Anim_NeutralRing]->setFrameRate(6.0);
+    // House Neutral uses the Ordos (female) mentat shape remapped to neutral's
+    // own grey house colour.
+    animation[Anim_NeutralEyes] = PictureFactory::mapMentatAnimationToNeutral(animation[Anim_OrdosEyes].get());
+    animation[Anim_NeutralMouth] = PictureFactory::mapMentatAnimationToNeutral(animation[Anim_OrdosMouth].get());
+    animation[Anim_NeutralShoulder] = PictureFactory::mapMentatAnimationToNeutral(animation[Anim_OrdosShoulder].get());
+    animation[Anim_NeutralRing] = PictureFactory::mapMentatAnimationToNeutral(animation[Anim_OrdosRing].get());
 
     animation[Anim_BeneEyes] = menshpm->getAnimation(0,4,true,true);
     if(animation[Anim_BeneEyes] != nullptr) {
