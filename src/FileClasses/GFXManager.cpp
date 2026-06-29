@@ -1182,7 +1182,16 @@ GFXManager::GFXManager() {
             }
 
             sdl2::surface_ptr superSrc;
-            for (const auto& dir : superDirs) {
+            // Prefer Tornie's custom gfx (single 48x48 frame)
+            if (pFileManager->exists("Tornie_AdvancedWindtrap_gfx.png")) {
+                auto gfxSurf = LoadPNG_RW(pFileManager->openFile("Tornie_AdvancedWindtrap_gfx.png").get());
+                if (gfxSurf) {
+                    sdl2::surface_ptr converted{ SDL_ConvertSurfaceFormat(gfxSurf.get(), SDL_PIXELFORMAT_RGBA32, 0) };
+                    superSrc = converted ? std::move(converted) : std::move(gfxSurf);
+                    SDL_Log("Loaded AdvancedWindtrap gfx from Tornie_AdvancedWindtrap_gfx.png");
+                }
+            }
+            if (!superSrc) for (const auto& dir : superDirs) {
                 std::string path = dir + "super_power_plant.png";
                 auto rwops = sdl2::RWops_ptr{ SDL_RWFromFile(path.c_str(), "rb") };
                 if (rwops) {

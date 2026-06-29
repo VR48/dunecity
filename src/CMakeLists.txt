@@ -619,6 +619,11 @@ if(WIN32)
         FILES "${DATA_DIR}/Tornie_AdvancedWindtrap_icon.png"
         DESTINATION .
     )
+    # Install Advanced Windtrap building graphic (custom PNG, loaded as a loose file by GFXManager)
+    install(
+        FILES "${DATA_DIR}/Tornie_AdvancedWindtrap_gfx.png"
+        DESTINATION .
+    )
 elseif(NOT APPLE)
     # Linux: use FHS structure
     install(
