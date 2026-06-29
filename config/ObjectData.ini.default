@@ -606,6 +606,7 @@ TechLevel = 5
 TechLevel(N) = 1
 Prerequisite(N) = House IX
 UpgradeLevel = 2
+UpgradeLevel(N) = 0
 
 [MCV]
 Enabled = true

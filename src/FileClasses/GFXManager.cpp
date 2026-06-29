@@ -1679,8 +1679,21 @@ GFXManager::GFXManager() {
     smallDetailPicTex[Picture_Soldier] = extractSmallDetailPic("INFANTRY.WSA");
     smallDetailPicTex[Picture_IX] = extractSmallDetailPic("IX.WSA");
     smallDetailPicTex[Picture_Launcher] = extractSmallDetailPic("RTANK.WSA");
-    // DuneCity: light red-tinted variant of the Launcher icon for the Neutral house build menu.
-    smallDetailPicTex[Picture_LauncherNeutral] = extractSmallDetailPic("RTANK.WSA", true);
+    // DuneCity: Neutral house gets a custom build-menu icon (NeutralLauncherIcon.png if present),
+    // falling back to the plain RTANK.WSA portrait (no red tint).
+    if (pFileManager->exists("NeutralLauncherIcon.png")) {
+        auto iconSurf = LoadPNG_RW(pFileManager->openFile("NeutralLauncherIcon.png").get());
+        if (iconSurf) {
+            auto tex = convertSurfaceToTexture(iconSurf.get());
+            if (tex) {
+                SDL_SetTextureBlendMode(tex.get(), SDL_BLENDMODE_BLEND);
+                smallDetailPicTex[Picture_LauncherNeutral] = std::move(tex);
+            }
+        }
+    }
+    if (!smallDetailPicTex[Picture_LauncherNeutral]) {
+        smallDetailPicTex[Picture_LauncherNeutral] = extractSmallDetailPic("RTANK.WSA");
+    }
     smallDetailPicTex[Picture_LightFactory] = extractSmallDetailPic("LITEFTRY.WSA");
     smallDetailPicTex[Picture_MCV] = extractSmallDetailPic("MCV.WSA");
     smallDetailPicTex[Picture_Ornithopter] = extractSmallDetailPic("ORNI.WSA");
