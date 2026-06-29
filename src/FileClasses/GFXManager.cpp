@@ -1640,6 +1640,8 @@ GFXManager::GFXManager() {
     smallDetailPicTex[Picture_Soldier] = extractSmallDetailPic("INFANTRY.WSA");
     smallDetailPicTex[Picture_IX] = extractSmallDetailPic("IX.WSA");
     smallDetailPicTex[Picture_Launcher] = extractSmallDetailPic("RTANK.WSA");
+    // DuneCity: light red-tinted variant of the Launcher icon for the Neutral house build menu.
+    smallDetailPicTex[Picture_LauncherNeutral] = extractSmallDetailPic("RTANK.WSA", true);
     smallDetailPicTex[Picture_LightFactory] = extractSmallDetailPic("LITEFTRY.WSA");
     smallDetailPicTex[Picture_MCV] = extractSmallDetailPic("MCV.WSA");
     smallDetailPicTex[Picture_Ornithopter] = extractSmallDetailPic("ORNI.WSA");
@@ -2724,7 +2726,7 @@ std::unique_ptr<Wsafile> GFXManager::loadWsafile(const std::string& filename) co
     }
 }
 
-sdl2::texture_ptr GFXManager::extractSmallDetailPic(const std::string& filename) const
+sdl2::texture_ptr GFXManager::extractSmallDetailPic(const std::string& filename, bool tintRed) const
 {
     sdl2::surface_ptr pSurface{ SDL_CreateRGBSurface(0, 91, 55, 8, 0, 0, 0, 0) };
 
@@ -2759,6 +2761,10 @@ sdl2::texture_ptr GFXManager::extractSmallDetailPic(const std::string& filename)
                 out[y*pSurface->pitch + x] = in[((y * 2) + 1)*tmp->pitch + (x * 2) + 1];
             }
         }
+    }
+
+    if(tintRed) {
+        tintSurfaceRed(pSurface.get());
     }
 
     sdl2::texture_ptr texture = convertSurfaceToTexture(pSurface.get());

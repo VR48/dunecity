@@ -84,7 +84,10 @@ SDL_Texture* resolveItemPicture(int itemID, HOUSETYPE house) {
         case Unit_Deviator:                 newPicID = Picture_Deviator;            break;
         case Unit_Frigate:                  newPicID = Picture_Frigate;             break;
         case Unit_Harvester:                newPicID = Picture_Harvester;           break;
-        case Unit_Launcher:                 newPicID = Picture_Launcher;            break;
+        case Unit_Launcher: {
+            // DuneCity: Neutral Launchers get a light red-tinted build-menu icon.
+            newPicID = (house == HOUSE_NEUTRAL) ? Picture_LauncherNeutral : Picture_Launcher;
+        } break;
         case Unit_MCV:                      newPicID = Picture_MCV;                 break;
         case Unit_Ornithopter:              newPicID = Picture_Ornithopter;         break;
         case Unit_Quad:                     newPicID = Picture_Quad;                break;

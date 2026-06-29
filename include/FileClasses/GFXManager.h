@@ -208,6 +208,7 @@ typedef enum {
     Picture_Airport,
     Picture_AdvancedWindTrap,
     Picture_RocketTrike,
+    Picture_LauncherNeutral,    ///< DuneCity: light red-tinted Launcher build-menu icon for HOUSE_NEUTRAL
     NUM_SMALLDETAILPICS
 } SmallDetailPics_Enum;
 
@@ -574,7 +575,7 @@ private:
     std::unique_ptr<Shpfile>  loadShpfile(const std::string& filename) const;
     std::unique_ptr<Wsafile>  loadWsafile(const std::string& filename) const;
 
-    sdl2::texture_ptr   extractSmallDetailPic(const std::string& filename) const;
+    sdl2::texture_ptr   extractSmallDetailPic(const std::string& filename, bool tintRed = false) const;
 
 
     sdl2::surface_ptr   generateDoubledObjPic(unsigned int id, int h) const;

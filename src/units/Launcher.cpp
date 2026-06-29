@@ -40,16 +40,8 @@ void Launcher::init() {
     itemID = Unit_Launcher;
     owner->incrementUnits(itemID);
 
-    // DuneCity: the Neutral Launcher uses a red-tinted body and turret to set
-    // it apart from the standard house Launchers; other houses keep the stock
-    // tank-base + rocket-turret art.
-    if(getOwner()->getHouseID() == HOUSE_NEUTRAL) {
-        graphicID = ObjPic_LauncherRed_Base;
-        gunGraphicID = ObjPic_LauncherRed_Gun;
-    } else {
-        graphicID = ObjPic_Tank_Base;
-        gunGraphicID = ObjPic_Launcher_Gun;
-    }
+    graphicID = ObjPic_Tank_Base;
+    gunGraphicID = ObjPic_Launcher_Gun;
     graphic = pGFXManager->getObjPic(graphicID,getOwner()->getHouseID());
     turretGraphic = pGFXManager->getObjPic(gunGraphicID,getOwner()->getHouseID());
 
