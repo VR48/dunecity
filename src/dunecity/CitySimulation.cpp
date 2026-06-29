@@ -36,6 +36,7 @@ void CitySimulation::init(int width, int height) {
     growthRateMap_.init(width, height, 2);
 
     initialized_ = true;
+    SDL_Log("[CitySim] initialized %dx%d", width, height);
 }
 
 void CitySimulation::load(InputStream& stream) {

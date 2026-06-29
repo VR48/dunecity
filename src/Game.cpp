@@ -371,6 +371,12 @@ void Game::initGame(const GameInitSettings& newGameInitSettings) {
 
             INIMapLoader(this, gameInitSettings.getFilename(), gameInitSettings.getFiledata());
 
+            // Reset city simulation for the new map so lastProcessedDay_ and
+            // other per-map state don't carry over from a previous mission.
+            if (citySimEnabled_ && currentGameMap != nullptr) {
+                citySimulation_.reset();
+            }
+
             if(bReplay == false && gameInitSettings.getGameType() != GameType::CustomGame && gameInitSettings.getGameType() != GameType::CustomMultiplayer) {
                 /* do briefing */
                 SDL_Log("Briefing...");
