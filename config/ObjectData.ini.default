@@ -652,7 +652,7 @@ TechLevel = 3
 TechLevel(H) = 1
 TechLevel(N) = 4
 UpgradeLevel = 1
-UpgradeLevel(H) = 1
+UpgradeLevel(H) = 0
 UpgradeLevel(N) = 1
 
 [Raider Trike]
@@ -682,7 +682,7 @@ WeaponReloadTime = 150
 MaxSpeed = 9.25
 BuildTime = 40
 InfSpawnProp = 25
-Builder = Light Factory
+Builder = Invalid
 UpgradeLevel = 0
 Builder(N) = Light Factory
 TechLevel(N) = 3
