@@ -6,6 +6,8 @@
 #include <House.h>
 #include <Game.h>
 
+#include <GUI/ObjectInterfaces/WindTrapInterface.h>
+
 AdvancedWindTrap::AdvancedWindTrap(House* newOwner) : StructureBase(newOwner) {
     AdvancedWindTrap::init();
 
@@ -56,6 +58,14 @@ void AdvancedWindTrap::setHealth(FixPoint newHealth) {
     int producedPowerAfterwards = getProducedPower();
 
     owner->setProducedPower(owner->getProducedPower() - producedPowerBefore + producedPowerAfterwards);
+}
+
+ObjectInterface* AdvancedWindTrap::getInterfaceContainer() {
+    if((pLocalHouse == owner) || (debug == true)) {
+        return WindTrapInterface::create(objectID);
+    } else {
+        return DefaultObjectInterface::create(objectID);
+    }
 }
 
 int AdvancedWindTrap::getProducedPower() const {

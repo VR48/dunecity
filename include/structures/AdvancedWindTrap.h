@@ -19,6 +19,7 @@ public:
 
     bool update() override;
     void setHealth(FixPoint newHealth) override;
+    ObjectInterface* getInterfaceContainer() override;
 
 protected:
     int getProducedPower() const;
