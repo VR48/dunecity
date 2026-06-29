@@ -605,6 +605,15 @@ if(WIN32)
         FILES "${DATA_DIR}/REGIONN.INI"
         DESTINATION .
     )
+    # Install Neutral house voice VOC files (not in VOC.PAK, loaded as loose files)
+    install(
+        FILES
+            "${DATA_DIR}/ANEU.VOC"
+            "${DATA_DIR}/HNEU.VOC"
+            "${DATA_DIR}/MNEU.VOC"
+            "${DATA_DIR}/ONEU.VOC"
+        DESTINATION .
+    )
 elseif(NOT APPLE)
     # Linux: use FHS structure
     install(
