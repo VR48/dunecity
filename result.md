@@ -1,78 +1,65 @@
-# Test Fix + Neutral House Tests + CI — Result
+# Bug Fix Report: Cursor + Neutral Herald
 
-## Summary
+## Bug 1: Cursor disappearing on campaign start (ALL houses)
 
-### 1. Fixed 43 failing tests
+### Root Cause
 
-**Root cause A — missing environment variable (37 tests):**
-Source-scan tests in ZoneStructureTestCase, CityStructuresTestCase,
-ConstructionYardResolverTestCase, and RoadPlacementTestCase all called helper
-functions that returned empty strings when `DUNE_CITY_SOURCE_DIR` was unset,
-then hit `REQUIRE_FALSE(src.empty())` / `REQUIRE(file.is_open())` and failed.
-The source files themselves exist at the correct paths.
+Three compounding issues in `src/CursorManager.cpp`:
 
-**Fix:** Changed each test's internal helper function (`readSourceFile`,
-`getSourceDir`) to call `SKIP(...)` instead of returning empty/failing when
-the env var is absent. Tests now skip gracefully (42 skipped, 0 failed) when
-run without the env var, and pass fully when run via ctest or with
-`DUNE_CITY_SOURCE_DIR` set.
+**1. Static cache not cleared on cleanup.**
+`CursorManager::cleanup()` nulled the instance pointers and reset `initialized = false`, but left the static `CursorCache` holding the old `SDL_Cursor*` objects. On the next `initialize()` call (new game), `cache.normal != nullptr` caused cursor *creation* to be skipped — the old SDL cursor pointers were reused without being recreated from fresh surfaces. On platforms where SDL cursor objects are backed by platform-specific resources (Windows D3D11), these stale pointers can become invisible after a renderer or window lifecycle event.
 
-**Root cause B — stale expected values (6 tests in CityEffectsTestCase +
-ValueModelTestCase):**
+**2. `SDL_ShowCursor(SDL_ENABLE)` was inside `if (normalCursor)`.**
+If `SDL_CreateColorCursor` failed (e.g. on a platform that can't handle a paletted cursor surface), `normalCursor` would be null and `SDL_ShowCursor(SDL_ENABLE)` would never be called. The cursor would stay hidden even though the OS default cursor was usable.
 
-| Test | Old expected | New (correct) | Reason |
-|---|---|---|---|
-| `getStructureMaxLevel(Structure_Silo)` | 2 | 3 | Silo reclassified as I-high (no pollution) |
-| `getPoliceCoverage(Structure_RocketTurret)` | 10 | 25 | Both turret types tuned to 25% after design review |
-| `getPoliceAnnualCost(Structure_PoliceStation)` | 500 | 100 | Designer-reduced from SC's 500 to make Police Stations more accessible |
-| `computeAnnualTaxRevenue(100, 7)` | 1400 | 466 | Formula changed to `pop×200×rate/(100×3)` (per-citizen contribution reduced to 200/3) |
-| `computeAnnualTaxRevenue(1000, 10%)` | 20000 | 6666 | Same formula change |
-| `computeAnnualTaxRevenue(1000, 15%)` | 30000 | 10000 | Same formula change |
+**3. No factored-out `clear()` on `CursorCache`.**
+The destructor freed cursors correctly, but there was no way to reset the cache mid-session from `cleanup()`. Adding `clear()` lets `cleanup()` invalidate the cache without requiring program exit.
 
-Also updated the test name for the PoliceStation cost test and all inline
-comments to reflect current code.
+### Files Changed
 
-### 2. Added Neutral house tests (12 new test cases)
+`src/CursorManager.cpp`
 
-New file: `tests/NeutralHouseTestCase/NeutralHouseTestCase.cpp`
+- Added `CursorCache::clear()` method that frees all SDL cursor objects and nulls pointers.
+- `CursorManager::cleanup()` now calls `getCursorCache().clear()` so `initialize()` always recreates cursors from current GFXManager surfaces on the next game start. Prevents stale SDL_Cursor* reuse.
+- Moved `SDL_ShowCursor(SDL_ENABLE)` outside the `if (normalCursor)` block in `initialize()` so it is called unconditionally — if cursor image creation fails, the OS default cursor is still shown.
 
-Covers:
-- `HOUSE_NEUTRAL == 6`, `NUM_HOUSES == 7`
-- `HOUSE_NEUTRAL == HOUSE_MERCENARY + 1`
-- `SAVEGAMEVERSION == 9813` (version that added HOUSE_NEUTRAL)
-- `PALCOLOR_NEUTRAL == 128`
-- `houseToPaletteIndex[HOUSE_NEUTRAL] == PALCOLOR_NEUTRAL`
-- Neutral mentat animation enums registered (`Anim_NeutralEyes`, etc.)
-- `HouseNeutral < NUM_VOICE`, `HouseNeutral == HouseOrdos + 1`
-- `ANEU.VOC` is primary Neutral voice (source scan, skips without env)
-- `HNEU.VOC` / `ONEU.VOC` referenced in Harkonnen/Ordos branches (source scan)
-- `HOUSE_NEUTRAL` in skirmish `houseOrder[]` (source scan)
-- `Prerequisite(N) = House IX` in `[Launcher]` section of ObjectData.ini (source scan)
+---
 
-Source-scan tests skip gracefully when `DUNE_CITY_SOURCE_DIR` is not set.
+## Bug 2: Neutral herald/banner missing in campaign house-choice info screen
 
-### 3. CI test job added
+### Root Cause
 
-Added `test-linux` job to `.github/workflows/build.yml`:
-- Runs on `ubuntu-latest`, parallel to platform builds
-- Installs Catch2 + SDL2 dev packages via apt (fast, no vcpkg)
-- Configures with `-DDUNECITY_BUILD_TESTS=ON`
-- Builds `dunelegacy_tests` target
-- Runs tests with `DUNE_CITY_SOURCE_DIR` and `DUNECITY_DATADIR` set so
-  source-scan tests execute (not just skip)
+Two related gaps in HOUSE_NEUTRAL support:
 
-## Final test counts
+**1. `createMentatHouseChoiceQuestion()` had no HOUSE_NEUTRAL case.**
+The switch in `PictureFactory::createMentatHouseChoiceQuestion()` covered HARKONNEN, ATREIDES, ORDOS, FREMEN, SARDAUKAR, MERCENARY but fell through to `default: break` for HOUSE_NEUTRAL. This left `pQuestionPart2` as `nullptr`. The very next line unconditionally called `SDL_SetColorKey(pQuestionPart2.get(), SDL_TRUE, 0)` — a null-pointer dereference and crash.
 
-| Run mode | Passed | Skipped | Failed |
-|---|---|---|---|
-| `./build/bin/dunelegacy_tests` (no env vars) | 273 | 42 | 0 |
-| With `DUNE_CITY_SOURCE_DIR` + `DUNECITY_DATADIR` set | 315 | 0 | 0 |
-| CI (`ctest` with env vars in test properties) | 315 | 0 | 0 |
+**2. `GFXManager::loadUIGraphics()` never populated `UI_MentatHouseChoiceInfoQuestion[HOUSE_NEUTRAL]`.**
+Without the entry, `getUIGraphic(UI_MentatHouseChoiceInfoQuestion, HOUSE_NEUTRAL)` fell back to a colour-remapped copy of the HOUSE_HARKONNEN banner (via the generic remap path in `getUIGraphicSurface`), showing the wrong emblem with wrong colours.
 
-Total test cases: **315** (303 original + 12 Neutral house)
-Total assertions: **1119** (with env vars)
+### Files Changed
 
-## Remaining issues
+**`src/FileClasses/PictureFactory.cpp`**
+- Added `case HOUSE_NEUTRAL` in `createMentatHouseChoiceQuestion()`: reuses the Ordos banner slot from the sprite sheet, then remaps Ordos green palette entries to the neutral grey palette range via `mapSurfaceColorRange(pOrdosPart.get(), PALCOLOR_ORDOS, PALCOLOR_NEUTRAL)`. Matches the same colour-remap pattern used by `createHeraldNeu()`. No new PNG asset required.
+- Added a null-guard after the switch: if `pQuestionPart2` is still null (future-proofing for unknown house IDs), a blank 208×48 transparent surface is created rather than crashing.
 
-None. All 303 original tests pass (or skip appropriately without env vars).
-All 12 new Neutral house tests pass.
+**`src/FileClasses/GFXManager.cpp`**
+- Added `uiGraphic[UI_MentatHouseChoiceInfoQuestion][HOUSE_NEUTRAL] = PicFactory->createMentatHouseChoiceQuestion(HOUSE_NEUTRAL, benePalette);` immediately after the MERCENARY entry, so the texture is properly cached and `getUIGraphic` returns it directly without falling back to the remapped-Harkonnen path.
+
+---
+
+## Test Results
+
+```
+All tests passed (1119 assertions in 315 test cases)
+```
+
+315 passing, 0 failing.
+
+---
+
+## Remaining Concerns
+
+**Cursor (Windows):** The fix addresses static-cache invalidation by always recreating cursors on game start. This adds a small one-time cost per game session (a handful of `SDL_CreateColorCursor` calls). The root cause — SDL cursor objects becoming invalid after renderer teardown on Windows D3D backends — is resolved by forcing recreation, but cannot be verified without a Windows build.
+
+**Neutral herald appearance:** The grey-remapped Ordos banner is a functional stand-in matching the pattern used elsewhere in the codebase. If a designer wants a distinct "Neutral" house name graphic (like Fremen/Sardaukar/Mercenary have their custom PNGs), placing a `Neutral.png` (104×24 px, same format as the others) in the game data directory is the upgrade path. `createMentatHouseChoiceQuestion` can then be extended to load it.

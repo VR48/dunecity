@@ -83,7 +83,7 @@ struct CursorCache {
     SDL_Cursor* capture = nullptr;
     SDL_Cursor* carryallDrop = nullptr;
 
-    ~CursorCache() {
+    void clear() {
         if(normal) {
             SDL_FreeCursor(normal);
             normal = nullptr;
@@ -104,6 +104,10 @@ struct CursorCache {
             SDL_FreeCursor(carryallDrop);
             carryallDrop = nullptr;
         }
+    }
+
+    ~CursorCache() {
+        clear();
     }
 };
 
@@ -258,19 +262,28 @@ void CursorManager::initialize() {
     // Set default cursor
     if (normalCursor) {
         SDL_SetCursor(normalCursor);
-        SDL_ShowCursor(SDL_ENABLE);
     }
+    // Always show the cursor, even if custom cursor creation failed (SDL default cursor will be used)
+    SDL_ShowCursor(SDL_ENABLE);
 
     initialized = true;
 }
 
 void CursorManager::cleanup() {
-    initialized = false;
+    // Null instance pointers first so they can't be used during cache teardown
     normalCursor = nullptr;
     moveCursor = nullptr;
     attackCursor = nullptr;
     captureCursor = nullptr;
     carryallDropCursor = nullptr;
+
+    // Clear the static cache so initialize() always recreates cursors from fresh
+    // GFXManager surfaces on the next call. This prevents stale SDL_Cursor* pointers
+    // from being reused across game instances, especially on platforms (Windows D3D)
+    // where SDL cursor objects can become invalid after a renderer/window cycle.
+    getCursorCache().clear();
+
+    initialized = false;
 }
 
 void CursorManager::setCursorMode(int mode) {

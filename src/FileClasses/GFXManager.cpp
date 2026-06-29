@@ -1697,11 +1697,25 @@ GFXManager::GFXManager() {
         if (airTex) smallDetailPicTex[Picture_Airport] = std::move(airTex);
         else        smallDetailPicTex[Picture_Airport] = extractSmallDetailPic("STARPORT.WSA");
 
-        // Advanced Windtrap: auto-extract the sidebar icon from the sprite atlas,
-        // same treatment as other structures (Nuclear Plant, Police Station, etc).
-        auto advTex = makeStructDetailPic(ObjPic_AdvancedWindTrap, 3 * D2_TILESIZE, 3 * D2_TILESIZE);
-        if (advTex) smallDetailPicTex[Picture_AdvancedWindTrap] = std::move(advTex);
-        else        smallDetailPicTex[Picture_AdvancedWindTrap] = extractSmallDetailPic("WINDTRAP.WSA");
+        // Advanced Windtrap: prefer Tornie's custom sidebar icon PNG. It ships
+        // pre-sized at 91×55 — exactly the sidebar slot — so load it straight
+        // to a texture with no subsampling or scaling. Fall through to the
+        // sprite-atlas-derived icon, then WINDTRAP.WSA, if the file is absent.
+        if (pFileManager->exists("Tornie_AdvancedWindtrap_icon.png")) {
+            auto iconSurf = LoadPNG_RW(pFileManager->openFile("Tornie_AdvancedWindtrap_icon.png").get());
+            if (iconSurf) {
+                auto tex = convertSurfaceToTexture(iconSurf.get());
+                if (tex) {
+                    SDL_SetTextureBlendMode(tex.get(), SDL_BLENDMODE_BLEND);
+                    smallDetailPicTex[Picture_AdvancedWindTrap] = std::move(tex);
+                }
+            }
+        }
+        if (!smallDetailPicTex[Picture_AdvancedWindTrap]) {
+            auto advTex = makeStructDetailPic(ObjPic_AdvancedWindTrap, 3 * D2_TILESIZE, 3 * D2_TILESIZE);
+            if (advTex) smallDetailPicTex[Picture_AdvancedWindTrap] = std::move(advTex);
+            else        smallDetailPicTex[Picture_AdvancedWindTrap] = extractSmallDetailPic("WINDTRAP.WSA");
+        }
     }
 
     // unused: FARTR.WSA, FHARK.WSA, FORDOS.WSA
