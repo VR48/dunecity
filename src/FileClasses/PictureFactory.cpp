@@ -31,6 +31,7 @@
 #include <misc/draw_util.h>
 #include <misc/Scaler.h>
 #include <misc/exceptions.h>
+#include <misc/FileSystem.h>
 
 #include <memory>
 
@@ -827,7 +828,7 @@ sdl2::surface_ptr PictureFactory::createHeraldMerc(SDL_Surface* heraldAtre, SDL_
     return pSoldier;
 }
 
-sdl2::surface_ptr PictureFactory::createHeraldNeu(SDL_Surface* heraldFre, SDL_Surface* /*launcherIcon*/) const {
+sdl2::surface_ptr PictureFactory::createHeraldNeu(SDL_Surface* heraldOrdos, SDL_Surface* /*launcherIcon*/) const {
     constexpr int BANNER_W = 83;
     constexpr int BANNER_H = 91;
     constexpr int BORDER_SIZE = 7;
@@ -836,8 +837,8 @@ sdl2::surface_ptr PictureFactory::createHeraldNeu(SDL_Surface* heraldFre, SDL_Su
     constexpr int TEXT_AREA_H = 15;
     constexpr int IMAGE_AREA_H = INTERIOR_H - TEXT_AREA_H;  // 62
 
-    // Use the Fremen herald as the border frame base, remapping its colours to neutral grey
-    auto pFrame = mapSurfaceColorRange(heraldFre, PALCOLOR_FREMEN, PALCOLOR_NEUTRAL);
+    // Use the Ordos herald as the border frame base, remapping its colours to neutral grey
+    auto pFrame = mapSurfaceColorRange(heraldOrdos, PALCOLOR_ORDOS, PALCOLOR_NEUTRAL);
 
     // Fill the interior with solid neutral grey (preserves the border frame)
     SDL_Rect interiorRect{ BORDER_SIZE, BORDER_SIZE, INTERIOR_W, INTERIOR_H };

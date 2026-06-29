@@ -1860,7 +1860,7 @@ GFXManager::GFXManager() {
         uiGraphic[UI_Herald_ColoredLarge][HOUSE_SARDAUKAR] = Scaler::defaultDoubleSurface(uiGraphic[UI_Herald_Colored][HOUSE_SARDAUKAR].get());
         uiGraphic[UI_Herald_Colored][HOUSE_MERCENARY] = PicFactory->createHeraldMerc(uiGraphic[UI_Herald_Colored][HOUSE_ATREIDES].get(), uiGraphic[UI_Herald_Colored][HOUSE_ORDOS].get());
         uiGraphic[UI_Herald_ColoredLarge][HOUSE_MERCENARY] = Scaler::defaultDoubleSurface(uiGraphic[UI_Herald_Colored][HOUSE_MERCENARY].get());
-        uiGraphic[UI_Herald_Colored][HOUSE_NEUTRAL] = PicFactory->createHeraldNeu(uiGraphic[UI_Herald_Colored][HOUSE_FREMEN].get());
+        uiGraphic[UI_Herald_Colored][HOUSE_NEUTRAL] = PicFactory->createHeraldNeu(uiGraphic[UI_Herald_Colored][HOUSE_ORDOS].get());
         uiGraphic[UI_Herald_ColoredLarge][HOUSE_NEUTRAL] = Scaler::defaultDoubleSurface(uiGraphic[UI_Herald_Colored][HOUSE_NEUTRAL].get());
     }
 
