@@ -1087,6 +1087,7 @@ sdl2::surface_ptr PictureFactory::mapMentatSurfaceToMercenary(SDL_Surface* ordos
 
 std::unique_ptr<Animation> PictureFactory::mapMentatAnimationToFremen(Animation* fremenAnimation) {
     auto newAnimation = std::make_unique<Animation>();
+    if (!fremenAnimation) return newAnimation;
 
     for(const sdl2::surface_ptr& pSurface : fremenAnimation->getFrames()) {
         newAnimation->addFrame(mapMentatSurfaceToFremen(pSurface.get()));
@@ -1123,6 +1124,7 @@ sdl2::surface_ptr PictureFactory::mapMentatSurfaceToSardaukar(SDL_Surface* harko
 
 std::unique_ptr<Animation> PictureFactory::mapMentatAnimationToSardaukar(Animation* harkonnenAnimation) {
     auto newAnimation = std::make_unique<Animation>();
+    if (!harkonnenAnimation) return newAnimation;
 
     for(const sdl2::surface_ptr& pSurface : harkonnenAnimation->getFrames()) {
         newAnimation->addFrame(mapMentatSurfaceToSardaukar(pSurface.get()));
@@ -1136,6 +1138,7 @@ std::unique_ptr<Animation> PictureFactory::mapMentatAnimationToSardaukar(Animati
 
 std::unique_ptr<Animation> PictureFactory::mapMentatAnimationToMercenary(Animation* ordosAnimation) {
     auto newAnimation = std::make_unique<Animation>();
+    if (!ordosAnimation) return newAnimation;
 
     for(const sdl2::surface_ptr& pSurface : ordosAnimation->getFrames()) {
         newAnimation->addFrame(mapMentatSurfaceToMercenary(pSurface.get()));
@@ -1171,6 +1174,7 @@ sdl2::surface_ptr PictureFactory::mapMentatSurfaceToNeutral(SDL_Surface* pSurfac
 
 std::unique_ptr<Animation> PictureFactory::mapMentatAnimationToNeutral(Animation* pAnimation) {
     auto newAnimation = std::make_unique<Animation>();
+    if (!pAnimation) return newAnimation;
 
     for(const sdl2::surface_ptr& pSurface : pAnimation->getFrames()) {
         newAnimation->addFrame(mapMentatSurfaceToNeutral(pSurface.get()));
