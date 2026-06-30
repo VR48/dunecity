@@ -592,21 +592,34 @@ Builder = Heavy Factory
 Enabled = true
 HitPoints = 100
 Price = 450
-Price(N) = 725
 ViewRange = 5
 WeaponDamage = 75
-WeaponDamage(N) = 94
 WeaponRange = 9
 WeaponReloadTime = 360
 MaxSpeed = 3.8400
 BuildTime = 72
 InfSpawnProp = 25
 Builder = Heavy Factory
+Builder(N) = Invalid
 TechLevel = 5
-TechLevel(N) = 1
-Prerequisite(N) = House IX
 UpgradeLevel = 2
-UpgradeLevel(N) = 0
+
+[Elite Launcher]
+Enabled = true
+HitPoints = 120
+Price = 725
+ViewRange = 5
+WeaponDamage = 94
+WeaponRange = 9
+WeaponReloadTime = 360
+MaxSpeed = 3.8400
+BuildTime = 72
+InfSpawnProp = 25
+Builder = Invalid
+Builder(N) = Heavy Factory
+TechLevel = 1
+Prerequisite(N) = House IX
+UpgradeLevel = 0
 
 [MCV]
 Enabled = true

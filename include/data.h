@@ -116,12 +116,13 @@ typedef enum {
     Unit_AmbientAirplane = 50,        ///< DuneCity: Ambient city airplane (non-combat, spawned by Airport)
     Unit_AmbientHelicopter = 51,      ///< DuneCity: Ambient city helicopter (non-combat, spawned by Airport)
     Unit_RocketTrike = 52,            ///< DuneCity: Rocket Trike (Neutral only, trooper rockets, light factory)
-    Unit_ExtLastID = 52,
+    Unit_EliteLauncher = 53,           ///< DuneCity: Elite Launcher (Neutral only, Heavy Factory, House IX prereq)
+    Unit_ExtLastID = 53,
 
     // Additional extended structures after units (isStructure handles non-contiguous range)
-    Structure_AdvancedWindTrap = 53,  ///< DuneCity: Advanced Windtrap (500 credits, -300 power, 3x3)
+    Structure_AdvancedWindTrap = 54,  ///< DuneCity: Advanced Windtrap (500 credits, -300 power, 3x3)
 
-    ItemID_LastID = 53,
+    ItemID_LastID = 54,
 
     Num_ItemID
 } ItemID_enum;

@@ -63,6 +63,7 @@
 #include <units/Frigate.h>
 #include <units/Harvester.h>
 #include <units/Launcher.h>
+#include <units/EliteLauncher.h>
 #include <units/MCV.h>
 #include <units/Ornithopter.h>
 #include <units/Quad.h>
@@ -762,7 +763,7 @@ const ObjectBase* ObjectBase::findTarget() const {
 
         case AREAGUARD: {
             // Launchers get extended area guard range due to long weapon range
-            checkRange = (getItemID() == Unit_Launcher) ? 12 : 10;
+            checkRange = (getItemID() == Unit_Launcher || getItemID() == Unit_EliteLauncher) ? 12 : 10;
         } break;
 
         case AMBUSH: {
@@ -853,6 +854,7 @@ ObjectBase* ObjectBase::createObject(int itemID, House* Owner, bool byScenario) 
         case Unit_Harvester:                newObject = new Harvester(Owner); break;
         case Unit_Soldier:                  newObject = new Soldier(Owner); break;
         case Unit_Launcher:                 newObject = new Launcher(Owner); break;
+        case Unit_EliteLauncher:            newObject = new EliteLauncher(Owner); break;
         case Unit_MCV:                      newObject = new MCV(Owner); break;
         case Unit_Ornithopter:              newObject = new Ornithopter(Owner); break;
         case Unit_Quad:                     newObject = new Quad(Owner); break;
@@ -938,6 +940,7 @@ ObjectBase* ObjectBase::loadObject(InputStream& stream, int itemID, Uint32 objec
         case Unit_Harvester:                newObject = new Harvester(stream); break;
         case Unit_Soldier:                  newObject = new Soldier(stream); break;
         case Unit_Launcher:                 newObject = new Launcher(stream); break;
+        case Unit_EliteLauncher:            newObject = new EliteLauncher(stream); break;
         case Unit_MCV:                      newObject = new MCV(stream); break;
         case Unit_Ornithopter:              newObject = new Ornithopter(stream); break;
         case Unit_Quad:                     newObject = new Quad(stream); break;

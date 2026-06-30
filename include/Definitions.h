@@ -30,7 +30,7 @@
 #define DEFAULT_METASERVER  "https://dunelegacy.com/metaserver/metaserver.php"
 
 #define SAVEMAGIC           8675309
-#define SAVEGAMEVERSION     9813  // 9813: Added HOUSE_NEUTRAL (NUM_HOUSES = 7).
+#define SAVEGAMEVERSION     9814  // 9814: Added Unit_EliteLauncher=53, shifted Structure_AdvancedWindTrap to 54.
 // 9812: Added Structure_AdvancedWindTrap (ID 52), Num_ItemID now 53.
 
 // v1.0.0–v1.0.7 shipped SAVEGAMEVERSION 9810 with Num_ItemID=48.

@@ -132,6 +132,13 @@ ReinforcementsWindow::ReinforcementsWindow(MapEditor* pMapEditor, HOUSETYPE curr
         }
         unitDropDownBox.addEntry(resolveItemName(itemID), itemID);
     }
+    // DuneCity extended units (RocketTrike, EliteLauncher — skip ambient aircraft)
+    for(int itemID = Unit_AmbientAirplane; itemID <= Unit_ExtLastID; ++itemID) {
+        if(isAmbientUnit(itemID)) {
+            continue;
+        }
+        unitDropDownBox.addEntry(resolveItemName(itemID), itemID);
+    }
     unitDropDownBox.setSelectedItem(0);
     hBox2.addWidget(&unitDropDownBox);
 

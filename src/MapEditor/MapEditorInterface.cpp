@@ -626,6 +626,11 @@ MapEditorInterface::MapEditorInterface(MapEditor* pMapEditor)
 
     editorModeUnits_HBoxRocketTrike.addWidget(HSpacer::create(2));
 
+    editorModeUnits_EliteLauncher.setToggleButton(true);
+    editorModeUnits_EliteLauncher.setTooltipText(resolveItemName(Unit_EliteLauncher));
+    editorModeUnits_EliteLauncher.setOnClick(std::bind(&MapEditorInterface::onUnitButton, this, Unit_EliteLauncher));
+    editorModeUnits_HBoxRocketTrike.addWidget(&editorModeUnits_EliteLauncher);
+
     editorModeUnits_HBoxRocketTrike.addWidget(Spacer::create());
 
     editorModeUnits_VBox.addWidget(VSpacer::create(2));
@@ -1158,6 +1163,7 @@ void MapEditorInterface::onUnitButton(int unitType) {
     editorModeUnits_Trike.setToggleState( (unitType == Unit_Trike) );
     editorModeUnits_Raider.setToggleState( (unitType == Unit_RaiderTrike) );
     editorModeUnits_RocketTrike.setToggleState( (unitType == Unit_RocketTrike) );
+    editorModeUnits_EliteLauncher.setToggleState( (unitType == Unit_EliteLauncher) );
     editorModeUnits_Quad.setToggleState( (unitType == Unit_Quad) );
     editorModeUnits_Tank.setToggleState( (unitType == Unit_Tank) );
     editorModeUnits_SiegeTank.setToggleState( (unitType == Unit_SiegeTank) );

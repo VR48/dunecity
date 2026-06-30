@@ -274,6 +274,7 @@ target_sources(dunecity
         units/Frigate.cpp
         units/Harvester.cpp
         units/Launcher.cpp
+        units/EliteLauncher.cpp
         units/MCV.cpp
         units/Ornithopter.cpp
         units/Quad.cpp

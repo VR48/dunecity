@@ -325,6 +325,7 @@ void LoadMapWindow::onMapListSelectionChange(bool bInteractive)
     if(inimap.hasSection("Player4")) numPlayers++;
     if(inimap.hasSection("Player5")) numPlayers++;
     if(inimap.hasSection("Player6")) numPlayers++;
+    if(inimap.hasSection("Player7")) numPlayers++;
 
     mapPropertyPlayers.setText(std::to_string(numPlayers));
 

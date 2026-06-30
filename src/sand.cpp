@@ -84,10 +84,12 @@ SDL_Texture* resolveItemPicture(int itemID, HOUSETYPE house) {
         case Unit_Deviator:                 newPicID = Picture_Deviator;            break;
         case Unit_Frigate:                  newPicID = Picture_Frigate;             break;
         case Unit_Harvester:                newPicID = Picture_Harvester;           break;
-        case Unit_Launcher: {
-            // DuneCity: Neutral Launchers get a custom build-menu icon (NeutralLauncherIcon.png if present).
-            newPicID = (house == HOUSE_NEUTRAL) ? Picture_LauncherNeutral : Picture_Launcher;
-        } break;
+        case Unit_Launcher:
+            newPicID = Picture_Launcher;
+            break;
+        case Unit_EliteLauncher:
+            newPicID = Picture_LauncherNeutral;  // DuneCity: Elite Launcher uses the Neutral Launcher icon
+            break;
         case Unit_MCV:                      newPicID = Picture_MCV;                 break;
         case Unit_Ornithopter:              newPicID = Picture_Ornithopter;         break;
         case Unit_Quad:                     newPicID = Picture_Quad;                break;
@@ -291,6 +293,7 @@ Uint32  getItemIDByName(const std::string& name) {
     else if((lowerName == "ambient airplane") || (lowerName == "city airplane")) return Unit_AmbientAirplane;
     else if((lowerName == "ambient helicopter") || (lowerName == "city helicopter")) return Unit_AmbientHelicopter;
     else if((lowerName == "rocket trike") || (lowerName == "rockettrike"))      return Unit_RocketTrike;
+    else if((lowerName == "elite launcher") || (lowerName == "elitelauncher"))   return Unit_EliteLauncher;
     else                                                                        return ItemID_Invalid;
 }
 
@@ -356,6 +359,7 @@ std::string getItemNameByID(Uint32 itemID) {
         case Unit_AmbientAirplane:          return "Ambient Airplane";  break;
         case Unit_AmbientHelicopter:        return "Ambient Helicopter";break;
         case Unit_RocketTrike:              return "Rocket Trike";      break;
+        case Unit_EliteLauncher:            return "Elite Launcher";    break;
 
         default:
             THROW(std::invalid_argument, "getItemNameByID(): Invalid item ID!");
@@ -425,6 +429,7 @@ std::string resolveItemName(int itemID) {
         case Unit_AmbientAirplane:          return _("City Airplane");                     break;
         case Unit_AmbientHelicopter:        return _("City Helicopter");                   break;
         case Unit_RocketTrike:              return _("Rocket Trike");                      break;
+        case Unit_EliteLauncher:            return _("Elite Launcher");                    break;
 
         default:
             THROW(std::invalid_argument, "resolveItemName(): Invalid item ID!");
