@@ -495,6 +495,7 @@ typedef enum {
     Anim_FremenPlanet,
     Anim_SardaukarPlanet,
     Anim_MercenaryPlanet,
+    Anim_NeutralPlanet,
     Anim_Win1,
     Anim_Win2,
     Anim_Lose1,

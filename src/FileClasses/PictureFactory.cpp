@@ -1020,6 +1020,55 @@ std::unique_ptr<Animation> PictureFactory::createMercenaryPlanet(Animation* atre
     return newAnimation;
 }
 
+std::unique_ptr<Animation> PictureFactory::createNeutralPlanet(Animation* harkonnenPlanetAnimation, SDL_Surface* heraldNeutral) {
+
+    sdl2::surface_ptr maskSurface{ Scaler::defaultDoubleSurface(LoadPNG_RW(pFileManager->openFile("PlanetMask.png").get()).get()) };
+    SDL_SetColorKey(maskSurface.get(), SDL_TRUE, 0);
+
+    auto newAnimation = std::make_unique<Animation>();
+
+    Uint8 colorMap[256];
+    for(int i = 0; i < 256; i++) {
+        colorMap[i] = i;
+    }
+
+    // Remap Harkonnen red/crimson tones → neutral grey/stone
+    // Harkonnen planet uses palette indices 154-165 (dark reds)
+    // Map to grey range (indices 29, 30, 31 are dark greys; 13, 24, 22 are stone)
+    colorMap[154] = 29;
+    colorMap[155] = 30;
+    colorMap[156] = 31;
+    colorMap[157] = 24;
+    colorMap[158] = 22;
+    colorMap[159] = 13;
+    colorMap[160] = 29;
+    colorMap[161] = 30;
+    colorMap[162] = 31;
+    colorMap[163] = 24;
+    colorMap[164] = 22;
+    colorMap[165] = 13;
+    colorMap[15] = 31;
+
+    for(const sdl2::surface_ptr& pSurface : harkonnenPlanetAnimation->getFrames()) {
+        sdl2::surface_ptr newFrame = copySurface(pSurface.get());
+
+        mapColor(newFrame.get(), colorMap);
+
+        sdl2::surface_ptr newFrameWithoutPlanet = copySurface(pSurface.get());
+        SDL_BlitSurface(maskSurface.get(), nullptr, newFrameWithoutPlanet.get(), nullptr);
+        SDL_SetColorKey(newFrameWithoutPlanet.get(), SDL_TRUE, 223);
+        SDL_BlitSurface(newFrameWithoutPlanet.get(), nullptr, newFrame.get(), nullptr);
+
+        SDL_Rect src =  {0, 0, getWidth(heraldNeutral), 126};
+        SDL_Rect dest = calcDrawingRect(heraldNeutral, 12, 66);
+        SDL_BlitSurface(heraldNeutral, &src, newFrame.get(), &dest);
+
+        newAnimation->addFrame(std::move(newFrame));
+    }
+
+    return newAnimation;
+}
+
 sdl2::surface_ptr PictureFactory::mapMentatSurfaceToMercenary(SDL_Surface* ordosMentat) {
     auto mappedSurface = mapSurfaceColorRange(ordosMentat, PALCOLOR_ORDOS, PALCOLOR_MERCENARY);
 

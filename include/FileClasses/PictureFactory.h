@@ -62,6 +62,7 @@ public:
     static std::unique_ptr<Animation> createFremenPlanet(SDL_Surface* heraldFre);
     static std::unique_ptr<Animation> createSardaukarPlanet(Animation* ordosPlanetAnimation, SDL_Surface* heraldSard);
     static std::unique_ptr<Animation> createMercenaryPlanet(Animation* atreidesPlanetAnimation, SDL_Surface* heraldMerc);
+    static std::unique_ptr<Animation> createNeutralPlanet(Animation* harkonnenPlanetAnimation, SDL_Surface* heraldNeutral);
 
     static sdl2::surface_ptr mapMentatSurfaceToFremen(SDL_Surface* atreidesMentat);
     static std::unique_ptr<Animation> mapMentatAnimationToFremen(Animation* atreidesAnimation);

@@ -2153,15 +2153,9 @@ GFXManager::GFXManager() {
     uiGraphic[UI_MentatBackground][HOUSE_FREMEN] = PictureFactory::mapMentatSurfaceToFremen(uiGraphic[UI_MentatBackground][HOUSE_ATREIDES].get());
     uiGraphic[UI_MentatBackground][HOUSE_SARDAUKAR] = PictureFactory::mapMentatSurfaceToSardaukar(uiGraphic[UI_MentatBackground][HOUSE_HARKONNEN].get());
     uiGraphic[UI_MentatBackground][HOUSE_MERCENARY] = PictureFactory::mapMentatSurfaceToMercenary(uiGraphic[UI_MentatBackground][HOUSE_ORDOS].get());
-    // DuneCity: Neutral mentat background — MENTATM.CPS (Chani portrait)
-    if (pFileManager->exists("MENTATM.CPS")) {
-        uiGraphic[UI_MentatBackground][HOUSE_NEUTRAL] =
-            Scaler::defaultDoubleSurface(LoadCPS_RW(pFileManager->openFile("MENTATM.CPS").get()).get());
-    } else {
-        // fallback: remap from Ordos
-        uiGraphic[UI_MentatBackground][HOUSE_NEUTRAL] =
-            PictureFactory::mapMentatSurfaceToNeutral(uiGraphic[UI_MentatBackground][HOUSE_ORDOS].get());
-    }
+    // DuneCity: Neutral mentat background — remap from Ordos (matches Ordos-based animation overlays)
+    uiGraphic[UI_MentatBackground][HOUSE_NEUTRAL] =
+        PictureFactory::mapMentatSurfaceToNeutral(uiGraphic[UI_MentatBackground][HOUSE_ORDOS].get());
 
     uiGraphic[UI_MentatBackgroundBene][HOUSE_HARKONNEN] = Scaler::defaultDoubleSurface(LoadCPS_RW(pFileManager->openFile("MENTATM.CPS").get()).get());
     if(uiGraphic[UI_MentatBackgroundBene][HOUSE_HARKONNEN] != nullptr) {
@@ -2735,6 +2729,11 @@ Animation* GFXManager::getAnimation(unsigned int id) {
             case Anim_MercenaryPlanet: {
                 animation[Anim_MercenaryPlanet] = PictureFactory::createMercenaryPlanet(getAnimation(Anim_AtreidesPlanet), uiGraphic[UI_Herald_ColoredLarge][HOUSE_MERCENARY].get());
                 animation[Anim_MercenaryPlanet]->setFrameRate(10);
+            } break;
+
+            case Anim_NeutralPlanet: {
+                animation[Anim_NeutralPlanet] = PictureFactory::createNeutralPlanet(getAnimation(Anim_HarkonnenPlanet), uiGraphic[UI_Herald_ColoredLarge][HOUSE_NEUTRAL].get());
+                animation[Anim_NeutralPlanet]->setFrameRate(10);
             } break;
 
             case Anim_Win1:             animation[Anim_Win1] = loadAnimationFromWsa("WIN1.WSA");                 break;
