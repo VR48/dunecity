@@ -1783,8 +1783,17 @@ void MapEditor::drawMap(ScreenBorder* pScreenborder, bool bCompleteMap) {
             SDL_RenderCopy(renderer, pGunSprite, &source2, &drawLocation2);
         }
 
-        if(unit.itemID == Unit_RaiderTrike || unit.itemID == Unit_Deviator || unit.itemID == Unit_Special) {
+        if(unit.itemID == Unit_RaiderTrike || unit.itemID == Unit_Deviator || unit.itemID == Unit_Special
+           || unit.itemID == Unit_RocketTrike || unit.itemID == Unit_EliteLauncher || unit.itemID == Unit_EliteSiegeTank) {
             SDL_Texture* pStarSprite = pGFXManager->getZoomedObjPic(ObjPic_Star, currentZoomlevel);
+
+            // Tornie mod units get a purple star; vanilla specials keep the default yellow
+            bool isTornieMod = (unit.itemID == Unit_RocketTrike
+                             || unit.itemID == Unit_EliteLauncher
+                             || unit.itemID == Unit_EliteSiegeTank);
+            if (isTornieMod) {
+                SDL_SetTextureColorMod(pStarSprite, 180, 0, 255);  // purple
+            }
 
             SDL_Rect drawLocation2 = calcDrawingRect(   pStarSprite,
                                                         pScreenborder->world2screenX((position.x*TILESIZE)+(TILESIZE/2)) + frameSizeX/2 - 1,
@@ -1792,6 +1801,11 @@ void MapEditor::drawMap(ScreenBorder* pScreenborder, bool bCompleteMap) {
                                                         HAlign::Right, VAlign::Bottom);
 
             SDL_RenderCopy(renderer, pStarSprite, nullptr, &drawLocation2);
+
+            // Reset tint so other draw calls aren't affected
+            if (isTornieMod) {
+                SDL_SetTextureColorMod(pStarSprite, 255, 255, 255);
+            }
         }
 
     }
