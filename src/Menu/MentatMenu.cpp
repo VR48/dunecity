@@ -19,6 +19,8 @@
 
 #include <globals.h>
 
+#include <FileClasses/FileManager.h>
+#include <mod/ModManager.h>
 #include <FileClasses/GFXManager.h>
 
 #include <mmath.h>
@@ -66,13 +68,16 @@ MentatMenu::MentatMenu(int newHouse)
         } break;
 
         case HOUSE_ATREIDES: {
+            const bool paulMod = (ModManager::instance().getActiveModName() == "Tornie")
+                              && pFileManager->exists("PaulAtreidesMentat.png");
+
             anim = pGFXManager->getAnimation(Anim_AtreidesEyes);
             eyesAnim.setAnimation(anim);
-            windowWidget.addWidget(&eyesAnim,Point(80,160),eyesAnim.getMinimumSize());
+            windowWidget.addWidget(&eyesAnim, paulMod ? Point(131,111) : Point(80,160), eyesAnim.getMinimumSize());
 
             anim = pGFXManager->getAnimation(Anim_AtreidesMouth);
             mouthAnim.setAnimation(anim);
-            windowWidget.addWidget(&mouthAnim,Point(80,192),mouthAnim.getMinimumSize());
+            windowWidget.addWidget(&mouthAnim, paulMod ? Point(131,169) : Point(80,192), mouthAnim.getMinimumSize());
 
             anim = pGFXManager->getAnimation(Anim_AtreidesBook);
             specialAnim.setAnimation(anim);

@@ -20,6 +20,7 @@
 #include <globals.h>
 
 #include <FileClasses/FileManager.h>
+#include <mod/ModManager.h>
 #include <FileClasses/TextManager.h>
 #include <FileClasses/FontManager.h>
 #include <FileClasses/PictureFactory.h>
@@ -2580,6 +2581,44 @@ GFXManager::GFXManager() {
             : PictureFactory::mapMentatAnimationToNeutral(animation[Anim_OrdosEyes].get());
         animation[Anim_NeutralMouth] = chaniMouth ? std::move(chaniMouth)
             : PictureFactory::mapMentatAnimationToNeutral(animation[Anim_OrdosMouth].get());
+
+        // Paul Atreides mentat (Tornie Mod — Atreides override)
+        if (ModManager::instance().getActiveModName() == "Tornie"
+            && pFileManager->exists("PaulAtreidesMentat.png")) {
+            // Background
+            auto paulBg = LoadPNG_RW(pFileManager->openFile("PaulAtreidesMentat.png").get());
+            if (paulBg) {
+                auto paulBgDoubled = doubleRGBASurface(paulBg.get());
+                if (paulBgDoubled)
+                    uiGraphic[UI_MentatBackground][HOUSE_ATREIDES] = std::move(paulBgDoubled);
+            }
+            // Eye animation (9 frames)
+            auto loadPaulAnim = [&](const std::string& prefix, int nFrames) -> std::unique_ptr<Animation> {
+                auto anim = std::make_unique<Animation>();
+                for (int fi = 0; fi < nFrames; fi++) {
+                    std::string name = prefix + "_" + std::to_string(fi) + ".png";
+                    if (!pFileManager->exists(name)) return nullptr;
+                    auto surf = LoadPNG_RW(pFileManager->openFile(name).get());
+                    if (!surf) return nullptr;
+                    if (surf->format->BitsPerPixel >= 24) {
+                        auto doubled = doubleRGBASurface(surf.get());
+                        if (!doubled) return nullptr;
+                        anim->addFrame(std::move(doubled), false, false);
+                    } else {
+                        auto doubled = Scaler::doubleSurfaceNN(surf.get());
+                        if (!doubled) return nullptr;
+                        anim->addFrame(std::move(doubled), false, false);
+                    }
+                }
+                anim->setFrameDurationTime(125);
+                return anim;
+            };
+            auto paulEyes = loadPaulAnim("PaulAtreidesMentatEyes", 9);
+            if (paulEyes) animation[Anim_AtreidesEyes] = std::move(paulEyes);
+            auto paulMouth = loadPaulAnim("PaulAtreidesMentatMouth", 9);
+            if (paulMouth) animation[Anim_AtreidesMouth] = std::move(paulMouth);
+            SDL_Log("GFX INIT: Paul Atreides mentat loaded from Tornie.PAK");
+        }
     }
     animation[Anim_NeutralShoulder] = PictureFactory::mapMentatAnimationToNeutral(animation[Anim_OrdosShoulder].get());
     animation[Anim_NeutralRing] = PictureFactory::mapMentatAnimationToNeutral(animation[Anim_OrdosRing].get());
