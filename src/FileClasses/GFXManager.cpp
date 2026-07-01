@@ -38,6 +38,7 @@
 #include <misc/Scaler.h>
 #include <misc/exceptions.h>
 
+#include <algorithm>
 #include <cstdlib>
 
 /**
@@ -3156,16 +3157,28 @@ sdl2::surface_ptr GFXManager::generateAdvancedWindtrapAnimationFrames(SDL_Surfac
         Uint8 wg = (Uint8)(40.0f * t);
         Uint8 wb = (Uint8)(40.0f + 180.0f * t);
 
+        // Pixel coords were annotated on the 48×48 reference sprite.
+        // Scale to match the current zoom level's frame size.
+        const int REFERENCE_SIZE = 48;
+        const float pixelScale = (float)fw / REFERENCE_SIZE;
+        const int block = std::max(1, (int)pixelScale);
+
         SDL_LockSurface(returnPic.get());
         for (int p = 0; p < NUM_LIGHT_PIXELS; p++) {
-            int px = destX + lightPixels[p].first;
-            int py = destY + lightPixels[p].second;
-            if (px >= 0 && px < sizeX && py >= 0 && py < sizeY) {
-                Uint8* pixel = (Uint8*)returnPic->pixels + py * returnPic->pitch + px * returnPic->format->BytesPerPixel;
-                *pixel++ = wr;
-                *pixel++ = wg;
-                *pixel++ = wb;
-                *pixel   = 255;
+            int baseX = (int)(lightPixels[p].first  * pixelScale);
+            int baseY = (int)(lightPixels[p].second * pixelScale);
+            for (int dy = 0; dy < block; dy++) {
+                for (int dx = 0; dx < block; dx++) {
+                    int px = destX + baseX + dx;
+                    int py = destY + baseY + dy;
+                    if (px >= 0 && px < sizeX && py >= 0 && py < sizeY) {
+                        Uint8* pixel = (Uint8*)returnPic->pixels + py * returnPic->pitch + px * returnPic->format->BytesPerPixel;
+                        *pixel++ = wr;
+                        *pixel++ = wg;
+                        *pixel++ = wb;
+                        *pixel   = 255;
+                    }
+                }
             }
         }
         SDL_UnlockSurface(returnPic.get());
