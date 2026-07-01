@@ -297,6 +297,20 @@ sdl2::texture_ptr convertSurfaceToTexture(SDL_Surface* inSurface) {
 
 sdl2::surface_ptr scaleSurface(SDL_Surface *surf, double ratio) {
 
+    // For non-paletted (RGBA) surfaces, use SDL_BlitScaled to avoid palette dereference
+    if (surf->format->BytesPerPixel != 1) {
+        int newW = static_cast<int>(surf->w * ratio);
+        int newH = static_cast<int>(surf->h * ratio);
+        sdl2::surface_ptr scaled{ SDL_CreateRGBSurface(0, newW, newH,
+            surf->format->BitsPerPixel,
+            surf->format->Rmask, surf->format->Gmask,
+            surf->format->Bmask, surf->format->Amask) };
+        if (scaled == nullptr) return nullptr;
+        SDL_SetSurfaceBlendMode(surf, SDL_BLENDMODE_NONE);
+        SDL_BlitScaled(surf, nullptr, scaled.get(), nullptr);
+        return scaled;
+    }
+
     sdl2::surface_ptr scaled{ SDL_CreateRGBSurface(0, static_cast<int>(surf->w * ratio),static_cast<int>(surf->h * ratio),8,0,0,0,0) };
     if(scaled == nullptr) {
         return nullptr;

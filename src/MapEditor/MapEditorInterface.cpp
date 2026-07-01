@@ -302,20 +302,25 @@ MapEditorInterface::MapEditorInterface(MapEditor* pMapEditor)
 
     editorModeTerrain_HBox3.addWidget(HSpacer::create(2));
 
-    // Tornie: red/green spice bloom buttons (hidden unless Tornie mod is active)
+    editorModeTerrain_HBox3.addWidget(Spacer::create());
+
+    // Tornie: red/green spice bloom buttons in their own row (hidden unless Tornie mod is active)
+    const bool isTornie = ModManager::instance().getActiveModName() == "Tornie";
+    editorModeTerrain_VBox.addWidget(VSpacer::create(2));
+    editorModeTerrain_VBox.addWidget(&editorModeTerrain_HBox4);
+    editorModeTerrain_HBox4.setVisible(isTornie);
+
     editorModeTerrain_RedSpiceBloom.setToggleButton(true);
     editorModeTerrain_RedSpiceBloom.setOnClick(std::bind(&MapEditorInterface::onTerrainButton, this, Terrain_RedSpiceBloom));
-    editorModeTerrain_HBox3.addWidget(&editorModeTerrain_RedSpiceBloom);
-    editorModeTerrain_RedSpiceBloom.setVisible(ModManager::instance().getActiveModName() == "Tornie");
+    editorModeTerrain_HBox4.addWidget(&editorModeTerrain_RedSpiceBloom);
 
-    editorModeTerrain_HBox3.addWidget(HSpacer::create(2));
+    editorModeTerrain_HBox4.addWidget(HSpacer::create(2));
 
     editorModeTerrain_GreenSpiceBloom.setToggleButton(true);
     editorModeTerrain_GreenSpiceBloom.setOnClick(std::bind(&MapEditorInterface::onTerrainButton, this, Terrain_GreenSpiceBloom));
-    editorModeTerrain_HBox3.addWidget(&editorModeTerrain_GreenSpiceBloom);
-    editorModeTerrain_GreenSpiceBloom.setVisible(ModManager::instance().getActiveModName() == "Tornie");
+    editorModeTerrain_HBox4.addWidget(&editorModeTerrain_GreenSpiceBloom);
 
-    editorModeTerrain_HBox3.addWidget(Spacer::create());
+    editorModeTerrain_HBox4.addWidget(Spacer::create());
 
 
     editorModeTerrainVBox.addWidget(VSpacer::create(10));

@@ -601,6 +601,26 @@ void MapEditor::saveMap(const std::string& filepath) {
                         row += 'Q';
                     } break;
 
+                    case Terrain_RedSpice: {
+                        // Red Spice (Tornie)
+                        row += 'r';
+                    } break;
+
+                    case Terrain_GreenSpice: {
+                        // Green Spice (Tornie)
+                        row += 'g';
+                    } break;
+
+                    case Terrain_RedSpiceBloom: {
+                        // Red Spice Bloom (Tornie)
+                        row += 'R';
+                    } break;
+
+                    case Terrain_GreenSpiceBloom: {
+                        // Green Spice Bloom (Tornie)
+                        row += 'G';
+                    } break;
+
                     case Terrain_Sand:
                     default: {
                         // Normal sand

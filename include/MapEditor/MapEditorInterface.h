@@ -166,6 +166,7 @@ private:
     HBox                editorModeTerrain_HBox1;
     HBox                editorModeTerrain_HBox2;
     HBox                editorModeTerrain_HBox3;
+    HBox                editorModeTerrain_HBox4;
 
     SymbolButton        editorModeTerrain_Sand;
     SymbolButton        editorModeTerrain_Dunes;

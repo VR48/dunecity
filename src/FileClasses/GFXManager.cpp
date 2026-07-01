@@ -364,6 +364,29 @@ GFXManager::GFXManager() {
                         }
                     }
 
+                    // Reorder frames: FlameTank.png uses Dune II convention
+                    // (UP=0, RIGHTUP=1, RIGHT=2, RIGHTDOWN=3, DOWN=4, LEFTDOWN=5, LEFT=6, LEFTUP=7)
+                    // → Dune Legacy convention
+                    // (RIGHT=0, RIGHTUP=1, UP=2, LEFTUP=3, LEFT=4, LEFTDOWN=5, DOWN=6, RIGHTDOWN=7)
+                    {
+                        static const int d2toDL[] = {2, 1, 0, 7, 6, 5, 4, 3};
+                        SDL_Surface* src = objPic[ObjPic_FlameTank][h][0].get();
+                        if (src) {
+                            int frameW = src->w / 8;
+                            int frameH = src->h;
+                            sdl2::surface_ptr reordered{ SDL_CreateRGBSurfaceWithFormat(0, src->w, src->h, 32, SDL_PIXELFORMAT_RGBA32) };
+                            if (reordered) {
+                                SDL_SetSurfaceBlendMode(src, SDL_BLENDMODE_NONE);
+                                for (int i = 0; i < 8; i++) {
+                                    SDL_Rect srcRect{d2toDL[i] * frameW, 0, frameW, frameH};
+                                    SDL_Rect dstRect{i * frameW, 0, frameW, frameH};
+                                    SDL_BlitSurface(src, &srcRect, reordered.get(), &dstRect);
+                                }
+                                objPic[ObjPic_FlameTank][h][0] = std::move(reordered);
+                            }
+                        }
+                    }
+
                     // Scale RGBA surface for zoom levels
                     for(int z = 1; z < NUM_ZOOMLEVEL; z++) {
                         SDL_Surface* src0 = objPic[ObjPic_FlameTank][h][0].get();
@@ -1498,6 +1521,30 @@ GFXManager::GFXManager() {
                             }
                             sdl2::surface_ptr flagRGBA{ SDL_ConvertSurfaceFormat(flagCopy.get(), SDL_PIXELFORMAT_RGBA32, 0) };
                             if (flagRGBA) {
+                                // Fill flag body with #65654c base color under house colours
+                                {
+                                    SDL_LockSurface(flagRGBA.get());
+                                    const Uint32 bodyColor = SDL_MapRGBA(flagRGBA->format, 101, 101, 76, 255);
+                                    const int pixelCount = flagRGBA->w * flagRGBA->h;
+                                    auto* pixels = static_cast<Uint32*>(flagRGBA->pixels);
+                                    for (int i = 0; i < pixelCount; i++) {
+                                        Uint8 r, g, b, a;
+                                        SDL_GetRGBA(pixels[i], flagRGBA->format, &r, &g, &b, &a);
+                                        // Fill opaque non-house-colour pixels with the base colour
+                                        if (a > 0) {
+                                            // Preserve house-remapped pixels (dark=index 147, highlight=index 51)
+                                            // by checking if this pixel matches a house palette entry
+                                            const SDL_Color& dark = palette[houseToPaletteIndex[h] + 3];
+                                            const SDL_Color& light = palette[houseToPaletteIndex[h] + 1];
+                                            if ((r == dark.r && g == dark.g && b == dark.b) ||
+                                                (r == light.r && g == light.g && b == light.b)) {
+                                                continue; // keep house colours
+                                            }
+                                            pixels[i] = bodyColor;
+                                        }
+                                    }
+                                    SDL_UnlockSurface(flagRGBA.get());
+                                }
                                 SDL_SetSurfaceBlendMode(flagRGBA.get(), SDL_BLENDMODE_BLEND);
                                 for (int z = 0; z < NUM_ZOOMLEVEL; z++) {
                                     if (objPic[ObjPic_AdvancedWindTrap][h][z]) {
@@ -1519,6 +1566,21 @@ GFXManager::GFXManager() {
                         // RGBA flag PNG — blit directly with blend mode, no palette remapping
                         sdl2::surface_ptr flagRGBA{ SDL_ConvertSurfaceFormat(flagSrc.get(), SDL_PIXELFORMAT_RGBA32, 0) };
                         if (flagRGBA) {
+                            // Fill flag body with #65654c base color
+                            {
+                                SDL_LockSurface(flagRGBA.get());
+                                const Uint32 bodyColor = SDL_MapRGBA(flagRGBA->format, 101, 101, 76, 255);
+                                const int pixelCount = flagRGBA->w * flagRGBA->h;
+                                auto* pixels = static_cast<Uint32*>(flagRGBA->pixels);
+                                for (int i = 0; i < pixelCount; i++) {
+                                    Uint8 r, g, b, a;
+                                    SDL_GetRGBA(pixels[i], flagRGBA->format, &r, &g, &b, &a);
+                                    if (a > 0) {
+                                        pixels[i] = bodyColor;
+                                    }
+                                }
+                                SDL_UnlockSurface(flagRGBA.get());
+                            }
                             SDL_SetSurfaceBlendMode(flagRGBA.get(), SDL_BLENDMODE_BLEND);
                             for (int h = 0; h < NUM_HOUSES; h++) {
                                 for (int z = 0; z < NUM_ZOOMLEVEL; z++) {
@@ -3364,8 +3426,10 @@ sdl2::surface_ptr GFXManager::generateMapChoiceArrowFrames(SDL_Surface* arrowPic
     SDL_Rect dest = {0, 0, arrowPic->w, arrowPic->h};
 
     for(int i = 0; i < 4; i++) {
-        for(int k = 0; k < 4; k++) {
-            SDL_SetPaletteColors(arrowPic->format->palette, &palette[houseToPaletteIndex[house]+((i+k)%4)], 251+k, 1);
+        if (arrowPic->format->palette) {
+            for(int k = 0; k < 4; k++) {
+                SDL_SetPaletteColors(arrowPic->format->palette, &palette[houseToPaletteIndex[house]+((i+k)%4)], 251+k, 1);
+            }
         }
 
         SDL_BlitSurface(arrowPic, nullptr, returnPic.get(), &dest);
@@ -3386,11 +3450,15 @@ sdl2::surface_ptr GFXManager::generateDoubledObjPic(unsigned int id, int h) cons
             SDL_SetColorKey(pOverlay.get(), SDL_TRUE, PALCOLOR_UI_COLORCYCLE);
 
             // SDL_BlitSurface will silently map PALCOLOR_BLACK to PALCOLOR_TRANSPARENT as both are RGB(0,0,0,255), so make them temporarily different
-            pOverlay->format->palette->colors[PALCOLOR_BLACK].g = 1;
-            pSurface->format->palette->colors[PALCOLOR_BLACK].g = 1;
-            SDL_BlitSurface(pOverlay.get(), NULL, pSurface.get(), NULL);
-            pOverlay->format->palette->colors[PALCOLOR_BLACK].g = 0;
-            pSurface->format->palette->colors[PALCOLOR_BLACK].g = 0;
+            if (pOverlay->format->palette && pSurface->format->palette) {
+                pOverlay->format->palette->colors[PALCOLOR_BLACK].g = 1;
+                pSurface->format->palette->colors[PALCOLOR_BLACK].g = 1;
+                SDL_BlitSurface(pOverlay.get(), NULL, pSurface.get(), NULL);
+                pOverlay->format->palette->colors[PALCOLOR_BLACK].g = 0;
+                pSurface->format->palette->colors[PALCOLOR_BLACK].g = 0;
+            } else {
+                SDL_BlitSurface(pOverlay.get(), NULL, pSurface.get(), NULL);
+            }
         } else {
             SDL_Log("Warning: No HD sprite sheet for '%s' in zoom level 1!", ObjPicNames.at(id).c_str());
             pSurface = sdl2::surface_ptr{ Scaler::defaultDoubleTiledSurface(objPic[id][h][0].get(), objPicTiles[id].x, objPicTiles[id].y) };
@@ -3417,11 +3485,15 @@ sdl2::surface_ptr GFXManager::generateTripledObjPic(unsigned int id, int h) cons
             SDL_SetColorKey(pOverlay.get(), SDL_TRUE, PALCOLOR_UI_COLORCYCLE);
 
             // SDL_BlitSurface will silently map PALCOLOR_BLACK to PALCOLOR_TRANSPARENT as both are RGB(0,0,0,255), so make them temporarily different
-            pOverlay->format->palette->colors[PALCOLOR_BLACK].g = 1;
-            pSurface->format->palette->colors[PALCOLOR_BLACK].g = 1;
-            SDL_BlitSurface(pOverlay.get(), NULL, pSurface.get(), NULL);
-            pOverlay->format->palette->colors[PALCOLOR_BLACK].g = 0;
-            pSurface->format->palette->colors[PALCOLOR_BLACK].g = 0;
+            if (pOverlay->format->palette && pSurface->format->palette) {
+                pOverlay->format->palette->colors[PALCOLOR_BLACK].g = 1;
+                pSurface->format->palette->colors[PALCOLOR_BLACK].g = 1;
+                SDL_BlitSurface(pOverlay.get(), NULL, pSurface.get(), NULL);
+                pOverlay->format->palette->colors[PALCOLOR_BLACK].g = 0;
+                pSurface->format->palette->colors[PALCOLOR_BLACK].g = 0;
+            } else {
+                SDL_BlitSurface(pOverlay.get(), NULL, pSurface.get(), NULL);
+            }
         } else {
             SDL_Log("Warning: No HD sprite sheet for '%s' in zoom level 2!", ObjPicNames.at(id).c_str());
             pSurface = sdl2::surface_ptr{ Scaler::defaultTripleTiledSurface(objPic[id][h][0].get(), objPicTiles[id].x, objPicTiles[id].y) };

@@ -138,6 +138,19 @@ sdl2::surface_ptr Scaler::tripleSurfaceNN(SDL_Surface* src) {
         return nullptr;
     }
 
+    // For non-paletted (RGBA) surfaces, use SDL_BlitScaled to avoid palette dereference
+    if (src->format->BytesPerPixel != 1) {
+        auto returnPic = sdl2::surface_ptr{
+            SDL_CreateRGBSurface(0, src->w * 3, src->h * 3,
+                src->format->BitsPerPixel,
+                src->format->Rmask, src->format->Gmask,
+                src->format->Bmask, src->format->Amask) };
+        if (returnPic == nullptr) return nullptr;
+        SDL_SetSurfaceBlendMode(src, SDL_BLENDMODE_NONE);
+        SDL_BlitScaled(src, nullptr, returnPic.get(), nullptr);
+        return returnPic;
+    }
+
     // create new picture surface
     auto returnPic = sdl2::surface_ptr{ SDL_CreateRGBSurface(0, src->w * 3, src->h * 3, 8, 0, 0, 0, 0) };
     if (returnPic == nullptr) {
@@ -324,6 +337,11 @@ sdl2::surface_ptr Scaler::tripleSurfaceScale3x(SDL_Surface* src) {
 sdl2::surface_ptr Scaler::tripleTiledSurfaceScale3x(SDL_Surface* src, int tilesX, int tilesY) {
     if (src == nullptr) {
         return nullptr;
+    }
+
+    // Guard against non-paletted surfaces — fall back to NN scaling
+    if (src->format->BytesPerPixel != 1) {
+        return tripleSurfaceNN(src);
     }
 
     int srcWidth = src->w;

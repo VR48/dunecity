@@ -360,6 +360,26 @@ void INIMapLoader::loadMap() {
                         type = Terrain_SpecialBloom;
                     } break;
 
+                    case 'r': {
+                        // Red Spice (Tornie)
+                        type = Terrain_RedSpice;
+                    } break;
+
+                    case 'g': {
+                        // Green Spice (Tornie)
+                        type = Terrain_GreenSpice;
+                    } break;
+
+                    case 'R': {
+                        // Red Spice Bloom (Tornie)
+                        type = Terrain_RedSpiceBloom;
+                    } break;
+
+                    case 'G': {
+                        // Green Spice Bloom (Tornie)
+                        type = Terrain_GreenSpiceBloom;
+                    } break;
+
                     default: {
                         logWarning(inifile->getKey("MAP", rowKey)->getLineNumber(), std::string("Unknown map tile type '") + rowString.at(x) + "' in map tile (" + std::to_string(x) + ", " + std::to_string(y) + ")!");
                         type = Terrain_Sand;
@@ -648,7 +668,8 @@ void INIMapLoader::loadUnits()
 
                     case HOUSE_FREMEN:
                     case HOUSE_SARDAUKAR:
-                    case HOUSE_MERCENARY: {
+                    case HOUSE_MERCENARY:
+                    case HOUSE_NEUTRAL: {
                         if(nextSpecialUnitIsSonicTank[houseID] == true && pGame->objectData.data[Unit_SonicTank][houseID].enabled) {
                             itemID = Unit_SonicTank;
                             nextSpecialUnitIsSonicTank[houseID] = !pGame->objectData.data[Unit_Devastator][houseID].enabled;
