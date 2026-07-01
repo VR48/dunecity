@@ -214,7 +214,19 @@ public:
         TerrainTile_ThickSpiceFull      = TerrainTile_ThickSpice + 0x0F,
 
         TerrainTile_SpiceBloom          = 0x54,
-        TerrainTile_SpecialBloom        = 0x55
+        TerrainTile_SpecialBloom        = 0x55,
+
+        // Tornie mod: red spice terrain tiles (0x56–0x66)
+        TerrainTile_RedSpice            = 0x56,
+        TerrainTile_RedSpiceIsland      = TerrainTile_RedSpice + 0x00,
+        TerrainTile_RedSpiceFull        = TerrainTile_RedSpice + 0x0F,
+        TerrainTile_RedSpiceBloom       = 0x66,
+
+        // Tornie mod: green spice terrain tiles (0x67–0x77)
+        TerrainTile_GreenSpice          = 0x67,
+        TerrainTile_GreenSpiceIsland    = TerrainTile_GreenSpice + 0x00,
+        TerrainTile_GreenSpiceFull      = TerrainTile_GreenSpice + 0x0F,
+        TerrainTile_GreenSpiceBloom     = 0x77
     } TERRAINTILETYPE;
 
 
@@ -386,6 +398,8 @@ public:
         \param  pTrigger    the house that triggered the bloom
     */
     void triggerSpiceBloom(House* pTrigger);
+    void triggerRedSpiceBloom(House* pTrigger);
+    void triggerGreenSpiceBloom(House* pTrigger);
 
     /**
         This method is called when the spice bloom on this tile shall be triggered. If this tile has no spice bloom nothing happens.
@@ -430,8 +444,12 @@ public:
     bool isDunes() const noexcept { return (type == Terrain_Dunes); }
     bool isSpiceBloom() const noexcept { return (type == Terrain_SpiceBloom); }
     bool isSpecialBloom() const noexcept { return (type == Terrain_SpecialBloom); }
-    bool isSpice() const noexcept { return ((type == Terrain_Spice) || (type == Terrain_ThickSpice)); }
+    bool isSpice() const noexcept { return ((type == Terrain_Spice) || (type == Terrain_ThickSpice) || (type == Terrain_RedSpice) || (type == Terrain_GreenSpice)); }
     bool isThickSpice() const noexcept { return (type == Terrain_ThickSpice); }
+    bool isRedSpice() const noexcept { return (type == Terrain_RedSpice); }
+    bool isGreenSpice() const noexcept { return (type == Terrain_GreenSpice); }
+    bool isRedSpiceBloom() const noexcept { return (type == Terrain_RedSpiceBloom); }
+    bool isGreenSpiceBloom() const noexcept { return (type == Terrain_GreenSpiceBloom); }
 
     Uint32 getSandRegion() const noexcept { return sandRegion; }
     int getOwner() const noexcept { return owner; }
