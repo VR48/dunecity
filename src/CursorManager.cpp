@@ -208,48 +208,52 @@ void CursorManager::initialize() {
             // Find hotspot on the original surface, then scale coordinates.
             SDL_Point hotspot = findTopLeftOpaquePixel(normalSurface);
             SDL_Surface* scaled = scaleSurface(normalSurface, scale);
-            if (scaled) {
-                cache.normal = SDL_CreateColorCursor(scaled, hotspot.x * scale, hotspot.y * scale);
-                SDL_FreeSurface(scaled);
-            } else {
-                cache.normal = SDL_CreateColorCursor(normalSurface, hotspot.x, hotspot.y);
-            }
+            SDL_Surface* src = scaled ? scaled : normalSurface;
+            int hx = scaled ? hotspot.x * scale : hotspot.x;
+            int hy = scaled ? hotspot.y * scale : hotspot.y;
+            SDL_Surface* argb = SDL_ConvertSurfaceFormat(src, SDL_PIXELFORMAT_ARGB8888, 0);
+            cache.normal = SDL_CreateColorCursor(argb ? argb : src, hx, hy);
+            if (argb) SDL_FreeSurface(argb);
+            if (scaled) SDL_FreeSurface(scaled);
+        }
+        if (!cache.normal) {
+            cache.normal = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW);
         }
         if (moveSurface) {
             SDL_Surface* scaled = scaleSurface(moveSurface, scale);
-            if (scaled) {
-                cache.move = SDL_CreateColorCursor(scaled, scaled->w / 2, scaled->h / 2);
-                SDL_FreeSurface(scaled);
-            } else {
-                cache.move = SDL_CreateColorCursor(moveSurface, moveSurface->w / 2, moveSurface->h / 2);
-            }
+            SDL_Surface* src = scaled ? scaled : moveSurface;
+            SDL_Surface* argb = SDL_ConvertSurfaceFormat(src, SDL_PIXELFORMAT_ARGB8888, 0);
+            SDL_Surface* toUse = argb ? argb : src;
+            cache.move = SDL_CreateColorCursor(toUse, toUse->w / 2, toUse->h / 2);
+            if (argb) SDL_FreeSurface(argb);
+            if (scaled) SDL_FreeSurface(scaled);
         }
         if (attackSurface) {
             SDL_Surface* scaled = scaleSurface(attackSurface, scale);
-            if (scaled) {
-                cache.attack = SDL_CreateColorCursor(scaled, scaled->w / 2, scaled->h / 2);
-                SDL_FreeSurface(scaled);
-            } else {
-                cache.attack = SDL_CreateColorCursor(attackSurface, attackSurface->w / 2, attackSurface->h / 2);
-            }
+            SDL_Surface* src = scaled ? scaled : attackSurface;
+            SDL_Surface* argb = SDL_ConvertSurfaceFormat(src, SDL_PIXELFORMAT_ARGB8888, 0);
+            SDL_Surface* toUse = argb ? argb : src;
+            cache.attack = SDL_CreateColorCursor(toUse, toUse->w / 2, toUse->h / 2);
+            if (argb) SDL_FreeSurface(argb);
+            if (scaled) SDL_FreeSurface(scaled);
         }
         if (captureSurface) {
             SDL_Surface* scaled = scaleSurface(captureSurface, scale);
-            if (scaled) {
-                cache.capture = SDL_CreateColorCursor(scaled, scaled->w / 2, scaled->h / 2);
-                SDL_FreeSurface(scaled);
-            } else {
-                cache.capture = SDL_CreateColorCursor(captureSurface, captureSurface->w / 2, captureSurface->h / 2);
-            }
+            SDL_Surface* src = scaled ? scaled : captureSurface;
+            SDL_Surface* argb = SDL_ConvertSurfaceFormat(src, SDL_PIXELFORMAT_ARGB8888, 0);
+            SDL_Surface* toUse = argb ? argb : src;
+            cache.capture = SDL_CreateColorCursor(toUse, toUse->w / 2, toUse->h / 2);
+            if (argb) SDL_FreeSurface(argb);
+            if (scaled) SDL_FreeSurface(scaled);
         }
         if (carryallDropSurface) {
             SDL_Surface* scaled = scaleSurface(carryallDropSurface, scale);
-            if (scaled) {
-                cache.carryallDrop = SDL_CreateColorCursor(scaled, scaled->w / 2, scaled->h / 2);
-                SDL_FreeSurface(scaled);
-            } else {
-                cache.carryallDrop = SDL_CreateColorCursor(carryallDropSurface, carryallDropSurface->w / 2, carryallDropSurface->h / 2);
-            }
+            SDL_Surface* src = scaled ? scaled : carryallDropSurface;
+            SDL_Surface* argb = SDL_ConvertSurfaceFormat(src, SDL_PIXELFORMAT_ARGB8888, 0);
+            SDL_Surface* toUse = argb ? argb : src;
+            cache.carryallDrop = SDL_CreateColorCursor(toUse, toUse->w / 2, toUse->h / 2);
+            if (argb) SDL_FreeSurface(argb);
+            if (scaled) SDL_FreeSurface(scaled);
         }
     }
 
