@@ -138,13 +138,13 @@ MentatMenu::MentatMenu(int newHouse)
             anim = pGFXManager->getAnimation(Anim_NeutralEyes);
             if (anim) {
                 eyesAnim.setAnimation(anim);
-                windowWidget.addWidget(&eyesAnim,Point(92,116),eyesAnim.getMinimumSize());
+                windowWidget.addWidget(&eyesAnim,Point(112,158),eyesAnim.getMinimumSize());
             }
 
             anim = pGFXManager->getAnimation(Anim_NeutralMouth);
             if (anim) {
                 mouthAnim.setAnimation(anim);
-                windowWidget.addWidget(&mouthAnim,Point(102,152),mouthAnim.getMinimumSize());
+                windowWidget.addWidget(&mouthAnim,Point(100,194),mouthAnim.getMinimumSize());
             }
 
             anim = pGFXManager->getAnimation(Anim_NeutralRing);
