@@ -875,9 +875,39 @@ ObjectBase* ObjectBase::createObject(int itemID, House* Owner, bool byScenario) 
         case Unit_RocketTrike:              newObject = new RocketTrike(Owner); break;
         case Unit_Special: {
             switch(Owner->getHouseID()) {
-                case HOUSE_HARKONNEN:       newObject = new Devastator(Owner); break;
-                case HOUSE_ATREIDES:        newObject = new SonicTank(Owner); break;
-                case HOUSE_ORDOS:           newObject = new Deviator(Owner); break;
+                case HOUSE_HARKONNEN:
+                    if (ModManager::instance().getActiveModName() == "Tornie") {
+                        if (currentGame->randomGen.randBool()) {
+                            newObject = new Devastator(Owner);
+                        } else {
+                            newObject = new EliteSiegeTank(Owner);
+                        }
+                    } else {
+                        newObject = new Devastator(Owner);
+                    }
+                    break;
+                case HOUSE_ATREIDES:
+                    if (ModManager::instance().getActiveModName() == "Tornie") {
+                        if (currentGame->randomGen.randBool()) {
+                            newObject = new SonicTank(Owner);
+                        } else {
+                            newObject = new EliteSiegeTank(Owner);
+                        }
+                    } else {
+                        newObject = new SonicTank(Owner);
+                    }
+                    break;
+                case HOUSE_ORDOS:
+                    if (ModManager::instance().getActiveModName() == "Tornie") {
+                        if (currentGame->randomGen.randBool()) {
+                            newObject = new Deviator(Owner);
+                        } else {
+                            newObject = new EliteSiegeTank(Owner);
+                        }
+                    } else {
+                        newObject = new Deviator(Owner);
+                    }
+                    break;
                 case HOUSE_SARDAUKAR:
                     // Sardaukar: always random SonicTank or Devastator (default and Tornie mod)
                     if(currentGame->randomGen.randBool()) {
