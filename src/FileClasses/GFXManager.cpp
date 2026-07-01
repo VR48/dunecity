@@ -2176,14 +2176,14 @@ GFXManager::GFXManager() {
     if (pFileManager->exists("D2X_MENTATM.png")) {
         auto surf = LoadPNG_RW(pFileManager->openFile("D2X_MENTATM.png").get());
         if (surf) {
-            uiGraphic[UI_MentatBackground][HOUSE_NEUTRAL] = Scaler::defaultDoubleSurface(surf.get());
+            uiGraphic[UI_MentatBackground][HOUSE_NEUTRAL] = Scaler::doubleSurfaceNN(surf.get());
             SDL_Log("Loaded Neutral mentat background from D2X_MENTATM.png");
         }
     }
     if (!uiGraphic[UI_MentatBackground][HOUSE_NEUTRAL] && pFileManager->exists("MentatNeutral.png")) {
         auto surf = LoadPNG_RW(pFileManager->openFile("MentatNeutral.png").get());
         if (surf) {
-            uiGraphic[UI_MentatBackground][HOUSE_NEUTRAL] = Scaler::defaultDoubleSurface(surf.get());
+            uiGraphic[UI_MentatBackground][HOUSE_NEUTRAL] = Scaler::doubleSurfaceNN(surf.get());
             SDL_Log("Loaded Neutral mentat background from MentatNeutral.png");
         }
     }
