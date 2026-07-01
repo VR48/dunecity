@@ -412,6 +412,8 @@ typedef enum {
     UI_MapEditor_Spice,
     UI_MapEditor_ThickSpice,
     UI_MapEditor_SpiceBloom,
+    UI_MapEditor_RedSpiceBloom,
+    UI_MapEditor_GreenSpiceBloom,
     UI_MapEditor_Slab,
     UI_MapEditor_Rock,
     UI_MapEditor_Mountain,

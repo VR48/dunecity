@@ -365,11 +365,11 @@ GFXManager::GFXManager() {
                     }
 
                     // Reorder frames: FlameTank.png uses Dune II convention
-                    // (UP=0, RIGHTUP=1, RIGHT=2, RIGHTDOWN=3, DOWN=4, LEFTDOWN=5, LEFT=6, LEFTUP=7)
+                    // (DOWN=0, RIGHTUP=1, RIGHT=2, RIGHTDOWN=3, UP=4, LEFTDOWN=5, LEFT=6, LEFTUP=7)
                     // → Dune Legacy convention
                     // (RIGHT=0, RIGHTUP=1, UP=2, LEFTUP=3, LEFT=4, LEFTDOWN=5, DOWN=6, RIGHTDOWN=7)
                     {
-                        static const int d2toDL[] = {2, 1, 0, 7, 6, 5, 4, 3};
+                        static const int d2toDL[] = {2, 1, 4, 7, 6, 5, 0, 3};
                         SDL_Surface* src = objPic[ObjPic_FlameTank][h][0].get();
                         if (src) {
                             int frameW = src->w / 8;
@@ -416,6 +416,20 @@ GFXManager::GFXManager() {
         if(devRaw && devRaw->format->BitsPerPixel == 8) {
             benePalette.applyToSurface(devRaw.get());
             objPic[ObjPic_DeviatorCustom][HOUSE_HARKONNEN][0] = std::move(devRaw);
+            // Generate zoom levels (same pattern as FlameTank)
+            for(int z = 1; z < NUM_ZOOMLEVEL; z++) {
+                SDL_Surface* src0 = objPic[ObjPic_DeviatorCustom][HOUSE_HARKONNEN][0].get();
+                if(!src0) continue;
+                sdl2::surface_ptr dst{ SDL_CreateRGBSurface(0,
+                    src0->w * (z+1), src0->h * (z+1),
+                    src0->format->BitsPerPixel,
+                    src0->format->Rmask, src0->format->Gmask,
+                    src0->format->Bmask, src0->format->Amask) };
+                if(dst) {
+                    SDL_BlitScaled(src0, nullptr, dst.get(), nullptr);
+                    objPic[ObjPic_DeviatorCustom][HOUSE_HARKONNEN][z] = std::move(dst);
+                }
+            }
             SDL_Log("GFXManager: Loaded Tornie_Deviator.png (palette-indexed)");
         }
     }
@@ -2668,6 +2682,20 @@ GFXManager::GFXManager() {
     for(int h = 0; h < (int) NUM_HOUSES; h++) {
         if(objPic[ObjPic_FlameTank][h][0] != nullptr) {
             uiGraphic[UI_MapEditor_FlameTank][h] = getSubFrame(objPic[ObjPic_FlameTank][h][0].get(),0,0,8,1);
+        }
+    }
+
+    // Tornie: red/green spice bloom editor icons — extract bloom tile (col 16,
+    // row 1) from the custom terrain strips. Terrain is house-agnostic so we
+    // fill every house slot directly, bypassing the palette remap.
+    for (int h = 0; h < (int)NUM_HOUSES; h++) {
+        if (objPic[ObjPic_TerrainRedSpice][h][0] != nullptr) {
+            uiGraphic[UI_MapEditor_RedSpiceBloom][h] = getSubFrame(
+                objPic[ObjPic_TerrainRedSpice][h][0].get(), 16, 1, 17, 2);
+        }
+        if (objPic[ObjPic_TerrainGreenSpice][h][0] != nullptr) {
+            uiGraphic[UI_MapEditor_GreenSpiceBloom][h] = getSubFrame(
+                objPic[ObjPic_TerrainGreenSpice][h][0].get(), 16, 1, 17, 2);
         }
     }
 

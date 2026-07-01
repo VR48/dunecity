@@ -1442,9 +1442,11 @@ void MapEditorInterface::changeInterfaceColor(HOUSETYPE newHouse) {
     editorModeTerrain_Spice.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Spice, newHouse));
     editorModeTerrain_ThickSpice.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_ThickSpice, newHouse));
     editorModeTerrain_SpiceBloom.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_SpiceBloom, newHouse));
-    // Tornie: use SpiceBloom icon for red/green bloom buttons (fallback — no dedicated UI graphic)
-    editorModeTerrain_RedSpiceBloom.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_SpiceBloom, newHouse));
-    editorModeTerrain_GreenSpiceBloom.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_SpiceBloom, newHouse));
+    // Tornie: dedicated red/green spice bloom icons; fall back to yellow bloom if Tornie.PAK absent
+    auto* redBloomIcon = pGFXManager->getUIGraphicSurface(UI_MapEditor_RedSpiceBloom, newHouse);
+    editorModeTerrain_RedSpiceBloom.setSymbol(redBloomIcon ? redBloomIcon : pGFXManager->getUIGraphicSurface(UI_MapEditor_SpiceBloom, newHouse));
+    auto* greenBloomIcon = pGFXManager->getUIGraphicSurface(UI_MapEditor_GreenSpiceBloom, newHouse);
+    editorModeTerrain_GreenSpiceBloom.setSymbol(greenBloomIcon ? greenBloomIcon : pGFXManager->getUIGraphicSurface(UI_MapEditor_SpiceBloom, newHouse));
     editorModeTerrain_Rock.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Rock, newHouse));
     editorModeTerrain_Mountain.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Mountain, newHouse));
 
