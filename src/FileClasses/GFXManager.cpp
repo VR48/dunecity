@@ -1363,6 +1363,62 @@ GFXManager::GFXManager() {
                     }
                 }
 
+                // Zone-colour corner markers: 3 stacked rectangles at top-left and bottom-right
+                // of every animation frame. Colors = three palette shades of the building's house.
+                {
+                    const int numFrameRows = (2 + NUM_WINDTRAP_ANIMATIONS + NUM_WINDTRAP_ANIMATIONS_PER_ROW - 1)
+                                             / NUM_WINDTRAP_ANIMATIONS_PER_ROW;
+
+                    for (int h = 0; h < NUM_HOUSES; h++) {
+                        for (int z = 0; z < NUM_ZOOMLEVEL; z++) {
+                            auto* surf = objPic[ObjPic_AdvancedWindTrap][h][z].get();
+                            if (!surf) continue;
+
+                            const int fw = surf->w / NUM_WINDTRAP_ANIMATIONS_PER_ROW;
+                            const int fh = surf->h / numFrameRows;
+                            const int scale = std::max(1, fw / (3 * D2_TILESIZE)); // 1/2/3 for z=0/1/2
+
+                            const int markerW  = 4 * scale;
+                            const int markerH  = 3 * scale;
+                            const int gap      = 1 * scale;
+                            const int inset    = 2 * scale;
+                            const int totalH   = 3 * markerH + 2 * gap;
+
+                            SDL_Color c1 = palette[houseToPaletteIndex[h] + 1];
+                            SDL_Color c2 = palette[houseToPaletteIndex[h] + 2];
+                            SDL_Color c3 = palette[houseToPaletteIndex[h] + 3];
+                            Uint32 col1 = SDL_MapRGBA(surf->format, c1.r, c1.g, c1.b, 255);
+                            Uint32 col2 = SDL_MapRGBA(surf->format, c2.r, c2.g, c2.b, 255);
+                            Uint32 col3 = SDL_MapRGBA(surf->format, c3.r, c3.g, c3.b, 255);
+
+                            for (int row = 0; row < numFrameRows; row++) {
+                                for (int col = 0; col < NUM_WINDTRAP_ANIMATIONS_PER_ROW; col++) {
+                                    int fx = col * fw;
+                                    int fy = row * fh;
+
+                                    // Top-left: three stacked rectangles
+                                    SDL_Rect tl0 = { fx + inset, fy + inset, markerW, markerH };
+                                    SDL_Rect tl1 = { fx + inset, fy + inset + markerH + gap, markerW, markerH };
+                                    SDL_Rect tl2 = { fx + inset, fy + inset + 2*(markerH + gap), markerW, markerH };
+                                    SDL_FillRect(surf, &tl0, col1);
+                                    SDL_FillRect(surf, &tl1, col2);
+                                    SDL_FillRect(surf, &tl2, col3);
+
+                                    // Bottom-right: three stacked rectangles
+                                    int brX = fx + fw - inset - markerW;
+                                    int brY = fy + fh - inset - totalH;
+                                    SDL_Rect br0 = { brX, brY, markerW, markerH };
+                                    SDL_Rect br1 = { brX, brY + markerH + gap, markerW, markerH };
+                                    SDL_Rect br2 = { brX, brY + 2*(markerH + gap), markerW, markerH };
+                                    SDL_FillRect(surf, &br0, col1);
+                                    SDL_FillRect(surf, &br1, col2);
+                                    SDL_FillRect(surf, &br2, col3);
+                                }
+                            }
+                        }
+                    }
+                }
+
             } else {
                 SDL_Log("Super power plant sprite not found; AdvancedWindTrap will fall back to Windtrap art");
                 SDL_Surface* fallback = objPic[ObjPic_Windtrap][HOUSE_HARKONNEN][0].get();
