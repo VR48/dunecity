@@ -900,6 +900,14 @@ ObjectBase* ObjectBase::createObject(int itemID, House* Owner, bool byScenario) 
                         }
                     }
                 } break;
+                case HOUSE_NEUTRAL:
+                    // Neutral Unit_Special: randomly Deviator or Elite Launcher
+                    if(currentGame->randomGen.randBool()) {
+                        newObject = new Deviator(Owner);
+                    } else {
+                        newObject = new EliteLauncher(Owner);
+                    }
+                    break;
                 default:    /* should never be reached */  break;
             }
         } break;
