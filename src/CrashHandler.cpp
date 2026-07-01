@@ -339,6 +339,9 @@ void installCrashHandlers(const char* logPath) {
 #ifdef _WIN32
     // Install vectored exception handler (runs BEFORE std::terminate)
     vectoredHandlerHandle = AddVectoredExceptionHandler(1, VectoredExceptionHandler);
+    // Backup unhandled exception filter
+    prevFilter = SetUnhandledExceptionFilter(UnhandledExceptionFilter);
+    SDL_Log("Windows crash handlers installed (VEH + UEF)");
 #endif
 
     SDL_Log("Crash handlers installed (log: %s)", logPath);
@@ -357,9 +360,12 @@ void registerGameForCrashReporting(void* game) {
 static void WriteMiniDump(EXCEPTION_POINTERS* ExceptionInfo) {
     char dumpPath[MAX_PATH];
     char appDataPath[MAX_PATH];
+    FILE* f = crashLogFile;
+    if(!f) f = stderr;
     
     // Get AppData/Roaming path
     if(FAILED(SHGetFolderPathA(NULL, CSIDL_APPDATA, NULL, 0, appDataPath))) {
+        writeCrashLogRaw(f, "WriteMiniDump: SHGetFolderPathA FAILED\n");
         return;
     }
     
@@ -379,6 +385,9 @@ static void WriteMiniDump(EXCEPTION_POINTERS* ExceptionInfo) {
     
     HANDLE hFile = CreateFileA(dumpPath, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if(hFile == INVALID_HANDLE_VALUE) {
+        char err[128];
+        snprintf(err, sizeof(err), "WriteMiniDump: CreateFileA FAILED (error %lu)\n", GetLastError());
+        writeCrashLogRaw(f, err);
         return;
     }
     
@@ -387,20 +396,82 @@ static void WriteMiniDump(EXCEPTION_POINTERS* ExceptionInfo) {
     mdei.ExceptionPointers = ExceptionInfo;
     mdei.ClientPointers = TRUE;
     
-    MINIDUMP_TYPE dumpType = MiniDumpNormal;
+    // Use MiniDumpWithIndirectlyReferencedMemory for better stack traces
+    MINIDUMP_TYPE dumpType = (MINIDUMP_TYPE)(MiniDumpNormal | MiniDumpWithIndirectlyReferencedMemory);
     
-    MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), hFile, dumpType,
+    BOOL ok = MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), hFile, dumpType,
                       &mdei, NULL, NULL);
-    
     CloseHandle(hFile);
     
-    // Log the dump path
-    FILE* f = crashLogFile;
-    if(!f) f = stderr;
+    if(!ok) {
+        char err[128];
+        snprintf(err, sizeof(err), "WriteMiniDump: MiniDumpWriteDump FAILED (error %lu)\n", GetLastError());
+        writeCrashLogRaw(f, err);
+        return;
+    }
     
     char msg[MAX_PATH + 64];
     snprintf(msg, sizeof(msg), "Minidump saved to: %s\n", dumpPath);
     writeCrashLogRaw(f, msg);
+    
+    // Also write a crash.txt with basic info alongside the dump
+    char txtPath[MAX_PATH];
+    snprintf(txtPath, sizeof(txtPath), "%s\\crash_%04d%02d%02d_%02d%02d%02d.txt",
+             dumpDir, st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+    HANDLE hTxt = CreateFileA(txtPath, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if(hTxt != INVALID_HANDLE_VALUE && ExceptionInfo && ExceptionInfo->ExceptionRecord) {
+        char buf[512];
+        int len = snprintf(buf, sizeof(buf),
+            "DuneCity Crash Dump Info\n"
+            "Version: %s\n"
+            "Exception: 0x%08X at 0x%p\n"
+            "Thread: %lu\n"
+            "Dump: %s\n",
+            VERSION,
+            ExceptionInfo->ExceptionRecord->ExceptionCode,
+            ExceptionInfo->ExceptionRecord->ExceptionAddress,
+            (unsigned long)GetCurrentThreadId(),
+            dumpPath);
+        DWORD written;
+        WriteFile(hTxt, buf, len, &written, NULL);
+        CloseHandle(hTxt);
+    }
 }
+
+// Backup: unhandled exception filter (catches what VEH + CRT miss)
+static LONG WINAPI UnhandledExceptionFilter(PEXCEPTION_POINTERS pExceptionInfo) {
+    FILE* f = crashLogFile;
+    if(!f && crashLogPath) {
+        f = fopen(crashLogPath, "a");
+    }
+    if(!f) f = stderr;
+    
+    char buf[256];
+    snprintf(buf, sizeof(buf), "\n[UNHANDLED EXCEPTION] code=0x%08X addr=%p thread=%lu\n",
+             pExceptionInfo->ExceptionRecord->ExceptionCode,
+             pExceptionInfo->ExceptionRecord->ExceptionAddress,
+             (unsigned long)GetCurrentThreadId());
+    writeCrashLogRaw(f, buf);
+    
+    // Write stack trace
+    writeCrashLogRaw(f, "Stack:\n");
+    void* stack[64];
+    WORD frames = CaptureStackBackTrace(0, 64, stack, NULL);
+    for(WORD i = 0; i < frames; i++) {
+        snprintf(buf, sizeof(buf), "  [%d] 0x%p\n", i, stack[i]);
+        writeCrashLogRaw(f, buf);
+    }
+    
+    WriteMiniDump(pExceptionInfo);
+    
+    if(f != stderr) {
+        fflush(f);
+        fclose(f);
+    }
+    
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
+static LPTOP_LEVEL_EXCEPTION_FILTER prevFilter = nullptr;
 #endif
 
