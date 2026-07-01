@@ -49,6 +49,15 @@ void EliteSiegeTank::init() {
     gunGraphicID = ObjPic_Siegetank_Gun;
     turretGraphic = pGFXManager->getObjPic(gunGraphicID,getOwner()->getHouseID());
 
+    // Use Tornie custom sprite if available
+    {
+        auto customGraphic = pGFXManager->getObjPic(ObjPic_EliteSiegeTankCustom, getOwner()->getHouseID());
+        if(customGraphic[0] != nullptr) {
+            graphicID = ObjPic_EliteSiegeTankCustom;
+            graphic = customGraphic;
+        }
+    }
+
     numImagesX = NUM_ANGLES;
     numImagesY = 1;
 }

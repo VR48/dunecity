@@ -180,6 +180,8 @@ static const Coord objPicTiles[] {
     { NUM_WINDTRAP_ANIMATIONS_PER_ROW, (2+NUM_WINDTRAP_ANIMATIONS+NUM_WINDTRAP_ANIMATIONS_PER_ROW-1)/NUM_WINDTRAP_ANIMATIONS_PER_ROW },   // ObjPic_AdvancedWindTrap (windtrap-style animation atlas)
     { 2, 1 },   // ObjPic_CornerFlag (2 animation frames from Tornie_CornerFlagNew.png; 7x7 each)
     { 8, 1 },   // ObjPic_FlameTank (8-dir palette-indexed strip from Tornie.PAK)
+    { 8, 1 },   // ObjPic_DeviatorCustom (8-dir RGBA strip from Tornie.PAK)
+    { 8, 1 },   // ObjPic_EliteSiegeTankCustom (8-dir RGBA strip from Tornie.PAK)
 };
 
 
@@ -378,6 +380,69 @@ GFXManager::GFXManager() {
             }
         }
         SDL_Log("GFXManager: FlameTank sprite loaded OK");
+    }
+
+    // DuneCity: Tornie Deviator custom sprite — RGBA 8-frame strip.
+    // No palette remap; same fixed colours for all houses.
+    if(pFileManager->exists("Tornie_Deviator.png")) {
+        auto devRaw = LoadPNG_RW(pFileManager->openFile("Tornie_Deviator.png").get());
+        if(devRaw) {
+            sdl2::surface_ptr rgba{ SDL_ConvertSurfaceFormat(devRaw.get(), SDL_PIXELFORMAT_ARGB8888, 0) };
+            if(rgba) {
+                for(int h = 0; h < (int)NUM_HOUSES; h++) {
+                    // Zoom 0: copy of the RGBA surface
+                    sdl2::surface_ptr copy{ SDL_ConvertSurface(rgba.get(), rgba->format, 0) };
+                    if(!copy) continue;
+                    objPic[ObjPic_DeviatorCustom][h][0] = std::move(copy);
+
+                    // Scale for higher zoom levels
+                    for(int z = 1; z < NUM_ZOOMLEVEL; z++) {
+                        SDL_Surface* src0 = objPic[ObjPic_DeviatorCustom][h][0].get();
+                        if(!src0) continue;
+                        sdl2::surface_ptr dst{ SDL_CreateRGBSurface(0,
+                            src0->w * (z+1), src0->h * (z+1),
+                            src0->format->BitsPerPixel,
+                            src0->format->Rmask, src0->format->Gmask,
+                            src0->format->Bmask, src0->format->Amask) };
+                        if(dst) {
+                            SDL_BlitScaled(src0, nullptr, dst.get(), nullptr);
+                            objPic[ObjPic_DeviatorCustom][h][z] = std::move(dst);
+                        }
+                    }
+                }
+                SDL_Log("GFXManager: Loaded Tornie_Deviator.png (%dx%d)", rgba->w, rgba->h);
+            }
+        }
+    }
+
+    // DuneCity: Tornie Elite Siege Tank custom sprite — RGBA 8-frame strip.
+    if(pFileManager->exists("Tornie_EliteSiegeTank.png")) {
+        auto estRaw = LoadPNG_RW(pFileManager->openFile("Tornie_EliteSiegeTank.png").get());
+        if(estRaw) {
+            sdl2::surface_ptr rgba{ SDL_ConvertSurfaceFormat(estRaw.get(), SDL_PIXELFORMAT_ARGB8888, 0) };
+            if(rgba) {
+                for(int h = 0; h < (int)NUM_HOUSES; h++) {
+                    sdl2::surface_ptr copy{ SDL_ConvertSurface(rgba.get(), rgba->format, 0) };
+                    if(!copy) continue;
+                    objPic[ObjPic_EliteSiegeTankCustom][h][0] = std::move(copy);
+
+                    for(int z = 1; z < NUM_ZOOMLEVEL; z++) {
+                        SDL_Surface* src0 = objPic[ObjPic_EliteSiegeTankCustom][h][0].get();
+                        if(!src0) continue;
+                        sdl2::surface_ptr dst{ SDL_CreateRGBSurface(0,
+                            src0->w * (z+1), src0->h * (z+1),
+                            src0->format->BitsPerPixel,
+                            src0->format->Rmask, src0->format->Gmask,
+                            src0->format->Bmask, src0->format->Amask) };
+                        if(dst) {
+                            SDL_BlitScaled(src0, nullptr, dst.get(), nullptr);
+                            objPic[ObjPic_EliteSiegeTankCustom][h][z] = std::move(dst);
+                        }
+                    }
+                }
+                SDL_Log("GFXManager: Loaded Tornie_EliteSiegeTank.png (%dx%d)", rgba->w, rgba->h);
+            }
+        }
     }
 
     // DuneCity: the Neutral Launcher reuses the standard Launcher body (tank
@@ -1685,6 +1750,8 @@ GFXManager::GFXManager() {
                                      || id == ObjPic_CornerFlag
                                      || id == ObjPic_Star
                                      || id == ObjPic_FlameTank
+                                     || id == ObjPic_DeviatorCustom
+                                     || id == ObjPic_EliteSiegeTankCustom
                                      // RocketTrike is truecolor only when the
                                      // data/RocketTrike.png override is loaded
                                      // (32-bit); the SHP fallback stays 8-bit.
