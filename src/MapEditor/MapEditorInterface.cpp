@@ -1339,20 +1339,50 @@ void MapEditorInterface::changeHouseDropDown(HOUSETYPE newHouse) {
     }
 }
 
-/// Returns a copy of `base` with a purple star dot composited at the bottom-right corner.
-/// Used to mark Tornie mod units in the map editor unit palette.
-static sdl2::surface_ptr makeStarredSymbol(SDL_Surface* base) {
+/// Draw a 7×7 cross/plus star at (ox, oy) on a 32-bit RGBA surface.
+static void drawCrossStar(SDL_Surface* surf, int ox, int oy, SDL_Color c) {
+    Uint32 col = SDL_MapRGBA(surf->format, c.r, c.g, c.b, 255);
+    for (int d = 0; d < 7; d++) {
+        // vertical bar: column 3 of the 7×7 block
+        int px = ox + 3, py = oy + d;
+        if (px >= 0 && py >= 0 && px < surf->w && py < surf->h)
+            ((Uint32*)((Uint8*)surf->pixels + py * surf->pitch))[px] = col;
+        // horizontal bar: row 3 of the 7×7 block
+        px = ox + d; py = oy + 3;
+        if (px >= 0 && py >= 0 && px < surf->w && py < surf->h)
+            ((Uint32*)((Uint8*)surf->pixels + py * surf->pitch))[px] = col;
+    }
+}
+
+/// Returns a copy of `base` with a house-color cross star at bottom-right.
+/// Used to mark Tornie mod units/structures in the map editor palette.
+static sdl2::surface_ptr makeStarredSymbol(SDL_Surface* base, SDL_Color starColor) {
     if (!base) return {};
 
-    sdl2::surface_ptr copy{ SDL_ConvertSurface(base, base->format, 0) };
+    // Ensure we work on a 32-bit RGBA copy
+    sdl2::surface_ptr copy;
+    if (base->format->BytesPerPixel == 1) {
+        copy = sdl2::surface_ptr{ SDL_ConvertSurfaceFormat(base, SDL_PIXELFORMAT_RGBA32, 0) };
+    } else {
+        copy = sdl2::surface_ptr{ SDL_ConvertSurface(base, base->format, 0) };
+    }
     if (!copy) return {};
 
-    // Draw a 5x5 purple filled square as the star marker (bottom-right corner)
-    SDL_Rect dot = { copy->w - 6, copy->h - 6, 5, 5 };
-    Uint32 purple = SDL_MapRGB(copy->format, 180, 0, 255);
-    SDL_FillRect(copy.get(), &dot, purple);
+    int ox = copy->w - 8;
+    int oy = copy->h - 8;
+    SDL_LockSurface(copy.get());
+    drawCrossStar(copy.get(), ox, oy, starColor);
+    SDL_UnlockSurface(copy.get());
 
     return copy;
+}
+
+/// Add a second cross star at top-left (1,1) on an already-starred surface.
+static void addTopLeftStar(SDL_Surface* surf, SDL_Color c) {
+    if (!surf) return;
+    SDL_LockSurface(surf);
+    drawCrossStar(surf, 1, 1, c);
+    SDL_UnlockSurface(surf);
 }
 
 void MapEditorInterface::changeInterfaceColor(HOUSETYPE newHouse) {
@@ -1412,7 +1442,12 @@ void MapEditorInterface::changeInterfaceColor(HOUSETYPE newHouse) {
     editorModeStructs_RepairYard.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_RepairYard, newHouse));
     editorModeStructs_Starport.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Starport, newHouse));
     editorModeStructs_Palace.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Palace, newHouse));
-    editorModeStructs_AdvancedWindTrap.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_AdvancedWindTrap, newHouse));
+    {
+        SDL_Color hc = palette[houseToPaletteIndex[newHouse] + 3];
+        auto starred = makeStarredSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_AdvancedWindTrap, newHouse), hc);
+        if (starred) addTopLeftStar(starred.get(), hc);
+        editorModeStructs_AdvancedWindTrap.setSymbol(std::move(starred));
+    }
 
     editorModeStructs_ZoneResidential.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_ZoneResidential, newHouse));
     editorModeStructs_ZoneCommercial.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_ZoneCommercial, newHouse));
@@ -1428,16 +1463,25 @@ void MapEditorInterface::changeInterfaceColor(HOUSETYPE newHouse) {
     editorModeUnits_MCV.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_MCV, newHouse));
     editorModeUnits_Trike.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Trike, newHouse));
     editorModeUnits_Raider.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Raider, newHouse));
-    // No dedicated UI_MapEditor_RocketTrike graphic exists; reuse the plain Trike icon with purple star.
-    editorModeUnits_RocketTrike.setSymbol(makeStarredSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Trike, newHouse)));
+    // No dedicated UI_MapEditor_RocketTrike graphic exists; reuse the plain Trike icon with house-color star.
+    {
+        SDL_Color hc = palette[houseToPaletteIndex[newHouse] + 3];
+        editorModeUnits_RocketTrike.setSymbol(makeStarredSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Trike, newHouse), hc));
+    }
     editorModeUnits_Quad.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Quad, newHouse));
     editorModeUnits_Tank.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Tank, newHouse));
     editorModeUnits_SiegeTank.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_SiegeTank, newHouse));
     editorModeUnits_Launcher.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Launcher, newHouse));
-    // DuneCity: Elite Launcher uses the Launcher editor icon with purple star
-    editorModeUnits_EliteLauncher.setSymbol(makeStarredSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Launcher, newHouse)));
-    // DuneCity: Elite Siege Tank uses the Siege Tank editor icon with purple star
-    editorModeUnits_EliteSiegeTank.setSymbol(makeStarredSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_SiegeTank, newHouse)));
+    // DuneCity: Elite Launcher uses the Launcher editor icon with house-color star
+    {
+        SDL_Color hc = palette[houseToPaletteIndex[newHouse] + 3];
+        editorModeUnits_EliteLauncher.setSymbol(makeStarredSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Launcher, newHouse), hc));
+    }
+    // DuneCity: Elite Siege Tank uses the Siege Tank editor icon with house-color star
+    {
+        SDL_Color hc = palette[houseToPaletteIndex[newHouse] + 3];
+        editorModeUnits_EliteSiegeTank.setSymbol(makeStarredSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_SiegeTank, newHouse), hc));
+    }
     editorModeUnits_Devastator.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Devastator, newHouse));
     editorModeUnits_SonicTank.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_SonicTank, newHouse));
     editorModeUnits_Deviator.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Deviator, newHouse));

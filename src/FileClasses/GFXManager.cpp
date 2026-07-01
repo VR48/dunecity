@@ -175,7 +175,7 @@ static const Coord objPicTiles[] {
     { 4, 1 },   // ObjPic_Airport (4 frame slots, all identical; 3x3 footprint)
     { 1, 1 },   // ObjPic_Hospital (single cell, 2x2 footprint, auto-placed on residential)
     { 1, 1 },   // ObjPic_Church   (single cell, 2x2 footprint, auto-placed on residential)
-    { 3, 1 },   // ObjPic_AdvancedWindTrap (3 frame slots, all identical; 3x3 footprint)
+    { NUM_WINDTRAP_ANIMATIONS_PER_ROW, (2+NUM_WINDTRAP_ANIMATIONS+NUM_WINDTRAP_ANIMATIONS_PER_ROW-1)/NUM_WINDTRAP_ANIMATIONS_PER_ROW },   // ObjPic_AdvancedWindTrap (windtrap-style animation atlas)
     { 3, 1 },   // ObjPic_CornerFlag (3 animation frames; 1x1 footprint)
 };
 
@@ -2666,6 +2666,34 @@ SDL_Texture* GFXManager::getZoomedObjPic(unsigned int id, int house, unsigned in
         if(id == ObjPic_Windtrap) {
             // Windtrap uses palette animation on PALCOLOR_WINDTRAP_COLORCYCLE; fake this
             objPicTex[id][house][z] = convertSurfaceToTexture(generateWindtrapAnimationFrames(objPic[id][house][z].get()));
+        } else if(id == ObjPic_AdvancedWindTrap) {
+            // Generate windtrap-style light animation for the RGBA AdvancedWindTrap sprite
+            SDL_Surface* base = objPic[id][house][z].get();
+            if (base) {
+                int fw = base->h; // square sprite: frame width = height
+                sdl2::surface_ptr singleFrame;
+                if (base->w > fw) {
+                    singleFrame = sdl2::surface_ptr{ SDL_CreateRGBSurface(0, fw, base->h, base->format->BitsPerPixel,
+                        base->format->Rmask, base->format->Gmask, base->format->Bmask, base->format->Amask) };
+                    if (singleFrame) {
+                        SDL_SetSurfaceBlendMode(base, SDL_BLENDMODE_NONE);
+                        SDL_Rect srcR{0, 0, fw, base->h};
+                        SDL_BlitSurface(base, &srcR, singleFrame.get(), nullptr);
+                    }
+                }
+                SDL_Surface* src = singleFrame ? singleFrame.get() : base;
+                sdl2::surface_ptr rgbaSrc;
+                if (src->format->BytesPerPixel != 4) {
+                    rgbaSrc = sdl2::surface_ptr{ SDL_ConvertSurfaceFormat(src, SDL_PIXELFORMAT_RGBA32, 0) };
+                    src = rgbaSrc.get();
+                }
+                objPicTex[id][house][z] = convertSurfaceToTexture(generateAdvancedWindtrapAnimationFrames(src).get());
+            } else {
+                objPicTex[id][house][z] = convertSurfaceToTexture(base);
+            }
+            if (objPicTex[id][house][z]) {
+                SDL_SetTextureBlendMode(objPicTex[id][house][z].get(), SDL_BLENDMODE_BLEND);
+            }
         } else if(id == ObjPic_Bullet_SonicTemp) {
             objPicTex[id][house][z] = sdl2::texture_ptr{ SDL_CreateTexture(renderer, SCREEN_FORMAT, SDL_TEXTUREACCESS_TARGET, objPic[id][house][z]->w, objPic[id][house][z]->h) };
         } else if(id == ObjPic_SandwormShimmerTemp) {
@@ -3021,6 +3049,84 @@ sdl2::surface_ptr GFXManager::generateWindtrapAnimationFrames(SDL_Surface* windt
     return returnPic;
 }
 
+
+sdl2::surface_ptr GFXManager::generateAdvancedWindtrapAnimationFrames(SDL_Surface* basePic) const {
+    int windtrapColorQ = 255 / ((NUM_WINDTRAP_ANIMATIONS / 2) - 2);
+    int fw = basePic->w;
+    int fh = basePic->h;
+
+    int sizeX = NUM_WINDTRAP_ANIMATIONS_PER_ROW * fw;
+    int sizeY = ((2 + NUM_WINDTRAP_ANIMATIONS + NUM_WINDTRAP_ANIMATIONS_PER_ROW - 1) / NUM_WINDTRAP_ANIMATIONS_PER_ROW) * fh;
+    sdl2::surface_ptr returnPic{ SDL_CreateRGBSurface(0, sizeX, sizeY, SCREEN_BPP, RMASK, GMASK, BMASK, AMASK) };
+    if (!returnPic) return {};
+    SDL_FillRect(returnPic.get(), nullptr, 0);
+    SDL_SetSurfaceBlendMode(basePic, SDL_BLENDMODE_NONE);
+
+    // Frame 0+1: building phase — blit basePic twice
+    for (int b = 0; b < 2; b++) {
+        SDL_Rect dst = { b * fw, 0, fw, fh };
+        SDL_BlitSurface(basePic, nullptr, returnPic.get(), &dst);
+    }
+
+    // Detect the "light pixel": scan for brightest blue-dominant pixel
+    int lightX = -1, lightY = -1;
+    {
+        SDL_LockSurface(basePic);
+        for (int y = 0; y < fh && lightX < 0; y++) {
+            for (int x = 0; x < fw && lightX < 0; x++) {
+                Uint8* p = (Uint8*)basePic->pixels + y * basePic->pitch + x * basePic->format->BytesPerPixel;
+                Uint8 r, g, b, a;
+                SDL_GetRGBA(*(Uint32*)p, basePic->format, &r, &g, &b, &a);
+                if (b > 180 && b > (int)r + 40 && b > (int)g + 40 && a > 128) {
+                    lightX = x; lightY = y;
+                }
+            }
+        }
+        SDL_UnlockSurface(basePic);
+        if (lightX < 0) { lightX = fw / 4; lightY = fh / 4; }
+    }
+
+    // Animation frames
+    SDL_Rect dest = { 2 * fw, 0, fw, fh };
+
+    for (int i = 0; i < NUM_WINDTRAP_ANIMATIONS; i++) {
+        SDL_BlitSurface(basePic, nullptr, returnPic.get(), &dest);
+
+        // Compute windtrap cycle color (same math as vanilla)
+        SDL_Color wc;
+        if (i < NUM_WINDTRAP_ANIMATIONS / 2) {
+            int val = i * windtrapColorQ;
+            wc = { (Uint8)std::min(80, val), (Uint8)std::min(80, val), (Uint8)std::min(255, val), 255 };
+        } else {
+            int val = (i - NUM_WINDTRAP_ANIMATIONS / 2) * windtrapColorQ;
+            wc = { (Uint8)std::max(0, 80 - val), (Uint8)std::max(0, 80 - val), (Uint8)std::max(0, 255 - val), 255 };
+        }
+
+        // Overdraw the light pixel (3×3 block) with cycle color
+        Uint32 lightCol = SDL_MapRGBA(returnPic->format, wc.r, wc.g, wc.b, 255);
+        SDL_LockSurface(returnPic.get());
+        for (int dy = -1; dy <= 1; dy++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                int px = dest.x + lightX + dx;
+                int py = dest.y + lightY + dy;
+                if (px >= 0 && py >= 0 && px < returnPic->w && py < returnPic->h) {
+                    Uint32* pp = (Uint32*)((Uint8*)returnPic->pixels + py * returnPic->pitch) + px;
+                    *pp = lightCol;
+                }
+            }
+        }
+        SDL_UnlockSurface(returnPic.get());
+
+        dest.x += fw;
+        if (dest.x >= sizeX) { dest.x = 0; dest.y += fh; }
+    }
+
+    if ((returnPic->w > 2048) || (returnPic->h > 2048)) {
+        SDL_Log("Warning: Size of sprite sheet for advanced windtrap is %dx%d; may exceed hardware limits on older GPUs!", returnPic->w, returnPic->h);
+    }
+
+    return returnPic;
+}
 
 sdl2::surface_ptr GFXManager::generateMapChoiceArrowFrames(SDL_Surface* arrowPic, int house) const {
     sdl2::surface_ptr returnPic{ SDL_CreateRGBSurface(0, arrowPic->w * 4, arrowPic->h, SCREEN_BPP, RMASK, GMASK, BMASK, AMASK) };

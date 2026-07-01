@@ -573,6 +573,7 @@ public:
 private:
     std::unique_ptr<Animation>  loadAnimationFromWsa(const std::string& filename) const;
     sdl2::surface_ptr           generateWindtrapAnimationFrames(SDL_Surface* windtrapPic) const;
+    sdl2::surface_ptr           generateAdvancedWindtrapAnimationFrames(SDL_Surface* basePic) const;
     sdl2::surface_ptr           generateMapChoiceArrowFrames(SDL_Surface* arrowPic, int house=HOUSE_HARKONNEN) const;
 
     std::unique_ptr<Shpfile>  loadShpfile(const std::string& filename) const;

@@ -29,15 +29,10 @@ void AdvancedWindTrap::init() {
 
     graphicID = ObjPic_AdvancedWindTrap;
     graphic = pGFXManager->getObjPic(graphicID, getOwner()->getHouseID());
-    // The AdvancedWindTrap sprite atlas has 3 identical frames in a single row
-    // (48×48 each), so the building renders as its own static sprite — no
-    // visible animation and no flag overlay. Do NOT copy WindTrap's synthetic
-    // animation parameters — those only apply to the 320×224 texture generated
-    // by generateWindtrapAnimationFrames().
-    numImagesX = 3;
-    numImagesY = 1;
-    firstAnimFrame = 0;
-    lastAnimFrame = 2;
+    numImagesX = NUM_WINDTRAP_ANIMATIONS_PER_ROW;
+    numImagesY = (2 + NUM_WINDTRAP_ANIMATIONS + NUM_WINDTRAP_ANIMATIONS_PER_ROW - 1) / NUM_WINDTRAP_ANIMATIONS_PER_ROW;
+    firstAnimFrame = 2;
+    lastAnimFrame = 2 + NUM_WINDTRAP_ANIMATIONS - 1;
 }
 
 AdvancedWindTrap::~AdvancedWindTrap() = default;
@@ -47,7 +42,7 @@ bool AdvancedWindTrap::update() {
 
     if(bResult) {
         if(justPlacedTimer <= 0 || curAnimFrame != 0) {
-            curAnimFrame = (currentGame->getGameCycleCount()/8) % 3;
+            curAnimFrame = 2 + ((currentGame->getGameCycleCount()/8) % NUM_WINDTRAP_ANIMATIONS);
         }
 
         auto* citySim = currentGame->getCitySimulation();
