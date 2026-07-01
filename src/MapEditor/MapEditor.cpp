@@ -47,6 +47,10 @@
 
 extern int currentZoomlevel;
 
+static bool isSpiceTerrain(int t) {
+    return t == Terrain_Spice || t == Terrain_ThickSpice || t == Terrain_RedSpice || t == Terrain_GreenSpice;
+}
+
 // functor for std::find_if
 class CoordDistance {
 public:
@@ -502,6 +506,31 @@ void MapEditor::saveMap(const std::string& filepath) {
             loadedINIFile->removeKey("MAP", "Special");
         }
 
+        // Tornie: red spice blooms
+        std::string strRedBloom = "";
+        for(size_t i=0;i<redBlooms.size();++i) {
+            if(i>0) strRedBloom += ",";
+            int position = (logicalOffsetY+redBlooms[i].y) * logicalSizeX + (logicalOffsetX+redBlooms[i].x);
+            strRedBloom += std::to_string(position);
+        }
+        if(!strRedBloom.empty()) {
+            loadedINIFile->setStringValue("MAP", "RedBloom", strRedBloom, false);
+        } else {
+            loadedINIFile->removeKey("MAP", "RedBloom");
+        }
+
+        // Tornie: green spice blooms
+        std::string strGreenBloom = "";
+        for(size_t i=0;i<greenBlooms.size();++i) {
+            if(i>0) strGreenBloom += ",";
+            int position = (logicalOffsetY+greenBlooms[i].y) * logicalSizeX + (logicalOffsetX+greenBlooms[i].x);
+            strGreenBloom += std::to_string(position);
+        }
+        if(!strGreenBloom.empty()) {
+            loadedINIFile->setStringValue("MAP", "GreenBloom", strGreenBloom, false);
+        } else {
+            loadedINIFile->removeKey("MAP", "GreenBloom");
+        }
 
         std::string strFieldBloom = "";
         for(size_t i=0;i<spiceFields.size();++i) {
@@ -754,6 +783,16 @@ void MapEditor::performMapEdit(int xpos, int ypos, bool bRepeated) {
                             addUndoOperation(editOperation.perform(this));
                         } break;
 
+                        case Terrain_RedSpiceBloom: {
+                            MapEditorTerrainAddRedBloomOperation editOperation(xpos, ypos);
+                            addUndoOperation(editOperation.perform(this));
+                        } break;
+
+                        case Terrain_GreenSpiceBloom: {
+                            MapEditorTerrainAddGreenBloomOperation editOperation(xpos, ypos);
+                            addUndoOperation(editOperation.perform(this));
+                        } break;
+
                         case Terrain_Spice: {
                             MapEditorTerrainAddSpiceFieldOperation editOperation(xpos, ypos);
                             addUndoOperation(editOperation.perform(this));
@@ -941,7 +980,9 @@ void MapEditor::performTerrainChange(int x, int y, TERRAINTYPE terrainType) {
         case Terrain_Sand:
         case Terrain_Dunes:
         case Terrain_SpiceBloom:
-        case Terrain_SpecialBloom: {
+        case Terrain_SpecialBloom:
+        case Terrain_RedSpiceBloom:
+        case Terrain_GreenSpiceBloom: {
             if(map.isInsideMap(x-1, y) && (map(x-1,y) == Terrain_Mountain))     performTerrainChange(x-1,y,Terrain_Rock);
             if(map.isInsideMap(x, y-1) && (map(x,y-1) == Terrain_Mountain))     performTerrainChange(x,y-1,Terrain_Rock);
             if(map.isInsideMap(x+1, y) && (map(x+1,y) == Terrain_Mountain))     performTerrainChange(x+1,y,Terrain_Rock);
@@ -1360,6 +1401,14 @@ TERRAINTYPE MapEditor::getTerrain(int x, int y) {
         terrainType = Terrain_SpecialBloom;
     }
 
+    if(std::find(redBlooms.begin(), redBlooms.end(), Coord(x,y)) != redBlooms.end()) {
+        terrainType = Terrain_RedSpiceBloom;
+    }
+
+    if(std::find(greenBlooms.begin(), greenBlooms.end(), Coord(x,y)) != greenBlooms.end()) {
+        terrainType = Terrain_GreenSpiceBloom;
+    }
+
     return terrainType;
 }
 
@@ -1449,6 +1498,30 @@ void MapEditor::drawMap(ScreenBorder* pScreenborder, bool bCompleteMap) {
 
                 case Terrain_SpecialBloom: {
                     tile = Tile::TerrainTile_SpecialBloom;
+                } break;
+
+                case Terrain_RedSpice: {
+                    bool up = (y-1 < 0) || isSpiceTerrain(getTerrain(x, y-1));
+                    bool right = (x+1 >= map.getSizeX()) || isSpiceTerrain(getTerrain(x+1, y));
+                    bool down = (y+1 >= map.getSizeY()) || isSpiceTerrain(getTerrain(x, y+1));
+                    bool left = (x-1 < 0) || isSpiceTerrain(getTerrain(x-1, y));
+                    tile = Tile::TerrainTile_RedSpice + (up | (right << 1) | (down << 2) | (left << 3));
+                } break;
+
+                case Terrain_GreenSpice: {
+                    bool up = (y-1 < 0) || isSpiceTerrain(getTerrain(x, y-1));
+                    bool right = (x+1 >= map.getSizeX()) || isSpiceTerrain(getTerrain(x+1, y));
+                    bool down = (y+1 >= map.getSizeY()) || isSpiceTerrain(getTerrain(x, y+1));
+                    bool left = (x-1 < 0) || isSpiceTerrain(getTerrain(x-1, y));
+                    tile = Tile::TerrainTile_GreenSpice + (up | (right << 1) | (down << 2) | (left << 3));
+                } break;
+
+                case Terrain_RedSpiceBloom: {
+                    tile = Tile::TerrainTile_RedSpiceBloom;
+                } break;
+
+                case Terrain_GreenSpiceBloom: {
+                    tile = Tile::TerrainTile_GreenSpiceBloom;
                 } break;
 
                 default: {

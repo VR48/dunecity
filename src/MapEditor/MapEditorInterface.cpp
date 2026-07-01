@@ -300,6 +300,21 @@ MapEditorInterface::MapEditorInterface(MapEditor* pMapEditor)
     editorModeTerrain_Mountain.setOnClick(std::bind(&MapEditorInterface::onTerrainButton, this, Terrain_Mountain));
     editorModeTerrain_HBox3.addWidget(&editorModeTerrain_Mountain);
 
+    editorModeTerrain_HBox3.addWidget(HSpacer::create(2));
+
+    // Tornie: red/green spice bloom buttons (hidden unless Tornie mod is active)
+    editorModeTerrain_RedSpiceBloom.setToggleButton(true);
+    editorModeTerrain_RedSpiceBloom.setOnClick(std::bind(&MapEditorInterface::onTerrainButton, this, Terrain_RedSpiceBloom));
+    editorModeTerrain_HBox3.addWidget(&editorModeTerrain_RedSpiceBloom);
+    editorModeTerrain_RedSpiceBloom.setVisible(ModManager::instance().getActiveModName() == "Tornie");
+
+    editorModeTerrain_HBox3.addWidget(HSpacer::create(2));
+
+    editorModeTerrain_GreenSpiceBloom.setToggleButton(true);
+    editorModeTerrain_GreenSpiceBloom.setOnClick(std::bind(&MapEditorInterface::onTerrainButton, this, Terrain_GreenSpiceBloom));
+    editorModeTerrain_HBox3.addWidget(&editorModeTerrain_GreenSpiceBloom);
+    editorModeTerrain_GreenSpiceBloom.setVisible(ModManager::instance().getActiveModName() == "Tornie");
+
     editorModeTerrain_HBox3.addWidget(Spacer::create());
 
 
@@ -1105,6 +1120,8 @@ void MapEditorInterface::onTerrainButton(int terrainType) {
     editorModeTerrain_Spice.setToggleState( (terrainType == Terrain_Spice) );
     editorModeTerrain_ThickSpice.setToggleState( (terrainType == Terrain_ThickSpice) );
     editorModeTerrain_SpiceBloom.setToggleState( (terrainType == Terrain_SpiceBloom) );
+    editorModeTerrain_RedSpiceBloom.setToggleState( (terrainType == Terrain_RedSpiceBloom) );
+    editorModeTerrain_GreenSpiceBloom.setToggleState( (terrainType == Terrain_GreenSpiceBloom) );
     editorModeTerrain_Rock.setToggleState( (terrainType == Terrain_Rock) );
     editorModeTerrain_Mountain.setToggleState( (terrainType == Terrain_Mountain) );
 
@@ -1420,6 +1437,9 @@ void MapEditorInterface::changeInterfaceColor(HOUSETYPE newHouse) {
     editorModeTerrain_Spice.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Spice, newHouse));
     editorModeTerrain_ThickSpice.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_ThickSpice, newHouse));
     editorModeTerrain_SpiceBloom.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_SpiceBloom, newHouse));
+    // Tornie: use SpiceBloom icon for red/green bloom buttons (fallback — no dedicated UI graphic)
+    editorModeTerrain_RedSpiceBloom.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_SpiceBloom, newHouse));
+    editorModeTerrain_GreenSpiceBloom.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_SpiceBloom, newHouse));
     editorModeTerrain_Rock.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Rock, newHouse));
     editorModeTerrain_Mountain.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Mountain, newHouse));
 
@@ -1490,6 +1510,8 @@ void MapEditorInterface::changeInterfaceColor(HOUSETYPE newHouse) {
         SDL_Color hc = palette[houseToPaletteIndex[newHouse] + 3];
         editorModeUnits_EliteSiegeTank.setSymbol(makeStarredSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_SiegeTank, newHouse), hc));
     }
+    // FlameTank: use Tank icon as editor symbol (no dedicated UI graphic)
+    editorModeUnits_FlameTank.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Tank, newHouse));
     editorModeUnits_Devastator.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Devastator, newHouse));
     editorModeUnits_SonicTank.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_SonicTank, newHouse));
     editorModeUnits_Deviator.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Deviator, newHouse));

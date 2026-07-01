@@ -173,6 +173,8 @@ private:
     SymbolButton        editorModeTerrain_Spice;
     SymbolButton        editorModeTerrain_ThickSpice;
     SymbolButton        editorModeTerrain_SpiceBloom;
+    SymbolButton        editorModeTerrain_RedSpiceBloom;
+    SymbolButton        editorModeTerrain_GreenSpiceBloom;
     SymbolButton        editorModeTerrain_Rock;
     SymbolButton        editorModeTerrain_Mountain;
 

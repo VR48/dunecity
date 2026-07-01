@@ -187,6 +187,10 @@ public:
 
     std::vector<Coord>& getSpecialBlooms() { return specialBlooms; };
 
+    std::vector<Coord>& getRedBlooms() { return redBlooms; };
+
+    std::vector<Coord>& getGreenBlooms() { return greenBlooms; };
+
     std::vector<Coord>& getSpiceFields() { return spiceFields; };
 
 
@@ -336,6 +340,8 @@ private:
 
     std::vector<Coord>              spiceBlooms;    ///< only for classic maps
     std::vector<Coord>              specialBlooms;  ///< only for classic maps
+    std::vector<Coord>              redBlooms;      ///< Tornie: red spice blooms
+    std::vector<Coord>              greenBlooms;    ///< Tornie: green spice blooms
     std::vector<Coord>              spiceFields;    ///< only for classic maps
 
     std::map<int,int>               choam;

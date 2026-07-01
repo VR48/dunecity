@@ -84,6 +84,48 @@ std::unique_ptr<MapEditorOperation> MapEditorTerrainRemoveSpecialBloomOperation:
 
 
 
+std::unique_ptr<MapEditorOperation> MapEditorTerrainAddRedBloomOperation::perform(MapEditor *pMapEditor) {
+    std::vector<Coord>& blooms = pMapEditor->getRedBlooms();
+    if(std::find(blooms.begin(), blooms.end(), Coord(x,y)) != blooms.end()) {
+        return std::make_unique<MapEditorNoOperation>();
+    } else {
+        blooms.emplace_back(x,y);
+        return std::make_unique<MapEditorTerrainRemoveRedBloomOperation>(x, y);
+    }
+}
+
+std::unique_ptr<MapEditorOperation> MapEditorTerrainRemoveRedBloomOperation::perform(MapEditor *pMapEditor) {
+    std::vector<Coord>& blooms = pMapEditor->getRedBlooms();
+    auto iter = std::find(blooms.begin(), blooms.end(), Coord(x,y));
+    if(iter != blooms.end()) {
+        blooms.erase(iter);
+        return std::make_unique<MapEditorTerrainAddRedBloomOperation>(x, y);
+    } else {
+        return std::make_unique<MapEditorNoOperation>();
+    }
+}
+
+std::unique_ptr<MapEditorOperation> MapEditorTerrainAddGreenBloomOperation::perform(MapEditor *pMapEditor) {
+    std::vector<Coord>& blooms = pMapEditor->getGreenBlooms();
+    if(std::find(blooms.begin(), blooms.end(), Coord(x,y)) != blooms.end()) {
+        return std::make_unique<MapEditorNoOperation>();
+    } else {
+        blooms.emplace_back(x,y);
+        return std::make_unique<MapEditorTerrainRemoveGreenBloomOperation>(x, y);
+    }
+}
+
+std::unique_ptr<MapEditorOperation> MapEditorTerrainRemoveGreenBloomOperation::perform(MapEditor *pMapEditor) {
+    std::vector<Coord>& blooms = pMapEditor->getGreenBlooms();
+    auto iter = std::find(blooms.begin(), blooms.end(), Coord(x,y));
+    if(iter != blooms.end()) {
+        blooms.erase(iter);
+        return std::make_unique<MapEditorTerrainAddGreenBloomOperation>(x, y);
+    } else {
+        return std::make_unique<MapEditorNoOperation>();
+    }
+}
+
 std::unique_ptr<MapEditorOperation> MapEditorTerrainAddSpiceFieldOperation::perform(MapEditor *pMapEditor) {
 
     std::vector<Coord>& spiceFields = pMapEditor->getSpiceFields();
