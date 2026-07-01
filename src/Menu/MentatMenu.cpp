@@ -70,6 +70,10 @@ MentatMenu::MentatMenu(int newHouse)
         case HOUSE_ATREIDES: {
             const bool paulMod = (ModManager::instance().getActiveModName() == "Tornie")
                               && pFileManager->exists("PaulAtreidesMentat.png");
+            SDL_Log("MentatMenu ATREIDES: paulMod=%s (mod=%s, file=%s)",
+                paulMod ? "YES" : "NO",
+                ModManager::instance().getActiveModName().c_str(),
+                pFileManager->exists("PaulAtreidesMentat.png") ? "found" : "MISSING");
 
             anim = pGFXManager->getAnimation(Anim_AtreidesEyes);
             eyesAnim.setAnimation(anim);

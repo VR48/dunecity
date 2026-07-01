@@ -20,6 +20,7 @@
 #include <globals.h>
 
 #include <FileClasses/GFXManager.h>
+#include <mod/ModManager.h>
 #include <House.h>
 #include <Game.h>
 #include <Map.h>
@@ -49,8 +50,8 @@ void Deviator::init()
     graphic = pGFXManager->getObjPic(graphicID,getOwner()->getHouseID());
     turretGraphic = pGFXManager->getObjPic(gunGraphicID,getOwner()->getHouseID());
 
-    // Use Tornie custom sprite if available
-    {
+    // Use Tornie custom sprite only when Tornie mod is active
+    if (ModManager::instance().getActiveModName() == "Tornie") {
         auto customGraphic = pGFXManager->getObjPic(ObjPic_DeviatorCustom, getOwner()->getHouseID());
         if(customGraphic[0] != nullptr) {
             graphicID = ObjPic_DeviatorCustom;
