@@ -535,9 +535,18 @@ void Harvester::move()
                     Tile* tile = currentGameMap->getTile(location);
 
                     if(tile->hasSpice()) {
+                        // Tornie: track what color of spice we're harvesting
+                        if (tile->isRedSpice())        currentSpiceColor = SpiceColor::Red;
+                        else if (tile->isGreenSpice())  currentSpiceColor = SpiceColor::Green;
+                        else                            currentSpiceColor = SpiceColor::Vanilla;
 
                         int beforeTileType = tile->getType();
-                        spice += tile->harvestSpice();
+                        FixPoint harvested = tile->harvestSpice();
+                        // Tornie: green spice harvests 30% faster
+                        if (currentSpiceColor == SpiceColor::Green) {
+                            harvested = harvested * (1.3_fix);
+                        }
+                        spice += harvested;
                         int afterTileType = tile->getType();
 
                         if(beforeTileType != afterTileType) {

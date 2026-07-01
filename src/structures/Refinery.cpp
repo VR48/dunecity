@@ -200,7 +200,12 @@ void Refinery::updateStructureSpecificStuff() {
             extractionSpeed = (extractionSpeed * scale) / 5;
 
 
-            owner->addCredits(pHarvester->extractSpice(extractionSpeed), true);
+            FixPoint extracted = pHarvester->extractSpice(extractionSpeed);
+            // Tornie: red spice yields +25% credits
+            if (pHarvester->getSpiceColor() == Harvester::SpiceColor::Red) {
+                extracted = extracted * (1.25_fix);
+            }
+            owner->addCredits(extracted, true);
         } else if((pHarvester->isAwaitingPickup() == false) && (pHarvester->getGuardPoint().isValid())) {
             // find carryall
             Carryall* pCarryall = nullptr;
