@@ -2217,8 +2217,15 @@ GFXManager::GFXManager() {
     uiGraphic[UI_MentatBackground][HOUSE_FREMEN] = PictureFactory::mapMentatSurfaceToFremen(uiGraphic[UI_MentatBackground][HOUSE_ATREIDES].get());
     uiGraphic[UI_MentatBackground][HOUSE_SARDAUKAR] = PictureFactory::mapMentatSurfaceToSardaukar(uiGraphic[UI_MentatBackground][HOUSE_HARKONNEN].get());
     uiGraphic[UI_MentatBackground][HOUSE_MERCENARY] = PictureFactory::mapMentatSurfaceToMercenary(uiGraphic[UI_MentatBackground][HOUSE_ORDOS].get());
-    // DuneCity: Neutral mentat background — prefer D2X_MENTATM.png, then MentatNeutral.png, then remap from Ordos
-    if (pFileManager->exists("D2X_MENTATM.png")) {
+    // DuneCity: Neutral mentat background — prefer D2X_MENTATF.png (Chani portrait), then fallbacks
+    if (pFileManager->exists("D2X_MENTATF.png")) {
+        auto surf = LoadPNG_RW(pFileManager->openFile("D2X_MENTATF.png").get());
+        if (surf) {
+            uiGraphic[UI_MentatBackground][HOUSE_NEUTRAL] = Scaler::doubleSurfaceNN(surf.get());
+            SDL_Log("Loaded Neutral mentat background from D2X_MENTATF.png");
+        }
+    }
+    if (!uiGraphic[UI_MentatBackground][HOUSE_NEUTRAL] && pFileManager->exists("D2X_MENTATM.png")) {
         auto surf = LoadPNG_RW(pFileManager->openFile("D2X_MENTATM.png").get());
         if (surf) {
             uiGraphic[UI_MentatBackground][HOUSE_NEUTRAL] = Scaler::doubleSurfaceNN(surf.get());
