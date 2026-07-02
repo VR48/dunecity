@@ -564,7 +564,7 @@ public:
 
     GFXManager(const GFXManager &) = delete;
     GFXManager(GFXManager &&) = default;
-    GFXManager& operator=(const GFXManager &) = default;
+    GFXManager& operator=(const GFXManager &) = delete;
     GFXManager& operator=(GFXManager &&) = default;
 
     SDL_Texture*     getZoomedObjPic(unsigned int id, int house, unsigned int z);
