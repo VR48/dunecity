@@ -277,8 +277,13 @@ GFXManager::GFXManager() {
     // per house (same approach as regular Trike).
     // Fallback: RocketTrike.png as truecolor RGBA — pre-build all zoom/house
     // slots so getZoomedObjPic never palette-remaps RGBA data.
-    // Final fallback: SHP from the base game data.
+    // Final fallback: SHP from the base game data, tinted red so the Rocket
+    // Trike is visually distinct from the regular Trike.
     objPic[ObjPic_RocketTrike][HOUSE_HARKONNEN][0] = units->getPictureArray(8,1,GROUNDUNIT_ROW(5));
+    if (objPic[ObjPic_RocketTrike][HOUSE_HARKONNEN][0] && objPic[ObjPic_RocketTrike][HOUSE_HARKONNEN][0]->format->palette) {
+        // Apply a red tint so the Rocket Trike reads as red, not the house color.
+        tintSurfaceRed(objPic[ObjPic_RocketTrike][HOUSE_HARKONNEN][0].get());
+    }
     {
         bool usedPaletteIndexed = false;
         if(pFileManager->exists("RocketTrikeMask.png")) {
@@ -2284,9 +2289,11 @@ GFXManager::GFXManager() {
         }
     }
     if (!smallDetailPicTex[Picture_EliteSiegeTank]) {
-        // Try Tornie.PAK custom WSA first, fall back to Siege Tank WSA
-        const char* estWsa = pFileManager->exists("EliteSiegeTank.WSA") ? "EliteSiegeTank.WSA" : "HTANK.WSA";
-        smallDetailPicTex[Picture_EliteSiegeTank] = extractSmallDetailPic(estWsa);
+        // Try Tornie.PAK custom WSA; do not fall back to vanilla HTANK.WSA (Siege Tank).
+        // The Elite Siege Tank needs its own dedicated portrait.
+        if (pFileManager->exists("EliteSiegeTank.WSA")) {
+            smallDetailPicTex[Picture_EliteSiegeTank] = extractSmallDetailPic("EliteSiegeTank.WSA");
+        }
     }
 
     // Flame Tank: prefer FlameTankIcon.png (sidebar slot), fall back to Sonic Tank portrait.
@@ -2509,8 +2516,12 @@ GFXManager::GFXManager() {
 
     uiGraphic[UI_MentatBackground][HOUSE_HARKONNEN] = Scaler::defaultDoubleSurface(LoadCPS_RW(pFileManager->openFile("MENTATH.CPS").get()).get());
     uiGraphic[UI_MentatBackground][HOUSE_ATREIDES] = Scaler::defaultDoubleSurface(LoadCPS_RW(pFileManager->openFile("MENTATA.CPS").get()).get());
-    // Paul Atreides mentat background override (Tornie mod)
-    if (pFileManager->exists("PaulAtreidesMentat.png")) {
+    // DuneCity: Capture vanilla MENTATA.CPS (Cyril) for Fremen remapping, since
+    // the Fremen mentat should always be Cyril-based regardless of any mod override.
+    sdl2::surface_ptr vanillaAtreidesMentat = Scaler::defaultDoubleSurface(LoadCPS_RW(pFileManager->openFile("MENTATA.CPS").get()).get());
+    // Paul Atreides mentat background override (Tornie mod only).
+    // When Tornie mod is inactive, Atreides mentat stays as Cyril (vanilla MENTATA.CPS).
+    if (ModManager::instance().getActiveModName() == "Tornie" && pFileManager->exists("PaulAtreidesMentat.png")) {
         auto paulBg = LoadPNG_RW(pFileManager->openFile("PaulAtreidesMentat.png").get());
         if (paulBg) {
             SDL_Log("GFX INIT: Paul Atreides mentat background loaded (%dx%d)", paulBg->w, paulBg->h);
@@ -2518,7 +2529,9 @@ GFXManager::GFXManager() {
         }
     }
     uiGraphic[UI_MentatBackground][HOUSE_ORDOS] = Scaler::defaultDoubleSurface(LoadCPS_RW(pFileManager->openFile("MENTATO.CPS").get()).get());
-    uiGraphic[UI_MentatBackground][HOUSE_FREMEN] = PictureFactory::mapMentatSurfaceToFremen(uiGraphic[UI_MentatBackground][HOUSE_ATREIDES].get());
+    // DuneCity: Fremen mentat is always Cyril-based (vanilla MENTATA.CPS), independent
+    // of the Paul Atreides override — so capture before any override.
+    uiGraphic[UI_MentatBackground][HOUSE_FREMEN] = PictureFactory::mapMentatSurfaceToFremen(vanillaAtreidesMentat.get());
     uiGraphic[UI_MentatBackground][HOUSE_SARDAUKAR] = PictureFactory::mapMentatSurfaceToSardaukar(uiGraphic[UI_MentatBackground][HOUSE_HARKONNEN].get());
     uiGraphic[UI_MentatBackground][HOUSE_MERCENARY] = PictureFactory::mapMentatSurfaceToMercenary(uiGraphic[UI_MentatBackground][HOUSE_ORDOS].get());
     // DuneCity: Neutral mentat background.
@@ -3530,18 +3543,13 @@ sdl2::surface_ptr GFXManager::generateAdvancedWindtrapAnimationFrames(SDL_Surfac
     int fh = basePic->h;
 
     int sizeX = NUM_WINDTRAP_ANIMATIONS_PER_ROW * fw;
-    int sizeY = ((2 + NUM_WINDTRAP_ANIMATIONS + NUM_WINDTRAP_ANIMATIONS_PER_ROW - 1) / NUM_WINDTRAP_ANIMATIONS_PER_ROW) * fh;
+    int sizeY = ((NUM_WINDTRAP_ANIMATIONS + NUM_WINDTRAP_ANIMATIONS_PER_ROW - 1) / NUM_WINDTRAP_ANIMATIONS_PER_ROW) * fh;
     sdl2::surface_ptr returnPic{ SDL_CreateRGBSurface(0, sizeX, sizeY, SCREEN_BPP, RMASK, GMASK, BMASK, AMASK) };
     if (!returnPic) return {};
     SDL_FillRect(returnPic.get(), nullptr, 0);
 
-    // First 2 frames: copy base unmodified (for static display)
-    for (int i = 0; i < 2; i++) {
-        int destX = (i % NUM_WINDTRAP_ANIMATIONS_PER_ROW) * fw;
-        int destY = (i / NUM_WINDTRAP_ANIMATIONS_PER_ROW) * fh;
-        SDL_Rect destRect = { destX, destY, fw, fh };
-        SDL_BlitSurface(basePic, nullptr, returnPic.get(), &destRect);
-    }
+    // Grey static building-phase frames are intentionally omitted: the advanced
+    // windtrap is always producing power, so it animates from frame 0 onward.
 
     // Artist-approved pixel coordinates for the light animation zones
     // (derived from annotated reference image, 48x48 sprite)
@@ -3564,9 +3572,9 @@ sdl2::surface_ptr GFXManager::generateAdvancedWindtrapAnimationFrames(SDL_Surfac
     };
     static const int NUM_LIGHT_PIXELS = sizeof(lightPixels) / sizeof(lightPixels[0]);
 
-    // Animation frames 2..2+NUM_WINDTRAP_ANIMATIONS
+    // Animation frames 0..NUM_WINDTRAP_ANIMATIONS-1 (no grey/building-phase frames)
     for (int i = 0; i < NUM_WINDTRAP_ANIMATIONS; i++) {
-        int frameIdx = 2 + i;
+        int frameIdx = i;
         int destX = (frameIdx % NUM_WINDTRAP_ANIMATIONS_PER_ROW) * fw;
         int destY = (frameIdx / NUM_WINDTRAP_ANIMATIONS_PER_ROW) * fh;
         SDL_Rect destRect = { destX, destY, fw, fh };

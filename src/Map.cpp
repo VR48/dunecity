@@ -242,16 +242,21 @@ void Map::damage(Uint32 damagerID, House* damagerOwner, const Coord& realPos, Ui
                         } else if(bulletID == Bullet_Sonic) {
                             pUnit->handleDamage(lround(damage), damagerID, damagerOwner);
                         } else if(bulletID == Bullet_Flame) {
-                            // Flame Tank: no aircraft damage, instakill light infantry, 2x vs troopers
+                            // Flame Tank: no aircraft damage, no self-damage, instakill light infantry, 2x vs troopers
                             if(!pUnit->isAFlyingUnit()) {
-                                int flameDmg = lround(damage);
-                                int uid = pUnit->getItemID();
-                                if(uid == Unit_Infantry || uid == Unit_Soldier) {
-                                    pUnit->handleDamage(lround(pUnit->getHealth()), damagerID, damagerOwner);
-                                } else if(uid == Unit_Trooper || uid == Unit_Troopers) {
-                                    pUnit->handleDamage(flameDmg * 2, damagerID, damagerOwner);
+                                // Self-damage immunity: skip if the unit being damaged is the attacker.
+                                if(pUnit->getObjectID() == damagerID) {
+                                    // Flame Tank cannot damage itself.
                                 } else {
-                                    pUnit->handleDamage(flameDmg, damagerID, damagerOwner);
+                                    int flameDmg = lround(damage);
+                                    int uid = pUnit->getItemID();
+                                    if(uid == Unit_Infantry || uid == Unit_Soldier) {
+                                        pUnit->handleDamage(lround(pUnit->getHealth()), damagerID, damagerOwner);
+                                    } else if(uid == Unit_Trooper || uid == Unit_Troopers) {
+                                        pUnit->handleDamage(flameDmg * 2, damagerID, damagerOwner);
+                                    } else {
+                                        pUnit->handleDamage(flameDmg, damagerID, damagerOwner);
+                                    }
                                 }
                             }
                         } else {

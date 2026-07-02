@@ -32,9 +32,9 @@ void AdvancedWindTrap::init() {
     graphicID = ObjPic_AdvancedWindTrap;
     graphic = pGFXManager->getObjPic(graphicID, getOwner()->getHouseID());
     numImagesX = NUM_WINDTRAP_ANIMATIONS_PER_ROW;
-    numImagesY = (2 + NUM_WINDTRAP_ANIMATIONS + NUM_WINDTRAP_ANIMATIONS_PER_ROW - 1) / NUM_WINDTRAP_ANIMATIONS_PER_ROW;
+    numImagesY = (NUM_WINDTRAP_ANIMATIONS + NUM_WINDTRAP_ANIMATIONS_PER_ROW - 1) / NUM_WINDTRAP_ANIMATIONS_PER_ROW;
     firstAnimFrame = 0;
-    lastAnimFrame = 2 + NUM_WINDTRAP_ANIMATIONS - 1;
+    lastAnimFrame = NUM_WINDTRAP_ANIMATIONS - 1;
 }
 
 AdvancedWindTrap::~AdvancedWindTrap() = default;
@@ -44,7 +44,7 @@ bool AdvancedWindTrap::update() {
 
     if(bResult) {
         if(justPlacedTimer <= 0) {
-            curAnimFrame = 2 + ((currentGame->getGameCycleCount()/8) % NUM_WINDTRAP_ANIMATIONS);
+            curAnimFrame = (currentGame->getGameCycleCount()/8) % NUM_WINDTRAP_ANIMATIONS;
         }
 
         auto* citySim = currentGame->getCitySimulation();
