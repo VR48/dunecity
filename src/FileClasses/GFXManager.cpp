@@ -2934,13 +2934,15 @@ GFXManager::GFXManager() {
     animation[Anim_AtreidesBook]->setNumLoops(1);
     animation[Anim_AtreidesBook]->setFrameRate(0.2);
 
-    // Paul Atreides custom mentat animations (Tornie mod)
+    // Paul Atreides custom mentat animations (Tornie mod) — 5 frames, matching vanilla mentat eye/mouth count.
     if (pFileManager->exists("PaulAtreidesEyes.png")) {
         auto eyeStrip = LoadPNG_RW(pFileManager->openFile("PaulAtreidesEyes.png").get());
         if (eyeStrip) {
+            if (eyeStrip->format->palette) { palette.applyToSurface(eyeStrip.get()); }
             auto paulEyes = std::make_unique<Animation>();
-            const int fw = eyeStrip->w / 4;
-            for (int i = 0; i < 4; ++i) {
+            constexpr int kMentatEyeFrames = 5;
+            const int fw = eyeStrip->w / kMentatEyeFrames;
+            for (int i = 0; i < kMentatEyeFrames; ++i) {
                 SDL_Rect src = { i * fw, 0, fw, eyeStrip->h };
                 sdl2::surface_ptr frame{ SDL_CreateRGBSurfaceWithFormat(0, fw, eyeStrip->h, 32, SDL_PIXELFORMAT_RGBA32) };
                 SDL_BlitSurface(eyeStrip.get(), &src, frame.get(), nullptr);
@@ -2948,16 +2950,18 @@ GFXManager::GFXManager() {
             }
             paulEyes->setFrameRate(0.5);
             animation[Anim_PaulEyes] = std::move(paulEyes);
-            SDL_Log("GFX INIT: Loaded Paul Atreides eyes animation (4 frames %dx%d)", fw, eyeStrip->h);
+            SDL_Log("GFX INIT: Loaded Paul Atreides eyes animation (%d frames %dx%d)", kMentatEyeFrames, fw, eyeStrip->h);
         }
     }
 
     if (pFileManager->exists("PaulAtreidesMouth.png")) {
         auto mouthStrip = LoadPNG_RW(pFileManager->openFile("PaulAtreidesMouth.png").get());
         if (mouthStrip) {
+            if (mouthStrip->format->palette) { palette.applyToSurface(mouthStrip.get()); }
             auto paulMouth = std::make_unique<Animation>();
-            const int fw = mouthStrip->w / 4;
-            for (int i = 0; i < 4; ++i) {
+            constexpr int kMentatMouthFrames = 5;
+            const int fw = mouthStrip->w / kMentatMouthFrames;
+            for (int i = 0; i < kMentatMouthFrames; ++i) {
                 SDL_Rect src = { i * fw, 0, fw, mouthStrip->h };
                 sdl2::surface_ptr frame{ SDL_CreateRGBSurfaceWithFormat(0, fw, mouthStrip->h, 32, SDL_PIXELFORMAT_RGBA32) };
                 SDL_BlitSurface(mouthStrip.get(), &src, frame.get(), nullptr);
@@ -2965,7 +2969,7 @@ GFXManager::GFXManager() {
             }
             paulMouth->setFrameRate(5.0);
             animation[Anim_PaulMouth] = std::move(paulMouth);
-            SDL_Log("GFX INIT: Loaded Paul Atreides mouth animation (4 frames %dx%d)", fw, mouthStrip->h);
+            SDL_Log("GFX INIT: Loaded Paul Atreides mouth animation (%d frames %dx%d)", kMentatMouthFrames, fw, mouthStrip->h);
         }
     }
 
@@ -2997,6 +3001,46 @@ GFXManager::GFXManager() {
     animation[Anim_NeutralShoulder] = PictureFactory::mapMentatAnimationToNeutral(animation[Anim_OrdosShoulder].get());
     animation[Anim_NeutralRing] = PictureFactory::mapMentatAnimationToNeutral(animation[Anim_OrdosRing].get());
     SDL_Log("GFX INIT: Neutral mentat animations done");
+
+    // Tornie mod: Chani mentat eye/mouth strips override the Neutral animations.
+    // Both strips are 5 frames wide (matching vanilla mentat eye/mouth count).
+    // Files: ChaniEyes.png (5-frame horizontal strip) and ChaniMouth.png (5-frame horizontal strip).
+    if (pFileManager->exists("ChaniEyes.png")) {
+        auto eyeStrip = LoadPNG_RW(pFileManager->openFile("ChaniEyes.png").get());
+        if (eyeStrip) {
+            if (eyeStrip->format->palette) { palette.applyToSurface(eyeStrip.get()); }
+            auto chaniEyes = std::make_unique<Animation>();
+            constexpr int kMentatEyeFrames = 5;
+            const int fw = eyeStrip->w / kMentatEyeFrames;
+            for (int i = 0; i < kMentatEyeFrames; ++i) {
+                SDL_Rect src = { i * fw, 0, fw, eyeStrip->h };
+                sdl2::surface_ptr frame{ SDL_CreateRGBSurfaceWithFormat(0, fw, eyeStrip->h, 32, SDL_PIXELFORMAT_RGBA32) };
+                SDL_BlitSurface(eyeStrip.get(), &src, frame.get(), nullptr);
+                chaniEyes->addFrame(std::move(frame));
+            }
+            chaniEyes->setFrameRate(0.5);
+            animation[Anim_NeutralEyes] = std::move(chaniEyes);
+            SDL_Log("GFX INIT: Loaded Chani eyes animation (%d frames %dx%d) — overriding Neutral", kMentatEyeFrames, fw, eyeStrip->h);
+        }
+    }
+    if (pFileManager->exists("ChaniMouth.png")) {
+        auto mouthStrip = LoadPNG_RW(pFileManager->openFile("ChaniMouth.png").get());
+        if (mouthStrip) {
+            if (mouthStrip->format->palette) { palette.applyToSurface(mouthStrip.get()); }
+            auto chaniMouth = std::make_unique<Animation>();
+            constexpr int kMentatMouthFrames = 5;
+            const int fw = mouthStrip->w / kMentatMouthFrames;
+            for (int i = 0; i < kMentatMouthFrames; ++i) {
+                SDL_Rect src = { i * fw, 0, fw, mouthStrip->h };
+                sdl2::surface_ptr frame{ SDL_CreateRGBSurfaceWithFormat(0, fw, mouthStrip->h, 32, SDL_PIXELFORMAT_RGBA32) };
+                SDL_BlitSurface(mouthStrip.get(), &src, frame.get(), nullptr);
+                chaniMouth->addFrame(std::move(frame));
+            }
+            chaniMouth->setFrameRate(5.0);
+            animation[Anim_NeutralMouth] = std::move(chaniMouth);
+            SDL_Log("GFX INIT: Loaded Chani mouth animation (%d frames %dx%d) — overriding Neutral", kMentatMouthFrames, fw, mouthStrip->h);
+        }
+    }
 
     animation[Anim_BeneEyes] = menshpm->getAnimation(0,4,true,true);
     if(animation[Anim_BeneEyes] != nullptr) {
