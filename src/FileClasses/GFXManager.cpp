@@ -2585,25 +2585,41 @@ GFXManager::GFXManager() {
     PicFactory->drawFrame(uiGraphic[UI_DuneLegacy][HOUSE_HARKONNEN].get(),PictureFactory::SimpleFrame);
 
     uiGraphic[UI_MentatBackground][HOUSE_HARKONNEN] = Scaler::defaultDoubleSurface(LoadCPS_RW(pFileManager->openFile("MENTATH.CPS").get()).get());
-    uiGraphic[UI_MentatBackground][HOUSE_ATREIDES] = Scaler::defaultDoubleSurface(LoadCPS_RW(pFileManager->openFile("MENTATA.CPS").get()).get());
-    // Paul Atreides mentat background override (Tornie mod)
-    if (pFileManager->exists("PaulAtreidesMentat.png")) {
-        auto paulBg = LoadPNG_RW(pFileManager->openFile("PaulAtreidesMentat.png").get());
-        if (paulBg) {
-            SDL_Log("GFX INIT: Paul Atreides mentat background loaded (%dx%d)", paulBg->w, paulBg->h);
-            uiGraphic[UI_MentatBackground][HOUSE_ATREIDES] = std::move(paulBg);
+    // Default Atreides mentat = vanilla MENTATA.CPS (Cyril). Per Tornie mod
+    // request: only override with PaulAtreidesMentat.png when the Tornie mod
+    // is actually active. The previous code loaded the Paul background
+    // whenever the file existed, which broke Cyril's portrait for any user
+    // who happened to have the PNG on disk without the mod enabled.
+    const bool bTornieActive = (ModManager::instance().getActiveModName() == "Tornie");
+    {
+        sdl2::surface_ptr atreidesBg = Scaler::defaultDoubleSurface(LoadCPS_RW(pFileManager->openFile("MENTATA.CPS").get()).get());
+        if (bTornieActive && pFileManager->exists("PaulAtreidesMentat.png")) {
+            auto paulBg = LoadPNG_RW(pFileManager->openFile("PaulAtreidesMentat.png").get());
+            if (paulBg) {
+                SDL_Log("GFX INIT: Paul Atreides mentat background loaded (%dx%d)", paulBg->w, paulBg->h);
+                uiGraphic[UI_MentatBackground][HOUSE_ATREIDES] = std::move(paulBg);
+            } else {
+                uiGraphic[UI_MentatBackground][HOUSE_ATREIDES] = std::move(atreidesBg);
+            }
+        } else {
+            uiGraphic[UI_MentatBackground][HOUSE_ATREIDES] = std::move(atreidesBg);
         }
     }
+    // Fremen mentat is derived from Atreides (vanilla Cyril) by recolour.
+    // Same path applies — when Tornie is active, Fremen will pick up the
+    // Atreides override above; when Tornie is inactive, Fremen sees vanilla
+    // Cyril. There is no separate Tornie Fremen mentat art in the repo, so
+    // the Atreides branch is sufficient.
     uiGraphic[UI_MentatBackground][HOUSE_ORDOS] = Scaler::defaultDoubleSurface(LoadCPS_RW(pFileManager->openFile("MENTATO.CPS").get()).get());
     uiGraphic[UI_MentatBackground][HOUSE_FREMEN] = PictureFactory::mapMentatSurfaceToFremen(uiGraphic[UI_MentatBackground][HOUSE_ATREIDES].get());
     uiGraphic[UI_MentatBackground][HOUSE_SARDAUKAR] = PictureFactory::mapMentatSurfaceToSardaukar(uiGraphic[UI_MentatBackground][HOUSE_HARKONNEN].get());
     uiGraphic[UI_MentatBackground][HOUSE_MERCENARY] = PictureFactory::mapMentatSurfaceToMercenary(uiGraphic[UI_MentatBackground][HOUSE_ORDOS].get());
     // DuneCity: Neutral mentat background.
     // Tornie mod: use ChaniMentat.png (320×200 palette-indexed) if available.
-    // Default: Mentat Cyrit — remap Atreides portrait blue to neutral grey.
+    // Default: Mentat Cyril — remap Atreides portrait blue to neutral grey.
     {
         bool loadedChani = false;
-        if (ModManager::instance().getActiveModName() == "Tornie" && pFileManager->exists("ChaniMentat.png")) {
+        if (bTornieActive && pFileManager->exists("ChaniMentat.png")) {
             auto chaniSurf = LoadPNG_RW(pFileManager->openFile("ChaniMentat.png").get());
             if (chaniSurf) {
                 if (chaniSurf->format->BitsPerPixel == 8)
