@@ -66,7 +66,15 @@ void AdvancedWindTrap::blitToScreen() {
     SDL_Texture* flagTex = pGFXManager->getZoomedObjPic(ObjPic_CornerFlag, getOwner()->getHouseID(), currentZoomlevel);
     if (!flagTex) return;
 
-    const int flagPx = 7 * (currentZoomlevel + 1);
+    // Flag frame size is derived from the loaded texture height (supports both
+    // old 7px and new 48px flag sprites).  Zoom levels scale linearly.
+    int baseFlagPx = 7;  // fallback
+    {
+        int texW = 0, texH = 0;
+        SDL_QueryTexture(flagTex, nullptr, nullptr, &texW, &texH);
+        if (texH > 0) baseFlagPx = texH;
+    }
+    const int flagPx = baseFlagPx;
     const int flagFrame = (currentGame->getGameCycleCount() / STRUCTURE_ANIMATIONTIMER) % 2;
 
     // Building screen rect (same calculation as StructureBase::blitToScreen)

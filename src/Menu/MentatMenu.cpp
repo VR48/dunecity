@@ -75,13 +75,17 @@ MentatMenu::MentatMenu(int newHouse)
                 ModManager::instance().getActiveModName().c_str(),
                 pFileManager->exists("PaulAtreidesMentat.png") ? "found" : "MISSING");
 
-            anim = pGFXManager->getAnimation(Anim_AtreidesEyes);
+            anim = paulMod && pGFXManager->getAnimation(Anim_PaulEyes)
+                 ? pGFXManager->getAnimation(Anim_PaulEyes)
+                 : pGFXManager->getAnimation(Anim_AtreidesEyes);
             eyesAnim.setAnimation(anim);
-            windowWidget.addWidget(&eyesAnim, paulMod ? Point(131,111) : Point(80,160), eyesAnim.getMinimumSize());
+            windowWidget.addWidget(&eyesAnim, paulMod ? Point(118,114) : Point(80,160), eyesAnim.getMinimumSize());
 
-            anim = pGFXManager->getAnimation(Anim_AtreidesMouth);
+            anim = paulMod && pGFXManager->getAnimation(Anim_PaulMouth)
+                 ? pGFXManager->getAnimation(Anim_PaulMouth)
+                 : pGFXManager->getAnimation(Anim_AtreidesMouth);
             mouthAnim.setAnimation(anim);
-            windowWidget.addWidget(&mouthAnim, paulMod ? Point(131,169) : Point(80,192), mouthAnim.getMinimumSize());
+            windowWidget.addWidget(&mouthAnim, paulMod ? Point(116,170) : Point(80,192), mouthAnim.getMinimumSize());
 
             anim = pGFXManager->getAnimation(Anim_AtreidesBook);
             specialAnim.setAnimation(anim);
@@ -144,16 +148,19 @@ MentatMenu::MentatMenu(int newHouse)
         } break;
 
         case HOUSE_NEUTRAL: {
+            const bool chaniMod = (ModManager::instance().getActiveModName() == "Tornie")
+                               && pFileManager->exists("ChaniMentat.png");
+
             anim = pGFXManager->getAnimation(Anim_NeutralEyes);
             if (anim && anim->getNumberOfFrames() > 0) {
                 eyesAnim.setAnimation(anim);
-                windowWidget.addWidget(&eyesAnim, Point(80, 160), eyesAnim.getMinimumSize());
+                windowWidget.addWidget(&eyesAnim, chaniMod ? Point(56, 96) : Point(80, 160), eyesAnim.getMinimumSize());
             }
 
             anim = pGFXManager->getAnimation(Anim_NeutralMouth);
             if (anim && anim->getNumberOfFrames() > 0) {
                 mouthAnim.setAnimation(anim);
-                windowWidget.addWidget(&mouthAnim, Point(80, 192), mouthAnim.getMinimumSize());
+                windowWidget.addWidget(&mouthAnim, chaniMod ? Point(64, 80) : Point(80, 192), mouthAnim.getMinimumSize());
             }
 
             anim = pGFXManager->getAnimation(Anim_NeutralRing);

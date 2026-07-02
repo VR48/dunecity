@@ -338,12 +338,24 @@ void Tile::blitGround(int xPos, int yPos) {
             }
         }
         if (!drewCustomSpice) {
-            // Red/green bloom types render as vanilla SpiceBloom (0x54) in the terrain atlas
+            // Red/green bloom types: render from custom spice strip column 16 (bloom frame)
+            // over a sand base; fall back to vanilla SpiceBloom if custom texture unavailable.
             if (type == Terrain_RedSpiceBloom || type == Terrain_GreenSpiceBloom) {
-                const auto bloomIndexX = TerrainTile_SpiceBloom % NUM_TERRAIN_TILES_X;
-                const auto bloomIndexY = TerrainTile_SpiceBloom / NUM_TERRAIN_TILES_X;
-                SDL_Rect bloomSrc = { bloomIndexX*zoomed_tilesize, bloomIndexY*zoomed_tilesize, zoomed_tilesize, zoomed_tilesize };
-                SDL_RenderCopy(renderer, sprite[currentZoomlevel], &bloomSrc, &drawLocation);
+                int customObjPic = (type == Terrain_RedSpiceBloom)
+                    ? ObjPic_TerrainRedSpice : ObjPic_TerrainGreenSpice;
+                SDL_Texture* customTex = pGFXManager->getZoomedObjPic(customObjPic, currentZoomlevel);
+                if (customTex) {
+                    // Bloom is at column 16 in the 17-column strip, row 0
+                    SDL_Rect sandSrc = { TerrainTile_Sand * zoomed_tilesize, 0, zoomed_tilesize, zoomed_tilesize };
+                    SDL_RenderCopy(renderer, sprite[currentZoomlevel], &sandSrc, &drawLocation);
+                    SDL_Rect bloomSrc = { 16 * zoomed_tilesize, 0, zoomed_tilesize, zoomed_tilesize };
+                    SDL_RenderCopy(renderer, customTex, &bloomSrc, &drawLocation);
+                } else {
+                    const auto bloomIndexX = TerrainTile_SpiceBloom % NUM_TERRAIN_TILES_X;
+                    const auto bloomIndexY = TerrainTile_SpiceBloom / NUM_TERRAIN_TILES_X;
+                    SDL_Rect bloomSrc = { bloomIndexX*zoomed_tilesize, bloomIndexY*zoomed_tilesize, zoomed_tilesize, zoomed_tilesize };
+                    SDL_RenderCopy(renderer, sprite[currentZoomlevel], &bloomSrc, &drawLocation);
+                }
             } else {
                 SDL_RenderCopy(renderer, sprite[currentZoomlevel], &source, &drawLocation);
             }

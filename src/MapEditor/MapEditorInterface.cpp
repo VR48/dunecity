@@ -339,7 +339,7 @@ MapEditorInterface::MapEditorInterface(MapEditor* pMapEditor)
 
 
     // setup terrain pen size buttons
-    editorModeTerrainVBox.addWidget(&editorModeTerrain_PenHBox, 40);
+    editorModeTerrainVBox.addWidget(&editorModeTerrain_PenHBox, 20);
 
     editorModeTerrain_Pen1x1.setToggleButton(true);
     editorModeTerrain_Pen1x1.setOnClick(std::bind(&MapEditorInterface::onTerrainPenButton, this, 1));

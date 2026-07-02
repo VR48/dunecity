@@ -551,6 +551,8 @@ typedef enum {
     Anim_Sardaukar,
     Anim_Frigate,
     Anim_Slab4,
+    Anim_PaulEyes,
+    Anim_PaulMouth,
     NUM_ANIMATION
 } Animation_enum;
 
