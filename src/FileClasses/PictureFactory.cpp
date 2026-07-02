@@ -757,7 +757,11 @@ sdl2::surface_ptr PictureFactory::createMentatHouseChoiceQuestion(int House, Pal
             auto pOrdosPart = getSubPicture(mentatHouseChoiceQuestionSurface.get(), 0, 144, 208, 48);
             pQuestionPart2 = mapSurfaceColorRange(pOrdosPart.get(), PALCOLOR_ORDOS, PALCOLOR_NEUTRAL);
         } break;
-        case HOUSE_REBELS:  pQuestionPart2 = getSubPicture(mentatHouseChoiceQuestionSurface.get(),0, 48, 208, 48);   break;
+        case HOUSE_REBELS: {
+            // Use Harkonnen banner slice remapped to rebels palette (grey via Custom_IBM.pal)
+            auto pHarkPart = getSubPicture(mentatHouseChoiceQuestionSurface.get(), 0, 48, 208, 48);
+            pQuestionPart2 = mapSurfaceColorRange(pHarkPart.get(), PALCOLOR_HARKONNEN, PALCOLOR_REBELS);
+        } break;
         default:    break;
     }
 

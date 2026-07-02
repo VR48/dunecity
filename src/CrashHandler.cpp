@@ -276,9 +276,24 @@ static LONG WINAPI VectoredExceptionHandler(PEXCEPTION_POINTERS ExceptionInfo) {
     writeCrashLogRaw(f, "CRASH DETECTED (Windows Exception)\n");
     writeCrashLogRaw(f, "========================================\n");
     
-    char buf[256];
+    char buf[512];
     snprintf(buf, sizeof(buf), "Exception Code: 0x%08X at 0x%p\n", code, ExceptionInfo->ExceptionRecord->ExceptionAddress);
     writeCrashLogRaw(f, buf);
+
+    // For C++ exceptions (0xE06D7363), extract the exception message via std::current_exception
+    if (code == 0xE06D7363) {
+        try {
+            // Re-throw the in-flight C++ exception to get .what()
+            if (auto ep = std::current_exception()) {
+                std::rethrow_exception(ep);
+            }
+        } catch (const std::exception& ex) {
+            snprintf(buf, sizeof(buf), "C++ exception message: %s\n", ex.what());
+            writeCrashLogRaw(f, buf);
+        } catch (...) {
+            writeCrashLogRaw(f, "C++ exception message: (non-std exception)\n");
+        }
+    }
     writeCrashLogRaw(f, "\n");
     
     // Write minidump
