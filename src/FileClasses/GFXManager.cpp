@@ -1568,9 +1568,11 @@ GFXManager::GFXManager() {
                             sdl2::surface_ptr flagCopy{ SDL_ConvertSurface(flagSrc.get(), flagSrc->format, 0) };
                             if (flagCopy && flagCopy->format->palette) {
                                 // Remap dark Harkonnen slot (index 147 = PALCOLOR_HARKONNEN+3)
-                                flagCopy->format->palette->colors[147] = palette[houseToPaletteIndex[h] + 3];
+                                // For Fremen, source colours from vanilla IBM.PAL (ibmPalette) so Custom_IBM.pal rebels grey doesn't bleed in
+                                const Palette& srcPal = (h == HOUSE_FREMEN) ? ibmPalette : palette;
+                                flagCopy->format->palette->colors[147] = srcPal[houseToPaletteIndex[h] + 3];
                                 // Remap highlight slot (index 51) to lighter house tone (+1)
-                                flagCopy->format->palette->colors[51] = palette[houseToPaletteIndex[h] + 1];
+                                flagCopy->format->palette->colors[51] = srcPal[houseToPaletteIndex[h] + 1];
                             }
                             sdl2::surface_ptr flagRGBA{ SDL_ConvertSurfaceFormat(flagCopy.get(), SDL_PIXELFORMAT_RGBA32, 0) };
                             if (flagRGBA) {
@@ -1587,8 +1589,8 @@ GFXManager::GFXManager() {
                                         if (a > 0) {
                                             // Preserve house-remapped pixels (dark=index 147, highlight=index 51)
                                             // by checking if this pixel matches a house palette entry
-                                            const SDL_Color& dark = palette[houseToPaletteIndex[h] + 3];
-                                            const SDL_Color& light = palette[houseToPaletteIndex[h] + 1];
+                                            const SDL_Color& dark = srcPal[houseToPaletteIndex[h] + 3];
+                                            const SDL_Color& light = srcPal[houseToPaletteIndex[h] + 1];
                                             if ((r == dark.r && g == dark.g && b == dark.b) ||
                                                 (r == light.r && g == light.g && b == light.b)) {
                                                 continue; // keep house colours
@@ -1768,8 +1770,10 @@ GFXManager::GFXManager() {
                 const Uint32 dstPole  = SDL_MapRGBA(flagRGBA->format, 30, 30, 30, 255);
 
                 for (int h = 0; h < NUM_HOUSES; h++) {
-                    SDL_Color cLight = palette[houseToPaletteIndex[h] + 0];
-                    SDL_Color cDark  = palette[houseToPaletteIndex[h] + 2];
+                    // For Fremen, source colours from vanilla IBM.PAL so rebels grey doesn't bleed in
+                    const Palette& hPal = (h == HOUSE_FREMEN) ? ibmPalette : palette;
+                    SDL_Color cLight = hPal[houseToPaletteIndex[h] + 0];
+                    SDL_Color cDark  = hPal[houseToPaletteIndex[h] + 2];
                     Uint32 dstLight = SDL_MapRGBA(flagRGBA->format, cLight.r, cLight.g, cLight.b, 255);
                     Uint32 dstDark  = SDL_MapRGBA(flagRGBA->format, cDark.r, cDark.g, cDark.b, 255);
 
@@ -3043,6 +3047,13 @@ SDL_Texture* GFXManager::getZoomedObjPic(unsigned int id, int house, unsigned in
         }
 
         objPic[id][house][z] = mapSurfaceColorRange(objPic[id][HOUSE_HARKONNEN][z].get(), PALCOLOR_HARKONNEN, houseToPaletteIndex[house]);
+
+        // For Fremen: palette[192] has been overridden with rebels grey by Custom_IBM.pal.
+        // Restore vanilla IBM.PAL colours at 192-207 in this surface's embedded palette so
+        // SDL renders Fremen units with their correct vanilla colour, not rebels grey.
+        if (house == HOUSE_FREMEN && objPic[id][house][z] && objPic[id][house][z]->format->palette) {
+            ibmPalette.applyToSurface(objPic[id][house][z].get(), PALCOLOR_FREMEN, PALCOLOR_FREMEN + 15);
+        }
     }
 
     if(objPicTex[id][house][z] == nullptr) {
@@ -3151,6 +3162,10 @@ SDL_Surface* GFXManager::getUIGraphicSurface(unsigned int id, int house) {
         }
 
         uiGraphic[id][house] = mapSurfaceColorRange(uiGraphic[id][HOUSE_HARKONNEN].get(), PALCOLOR_HARKONNEN, houseToPaletteIndex[house]);
+        // Restore vanilla IBM.PAL at 192-207 for Fremen so rebels grey doesn't corrupt Fremen UI graphics
+        if (house == HOUSE_FREMEN && uiGraphic[id][house] && uiGraphic[id][house]->format->palette) {
+            ibmPalette.applyToSurface(uiGraphic[id][house].get(), PALCOLOR_FREMEN, PALCOLOR_FREMEN + 15);
+        }
     }
 
     return uiGraphic[id][house].get();
@@ -3186,6 +3201,10 @@ SDL_Surface* GFXManager::getMapChoicePieceSurface(unsigned int num, int house) {
         }
 
         mapChoicePieces[num][house] = mapSurfaceColorRange(mapChoicePieces[num][HOUSE_HARKONNEN].get(), PALCOLOR_HARKONNEN, houseToPaletteIndex[house]);
+        // Restore vanilla IBM.PAL at 192-207 for Fremen so rebels grey doesn't corrupt Fremen map pieces
+        if (house == HOUSE_FREMEN && mapChoicePieces[num][house] && mapChoicePieces[num][house]->format->palette) {
+            ibmPalette.applyToSurface(mapChoicePieces[num][house].get(), PALCOLOR_FREMEN, PALCOLOR_FREMEN + 15);
+        }
     }
 
     return mapChoicePieces[num][house].get();

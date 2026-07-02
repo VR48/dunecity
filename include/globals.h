@@ -63,7 +63,8 @@ class Bullet;
 EXTERN SDL_Window*          window;                     ///< the window
 EXTERN SDL_Renderer*        renderer;                   ///< the renderer
 EXTERN SDL_Texture*         screenTexture;              ///< the texture
-EXTERN Palette              palette;                    ///< the palette for the screen
+EXTERN Palette              palette;                    ///< the palette for the screen (may include mod overrides)
+EXTERN Palette              ibmPalette;                 ///< vanilla IBM.PAL before any mod overrides (used for Fremen colours)
 EXTERN int                  drawnMouseX;                ///< the current mouse position (x coordinate)
 EXTERN int                  drawnMouseY;                ///< the current mouse position (y coordinate)
 EXTERN int                  currentZoomlevel;           ///< 0 = the smallest zoom level, 1 = medium zoom level, 2 = maximum zoom level

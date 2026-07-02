@@ -1065,6 +1065,7 @@ int main(int argc, char *argv[]) {
                 pTextManager->loadData();
 
                 palette = LoadPalette_RW(pFileManager->openFile("IBM.PAL").get());
+                ibmPalette = palette;  // save vanilla IBM.PAL before any mod overrides
 
                 // Tornie mod: load Custom_IBM.pal to replace palette entries 192-199 with rebels grey
                 if (ModManager::instance().getActiveModName() == "Tornie" && pFileManager->exists("Custom_IBM.pal")) {

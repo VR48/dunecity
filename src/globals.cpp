@@ -32,6 +32,7 @@ SDL_Window*          window = nullptr;
 SDL_Renderer*        renderer = nullptr;
 SDL_Texture*         screenTexture = nullptr;
 Palette              palette;
+Palette              ibmPalette;
 int                  drawnMouseX = 0;
 int                  drawnMouseY = 0;
 int                  currentZoomlevel = 0;
