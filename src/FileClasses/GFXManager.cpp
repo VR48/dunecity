@@ -339,7 +339,7 @@ GFXManager::GFXManager() {
                 static const int houseAnchor[NUM_HOUSES][3] = {
                     {212,  0,  0}, {  0, 80,212}, {  0,180,  0},
                     {212,140,  0}, {120,  0,200}, {200,160,  0}, {128,128,128},
-                    { 96, 96, 96}  // HOUSE_REBELS: dark grey
+                    {212,  0,  0}  // HOUSE_REBELS: red (same as Harkonnen)
                 };
 
                 SDL_Palette* srcPal = raw->format->palette;

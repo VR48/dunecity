@@ -757,10 +757,7 @@ sdl2::surface_ptr PictureFactory::createMentatHouseChoiceQuestion(int House, Pal
             auto pOrdosPart = getSubPicture(mentatHouseChoiceQuestionSurface.get(), 0, 144, 208, 48);
             pQuestionPart2 = mapSurfaceColorRange(pOrdosPart.get(), PALCOLOR_ORDOS, PALCOLOR_NEUTRAL);
         } break;
-        case HOUSE_REBELS: {
-            auto pOrdosPart = getSubPicture(mentatHouseChoiceQuestionSurface.get(), 0, 144, 208, 48);
-            pQuestionPart2 = mapSurfaceColorRange(pOrdosPart.get(), PALCOLOR_ORDOS, PALCOLOR_REBELS);
-        } break;
+        case HOUSE_REBELS:  pQuestionPart2 = getSubPicture(mentatHouseChoiceQuestionSurface.get(),0, 48, 208, 48);   break;
         default:    break;
     }
 
