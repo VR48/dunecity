@@ -475,7 +475,7 @@ GFXManager::GFXManager() {
             objPic[ObjPic_EliteSiegeTankCustom][HOUSE_HARKONNEN][0] = std::move(estRaw);
             // Generate zoom levels 1 and 2 so getZoomedObjPic never throws on
             // a null HOUSE_HARKONNEN[z] entry for this custom sprite.
-            for (int z = 1; z < NUM_ZOOMLEVELS; z++) {
+            for (int z = 1; z < NUM_ZOOMLEVEL; z++) {
                 SDL_Surface* src = objPic[ObjPic_EliteSiegeTankCustom][HOUSE_HARKONNEN][0].get();
                 if (!src) break;
                 auto scaled = Scaler::defaultDoubleSurface(src);
