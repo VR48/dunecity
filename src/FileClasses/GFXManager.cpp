@@ -1564,12 +1564,12 @@ GFXManager::GFXManager() {
                     if (flagSrc && flagSrc->format->BitsPerPixel == 8) {
                         for (int h = 0; h < NUM_HOUSES; h++) {
                             if (!objPic[ObjPic_AdvancedWindTrap][h][0]) continue;
+                            // For Fremen, source colours from vanilla IBM.PAL (ibmPalette) so Custom_IBM.pal rebels grey doesn't bleed in
+                            const Palette& srcPal = (h == HOUSE_FREMEN) ? ibmPalette : palette;
                             // Clone flag surface and substitute palette entries for this house
                             sdl2::surface_ptr flagCopy{ SDL_ConvertSurface(flagSrc.get(), flagSrc->format, 0) };
                             if (flagCopy && flagCopy->format->palette) {
                                 // Remap dark Harkonnen slot (index 147 = PALCOLOR_HARKONNEN+3)
-                                // For Fremen, source colours from vanilla IBM.PAL (ibmPalette) so Custom_IBM.pal rebels grey doesn't bleed in
-                                const Palette& srcPal = (h == HOUSE_FREMEN) ? ibmPalette : palette;
                                 flagCopy->format->palette->colors[147] = srcPal[houseToPaletteIndex[h] + 3];
                                 // Remap highlight slot (index 51) to lighter house tone (+1)
                                 flagCopy->format->palette->colors[51] = srcPal[houseToPaletteIndex[h] + 1];
