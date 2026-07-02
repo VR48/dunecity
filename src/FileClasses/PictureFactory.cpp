@@ -536,6 +536,11 @@ sdl2::surface_ptr PictureFactory::createGameStatsBackground(int House) const {
             pLogo = copySurface(ordosLogo.get());
         } break;
 
+        case HOUSE_NEUTRAL:
+        case HOUSE_REBELS: {
+            pLogo = copySurface(harkonnenLogo.get());
+        } break;
+
         default:
             THROW(std::invalid_argument, "PictureFactory::createGameStatsBackground(): Unknown house %d!", House);
     }
@@ -688,6 +693,11 @@ sdl2::surface_ptr PictureFactory::createMapChoiceScreen(int House) const {
             SDL_BlitSurface(ordosLogo.get(),nullptr,pMapChoiceScreen.get(),&RightLogo);
         } break;
 
+        case HOUSE_REBELS: {
+            SDL_BlitSurface(harkonnenLogo.get(),nullptr,pMapChoiceScreen.get(),&LeftLogo);
+            SDL_BlitSurface(harkonnenLogo.get(),nullptr,pMapChoiceScreen.get(),&RightLogo);
+        } break;
+
         default: {
 
         } break;
@@ -746,6 +756,10 @@ sdl2::surface_ptr PictureFactory::createMentatHouseChoiceQuestion(int House, Pal
             // without requiring a separate Neutral.png asset.
             auto pOrdosPart = getSubPicture(mentatHouseChoiceQuestionSurface.get(), 0, 144, 208, 48);
             pQuestionPart2 = mapSurfaceColorRange(pOrdosPart.get(), PALCOLOR_ORDOS, PALCOLOR_NEUTRAL);
+        } break;
+        case HOUSE_REBELS: {
+            auto pOrdosPart = getSubPicture(mentatHouseChoiceQuestionSurface.get(), 0, 144, 208, 48);
+            pQuestionPart2 = mapSurfaceColorRange(pOrdosPart.get(), PALCOLOR_ORDOS, PALCOLOR_REBELS);
         } break;
         default:    break;
     }

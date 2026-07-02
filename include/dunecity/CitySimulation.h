@@ -13,7 +13,7 @@ namespace DuneCity {
 
 /// Per-house city state — population, demand, economy, civic buildings.
 /// Density maps (pollution, crime, land value) remain global (shared environment).
-static constexpr int kMaxCityHouses = 7;  // matches NUM_HOUSES (includes HOUSE_NEUTRAL)
+static constexpr int kMaxCityHouses = 8;  // matches NUM_HOUSES (includes HOUSE_NEUTRAL + HOUSE_REBELS)
 
 struct HouseCityState {
     int resPop = 0, comPop = 0, indPop = 0;

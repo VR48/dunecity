@@ -40,8 +40,8 @@ static std::string readSourceFile(const std::string& relativePath) {
 TEST_CASE("NeutralHouse: HOUSE_NEUTRAL exists in the house enum",
           "[neutral][enum]") {
     REQUIRE(HOUSE_NEUTRAL == 6);
-    // NUM_HOUSES must include Neutral (0..6 → 7 total)
-    REQUIRE(NUM_HOUSES == 7);
+    // NUM_HOUSES must include Neutral + Rebels (0..7 → 8 total as of v1.0.228)
+    REQUIRE(NUM_HOUSES == 8);
 }
 
 TEST_CASE("NeutralHouse: HOUSE_NEUTRAL is after HOUSE_MERCENARY",

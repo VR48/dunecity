@@ -338,7 +338,8 @@ GFXManager::GFXManager() {
                 // Per-house bright anchor RGB (H=red, A=blue, O=green, F=orange, S=purple, M=gold)
                 static const int houseAnchor[NUM_HOUSES][3] = {
                     {212,  0,  0}, {  0, 80,212}, {  0,180,  0},
-                    {212,140,  0}, {120,  0,200}, {200,160,  0}, {128,128,128}
+                    {212,140,  0}, {120,  0,200}, {200,160,  0}, {128,128,128},
+                    { 96, 96, 96}  // HOUSE_REBELS: dark grey
                 };
 
                 SDL_Palette* srcPal = raw->format->palette;
@@ -2395,6 +2396,8 @@ GFXManager::GFXManager() {
     uiGraphic[UI_GameStatsBackground][HOUSE_FREMEN] = PicFactory->createGameStatsBackground(HOUSE_FREMEN);
     uiGraphic[UI_GameStatsBackground][HOUSE_SARDAUKAR] = PicFactory->createGameStatsBackground(HOUSE_SARDAUKAR);
     uiGraphic[UI_GameStatsBackground][HOUSE_MERCENARY] = PicFactory->createGameStatsBackground(HOUSE_MERCENARY);
+    uiGraphic[UI_GameStatsBackground][HOUSE_NEUTRAL] = PicFactory->createGameStatsBackground(HOUSE_NEUTRAL);
+    uiGraphic[UI_GameStatsBackground][HOUSE_REBELS] = PicFactory->createGameStatsBackground(HOUSE_REBELS);
     uiGraphic[UI_SelectionBox_Zoomlevel0][HOUSE_HARKONNEN] = LoadPNG_RW(pFileManager->openFile("UI_SelectionBox.png").get());
     SDL_SetColorKey(uiGraphic[UI_SelectionBox_Zoomlevel0][HOUSE_HARKONNEN].get(), SDL_TRUE, 0);
     uiGraphic[UI_SelectionBox_Zoomlevel1][HOUSE_HARKONNEN] = Scaler::defaultDoubleTiledSurface(uiGraphic[UI_SelectionBox_Zoomlevel0][HOUSE_HARKONNEN].get(), 1, 1);
@@ -2626,6 +2629,7 @@ GFXManager::GFXManager() {
     uiGraphic[UI_MapChoiceScreen][HOUSE_SARDAUKAR] = PicFactory->createMapChoiceScreen(HOUSE_SARDAUKAR);
     uiGraphic[UI_MapChoiceScreen][HOUSE_MERCENARY] = PicFactory->createMapChoiceScreen(HOUSE_MERCENARY);
     uiGraphic[UI_MapChoiceScreen][HOUSE_NEUTRAL] = PicFactory->createMapChoiceScreen(HOUSE_NEUTRAL);
+    uiGraphic[UI_MapChoiceScreen][HOUSE_REBELS] = PicFactory->createMapChoiceScreen(HOUSE_REBELS);
     uiGraphic[UI_MapChoicePlanet][HOUSE_HARKONNEN] = Scaler::doubleSurfaceNN(LoadCPS_RW(pFileManager->openFile("PLANET.CPS").get()).get());
     SDL_SetColorKey(uiGraphic[UI_MapChoicePlanet][HOUSE_HARKONNEN].get(), SDL_TRUE, 0);
     uiGraphic[UI_MapChoiceMapOnly][HOUSE_HARKONNEN] = Scaler::doubleSurfaceNN(LoadCPS_RW(pFileManager->openFile("DUNEMAP.CPS").get()).get());
