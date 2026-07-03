@@ -194,7 +194,6 @@ typedef enum {
     Picture_Slab1,
     Picture_Slab4,
     Picture_SonicTank,
-    Picture_RebelsSonic,        // Tornie mod: Rebels Palace special-weapon icon (Sonic Tank copy)
     Picture_Special,
     Picture_StarPort,
     Picture_Tank,

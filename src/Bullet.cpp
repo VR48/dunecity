@@ -499,23 +499,6 @@ void Bullet::update()
             // Flame Tank: spawn flame explosions at intervals along path
             if(bulletID == Bullet_Flame && (detonationTimer % 8 == 0)) {
                 currentGame->getExplosionList().push_back(new Explosion(Explosion_Flames, realPos, owner->getHouseID()));
-
-                // Item #14 of Tornie 1.0.242 (clarification): play a flame-impact sound at each
-                // Explosion_Flames spawn, EXCEPT when the impact tile is the Flame Tank's own
-                // tile. The shooter must not hear its own weapon's hit sound on its own position.
-                // The visual Explosion_Flames still spawns in both cases — only the sound is gated.
-                bool atShooterTile = false;
-                ObjectBase* pShooter = currentGame->getObjectManager().getObject(shooterID);
-                if(pShooter != nullptr) {
-                    const Coord shooterTile = pShooter->getLocation();
-                    const Coord impactTile(lround(realX) / TILESIZE, lround(realY) / TILESIZE);
-                    if(impactTile.x == shooterTile.x && impactTile.y == shooterTile.y) {
-                        atShooterTile = true;
-                    }
-                }
-                if(!atShooterTile) {
-                    soundPlayer->playSoundAt(Sound_ExplosionGas, realPos);
-                }
             }
 
             realX += xSpeed;  //keep the bullet moving by its current speeds

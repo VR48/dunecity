@@ -874,13 +874,7 @@ ObjectBase* ObjectBase::createObject(int itemID, House* Owner, bool byScenario) 
         case Unit_AmbientAirplane:          newObject = new AmbientAirplane(Owner); break;
         case Unit_AmbientHelicopter:        newObject = new AmbientHelicopter(Owner); break;
         case Unit_RocketTrike:              newObject = new RocketTrike(Owner); break;
-        case Unit_FlameTank: {
-            // Item #5 of Tornie 1.0.242: Flame Tank is Tornie-mod-exclusive. Outside Tornie, fall
-            // through to a no-op so a stray map/scenario entry cannot spawn it in vanilla/other mods.
-            if (ModManager::instance().getActiveModName() == "Tornie") {
-                newObject = new FlameTank(Owner);
-            }
-        } break;
+        case Unit_FlameTank:               newObject = new FlameTank(Owner); break;
         case Unit_Special: {
             switch(Owner->getHouseID()) {
                 case HOUSE_HARKONNEN:

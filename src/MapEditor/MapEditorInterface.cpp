@@ -1494,15 +1494,12 @@ void MapEditorInterface::changeInterfaceColor(HOUSETYPE newHouse) {
     editorModeStructs_RepairYard.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_RepairYard, newHouse));
     editorModeStructs_Starport.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Starport, newHouse));
     editorModeStructs_Palace.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Palace, newHouse));
-    // Tornie 1.0.242 #20: remove the red stars from the Advanced Powerplant
-    // sidebar button. The Advanced Powerplant is a normal structure (not
-    // "elite" or Tornie-exclusive), so it should not get the red-star overlay
-    // that marks special units like Rocket Trike / Elite Launcher / Elite
-    // Siege Tank. Previously this branch wrapped the icon in makeStarredSymbol
-    // + addTopLeftStar with the house's red color, which produced a confusing
-    // red-star mark on the button. Now the button shows the plain structure
-    // icon, matching the other normal structures (Windtrap, Radar, etc.).
-    editorModeStructs_AdvancedWindTrap.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_AdvancedWindTrap, newHouse));
+    {
+        SDL_Color hc = getHouseSDLColor(newHouse, 3);
+        auto starred = makeStarredSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_AdvancedWindTrap, newHouse), hc);
+        if (starred) addTopLeftStar(starred.get(), hc);
+        editorModeStructs_AdvancedWindTrap.setSymbol(std::move(starred));
+    }
 
     editorModeStructs_ZoneResidential.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_ZoneResidential, newHouse));
     editorModeStructs_ZoneCommercial.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_ZoneCommercial, newHouse));

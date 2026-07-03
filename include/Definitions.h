@@ -30,7 +30,8 @@
 #define DEFAULT_METASERVER  "https://dunelegacy.com/metaserver/metaserver.php"
 
 #define SAVEMAGIC           8675309
-#define SAVEGAMEVERSION     9817  // 9817: Added House::cityCredits (tax income separate from spice quota)
+#define SAVEGAMEVERSION     9818  // 9818: CitySimulation persists all kMaxCityHouses houseState_[] slots (was houseState_[0] only — bug: local-player slot zeroed on reload in any non-Harkonnen campaign)
+// 9817: Added House::cityCredits (tax income separate from spice quota)
 // 9812: Added Structure_AdvancedWindTrap (ID 52), Num_ItemID now 53.
 
 // v1.0.0–v1.0.7 shipped SAVEGAMEVERSION 9810 with Num_ItemID=48.

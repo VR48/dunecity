@@ -395,7 +395,17 @@ void MapEditor::loadMap(const std::string& filepath) {
     lastSaveName = filepath;
 
     // do the actual loading
-    INIMapEditorLoader INIMapEditorLoader(this, loadedINIFile.get());
+    // Defensive: same as Game::init. A malformed map with bad unit/structure
+    // positions or unknown item IDs could throw std::runtime_error from deep
+    // inside INIMapEditorLoader. Without this catch, the throw escapes and
+    // crashes the process. Log and continue with a partially-loaded map.
+    try {
+        INIMapEditorLoader INIMapEditorLoader(this, loadedINIFile.get());
+    } catch(const std::exception& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+            "MapEditor::loadMap(): failed to load map '%s': %s",
+            filepath.c_str(), e.what());
+    }
 
     // update interface
     if(pInterface != nullptr) {

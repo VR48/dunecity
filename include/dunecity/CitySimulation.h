@@ -29,6 +29,17 @@ struct HouseCityState {
     CityBudget budget;
 
     int getTotalPop() const { return resPop + comPop + indPop; }
+
+    /// Self-serializing save/load — added in SAVEGAMEVERSION 9818 so the city sim
+    /// can persist every HouseCityState slot rather than only houseState_[0] (the
+    /// latter caused the R/C/I = 0 / Pop = 0 bug reported on Ordos campaign
+    /// Map 3: the local player's slot was never saved or restored).
+    /// Note: InputStream/OutputStream live in the GLOBAL namespace (see
+    /// include/misc/InputStream.h), so the parameter type is the unqualified
+    /// ::InputStream. C++ name lookup inside namespace DuneCity finds them
+    /// through the global namespace automatically.
+    void save(class OutputStream& stream) const;
+    void load(class InputStream& stream);
 };
 
 class CitySimulation {

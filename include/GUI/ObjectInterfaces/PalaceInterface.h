@@ -117,15 +117,6 @@ protected:
                     picID = Picture_PalaceNeutral;
                 } break;
 
-                case HOUSE_REBELS: {
-                    // Tornie 1.0.242: Rebels Palace special weapon spawns 1-2 Sonic Tanks
-                    // (see Palace::spawnRebelsUnits). Use a dedicated icon slot
-                    // (Tornie-supplied WSA/PNG), fall back to vanilla Picture_SonicTank.
-                    picID = (pGFXManager->getSmallDetailPic(Picture_RebelsSonic) != nullptr)
-                          ? Picture_RebelsSonic
-                          : Picture_SonicTank;
-                } break;
-
                 default: {
                     picID = Picture_Fremen;
                 } break;

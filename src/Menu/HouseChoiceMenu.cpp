@@ -25,6 +25,7 @@
 #include <GUI/dune/GameOptionsWindow.h>
 #include <Menu/HouseChoiceInfoMenu.h>
 #include <SoundPlayer.h>
+#include <cstddef>
 
 
 static const int houseOrder[] = { HOUSE_ATREIDES, HOUSE_ORDOS, HOUSE_HARKONNEN, HOUSE_MERCENARY, HOUSE_FREMEN, HOUSE_SARDAUKAR, HOUSE_NEUTRAL, HOUSE_REBELS };
@@ -207,7 +208,12 @@ void HouseChoiceMenu::onHouseLeft()
 
 void HouseChoiceMenu::onHouseRight()
 {
-    if(currentHouseChoiceScrollPos < 4) {
+    // House-order list has NUM_HOUSES (8) entries: [A,O,H,M,F,S,N,R].
+    // Carousel shows 3 at a time, so the rightmost valid scroll position is
+    // (NUM_HOUSES - 3) so the 3rd button is houseOrder[NUM_HOUSES-1] (Rebels).
+    // Previous bound (< 4) capped at pos 4 and hid Rebels (index 7).
+    constexpr int kMaxScrollPos = (sizeof(houseOrder) / sizeof(houseOrder[0])) - 3;
+    if(currentHouseChoiceScrollPos < kMaxScrollPos) {
         currentHouseChoiceScrollPos++;
         updateHouseChoice();
     }

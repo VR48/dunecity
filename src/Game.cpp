@@ -369,7 +369,20 @@ void Game::initGame(const GameInitSettings& newGameInitSettings) {
                 techLevel = ((gameInitSettings.getMission() + 1)/3) + 1 ;
             }
 
-            INIMapLoader(this, gameInitSettings.getFilename(), gameInitSettings.getFiledata());
+            // Defensive: scenario/INI loading can throw std::runtime_error
+            // for malformed scenario data (e.g. an unplaceable unit position
+            // on a save-game load). Without this guard, an uncaught throw
+            // becomes 0xE06D7363 / heap corruption (0xC0000374) on Windows
+            // and kills the process. Log and continue with an empty map
+            // rather than abort.
+            try {
+                INIMapLoader(this, gameInitSettings.getFilename(), gameInitSettings.getFiledata());
+            } catch(const std::exception& e) {
+                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                    "Game::init: scenario load failed (gameType=%d, mission=%d): %s",
+                    (int)gameInitSettings.getGameType(),
+                    gameInitSettings.getMission(), e.what());
+            }
 
             // Reset city simulation for the new map so lastProcessedDay_ and
             // other per-map state don't carry over from a previous mission.
@@ -3517,7 +3530,14 @@ ObjectBase* Game::loadObject(InputStream& stream, Uint32 objectID)
 
     ObjectBase* newObject = ObjectBase::loadObject(stream, itemID, objectID);
     if(newObject == nullptr) {
-        THROW(std::runtime_error, "Error while loading an object!");
+        // Was: THROW(std::runtime_error, "Error while loading an object!");
+        // Defensive: log and return nullptr instead of throwing. The caller
+        // (ObjectManager::load) now checks for nullptr and skips. Without
+        // this, an uncaught std::runtime_error escapes Game::loadSaveGame and
+        // becomes 0xE06D7363 / heap corruption (0xC0000374) on Windows.
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+            "Game::loadObject(): failed to load objectID=%u itemID=%u (corrupt or unknown object in savegame)",
+            objectID, itemID);
     }
 
     return newObject;

@@ -410,16 +410,10 @@ if(APPLE)
 endif()
 
 # Find miniupnpc for UPnP support
-# Use the upstream FindMiniUPnPC module when available, then fall back to a system search.
 find_package(miniupnpc CONFIG QUIET)
 if(NOT miniupnpc_FOUND)
-    # Search standard system paths in addition to any CMAKE_PREFIX_PATH. The PATHS-only
-    # lookup was missing the system locations on Linux distros where libminiupnpc-dev
-    # installs to /usr/lib/<multiarch>/.
-    find_library(MINIUPNPC_LIBRARY NAMES miniupnpc
-        PATHS ${CMAKE_PREFIX_PATH}/lib /usr/lib /usr/lib/x86_64-linux-gnu /usr/local/lib)
-    find_path(MINIUPNPC_INCLUDE_DIR miniupnpc/miniupnpc.h
-        PATHS ${CMAKE_PREFIX_PATH}/include /usr/include /usr/local/include)
+    find_library(MINIUPNPC_LIBRARY miniupnpc PATHS ${CMAKE_PREFIX_PATH}/lib)
+    find_path(MINIUPNPC_INCLUDE_DIR miniupnpc/miniupnpc.h PATHS ${CMAKE_PREFIX_PATH}/include)
     if(MINIUPNPC_LIBRARY AND MINIUPNPC_INCLUDE_DIR)
         add_library(miniupnpc::miniupnpc UNKNOWN IMPORTED)
         set_target_properties(miniupnpc::miniupnpc PROPERTIES

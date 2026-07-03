@@ -34,6 +34,7 @@
 #include <filesystem>
 
 #include <sand.h>
+#include <stdexcept>
 
 MapChoice::MapChoice(int newHouse, unsigned int lastMission, Uint32 oldAlreadyPlayedRegions) : MenuBase() {
     disableQuiting(true);
@@ -61,8 +62,20 @@ MapChoice::MapChoice(int newHouse, unsigned int lastMission, Uint32 oldAlreadyPl
 
     msgticker.resize(640,30);
 
-    // load all data from ini
-    loadINI();
+    // load all data from ini — guarded so a malformed REGION*.INI or unknown
+    // house key logs and degrades gracefully instead of throwing std::runtime_error
+    // out of the constructor (which becomes an uncaught 0xE06D7363 crash on Windows).
+    try {
+        loadINI();
+    } catch(const std::exception& e) {
+        SDL_Log("MapChoice: failed to load campaign data for house %d: %s", house, e.what());
+        // zero out group[] so the menu can still render (no selectable regions)
+        for(int g = 0; g <= (int)lastScenario && g < (int)(sizeof(group)/sizeof(group[0])); g++) {
+            for(unsigned int h = 0; h < group[g].newRegion.size(); h++) {
+                group[g].newRegion[h].clear();
+            }
+        }
+    }
 
     int numSelectableRegions = 0;
     int numRegions = 0;
@@ -390,35 +403,7 @@ void MapChoice::loadINI() {
         }
     }
     if (!pRegionINI) {
-        // Items #11, #12, #13 of Tornie 1.0.242: per-house campaign-crash policy.
-        //   #11 Harkonnen (REGIONH.INI): must crash when Tornie is active
-        //      (the mod is responsible for providing it). Outside Tornie the
-        //      campaign is simply unavailable — do not throw, return early
-        //      with a sentinel so the UI shows no region map instead of
-        //      aborting the game.
-        //   #12 Fremen (REGIONF.INI): same policy as Harkonnen.
-        //   #13 Neutral (REGIONN.INI): always crash if the file is missing
-        //      or unreadable, regardless of which mod is active. The Neutral
-        //      campaign is core to the mod and any failure here is a real bug.
-        const bool isHarkonnen = (house == HOUSE_HARKONNEN) || (house == HOUSE_SARDAUKAR);
-        const bool isFremen    = (house == HOUSE_FREMEN);
-        const bool isNeutral   = (house == HOUSE_NEUTRAL);
-        const bool isTornieActive = (ModManager::instance().getActiveModName() == "Tornie");
-
-        const bool shouldCrash = isNeutral
-                              || (isTornieActive && (isHarkonnen || isFremen));
-
-        if(shouldCrash) {
-            // Re-throw: surface the missing file as a hard failure.
-            pRegionINI = std::make_unique<INIFile>(pFileManager->openFile(filename).get());
-        } else {
-            // Harkonnen or Fremen outside the Tornie mod: campaign is unavailable.
-            // Skip the rest of loadINI — callers that touch group[] / piecePosition[]
-            // will see zeroed state, which is the correct "no campaign" presentation.
-            SDL_Log("MapChoice: %s not found and Tornie mod is inactive — campaign unavailable for this house",
-                    filename.c_str());
-            return;
-        }
+        pRegionINI = std::make_unique<INIFile>(pFileManager->openFile(filename).get());
     }
     INIFile& RegionINI = *pRegionINI;
 
@@ -444,7 +429,7 @@ void MapChoice::loadINI() {
         piecePosition[i].y *= 2;
     }
 
-    for(int i=1; i<=9; i++) {
+    for(int i=1; i<=8; i++) {
         std::string strSection = "GROUP" + std::to_string(i);
 
         // read new regions

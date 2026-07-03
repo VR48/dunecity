@@ -177,7 +177,7 @@ static const Coord objPicTiles[] {
     { 4, 1 },   // ObjPic_Airport (4 frame slots, all identical; 3x3 footprint)
     { 1, 1 },   // ObjPic_Hospital (single cell, 2x2 footprint, auto-placed on residential)
     { 1, 1 },   // ObjPic_Church   (single cell, 2x2 footprint, auto-placed on residential)
-    { NUM_WINDTRAP_ANIMATIONS_PER_ROW, (2+NUM_WINDTRAP_ANIMATIONS+NUM_WINDTRAP_ANIMATIONS_PER_ROW-1)/NUM_WINDTRAP_ANIMATIONS_PER_ROW },   // ObjPic_AdvancedWindTrap (windtrap-style animation atlas)
+    { 1, 1 },   // ObjPic_AdvancedWindTrap (Tornie super power plant, 3x3 footprint, single static frame — the previous NUM_WINDTRAP_ANIMATIONS_PER_ROW layout caused the engine's animation cycle to read past the real atlas into grey out-of-bounds cells and to render the editor palette icon as the vanilla Windtrap animation's first frame)
     { 2, 1 },   // ObjPic_CornerFlag (2 animation frames from Tornie_CornerFlagNew.png; 7x7 each)
     { 8, 1 },   // ObjPic_FlameTank (8-dir palette-indexed strip from Tornie.PAK)
     { 8, 1 },   // ObjPic_DeviatorCustom (8-dir palette-indexed strip from Tornie.PAK)
@@ -327,10 +327,7 @@ GFXManager::GFXManager() {
     // DuneCity: Flame Tank (Tornie mod) — palette-indexed 8-frame strip from Tornie.PAK.
     // House tinting uses luminance-based remap: each red palette index is remapped to
     // the house anchor colour scaled by relative luminance.
-    // Item #5 of Tornie 1.0.242: Flame Tank is Tornie-mod-exclusive — skip the loader
-    // outside Tornie even if a stray FlameTank.png happens to exist in data/.
-    if(ModManager::instance().getActiveModName() == "Tornie"
-       && pFileManager->exists("FlameTank.png")) {
+    if(pFileManager->exists("FlameTank.png")) {
         auto ftRaw = LoadPNG_RW(pFileManager->openFile("FlameTank.png").get());
         if(ftRaw) {
             SDL_Surface* raw = ftRaw.get();
@@ -399,26 +396,27 @@ GFXManager::GFXManager() {
                     // (DOWN=0, RIGHTUP=1, RIGHT=2, RIGHTDOWN=3, UP=4, LEFTDOWN=5, LEFT=6, LEFTUP=7)
                     // → Dune Legacy convention
                     // (RIGHT=0, RIGHTUP=1, UP=2, LEFTUP=3, LEFT=4, LEFTDOWN=5, DOWN=6, RIGHTDOWN=7)
-                    // Item #17 of Tornie 1.0.242: source sheet has a 5px transparent gap between
-                    // each frame. The gap pixels are palette-indexed (treated as black → transparent
-                    // by the prior pass) so they render invisibly. We must use a stride = frameW + gap
-                    // to read the source correctly, while the destination stays packed (no gap in the
-                    // cached sprite that the rest of the engine uses).
                     {
                         static const int d2toDL[] = {2, 1, 4, 7, 6, 5, 0, 3};
                         SDL_Surface* src = objPic[ObjPic_FlameTank][h][0].get();
                         if (src) {
-                            constexpr int kFrameW = 16;    // per-frame pixel width
-                            constexpr int kGap    = 5;     // transparent gap between frames
-                            constexpr int kStride = kFrameW + kGap;  // 21
-                            const int frameH = src->h;
-                            sdl2::surface_ptr reordered{ SDL_CreateRGBSurfaceWithFormat(0,
-                                kFrameW * 8, frameH, 32, SDL_PIXELFORMAT_RGBA32) };
+                            int frameW = src->w / 8;
+                            // Force frameH to D2_TILESIZE (16) regardless of the
+                            // source PNG height. FlameTank.png has historically
+                            // been exported as 128x20 (16-pixel sprite + 4 trailing
+                            // rows of background artefacts), which produced frames
+                            // of 16x20 → visible "blur/transparency" at the bottom
+                            // of every Flame Tank and a 4-pixel-tall band of garbage
+                            // colours above the tile. Clamping to 16 keeps the
+                            // engine's tile math intact and is robust against
+                            // future re-exports at any height.
+                            int frameH = D2_TILESIZE;
+                            sdl2::surface_ptr reordered{ SDL_CreateRGBSurfaceWithFormat(0, src->w, frameH, 32, SDL_PIXELFORMAT_RGBA32) };
                             if (reordered) {
                                 SDL_SetSurfaceBlendMode(src, SDL_BLENDMODE_NONE);
                                 for (int i = 0; i < 8; i++) {
-                                    SDL_Rect srcRect{d2toDL[i] * kStride, 0, kFrameW, frameH};
-                                    SDL_Rect dstRect{i * kFrameW, 0, kFrameW, frameH};
+                                    SDL_Rect srcRect{d2toDL[i] * frameW, 0, frameW, frameH};
+                                    SDL_Rect dstRect{i * frameW, 0, frameW, frameH};
                                     SDL_BlitSurface(src, &srcRect, reordered.get(), &dstRect);
                                 }
                                 objPic[ObjPic_FlameTank][h][0] = std::move(reordered);
@@ -454,31 +452,6 @@ GFXManager::GFXManager() {
         auto devRaw = LoadPNG_RW(pFileManager->openFile("Tornie_Deviator.png").get());
         if(devRaw && devRaw->format->BitsPerPixel == 8) {
             benePalette.applyToSurface(devRaw.get());
-
-            // DuneCity Tornie 1.0.242: light-green tint for the Deviator body.
-            // When Tornie mod is active (the gate above), tint all non-red palette
-            // indices to light green (170, 220, 110), preserving luminance via
-            // the standard 0.299R + 0.587G + 0.114B formula. The red zone
-            // (indices 144-159) is left untouched so getZoomedObjPic's per-house
-            // mapSurfaceColorRange still remaps it to each house's color
-            // (preserves the owner's color). Net effect: every house's Deviator
-            // has a light-green body and their own per-house red highlights.
-            // Indices 0-2 (transparent/special) are skipped.
-            if(devRaw->format->palette) {
-                SDL_Palette* pal = devRaw->format->palette;
-                const float gr = 170.0f, gg = 220.0f, gb = 110.0f;
-                for(int i = 0; i < pal->ncolors; i++) {
-                    if(i >= 144 && i < 160) continue;  // red zone (per-house)
-                    if(i < 3) continue;                  // transparent/special
-                    SDL_Color& c = pal->colors[i];
-                    float lum = c.r*0.299f + c.g*0.587f + c.b*0.114f;
-                    float scale = lum / 255.0f;
-                    c.r = (Uint8)std::min(255, (int)(gr * scale));
-                    c.g = (Uint8)std::min(255, (int)(gg * scale));
-                    c.b = (Uint8)std::min(255, (int)(gb * scale));
-                }
-            }
-
             objPic[ObjPic_DeviatorCustom][HOUSE_HARKONNEN][0] = std::move(devRaw);
             for(int z = 1; z < NUM_ZOOMLEVEL; z++) {
                 SDL_Surface* src0 = objPic[ObjPic_DeviatorCustom][HOUSE_HARKONNEN][0].get();
@@ -527,49 +500,6 @@ GFXManager::GFXManager() {
         } else if(estRaw) {
             SDL_Log("GFXManager WARNING: Tornie_EliteSiegeTank.png is not 8-bit palette-indexed (%d bpp), skipped",
                     estRaw->format->BitsPerPixel);
-        }
-    } else if(objPic[ObjPic_Siegetank_Base][HOUSE_HARKONNEN][0]) {
-        // DuneCity Tornie 1.0.242 #18: Procedural gold Elite Siege Tank.
-        // When no Tornie_EliteSiegeTank.png is provided, derive a gold-tinted
-        // base from the vanilla Siege Tank. Non-red palette indices are remapped
-        // to gold shades (preserving luminance); the red zone (indices 144-159)
-        // is left untouched so getZoomedObjPic's per-house mapSurfaceColorRange
-        // can still remap it to each house's color range (blue for Atreides,
-        // green for Ordos, etc.). The red zone is the "siege tank zone" the
-        // spec wants tinted by owner; the gold is the new "elite" tint.
-        SDL_Surface* src = objPic[ObjPic_Siegetank_Base][HOUSE_HARKONNEN][0].get();
-        sdl2::surface_ptr copy{SDL_ConvertSurface(src, src->format, 0)};
-        if(copy && copy->format->palette) {
-            SDL_Palette* pal = copy->format->palette;
-            // Gold anchor RGB (matches Mercenary houseAnchor from the Flame Tank loader)
-            const float gr = 200.0f, gg = 160.0f, gb = 0.0f;
-            for(int i = 0; i < pal->ncolors; i++) {
-                // Skip the red zone (144-159) — these get per-house remapped later.
-                if(i >= 144 && i < 160) continue;
-                // Skip transparent/special indices (typically 0, 1, 2).
-                if(i < 3) continue;
-                SDL_Color& c = pal->colors[i];
-                // Preserve luminance: scale gold anchor by original brightness.
-                float lum = c.r*0.299f + c.g*0.587f + c.b*0.114f;
-                float scale = lum / 255.0f;
-                c.r = (Uint8)std::min(255, (int)(gr * scale));
-                c.g = (Uint8)std::min(255, (int)(gg * scale));
-                c.b = (Uint8)std::min(255, (int)(gb * scale));
-            }
-            objPic[ObjPic_EliteSiegeTankCustom][HOUSE_HARKONNEN][0] = std::move(copy);
-            // Generate zoom levels 1 and 2 (same pattern as the PNG path above)
-            for(int z = 1; z < NUM_ZOOMLEVEL; z++) {
-                SDL_Surface* zsrc = objPic[ObjPic_EliteSiegeTankCustom][HOUSE_HARKONNEN][0].get();
-                if(!zsrc) break;
-                auto zscaled = Scaler::defaultDoubleSurface(zsrc);
-                if(z == 1) {
-                    objPic[ObjPic_EliteSiegeTankCustom][HOUSE_HARKONNEN][1] = std::move(zscaled);
-                } else {
-                    SDL_Surface* zsrc1 = objPic[ObjPic_EliteSiegeTankCustom][HOUSE_HARKONNEN][1].get();
-                    if(zsrc1) objPic[ObjPic_EliteSiegeTankCustom][HOUSE_HARKONNEN][2] = Scaler::defaultDoubleSurface(zsrc1);
-                }
-            }
-            SDL_Log("GFXManager: Built procedural gold Elite Siege Tank from vanilla siege tank (all zoom levels)");
         }
     }
 
@@ -1594,25 +1524,14 @@ GFXManager::GFXManager() {
 
             const int frameW = 3 * D2_TILESIZE;
             const int frameH = 3 * D2_TILESIZE;
-            // Tornie 1.0.242 #7: remove the "grey frames" from the running
-            // animation. The advanced wind trap is a static structure and
-            // should NOT animate. Previously the atlas only contained 3
-            // identical frames in a single row, so when the engine's
-            // curAnimFrame cycled through 0..67 (2 construction + 66 running
-            // = NUM_WINDTRAP_ANIMATIONS_PER_ROW rows = 7 rows × 10 cols),
-            // frames 3..67 read out-of-bounds and displayed as grey/transparent
-            // — the "grey frames anim" the spec wants removed.
-            //
-            // Fix: build a full 7-row × 10-col atlas (70 cells, 68 used) with
-            // the same static sprite in every cell, so the engine's frame
-            // indices all map to valid data and the building appears static.
-            const int numFramesX = NUM_WINDTRAP_ANIMATIONS_PER_ROW;        // 10
-            const int numFramesY = (2 + NUM_WINDTRAP_ANIMATIONS
-                                  + NUM_WINDTRAP_ANIMATIONS_PER_ROW - 1)
-                                 / NUM_WINDTRAP_ANIMATIONS_PER_ROW;       // 7
-            const int numFrames = numFramesX * numFramesY;
-            const int atlasW = numFramesX * frameW;
-            const int atlasH = numFramesY * frameH;
+            // Single static frame. Previous code built a 3-frame atlas
+            // (144x48) with 3 identical blits of a 48x48 source. The engine's
+            // animation cycle (curAnimFrame 0..2) then read past the real
+            // atlas into grey out-of-bounds cells. Now 1 frame × 1 row —
+            // matches the {1, 1} atlas declaration on the line above.
+            const int numFrames = 1;
+            const int atlasW = numFrames * frameW;
+            const int atlasH = frameH;
             sdl2::surface_ptr atlas{ SDL_CreateRGBSurface(0, atlasW, atlasH,
                 SCREEN_BPP, RMASK, GMASK, BMASK, AMASK) };
             if (atlas) {
@@ -1649,9 +1568,7 @@ GFXManager::GFXManager() {
                 // advanced wind trap occupies its entire 3×3 gameplay footprint.
                 SDL_SetSurfaceBlendMode(superSrc.get(), SDL_BLENDMODE_NONE);
                 for (int f = 0; f < numFrames; ++f) {
-                    int col = f % numFramesX;
-                    int row = f / numFramesX;
-                    SDL_Rect frameDst = { col * frameW, row * frameH, frameW, frameH };
+                    SDL_Rect frameDst = { f * frameW, 0, frameW, frameH };
                     SDL_BlitScaled(superSrc.get(), nullptr, atlas.get(), &frameDst);
                 }
 
@@ -1662,10 +1579,57 @@ GFXManager::GFXManager() {
                 for (int h = 1; h < NUM_HOUSES; h++) {
                     for (int z = 0; z < NUM_ZOOMLEVEL; z++) {
                         if (objPic[ObjPic_AdvancedWindTrap][HOUSE_HARKONNEN][z]) {
-                            objPic[ObjPic_AdvancedWindTrap][h][z] = sdl2::surface_ptr{
-                                SDL_ConvertSurface(objPic[ObjPic_AdvancedWindTrap][HOUSE_HARKONNEN][z].get(),
-                                                   objPic[ObjPic_AdvancedWindTrap][HOUSE_HARKONNEN][z]->format, 0)
-                            };
+                            // Clone the Harkonnen sprite, then modulate RGB by
+                            // this house's tint colour. The previous code did a
+                            // bare SDL_ConvertSurface copy which left every house
+                            // showing the Harkonnen grey/red palette — no
+                            // per-house owner flag in the editor palette or in
+                            // the in-world sprite. Per-house anchor RGB matches
+                            // the Flame Tank loader (h=0 red, h=1 blue, h=2
+                            // green, h=3 orange, h=4 purple, h=5 gold, h=6 grey,
+                            // h=7 dark grey). The factor scales the source
+                            // channels toward the house colour while preserving
+                            // alpha and shading contrast.
+                            SDL_Surface* src0 = objPic[ObjPic_AdvancedWindTrap][HOUSE_HARKONNEN][z].get();
+                            sdl2::surface_ptr tinted{ SDL_CreateRGBSurface(0, src0->w, src0->h, 32,
+                                src0->format->Rmask, src0->format->Gmask,
+                                src0->format->Bmask, src0->format->Amask) };
+                            if (tinted) {
+                                static const int houseAnchor[NUM_HOUSES][3] = {
+                                    {255,  60,  60}, { 80, 120,255}, { 60,220, 60},
+                                    {255, 180,  40}, {180, 80, 220}, {240,200,  60}, {160,160,160},
+                                    {110,110,110}  // HOUSE_REBELS: dark grey
+                                };
+                                const int hr = houseAnchor[h][0];
+                                const int hg = houseAnchor[h][1];
+                                const int hb = houseAnchor[h][2];
+                                // Blend factor 0.55: 55% house colour + 45% original.
+                                // Keeps shading contrast readable while tinting
+                                // recognisably. Same idea as the Flame Tank
+                                // luminance-tier remap but for RGBA sprites.
+                                constexpr int blendNumer = 55;
+                                constexpr int blendDenom = 100;
+                                SDL_LockSurface(src0);
+                                SDL_LockSurface(tinted.get());
+                                const Uint32* sp = static_cast<const Uint32*>(src0->pixels);
+                                Uint32* dp = static_cast<Uint32*>(tinted->pixels);
+                                const int npix = src0->w * src0->h;
+                                for (int p = 0; p < npix; ++p) {
+                                    Uint8 r, g, b, a;
+                                    SDL_GetRGBA(sp[p], src0->format, &r, &g, &b, &a);
+                                    if (a == 0) {
+                                        dp[p] = sp[p];
+                                        continue;
+                                    }
+                                    Uint8 nr = static_cast<Uint8>((r * (blendDenom - blendNumer) + hr * blendNumer) / blendDenom);
+                                    Uint8 ng = static_cast<Uint8>((g * (blendDenom - blendNumer) + hg * blendNumer) / blendDenom);
+                                    Uint8 nb = static_cast<Uint8>((b * (blendDenom - blendNumer) + hb * blendNumer) / blendDenom);
+                                    dp[p] = SDL_MapRGBA(tinted->format, nr, ng, nb, a);
+                                }
+                                SDL_UnlockSurface(tinted.get());
+                                SDL_UnlockSurface(src0);
+                                objPic[ObjPic_AdvancedWindTrap][h][z] = std::move(tinted);
+                            }
                         }
                     }
                 }
@@ -1832,51 +1796,6 @@ GFXManager::GFXManager() {
     } // end city-sprite loading scope (binDir, srcDirEnv, scaleRGBASurface)
 
     // ----- DuneCity corner flag sprite -----
-    // Tornie 1.0.242 #19: 2-frame construction anim sprite for the Advanced
-    // Windtrap corner flag. Tornie_AdvancedWindtrap_gfx_two_frames.png is a
-    // 48x96 palette-indexed PNG with 2 frames stacked vertically (the "2-frame
-    // construction anim" per spec). Sand-yellow background, blue/red lollipop
-    // smoke markers + dome. This file takes precedence over the single-frame
-    // Tornie_AdvancedWindtrap_gfx.png below.
-    //
-    // If the file is present, it's used as ObjPic_CornerFlag for the
-    // AdvancedWindTrap blitToScreen overlay (replaces the 1-frame flag from
-    // Tornie_AdvancedWindtrap_gfx.png).
-    {
-        bool loadedTwoFrameFlag = false;
-        if (pFileManager->exists("Tornie_AdvancedWindtrap_gfx_two_frames.png")) {
-            auto flagSrc = LoadPNG_RW(pFileManager->openFile("Tornie_AdvancedWindtrap_gfx_two_frames.png").get());
-            if (flagSrc && flagSrc->format->BitsPerPixel == 8 && flagSrc->format->palette) {
-                const int frameSize = flagSrc->w;  // 48
-                const int numFrames = (flagSrc->h >= frameSize * 2) ? 2 : 1;
-                benePalette.applyToSurface(flagSrc.get());
-
-                // Rearrange vertically-stacked frames into a horizontal strip
-                sdl2::surface_ptr strip{ SDL_CreateRGBSurface(0, numFrames * frameSize, frameSize,
-                    8, 0, 0, 0, 0) };
-                if (strip) {
-                    SDL_SetPaletteColors(strip->format->palette, flagSrc->format->palette->colors, 0, 256);
-                    for (int f = 0; f < numFrames; f++) {
-                        SDL_Rect srcRect = { 0, f * frameSize, frameSize, frameSize };
-                        SDL_Rect dstRect = { f * frameSize, 0, frameSize, frameSize };
-                        SDL_SetSurfaceBlendMode(flagSrc.get(), SDL_BLENDMODE_NONE);
-                        SDL_BlitSurface(flagSrc.get(), &srcRect, strip.get(), &dstRect);
-                    }
-                    objPic[ObjPic_CornerFlag][HOUSE_HARKONNEN][0] = std::move(strip);
-                    loadedTwoFrameFlag = true;
-                    SDL_Log("GFXManager: Loaded Tornie_AdvancedWindtrap_gfx_two_frames.png as CornerFlag (%dx%d, %d frames)",
-                            frameSize, frameSize, numFrames);
-                }
-            } else if (flagSrc) {
-                SDL_Log("GFXManager WARNING: Tornie_AdvancedWindtrap_gfx_two_frames.png is not 8-bit palette-indexed (%d bpp), skipped",
-                        flagSrc->format->BitsPerPixel);
-            }
-        }
-        // If 2-frame override wasn't loaded, fall through to the legacy single-frame
-        // Tornie_AdvancedWindtrap_gfx.png loader below.
-        (void)loadedTwoFrameFlag;
-    }
-
     // Tornie_AdvancedWindtrap_gfx.png: 48×96 (or 48×48 single-frame), 8-bit
     // palette-indexed.  2 frames stacked vertically, each 48×48.  Loaded into
     // HOUSE_HARKONNEN only; getZoomedObjPic remaps palette indices 144-150 for
@@ -2223,33 +2142,6 @@ GFXManager::GFXManager() {
     smallDetailPicTex[Picture_Slab1] = extractSmallDetailPic("SLAB.WSA");
     smallDetailPicTex[Picture_Slab4] = extractSmallDetailPic("4SLAB.WSA");
     smallDetailPicTex[Picture_SonicTank] = extractSmallDetailPic("STANK.WSA");
-
-    // Rebels Palace special-weapon icon (Sonic Tank copy from Tornie.PAK).
-    // Resolution order: 1) RebelsSonicTankIcon.png (PNG override, recommended),
-    //                    2) RebelsSonic.WSA (Tornie-side WSA).
-    // If neither exists the slot stays empty and the Palace UI falls back to
-    // Picture_SonicTank at the use site (PalaceInterface.cpp) — sharing a
-    // texture_ptr is unsafe since the smart pointer takes unique ownership.
-    // Item: Palace ability for the Rebels house. The user can drop a Sonic Tank
-    // WSA (or PNG) named RebelsSonicTankIcon.png / RebelsSonic.WSA into
-    // mods/Tornie/ (Tornie.PAK) for a custom icon.
-    if(pFileManager->exists("RebelsSonicTankIcon.png")) {
-        auto rsSurf = LoadPNG_RW(pFileManager->openFile("RebelsSonicTankIcon.png").get());
-        if(rsSurf) {
-            if(rsSurf->format->palette) { palette.applyToSurface(rsSurf.get()); }
-            auto tex = convertSurfaceToTexture(rsSurf.get());
-            if(tex) {
-                SDL_SetTextureBlendMode(tex.get(), SDL_BLENDMODE_BLEND);
-                smallDetailPicTex[Picture_RebelsSonic] = std::move(tex);
-            }
-        }
-    }
-    if(!smallDetailPicTex[Picture_RebelsSonic] && pFileManager->exists("RebelsSonic.WSA")) {
-        smallDetailPicTex[Picture_RebelsSonic] = extractSmallDetailPic("RebelsSonic.WSA");
-    }
-    if(!smallDetailPicTex[Picture_RebelsSonic]) {
-        SDL_Log("GFXManager: no RebelsSonicTankIcon.png / RebelsSonic.WSA — Palace UI will fall back to Picture_SonicTank");
-    }
     smallDetailPicTex[Picture_Special]  = nullptr;
     smallDetailPicTex[Picture_StarPort] = extractSmallDetailPic("STARPORT.WSA");
     smallDetailPicTex[Picture_Tank] = extractSmallDetailPic("LTANK.WSA");
@@ -2441,13 +2333,7 @@ GFXManager::GFXManager() {
         SDL_Log("RocketTrikeIconMask.png found — mask companion for RocketTrikeIcon is available");
     }
 
-    // Elite Siege Tank: prefer EliteSiegeTankIcon.png (sidebar slot). Fall back to
-    // EliteSiegeTank.WSA (Tornie.PAK). If neither is present, the sidebar slot
-    // stays empty — do NOT borrow HTANK.WSA from the vanilla siege tank, since
-    // Item #8 of Tornie 1.0.242 wants the Elite Siege Tank's icon to be visually
-    // distinct from the regular Siege Tank. (Item note: the prior implementation
-    // fell back to HTANK.WSA when EliteSiegeTankIcon.png was missing, which
-    // silently reused the regular siege-tank portrait. That's now removed.)
+    // Elite Siege Tank: prefer EliteSiegeTankIcon.png (sidebar slot), fall back to SiegeTank portrait.
     if (pFileManager->exists("EliteSiegeTankIcon.png")) {
         auto iconSurf = LoadPNG_RW(pFileManager->openFile("EliteSiegeTankIcon.png").get());
         if (iconSurf) {
@@ -2458,19 +2344,14 @@ GFXManager::GFXManager() {
             }
         }
     }
-    if (!smallDetailPicTex[Picture_EliteSiegeTank] && pFileManager->exists("EliteSiegeTank.WSA")) {
-        // Try Tornie.PAK custom WSA. If this also fails, leave the slot empty
-        // (no vanilla HTANK.WSA fallback per the spec).
-        smallDetailPicTex[Picture_EliteSiegeTank] = extractSmallDetailPic("EliteSiegeTank.WSA");
-    }
     if (!smallDetailPicTex[Picture_EliteSiegeTank]) {
-        SDL_Log("GFXManager WARNING: no Elite Siege Tank icon found (need EliteSiegeTankIcon.png or EliteSiegeTank.WSA) — sidebar slot will be empty");
+        // Try Tornie.PAK custom WSA first, fall back to Siege Tank WSA
+        const char* estWsa = pFileManager->exists("EliteSiegeTank.WSA") ? "EliteSiegeTank.WSA" : "HTANK.WSA";
+        smallDetailPicTex[Picture_EliteSiegeTank] = extractSmallDetailPic(estWsa);
     }
 
     // Flame Tank: prefer FlameTankIcon.png (sidebar slot), fall back to Sonic Tank portrait.
-    // Item #5 of Tornie 1.0.242: Flame Tank is Tornie-mod-exclusive.
-    if (ModManager::instance().getActiveModName() == "Tornie"
-        && pFileManager->exists("FlameTankIcon.png")) {
+    if (pFileManager->exists("FlameTankIcon.png")) {
         auto iconSurf = LoadPNG_RW(pFileManager->openFile("FlameTankIcon.png").get());
         if (iconSurf) {
             if (iconSurf->format->palette) { palette.applyToSurface(iconSurf.get()); }
@@ -2689,25 +2570,12 @@ GFXManager::GFXManager() {
 
     uiGraphic[UI_MentatBackground][HOUSE_HARKONNEN] = Scaler::defaultDoubleSurface(LoadCPS_RW(pFileManager->openFile("MENTATH.CPS").get()).get());
     uiGraphic[UI_MentatBackground][HOUSE_ATREIDES] = Scaler::defaultDoubleSurface(LoadCPS_RW(pFileManager->openFile("MENTATA.CPS").get()).get());
-    // Paul Atreides mentat background override (Tornie mod only)
-    // Items #1 + #2 of Tornie 1.0.242: when Tornie is inactive, the Atreides mentat
-    // must show the vanilla Cyril background (MENTATA.CPS) — not Paul's portrait.
-    if (ModManager::instance().getActiveModName() == "Tornie"
-        && pFileManager->exists("PaulAtreidesMentat.png")) {
+    // Paul Atreides mentat background override (Tornie mod)
+    if (pFileManager->exists("PaulAtreidesMentat.png")) {
         auto paulBg = LoadPNG_RW(pFileManager->openFile("PaulAtreidesMentat.png").get());
         if (paulBg) {
             SDL_Log("GFX INIT: Paul Atreides mentat background loaded (%dx%d)", paulBg->w, paulBg->h);
             uiGraphic[UI_MentatBackground][HOUSE_ATREIDES] = std::move(paulBg);
-        }
-    }
-
-    // Fremen mentat background override (Tornie mod only)
-    if (ModManager::instance().getActiveModName() == "Tornie"
-        && pFileManager->exists("FremenMentat.png")) {
-        auto fremenBg = LoadPNG_RW(pFileManager->openFile("FremenMentat.png").get());
-        if (fremenBg) {
-            SDL_Log("GFX INIT: Fremen mentat background loaded (%dx%d)", fremenBg->w, fremenBg->h);
-            uiGraphic[UI_MentatBackground][HOUSE_FREMEN] = std::move(fremenBg);
         }
     }
     uiGraphic[UI_MentatBackground][HOUSE_ORDOS] = Scaler::defaultDoubleSurface(LoadCPS_RW(pFileManager->openFile("MENTATO.CPS").get()).get());
@@ -3029,21 +2897,14 @@ GFXManager::GFXManager() {
 
     // Tornie: red/green spice field + bloom editor icons from custom terrain strips.
     // Spice field = col 0, row 0 (thin spice); bloom icons use vanilla SpiceBloom.
-    // The vanilla terrain icons (Sand, Dunes, Spice, Rock, etc.) all use
-    // Scaler::defaultDoubleSurface(icon->getPicture(N)) which doubles a 16x16
-    // tile to 32x32 for the button. The Tornie red/green icons must do the
-    // same so the buttons are the same size as the other terrain buttons
-    // (matching the spec: "the 3 kind of spices need to have their button
-    // like others"). getSubFrame returns the 16x16 frame at col 0, row 0 of
-    // the 17x2 strip; defaultDoubleSurface scales it to 32x32.
     for (int h = 0; h < (int)NUM_HOUSES; h++) {
         if (objPic[ObjPic_TerrainRedSpice][h][0] != nullptr) {
-            uiGraphic[UI_MapEditor_RedSpice][h] = Scaler::defaultDoubleSurface(
-                getSubFrame(objPic[ObjPic_TerrainRedSpice][h][0].get(), 0, 0, 17, 2).get());
+            uiGraphic[UI_MapEditor_RedSpice][h] = getSubFrame(
+                objPic[ObjPic_TerrainRedSpice][h][0].get(), 0, 0, 17, 2);
         }
         if (objPic[ObjPic_TerrainGreenSpice][h][0] != nullptr) {
-            uiGraphic[UI_MapEditor_GreenSpice][h] = Scaler::defaultDoubleSurface(
-                getSubFrame(objPic[ObjPic_TerrainGreenSpice][h][0].get(), 0, 0, 17, 2).get());
+            uiGraphic[UI_MapEditor_GreenSpice][h] = getSubFrame(
+                objPic[ObjPic_TerrainGreenSpice][h][0].get(), 0, 0, 17, 2);
         }
     }
 
@@ -3156,9 +3017,8 @@ GFXManager::GFXManager() {
     animation[Anim_AtreidesBook]->setNumLoops(1);
     animation[Anim_AtreidesBook]->setFrameRate(0.2);
 
-    // Paul Atreides custom mentat animations (Tornie mod only) — 5 frames, matching vanilla mentat eye/mouth count.
-    if (ModManager::instance().getActiveModName() == "Tornie"
-        && pFileManager->exists("PaulAtreidesEyes.png")) {
+    // Paul Atreides custom mentat animations (Tornie mod) — 5 frames, matching vanilla mentat eye/mouth count.
+    if (pFileManager->exists("PaulAtreidesEyes.png")) {
         auto eyeStrip = LoadPNG_RW(pFileManager->openFile("PaulAtreidesEyes.png").get());
         if (eyeStrip) {
             if (eyeStrip->format->palette) { palette.applyToSurface(eyeStrip.get()); }
@@ -3177,8 +3037,7 @@ GFXManager::GFXManager() {
         }
     }
 
-    if (ModManager::instance().getActiveModName() == "Tornie"
-        && pFileManager->exists("PaulAtreidesMouth.png")) {
+    if (pFileManager->exists("PaulAtreidesMouth.png")) {
         auto mouthStrip = LoadPNG_RW(pFileManager->openFile("PaulAtreidesMouth.png").get());
         if (mouthStrip) {
             if (mouthStrip->format->palette) { palette.applyToSurface(mouthStrip.get()); }
@@ -3197,47 +3056,6 @@ GFXManager::GFXManager() {
         }
     }
 
-    // Fremen custom mentat animations (Tornie mod only) — same 5-frame format.
-    if (ModManager::instance().getActiveModName() == "Tornie"
-        && pFileManager->exists("FremenEyes.png")) {
-        auto eyeStrip = LoadPNG_RW(pFileManager->openFile("FremenEyes.png").get());
-        if (eyeStrip) {
-            if (eyeStrip->format->palette) { palette.applyToSurface(eyeStrip.get()); }
-            auto fremenEyes = std::make_unique<Animation>();
-            constexpr int kMentatEyeFrames = 5;
-            const int fw = eyeStrip->w / kMentatEyeFrames;
-            for (int i = 0; i < kMentatEyeFrames; ++i) {
-                SDL_Rect src = { i * fw, 0, fw, eyeStrip->h };
-                sdl2::surface_ptr frame{ SDL_CreateRGBSurfaceWithFormat(0, fw, eyeStrip->h, 32, SDL_PIXELFORMAT_RGBA32) };
-                SDL_BlitSurface(eyeStrip.get(), &src, frame.get(), nullptr);
-                fremenEyes->addFrame(std::move(frame));
-            }
-            fremenEyes->setFrameRate(0.5);
-            animation[Anim_FremenEyes] = std::move(fremenEyes);
-            SDL_Log("GFX INIT: Loaded Fremen eyes animation (%d frames %dx%d)", kMentatEyeFrames, fw, eyeStrip->h);
-        }
-    }
-
-    if (ModManager::instance().getActiveModName() == "Tornie"
-        && pFileManager->exists("FremenMouth.png")) {
-        auto mouthStrip = LoadPNG_RW(pFileManager->openFile("FremenMouth.png").get());
-        if (mouthStrip) {
-            if (mouthStrip->format->palette) { palette.applyToSurface(mouthStrip.get()); }
-            auto fremenMouth = std::make_unique<Animation>();
-            constexpr int kMentatMouthFrames = 5;
-            const int fw = mouthStrip->w / kMentatMouthFrames;
-            for (int i = 0; i < kMentatMouthFrames; ++i) {
-                SDL_Rect src = { i * fw, 0, fw, mouthStrip->h };
-                sdl2::surface_ptr frame{ SDL_CreateRGBSurfaceWithFormat(0, fw, mouthStrip->h, 32, SDL_PIXELFORMAT_RGBA32) };
-                SDL_BlitSurface(mouthStrip.get(), &src, frame.get(), nullptr);
-                fremenMouth->addFrame(std::move(frame));
-            }
-            fremenMouth->setFrameRate(5.0);
-            animation[Anim_FremenMouth] = std::move(fremenMouth);
-            SDL_Log("GFX INIT: Loaded Fremen mouth animation (%d frames %dx%d)", kMentatMouthFrames, fw, mouthStrip->h);
-        }
-    }
-
     animation[Anim_OrdosEyes] = menshpo->getAnimation(0,4,true,true);
     animation[Anim_OrdosEyes]->setFrameRate(0.5);
     animation[Anim_OrdosMouth] = menshpo->getAnimation(5,9,true,true,true);
@@ -3248,16 +3066,8 @@ GFXManager::GFXManager() {
     animation[Anim_OrdosRing]->setNumLoops(1);
     animation[Anim_OrdosRing]->setFrameRate(6.0);
     SDL_Log("GFX INIT: base house animations done");
-    // Fremen animations: use the loaded Tornie override if present, otherwise recolor Atreides.
-    // Note: Anim_FremenEyes / Anim_FremenMouth were just registered above when the PNG override
-    // was found; checking for the file here (Tornie-gated) is the cleanest signal of "override present."
-    const bool fremenOverridePresent = (ModManager::instance().getActiveModName() == "Tornie")
-                                    && pFileManager->exists("FremenEyes.png")
-                                    && pFileManager->exists("FremenMouth.png");
-    if (!fremenOverridePresent) {
-        animation[Anim_FremenEyes]  = PictureFactory::mapMentatAnimationToFremen(animation[Anim_AtreidesEyes].get());
-        animation[Anim_FremenMouth] = PictureFactory::mapMentatAnimationToFremen(animation[Anim_AtreidesMouth].get());
-    }
+    animation[Anim_FremenEyes] = PictureFactory::mapMentatAnimationToFremen(animation[Anim_AtreidesEyes].get());
+    animation[Anim_FremenMouth] = PictureFactory::mapMentatAnimationToFremen(animation[Anim_AtreidesMouth].get());
     animation[Anim_FremenShoulder] = PictureFactory::mapMentatAnimationToFremen(animation[Anim_AtreidesShoulder].get());
     animation[Anim_FremenBook] = PictureFactory::mapMentatAnimationToFremen(animation[Anim_AtreidesBook].get());
     animation[Anim_SardaukarEyes] = PictureFactory::mapMentatAnimationToSardaukar(animation[Anim_HarkonnenEyes].get());

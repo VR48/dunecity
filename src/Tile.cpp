@@ -316,7 +316,8 @@ void Tile::blitGround(int xPos, int yPos) {
 
     //draw terrain
     if (destroyedStructureTile == DestroyedStructure_None || destroyedStructureTile == DestroyedStructure_Wall) {
-        // Tornie: red/green spice field tiles use a custom sprite strip.
+        // Tornie: red/green spice field tiles use a custom sprite strip;
+        // red/green bloom tiles fall through to the vanilla terrain atlas (SpiceBloom frame)
         bool drewCustomSpice = false;
         if (type == Terrain_RedSpice || type == Terrain_GreenSpice) {
             int customObjPic = (type == Terrain_RedSpice)
@@ -337,25 +338,23 @@ void Tile::blitGround(int xPos, int yPos) {
             }
         }
         if (!drewCustomSpice) {
-            // Tornie 1.0.242 #4: red/green bloom tiles use the SAME tile sprite as
-            // the vanilla spice bloom (per spec: 'Tile for Space blooms for red
-            // spice/green spice are same for vanilla spices'). The custom
-            // 17x2 strip's row 1 bloom frames are no longer used here. The
-            // vanilla SpiceBloom frame is the same orange/yellow bloom that
-            // appears for the regular spice bloom, and it composes correctly
-            // over the underlying red/green spice field (which already
-            // doesn't get drawn here because drewCustomSpice is false).
-            //
-            // Note: this also covers the regular SpiceBloom case via the
-            // else branch below — both vanilla and red/green bloom now share
-            // the same TerrainTile_SpiceBloom sprite.
-            if (type == Terrain_SpiceBloom
-             || type == Terrain_RedSpiceBloom
-             || type == Terrain_GreenSpiceBloom) {
-                const auto bloomIndexX = TerrainTile_SpiceBloom % NUM_TERRAIN_TILES_X;
-                const auto bloomIndexY = TerrainTile_SpiceBloom / NUM_TERRAIN_TILES_X;
-                SDL_Rect bloomSrc = { bloomIndexX*zoomed_tilesize, bloomIndexY*zoomed_tilesize, zoomed_tilesize, zoomed_tilesize };
-                SDL_RenderCopy(renderer, sprite[currentZoomlevel], &bloomSrc, &drawLocation);
+            // Red/green bloom types: render from custom spice strip column 16 (bloom frame)
+            // over a sand base; fall back to vanilla SpiceBloom if custom texture unavailable.
+            if (type == Terrain_RedSpiceBloom || type == Terrain_GreenSpiceBloom) {
+                int customObjPic = (type == Terrain_RedSpiceBloom)
+                    ? ObjPic_TerrainRedSpice : ObjPic_TerrainGreenSpice;
+                SDL_Texture* customTex = pGFXManager->getZoomedObjPic(customObjPic, currentZoomlevel);
+                if (customTex) {
+                    // Bloom is at column 16, row 1 in the 17×2 strip (row 0 col 16 is empty).
+                    // The bloom tile is pre-composited on sand, so no separate sand base needed.
+                    SDL_Rect bloomSrc = { 16 * zoomed_tilesize, 1 * zoomed_tilesize, zoomed_tilesize, zoomed_tilesize };
+                    SDL_RenderCopy(renderer, customTex, &bloomSrc, &drawLocation);
+                } else {
+                    const auto bloomIndexX = TerrainTile_SpiceBloom % NUM_TERRAIN_TILES_X;
+                    const auto bloomIndexY = TerrainTile_SpiceBloom / NUM_TERRAIN_TILES_X;
+                    SDL_Rect bloomSrc = { bloomIndexX*zoomed_tilesize, bloomIndexY*zoomed_tilesize, zoomed_tilesize, zoomed_tilesize };
+                    SDL_RenderCopy(renderer, sprite[currentZoomlevel], &bloomSrc, &drawLocation);
+                }
             } else {
                 SDL_RenderCopy(renderer, sprite[currentZoomlevel], &source, &drawLocation);
             }

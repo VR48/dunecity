@@ -47,36 +47,71 @@ void CitySimulation::load(InputStream& stream) {
         return;
     }
 
-    // Save format compatibility: load into house 0 (local player's state
-    // will be redirected via localHouseID() at runtime).
-    auto& hs = houseState_[0];
-    hs.resPop = stream.readSint32();
-    hs.comPop = stream.readSint32();
-    hs.indPop = stream.readSint32();
-    hs.prevResPop = hs.resPop;
-    hs.prevComPop = hs.comPop;
-    hs.prevIndPop = hs.indPop;
-    hs.resValve = stream.readSint16();
-    hs.comValve = stream.readSint16();
-    hs.indValve = stream.readSint16();
+    // SAVEGAMEVERSION 9818+ persists every kMaxCityHouses HouseCityState slot
+    // in a freshly-reordered layout (see CitySimulation::save). Older saves
+    // (9809..9817 inclusive) wrote only houseState_[0] AND in a DIFFERENT
+    // field order (resPop/valve sandwiched around the global sim fields).
+    // Both branches are kept so existing saves still load — the bug this
+    // fixes: in any campaign where the local player was NOT house 0 (Ordos =
+    // 2, Atreides = 1, etc.), R/C/I / Pop / valves all read 0 after a reload
+    // because the player's slot was never on disk. Pre-9818, only Harkonnen's
+    // data round-tripped; everyone else's resPop/comPop/indPop was zero.
+    const int loadedVersion = currentGame->getLoadedSavegameVersion();
 
-    totalFunds_              = stream.readSint32();
-    cityTax_                 = stream.readSint16();
-    cityYear_                = stream.readSint32();
-    cityDay_                 = stream.readSint32();
-    lastProcessedDay_        = stream.readUint32();
-    lastTaxYear_             = stream.readUint32();
-    lastBudgetTick_          = (lastProcessedDay_ * kCyclesPerCityDay) / kCyclesPerBudgetTick;
-    economicVictoryThreshold_= stream.readSint32();
+    if (loadedVersion >= 9818) {
+        // --- New format (9818+) ---
+        // Global sim fields (same across all houses — read once)
+        totalFunds_              = stream.readSint32();
+        cityTax_                 = stream.readSint16();
+        cityYear_                = stream.readSint32();
+        cityDay_                 = stream.readSint32();
+        lastProcessedDay_        = stream.readUint32();
+        lastTaxYear_             = stream.readUint32();
+        lastBudgetTick_          = (lastProcessedDay_ * kCyclesPerCityDay) / kCyclesPerBudgetTick;
+        economicVictoryThreshold_= stream.readSint32();
 
-    hs.policeFundingPercent = stream.readSint32();
-    hs.nominalPoliceCost    = stream.readSint32();
-    hs.lastPoliceExpense    = stream.readSint32();
+        for (int h = 0; h < kMaxCityHouses; ++h) {
+            houseState_[h].load(stream);
+        }
+    } else {
+        // --- Legacy format (9809..9817) ---
+        // Stream order is: [houseState_[0].resPop/valve] [global fields]
+        // [houseState_[0].police/budget] [milestones]. Note that fields like
+        // prevResPop / avgLandValue / hasStadium didn't exist on disk pre-9818,
+        // so we leave them at their freshly-initialised defaults. Remaining
+        // slots (1..7) also stay at defaults — same as before the fix, so this
+        // isn't a regression.
+        houseState_[0].resPop     = stream.readSint32();
+        houseState_[0].comPop     = stream.readSint32();
+        houseState_[0].indPop     = stream.readSint32();
+        houseState_[0].prevResPop = houseState_[0].resPop;
+        houseState_[0].prevComPop = houseState_[0].comPop;
+        houseState_[0].prevIndPop = houseState_[0].indPop;
+        houseState_[0].resValve   = stream.readSint16();
+        houseState_[0].comValve   = stream.readSint16();
+        houseState_[0].indValve   = stream.readSint16();
 
-    hs.budget.setLastTaxRevenue(stream.readSint32());
-    hs.budget.setRoadPercent(stream.readSint32());
-    hs.budget.setPolicePercent(stream.readSint32());
-    hs.budget.setFirePercent(stream.readSint32());
+        // Global sim fields (mid-stream in the old layout)
+        totalFunds_              = stream.readSint32();
+        cityTax_                 = stream.readSint16();
+        cityYear_                = stream.readSint32();
+        cityDay_                 = stream.readSint32();
+        lastProcessedDay_        = stream.readUint32();
+        lastTaxYear_             = stream.readUint32();
+        lastBudgetTick_          = (lastProcessedDay_ * kCyclesPerCityDay) / kCyclesPerBudgetTick;
+        economicVictoryThreshold_= stream.readSint32();
+
+        // policeFunding / nominalCost / lastExpense / budget come AFTER global fields
+        // in the old format (and are part of each house slot in the new format).
+        houseState_[0].policeFundingPercent = stream.readSint32();
+        houseState_[0].nominalPoliceCost    = stream.readSint32();
+        houseState_[0].lastPoliceExpense    = stream.readSint32();
+
+        houseState_[0].budget.setLastTaxRevenue(stream.readSint32());
+        houseState_[0].budget.setRoadPercent(stream.readSint32());
+        houseState_[0].budget.setPolicePercent(stream.readSint32());
+        houseState_[0].budget.setFirePercent(stream.readSint32());
+    }
 
     milestoneFirstZoneAchieved_ = stream.readBool();
     for (int i = 0; i < NUM_MILESTONES; ++i) {
@@ -85,15 +120,7 @@ void CitySimulation::load(InputStream& stream) {
 }
 
 void CitySimulation::save(OutputStream& stream) const {
-    // Save format compatibility: save house 0's state (matches old format).
-    const auto& hs = houseState_[0];
-    stream.writeSint32(hs.resPop);
-    stream.writeSint32(hs.comPop);
-    stream.writeSint32(hs.indPop);
-    stream.writeSint16(hs.resValve);
-    stream.writeSint16(hs.comValve);
-    stream.writeSint16(hs.indValve);
-
+    // Global sim fields (same across all houses — written once)
     stream.writeSint32(totalFunds_);
     stream.writeSint16(cityTax_);
     stream.writeSint32(cityYear_);
@@ -102,19 +129,79 @@ void CitySimulation::save(OutputStream& stream) const {
     stream.writeUint32(lastTaxYear_);
     stream.writeSint32(economicVictoryThreshold_);
 
-    stream.writeSint32(hs.policeFundingPercent);
-    stream.writeSint32(hs.nominalPoliceCost);
-    stream.writeSint32(hs.lastPoliceExpense);
-
-    stream.writeSint32(hs.budget.getLastTaxRevenue());
-    stream.writeSint32(hs.budget.getRoadPercent());
-    stream.writeSint32(hs.budget.getPolicePercent());
-    stream.writeSint32(hs.budget.getFirePercent());
+    // SAVEGAMEVERSION 9818+ persists all kMaxCityHouses slots.
+    for (int h = 0; h < kMaxCityHouses; ++h) {
+        houseState_[h].save(stream);
+    }
 
     stream.writeBool(milestoneFirstZoneAchieved_);
     for (int i = 0; i < NUM_MILESTONES; ++i) {
         stream.writeBool(milestones_[i]);
     }
+}
+
+// --- HouseCityState self-serializing impls ---
+// Factored out of CitySimulation::save/load so future field additions live in
+// one place. Read/write order MUST stay in lockstep.
+
+void HouseCityState::save(OutputStream& stream) const {
+    stream.writeSint32(resPop);
+    stream.writeSint32(comPop);
+    stream.writeSint32(indPop);
+    stream.writeSint32(prevResPop);
+    stream.writeSint32(prevComPop);
+    stream.writeSint32(prevIndPop);
+    stream.writeSint16(resValve);
+    stream.writeSint16(comValve);
+    stream.writeSint16(indValve);
+
+    stream.writeSint32(avgLandValue);
+    stream.writeSint32(unemploymentRate);
+    stream.writeSint32(hospitalCount);
+    stream.writeSint32(churchCount);
+    stream.writeBool(hasStadium);
+    stream.writeBool(hasPalace);
+    stream.writeBool(hasAirport);
+    stream.writeBool(hasStarport);
+
+    stream.writeSint32(policeFundingPercent);
+    stream.writeSint32(nominalPoliceCost);
+    stream.writeSint32(lastPoliceExpense);
+
+    stream.writeSint32(budget.getLastTaxRevenue());
+    stream.writeSint32(budget.getRoadPercent());
+    stream.writeSint32(budget.getPolicePercent());
+    stream.writeSint32(budget.getFirePercent());
+}
+
+void HouseCityState::load(InputStream& stream) {
+    resPop     = stream.readSint32();
+    comPop     = stream.readSint32();
+    indPop     = stream.readSint32();
+    prevResPop = stream.readSint32();
+    prevComPop = stream.readSint32();
+    prevIndPop = stream.readSint32();
+    resValve   = stream.readSint16();
+    comValve   = stream.readSint16();
+    indValve   = stream.readSint16();
+
+    avgLandValue    = stream.readSint32();
+    unemploymentRate = stream.readSint32();
+    hospitalCount   = stream.readSint32();
+    churchCount     = stream.readSint32();
+    hasStadium      = stream.readBool();
+    hasPalace       = stream.readBool();
+    hasAirport      = stream.readBool();
+    hasStarport     = stream.readBool();
+
+    policeFundingPercent = stream.readSint32();
+    nominalPoliceCost    = stream.readSint32();
+    lastPoliceExpense    = stream.readSint32();
+
+    budget.setLastTaxRevenue(stream.readSint32());
+    budget.setRoadPercent(stream.readSint32());
+    budget.setPolicePercent(stream.readSint32());
+    budget.setFirePercent(stream.readSint32());
 }
 
 void CitySimulation::advancePhase(uint32_t gameCycleCount) {
