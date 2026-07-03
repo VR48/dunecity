@@ -51,8 +51,8 @@ TEST_CASE("NeutralHouse: HOUSE_NEUTRAL is after HOUSE_MERCENARY",
 
 TEST_CASE("NeutralHouse: savegame version includes HOUSE_NEUTRAL",
           "[neutral][savegame]") {
-    // SAVEGAMEVERSION 9817 added House::cityCredits (9816 added Unit_EliteSiegeTank=55, 9813 added HOUSE_NEUTRAL).
-    REQUIRE(SAVEGAMEVERSION == 9817);
+    // SAVEGAMEVERSION 9818 persists all kMaxCityHouses houseState[] slots (9817 added House::cityCredits, 9816 added Unit_EliteSiegeTank=55, 9813 added HOUSE_NEUTRAL).
+    REQUIRE(SAVEGAMEVERSION == 9818);
 }
 
 // =============================================================================
