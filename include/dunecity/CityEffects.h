@@ -791,6 +791,26 @@ inline ValveOutputs computeDemandValves(const ValveInputs& in) {
         static_cast<double>(in.indPop)) * laborBase * extMarketParam;
 
     // Growth ratios (SC defaults resRatio to 1.3 when resPop is 0)
+    //
+    // CATCH-22 fix (regression introduced by v1.0.244+ R/C/I valve work):
+    // SC's classic code used raw projected population as the ratio when the
+    // denominator was 0, e.g. `comRatio = projectedComPop` when comPop == 0.
+    // DuneCity's port fed that raw value into the same `(ratio - 1.0) * 600`
+    // formula used for the populated case, so `comDelta` collapsed to
+    // `(projectedComPop - 1.0) * 600` — almost always negative for the first
+    // few scan ticks. The C valve drained to its floor (-1500) in 3 ticks and
+    // stayed there until the player had positive comPop, which by definition
+    // they could never get because the valve is what gates zone growth.
+    // Symptom: any C-zone the player placed sat at level 0 forever, never
+    // upgrading past the flat "C" tile. Reported on Ordos campaign Map 1
+    // (1.0.247) — R and I zones grew normally, C zones were dead.
+    //
+    // Fix: when comPop == 0 (or indPop == 0, same class of bug), use a
+    // neutral 1.0 ratio. The valve carries forward unchanged from the
+    // previous tick instead of being drained. R-pop growth still drives
+    // projectedComPop upward via the internalMarket term, so once the player
+    // places a first C-zone (comPop > 0) the normal ratio path takes over
+    // and the valve responds correctly.
     double resRatio, comRatio, indRatio;
     if (normResPop > 0) {
         resRatio = projectedResPop / normResPop;
@@ -800,12 +820,12 @@ inline ValveOutputs computeDemandValves(const ValveInputs& in) {
     if (in.comPop > 0) {
         comRatio = projectedComPop / in.comPop;
     } else {
-        comRatio = projectedComPop;  // SC uses raw projected when 0
+        comRatio = 1.0;  // see CATCH-22 comment above
     }
     if (in.indPop > 0) {
         indRatio = projectedIndPop / in.indPop;
     } else {
-        indRatio = projectedIndPop;  // SC uses raw projected when 0
+        indRatio = 1.0;  // same fix as C: no I zones yet, don't drain the valve
     }
     if (resRatio > resRatioMax) resRatio = resRatioMax;
     if (comRatio > comRatioMax) comRatio = comRatioMax;
