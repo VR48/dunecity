@@ -264,7 +264,12 @@ void Bullet::init()
             speed = 6;  // Same speed as Sonic
             numFrames = 1;
             detonationTimer = 28;  // Shorter range than Sonic (range 5 vs 8)
-            graphic = pGFXManager->getObjPic(ObjPic_Bullet_Sonic, HOUSE_HARKONNEN);    // reuse sonic graphic
+            // Use the ExplosionFlames sprite (21 frames of pure flames spawned at
+            // vehicle wreck sites) as the flame bullet's appearance. This renders
+            // the bullet as a proper flame element rather than reusing the Sonic
+            // bullet's circular wave graphic (which produced a dark/black blob).
+            // The smoke/heat-haze frames 17-22 are only flames with no chassis.
+            graphic = pGFXManager->getObjPic(ObjPic_ExplosionFlames, HOUSE_HARKONNEN);
         } break;
 
         case Bullet_Sandworm: {
