@@ -2989,7 +2989,26 @@ GFXManager::GFXManager() {
     uiGraphic[UI_MapEditor_SiegeTank][HOUSE_HARKONNEN] = combinePictures(getSubFrame(objPic[ObjPic_Siegetank_Base][HOUSE_HARKONNEN][0].get(),0,0,8,1).get(), getSubFrame(objPic[ObjPic_Siegetank_Gun][HOUSE_HARKONNEN][0].get(),0,0,8,1).get(), 2, -4);
     uiGraphic[UI_MapEditor_Launcher][HOUSE_HARKONNEN] = combinePictures(getSubFrame(objPic[ObjPic_Tank_Base][HOUSE_HARKONNEN][0].get(),0,0,8,1).get(), getSubFrame(objPic[ObjPic_Launcher_Gun][HOUSE_HARKONNEN][0].get(),0,0,8,1).get(), 3, 0);
     uiGraphic[UI_MapEditor_Devastator][HOUSE_HARKONNEN] = combinePictures(getSubFrame(objPic[ObjPic_Devastator_Base][HOUSE_HARKONNEN][0].get(),0,0,8,1).get(), getSubFrame(objPic[ObjPic_Devastator_Gun][HOUSE_HARKONNEN][0].get(),0,0,8,1).get(), 2, -4);
-    uiGraphic[UI_MapEditor_SonicTank][HOUSE_HARKONNEN] = combinePictures(getSubFrame(objPic[ObjPic_Tank_Base][HOUSE_HARKONNEN][0].get(),0,0,8,1).get(), getSubFrame(objPic[ObjPic_Sonictank_Gun][HOUSE_HARKONNEN][0].get(),0,0,8,1).get(), 3, 1);
+    // DuneCity 1.0.372: guard the editor icon combinePictures
+    // calls. If either source objPic is null (vanilla UNITS2.SHP
+    // row missing, FlameTank/Sonictank_Gun/etc. failed to load),
+    // the resulting uiGraphic stays null and getUIGraphicSurface
+    // throws 'UI Graphic with ID %u is not loaded!' which Tornie's
+    // log captured as the editor-not-opening bug. v1.0.371 added
+    // the v1.0.358 editor crash wrapper that catches the throw
+    // silently, so the editor never opens. The fix is to fall
+    // back to a vanilla placeholder (TANK_Gun) so the entry is
+    // never null.
+    {
+        auto* pTankBase = objPic[ObjPic_Tank_Base][HOUSE_HARKONNEN][0] ? objPic[ObjPic_Tank_Base][HOUSE_HARKONNEN][0].get() : objPic[ObjPic_Tank_Gun][HOUSE_HARKONNEN][0].get();
+        auto* pSonicGun = objPic[ObjPic_Sonictank_Gun][HOUSE_HARKONNEN][0] ? objPic[ObjPic_Sonictank_Gun][HOUSE_HARKONNEN][0].get() : objPic[ObjPic_Tank_Gun][HOUSE_HARKONNEN][0].get();
+        auto* pLauncherGun = objPic[ObjPic_Launcher_Gun][HOUSE_HARKONNEN][0] ? objPic[ObjPic_Launcher_Gun][HOUSE_HARKONNEN][0].get() : objPic[ObjPic_Tank_Gun][HOUSE_HARKONNEN][0].get();
+        if(pTankBase && pSonicGun) {
+            uiGraphic[UI_MapEditor_SonicTank][HOUSE_HARKONNEN] = combinePictures(getSubFrame(pTankBase, 0, 0, 8, 1).get(),
+                                                                                    getSubFrame(pSonicGun, 0, 0, 8, 1).get(),
+                                                                                    3, 1);
+        }
+    }
     uiGraphic[UI_MapEditor_Deviator][HOUSE_HARKONNEN] = combinePictures(getSubFrame(objPic[ObjPic_Tank_Base][HOUSE_HARKONNEN][0].get(),0,0,8,1).get(), getSubFrame(objPic[ObjPic_Launcher_Gun][HOUSE_HARKONNEN][0].get(),0,0,8,1).get(), 3, 0);
     uiGraphic[UI_MapEditor_Deviator][HOUSE_HARKONNEN] = combinePictures(uiGraphic[UI_MapEditor_Deviator][HOUSE_HARKONNEN].get(), objPic[ObjPic_Star][HOUSE_HARKONNEN][1].get(),
                                                                   uiGraphic[UI_MapEditor_Deviator][HOUSE_HARKONNEN]->w - objPic[ObjPic_Star][HOUSE_HARKONNEN][1]->w,
