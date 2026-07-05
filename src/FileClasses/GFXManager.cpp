@@ -295,41 +295,69 @@ GFXManager::GFXManager() {
     // v1.0.385: prefer SpectatorTeal.pal file if shipped (lets
     // tornie tune the teal ramp without rebuilding). Falls back to
     // the v1.0.369 hardcoded teal ramp if the file is absent.
+    // v1.0.394: same pattern extended to 4 new colors - Fushia
+    // (160, ATREIDES slot), Apple_Green (208, SARDAUKAR slot),
+    // Dark Purple (144, HARKONNEN slot), Light Pink (224,
+    // MERCENARY slot). All 5 colors are dropdown entries via the
+    // CustomGamePlayers color dropdown (data values -3..-7).
     {
-        const int tealSlot = PALCOLOR_ORDOS;  // 176 - Ordos slot
-        if(pFileManager->exists("SpectatorTeal.pal")) {
-            auto tealRw = pFileManager->openFile("SpectatorTeal.pal");
-            std::vector<Uint8> tealData(768);
-            SDL_RWread(tealRw.get(), tealData.data(), 1, 768);
-            for(int k = 0; k < 8; k++) {
-                int idx = tealSlot + k;
-                SDL_Color c;
-                c.r = tealData[idx*3+0];
-                c.g = tealData[idx*3+1];
-                c.b = tealData[idx*3+2];
-                c.a = 255;
-                palette[idx] = c;
+        // Each custom color has: slot, file, fallback ramp
+        struct CustomColorSpec {
+            int slot;
+            const char* filename;
+            SDL_Color fallback[8];
+            const char* name;
+        };
+        const CustomColorSpec customColors[] = {
+            // Teal (Ordos slot) - data value -2
+            { PALCOLOR_ORDOS, "SpectatorTeal.pal",
+              { {0,220,220,255}, {0,200,200,255}, {0,180,180,255}, {0,160,160,255},
+                {0,140,140,255}, {0,120,120,255}, {0,100,100,255}, {0, 80, 80,255} },
+              "Teal" },
+            // Fushia (Atreides slot) - data value -3
+            { PALCOLOR_ATREIDES, "SpectatorFushia.pal",
+              { {255,  0,255,255}, {240,  0,240,255}, {220,  0,220,255}, {200,  0,200,255},
+                {180,  0,180,255}, {160,  0,160,255}, {140,  0,140,255}, {120,  0,120,255} },
+              "Fushia" },
+            // Apple_Green (Sardaukar slot) - data value -4
+            { PALCOLOR_SARDAUKAR, "SpectatorAppleGreen.pal",
+              { {  0,255, 64,255}, {  0,240, 56,255}, {  0,220, 48,255}, {  0,200, 40,255},
+                {  0,180, 32,255}, {  0,160, 24,255}, {  0,140, 16,255}, {  0,120,  8,255} },
+              "Apple Green" },
+            // Dark Purple (Harkonnen slot) - data value -5
+            { PALCOLOR_HARKONNEN, "SpectatorDarkPurple.pal",
+              { { 96,  0,144,255}, { 80,  0,128,255}, { 64,  0,112,255}, { 48,  0, 96,255},
+                { 32,  0, 80,255}, { 24,  0, 64,255}, { 16,  0, 48,255}, {  8,  0, 32,255} },
+              "Dark Purple" },
+            // Light Pink (Mercenary slot) - data value -6
+            { PALCOLOR_MERCENARY, "SpectatorLightPink.pal",
+              { {255,192,203,255}, {255,200,213,255}, {255,208,223,255}, {255,216,233,255},
+                {255,224,233,255}, {255,232,233,255}, {255,240,233,255}, {255,248,233,255} },
+              "Light Pink" },
+        };
+        for (const auto& spec : customColors) {
+            if(pFileManager->exists(spec.filename)) {
+                auto rw = pFileManager->openFile(spec.filename);
+                std::vector<Uint8> fileData(768);
+                SDL_RWread(rw.get(), fileData.data(), 1, 768);
+                for(int k = 0; k < 8; k++) {
+                    int idx = spec.slot + k;
+                    SDL_Color c;
+                    c.r = fileData[idx*3+0];
+                    c.g = fileData[idx*3+1];
+                    c.b = fileData[idx*3+2];
+                    c.a = 255;
+                    palette[idx] = c;
+                }
+                SDL_Log("GFX INIT: %s applied at palette[%d..%d] (file override, %s slot)",
+                        spec.filename, spec.slot, spec.slot+7, spec.name);
+            } else {
+                for(int k = 0; k < 8; k++) {
+                    palette[spec.slot + k] = spec.fallback[k];
+                }
+                SDL_Log("GFX INIT: %s ramp applied at palette[%d..%d] (hardcoded fallback)",
+                        spec.name, spec.slot, spec.slot+7);
             }
-            SDL_Log("GFX INIT: SpectatorTeal.pal applied at palette[%d..%d] (file override, Ordos slot)", tealSlot, tealSlot+7);
-        } else {
-            // Fallback teal ramp - sourced from Custom_IBM.pal
-            // at the Ordos slot 176-183 which the user uploaded
-            // with teal/cyan color values. The teal ramp mirrors
-            // vanilla's PALCOLOR_ORDOS green ramp.
-            const SDL_Color tealRamp[8] = {
-                {  0, 220, 220, 255 },
-                {  0, 200, 200, 255 },
-                {  0, 180, 180, 255 },
-                {  0, 160, 160, 255 },
-                {  0, 140, 140, 255 },
-                {  0, 120, 120, 255 },
-                {  0, 100, 100, 255 },
-                {  0,  80,  80, 255 },
-            };
-            for(int k = 0; k < 8; k++) {
-                palette[tealSlot + k] = tealRamp[k];
-            }
-            SDL_Log("GFX INIT: Teal ramp applied at palette[%d..%d] (hardcoded fallback, Ordos slot)", tealSlot, tealSlot+7);
         }
     }
 
