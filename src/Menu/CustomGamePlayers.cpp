@@ -1456,7 +1456,11 @@ void CustomGamePlayers::onChangeHousesDropDownBoxes(bool bInteractive, int house
         addToHouseDropDown(curHouseInfo.houseDropDown, HOUSE_INVALID);
 
         for(int h=0;h<NUM_HOUSES;h++) {
-            if (h == HOUSE_REBELS) continue; // Rebels: AI-only, not player-selectable
+            // DuneCity 1.0.344: drop the AI-only skip. HOUSE_REBELS is
+            // a fully playable 8th faction selectable in any custom
+            // game. Tornie's instruction: 'no longer AI-only or enemy
+            // from everyone'.
+            // if (h == HOUSE_REBELS) continue; // removed in 1.0.344
 
             bool bAddHouse;
 

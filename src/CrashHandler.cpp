@@ -259,9 +259,30 @@ static LONG WINAPI VectoredExceptionHandler(PEXCEPTION_POINTERS ExceptionInfo) {
     }
     
     DWORD code = ExceptionInfo->ExceptionRecord->ExceptionCode;
-    
+
     // Ignore debug exceptions
     if(code == EXCEPTION_BREAKPOINT || code == 0x406D1388) {
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
+
+    // DuneCity 1.0.334: 0xE06D7363 is the Microsoft Visual C++
+    // C++ exception opcode. It is raised by the C runtime when
+    // somebody calls throw() and propagates through RaiseException.
+    // Tornie's Dune_City.log keeps showing it fire at
+    // 0x00007FF95B2C1B6A at every game shutdown, after
+    // Deinitialization finished!, with no other exception in
+    // flight. The 1.0.312 + 1.0.332 try/catch in
+    // DiscordManager::shutdown cannot catch this because the
+    // exception fires from somewhere in the Windows process
+    // exit handler chain (PE loader, CRT, etc.) once the C++
+    // unwind tables have already been torn down.
+
+    // What we CAN do: skip the verbose log + minidump for
+    // 0xE06D7363 and let the system continue handling the
+    // exception. The OS already has our minidump from the
+    // prior VectoredExceptionHandler visit; the user just
+    // does not need a second crash dialog on every shutdown.
+    if (code == 0xE06D7363) {
         return EXCEPTION_CONTINUE_SEARCH;
     }
     

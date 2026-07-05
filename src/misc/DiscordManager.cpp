@@ -79,13 +79,24 @@ void DiscordManager::shutdown() {
     if (!initialized) {
         return;
     }
-    
-    Discord_ClearPresence();
-    Discord_Shutdown();
-    
+
+    // DuneCity 1.0.332: try/catch wrap around the Discord RPC
+    // teardown so the recurring 0xE06D7363 at 0x00007FF95B2C1B6A
+    // SEH handler Tornie sees on every shutdown does not abort
+    // the process.  This was applied at 1.0.312 but lost in
+    // the 1.0.322 clean-slate revert; restoring it.
+    try {
+        Discord_ClearPresence();
+        Discord_Shutdown();
+    } catch (const std::exception& e) {
+        SDL_Log("DiscordManager::shutdown swallowed std::exception: %s", e.what());
+    } catch (...) {
+        SDL_Log("DiscordManager::shutdown swallowed unknown exception");
+    }
+
     initialized = false;
     connected = false;
-    
+
     SDL_Log("Discord: Shutdown");
 }
 
@@ -200,16 +211,8 @@ void DiscordManager::setGameStarting(const std::string& mapName, const std::stri
 void DiscordManager::setMapEditor(const std::string& mapName) {
     std::string state = "Map Editor";
     std::string details = mapName.empty() ? "Creating a map" : "Editing: " + mapName;
-    
-    updatePresence(state, details, "logo", "Dune City", "editor", "Map Editor");
-}
 
-void DiscordManager::clear() {
-    if (!initialized) {
-        return;
-    }
-    
-    Discord_ClearPresence();
+    updatePresence(state, details, "logo", "Dune City", "editor", "Map Editor");
 }
 
 void DiscordManager::sendWebhookMessage(const std::string& title, const std::string& description, int color) {
@@ -217,7 +220,7 @@ void DiscordManager::sendWebhookMessage(const std::string& title, const std::str
         SDL_Log("Discord: Webhook URL not configured, skipping notification");
         return;
     }
-    
+
     // Send webhook in a separate thread to avoid blocking the game
     std::string url = webhookUrl;
     std::thread([url, title, description, color]() {

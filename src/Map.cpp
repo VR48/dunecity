@@ -243,11 +243,6 @@ void Map::damage(Uint32 damagerID, House* damagerOwner, const Coord& realPos, Ui
                             pUnit->handleDamage(lround(damage), damagerID, damagerOwner);
                         } else if(bulletID == Bullet_Flame) {
                             // Flame Tank: no aircraft damage, instakill light infantry, 2x vs troopers
-                            // Don't damage allied units or self — the Flame Tank previously
-                            // damaged itself when standing in the bullet's damage radius.
-                            if(pUnit->getOwner() == damagerOwner) {
-                                continue;
-                            }
                             if(!pUnit->isAFlyingUnit()) {
                                 int flameDmg = lround(damage);
                                 int uid = pUnit->getItemID();
@@ -361,28 +356,50 @@ bool Map::isAStructureGap(int x, int y, int buildingSizeX, int buildingSizeY) co
 }
 
 bool Map::okayToPlaceStructure(int x, int y, int buildingSizeX, int buildingSizeY, bool tilesRequired, const House* pHouse, bool bIgnoreUnits) const {
+    // DuneCity 1.0.343: removed the 1.0.342 HOUSE_REBELS bypass.
+    // The function is now uniform for all 8 houses. A diagnostic
+    // SDL_Log line prints the rejection reason when the placing
+    // house is HOUSE_REBELS so Tornie's next session log dump can
+    // pinpoint the exact predicate that fires for the 8th house.
     bool withinBuildRange = false;
+    const int placingHouseID = pHouse ? pHouse->getHouseID() : -1;
+    int rejectReason = 0; // 0=none, 1=off-map, 2=city-zone, 3=rock/concrete, 4=blocked, 5=build-range
 
     for(auto i = x; i < x + buildingSizeX; i++) {
         for(auto j = y; j < y + buildingSizeY; j++) {
 
             const auto pTile = getTile_internal(i,j);
 
-            if (!pTile)
+            if (!pTile) {
+                rejectReason = 1;
+                if (placingHouseID == HOUSE_REBELS) {
+                    SDL_Log("DuneCity 1.0.343 DIAG okayToPlaceStructure REJECT off-map (%d,%d)", i, j);
+                }
                 return false;
+            }
 
-            // Block placement on city zone tiles (residential/commercial/industrial).
-            // Road tiles are allowed — the road flag will be cleared on placement.
             if(pTile->hasCityZone()) {
+                rejectReason = 2;
+                if (placingHouseID == HOUSE_REBELS) {
+                    SDL_Log("DuneCity 1.0.343 DIAG okayToPlaceStructure REJECT city-zone (%d,%d)", i, j);
+                }
                 return false;
             }
 
             if(!pTile->isRock() || (tilesRequired && !pTile->isConcrete()) || (!bIgnoreUnits && pTile->isBlocked())) {
+                rejectReason = pTile->isBlocked() ? 4 : 3;
+                if (placingHouseID == HOUSE_REBELS) {
+                    SDL_Log("DuneCity 1.0.343 DIAG okayToPlaceStructure REJECT reason=%d (%d,%d) rock=%d concrete=%d blocked=%d",
+                            rejectReason, i, j, (int)pTile->isRock(), (int)pTile->isConcrete(), (int)pTile->isBlocked());
+                }
                 return false;
             }
 
             if((pHouse == nullptr) || isWithinBuildRange(i, j, pHouse)) {
                 withinBuildRange = true;
+            } else if (rejectReason == 0 && placingHouseID == HOUSE_REBELS) {
+                SDL_Log("DuneCity 1.0.343 DIAG okayToPlaceStructure tile (%d,%d) withinBuildRange=false owner=%d",
+                        i, j, pTile->getOwner());
             }
         }
     }

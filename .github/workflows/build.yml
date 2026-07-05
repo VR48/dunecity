@@ -100,13 +100,64 @@ jobs:
           name: DuneCity-Windows-Installer
           path: build/*.zip
 
-  # macOS build step removed in 1.0.249+.
-  # The job required a [self-hosted, macOS, ARM64] runner which is not
-  # currently registered on this fork, and cross-compiling macOS from
-  # Linux would need an osxcross toolchain not configured for this
-  # project. Add the job back when an Apple-silicon self-hosted runner
-  # is added (Settings -> Actions -> Runners) or osxcross support is
-  # upstreamed.
+  build-macos:
+    runs-on: [self-hosted, macOS, ARM64]
+    needs: [verify-version]
+    if: always() && (needs.verify-version.result == 'success' || needs.verify-version.result == 'skipped')
+    env:
+      PATH: /opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clean previous build
+        run: rm -rf build
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgJsonGlob: 'vcpkg.json'
+
+      # run-vcpkg sets VCPKG_BINARY_SOURCES to 'clear;x-gha,readwrite' but
+      # the x-gha backend was removed from vcpkg. The 'clear' prefix also
+      # disables the default file-based cache. Override to use a persistent
+      # local directory on the self-hosted runner instead.
+      - name: Fix vcpkg binary caching
+        run: |
+          mkdir -p "$HOME/.cache/vcpkg/archives"
+          echo "VCPKG_BINARY_SOURCES=clear;files,$HOME/.cache/vcpkg/archives,readwrite" >> "$GITHUB_ENV"
+
+      - name: Configure CMake
+        run: cmake -B build -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Create DMG Installer
+        run: |
+          cd build
+          cmake --install . --prefix install --config Release
+          cpack -G DragNDrop -C Release
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: DuneCity-macOS-DMG
+          path: build/*.dmg
+
+      - name: Notify Discord
+        if: always() && env.DISCORD_WEBHOOK != ''
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_DEV_WEBHOOK }}
+        run: |
+          VERSION=$(sed -n 's/^project(DuneCity VERSION \([0-9]*\.[0-9]*\.[0-9]*\).*/\1/p' CMakeLists.txt)
+          if [ "${{ job.status }}" = "success" ]; then
+            MSG="✅ **macOS build passed** — DuneCity v${VERSION} DMG ready"
+          else
+            MSG="❌ **macOS build failed** — DuneCity v${VERSION}"
+          fi
+          curl -s -H "Content-Type: application/json" \
+            -d "{\"content\": \"${MSG}\"}" \
+            "$DISCORD_WEBHOOK"
 
   build-linux:
     runs-on: ubuntu-latest
@@ -212,11 +263,11 @@ jobs:
   # Rolling dev build: update a "latest-dev" pre-release on every main push
   # so builds are always downloadable from the releases page.
   dev-release:
-    needs: [build-windows, build-linux]
+    needs: [build-windows, build-linux, build-macos]
     if: |
       always() &&
       github.ref == 'refs/heads/main' &&
-      (needs.build-windows.result == 'success' || needs.build-linux.result == 'success')
+      (needs.build-windows.result == 'success' || needs.build-linux.result == 'success' || needs.build-macos.result == 'success')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -229,6 +280,13 @@ jobs:
         with:
           name: DuneCity-Windows-Installer
           path: dist/windows
+
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: DuneCity-macOS-DMG
+          path: dist/macos
 
       - name: Download Linux artifact
         uses: actions/download-artifact@v4
@@ -265,8 +323,8 @@ jobs:
   # so creating a release here automatically flips every existing
   # install's "update available" flag the next time they launch.
   release:
-    needs: [verify-version, build-windows]
-    # Linux is best-effort; Windows is required for release
+    needs: [verify-version, build-windows, build-macos]
+    # Linux is best-effort; Windows + macOS are required for release
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
@@ -279,6 +337,12 @@ jobs:
         with:
           name: DuneCity-Windows-Installer
           path: dist/windows
+
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: DuneCity-macOS-DMG
+          path: dist/macos
 
       - name: Download Linux artifact
         uses: actions/download-artifact@v4
@@ -300,6 +364,7 @@ jobs:
             echo
             echo "**Downloads** (attached below):"
             echo "- Windows: \`DuneCity-*.zip\`"
+            echo "- macOS: \`DuneCity-*.dmg\`"
             echo "- Linux: \`.AppImage\` (recommended) / \`.deb\` / \`.rpm\` / \`.tar.gz\`"
             echo
             echo "Upgrading from a previous Dune City install? Your built-in mod INI files are reseeded automatically on first launch."

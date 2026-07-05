@@ -1565,8 +1565,26 @@ void Game::drawScreen()
                         }
                     }
 
+                    // DuneCity 1.0.349: green grid removed. Tornie asked
+                    // for 'a normal vision from game not glitched like
+                    // now' - the green/red placement overlay kept
+                    // rendering in zones the player did not own,
+                    // looking like a glitched field-of-view effect.
+                    // We compute withinRange above for compatibility
+                    // with the placement path but no longer draw the
+                    // per-tile texture. Players still see the standard
+                    // vanilla cursor and click-to-place semantics.
+                    (void)withinRange;
+
                     SDL_Texture* validPlace = nullptr;
                     SDL_Texture* invalidPlace = nullptr;
+
+                    // DuneCity 1.0.351: Rebels get a dark-grey valid
+                    // grid instead of green. We override validPlace
+                    // AFTER the switch so the texture selection logic
+                    // stays linear.
+                    const bool placingRebelsForGrid = (pBuilder->getOwner()
+                                                       && pBuilder->getOwner()->getHouseID() == HOUSE_REBELS);
 
                     switch(currentZoomlevel) {
                         case 0: {
@@ -1587,13 +1605,52 @@ void Game::drawScreen()
 
                     }
 
+                    if (placingRebelsForGrid) {
+                        switch(currentZoomlevel) {
+                            case 0:  validPlace = pGFXManager->getUIGraphic(UI_GreyPlace_Zoomlevel0); break;
+                            case 1:  validPlace = pGFXManager->getUIGraphic(UI_GreyPlace_Zoomlevel1); break;
+                            default: validPlace = pGFXManager->getUIGraphic(UI_GreyPlace_Zoomlevel2); break;
+                        }
+                    }
+
+                    // DuneCity 1.0.350: green/red placement grid restored, but
+                    // only when the local player has selected a Builder
+                    // unit AND is actively trying to place a building
+                    // (i.e. the player has a structure queued in the
+                    // build list and is hovering over the map).
+                    //
+                    // Tornie's instruction: 'the grid should only be
+                    // displayed when selecting buildings'.
+                    //
+                    // We restore the per-tile UI_ValidPlace /
+                    // UI_InvalidPlace texture render. The grid only
+                    // renders green on tiles owned by the placing
+                    // house (no cross-zone bleed for any house,
+                    // including the 8th).
+                    //
+                    // DuneCity 1.0.351: for the 8th house (Rebels),
+                    // the valid grid uses the dark-grey UI_GreyPlace
+                    // palette to match the Rebels faction colour
+                    // (96,96,96 / 110,110,110). The invalid grid
+                    // stays red so the player still gets a clear
+                    // 'cannot place here' signal. Vanilla houses 1..7
+                    // keep the standard green/red pair.
                     for(int i = xPos; i < (xPos + structuresize.x); i++) {
                         for(int j = yPos; j < (yPos + structuresize.y); j++) {
                             SDL_Texture* image;
-
                             bool tileValid = false;
                             if(withinRange && currentGameMap->tileExists(i,j)) {
                                 Tile* pTile = currentGameMap->getTile(i,j);
+                                const int placingOwnerID = pBuilder->getOwner()
+                                                            ? pBuilder->getOwner()->getHouseID()
+                                                            : -1;
+                                const int tileOwnerByte = pTile->getOwner();
+                                if(tileOwnerByte != placingOwnerID) {
+                                    image = invalidPlace;
+                                    SDL_Rect drawLocationSkip = calcDrawingRect(image, screenborder->world2screenX(i*TILESIZE), screenborder->world2screenY(j*TILESIZE));
+                                    SDL_RenderCopy(renderer, image, nullptr, &drawLocationSkip);
+                                    continue;
+                                }
                                 if(isZoneStructure(placeItem)) {
                                     tileValid = !pTile->isMountain() && !pTile->hasAGroundObject();
                                 } else {
@@ -1602,7 +1659,6 @@ void Game::drawScreen()
                                 }
                             }
                             image = tileValid ? validPlace : invalidPlace;
-
                             SDL_Rect drawLocation = calcDrawingRect(image, screenborder->world2screenX(i*TILESIZE), screenborder->world2screenY(j*TILESIZE));
                             SDL_RenderCopy(renderer, image, nullptr, &drawLocation);
                         }
@@ -2610,14 +2666,29 @@ void Game::updateGameState() {
 
     // DuneCity: advance one phase of the city simulation
     if (citySimEnabled_ && citySimulation_) {
-        const Uint64 citySimStart = SDL_GetPerformanceCounter();
-        citySimulation_->advancePhase(gameCycleCount);
-        const Uint64 citySimEnd = SDL_GetPerformanceCounter();
-        const double citySimMs = getElapsedMs(citySimStart, citySimEnd);
-        frameTiming.citySimMsThisFrame += citySimMs;
-        if(citySimMs > 10.0) {
-            logPerformance("[CITYSIM SPIKE] Cycle %u advancePhase=%.1fms",
-                gameCycleCount, citySimMs);
+        try {
+            const Uint64 citySimStart = SDL_GetPerformanceCounter();
+            citySimulation_->advancePhase(gameCycleCount);
+            const Uint64 citySimEnd = SDL_GetPerformanceCounter();
+            const double citySimMs = getElapsedMs(citySimStart, citySimEnd);
+            frameTiming.citySimMsThisFrame += citySimMs;
+            if(citySimMs > 10.0) {
+                logPerformance("[CITYSIM SPIKE] Cycle %u advancePhase=%.1fms",
+                    gameCycleCount, citySimMs);
+            }
+        } catch(const std::exception& e) {
+            // City-sim math can throw on loaded games where prevResPop /
+            // computed-resPop diverge (R/C/I 0 bug, save-load migration, etc).
+            // Without this guard an uncaught throw becomes 0xE06D7363 on
+            // Windows and kills the process. Log and continue — the rest of
+            // the game (RTS, units, structures) is unaffected.
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                "Game::updateGameState: citySim advancePhase threw (%s) at cycle=%u",
+                e.what(), gameCycleCount);
+        } catch(...) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                "Game::updateGameState: citySim advancePhase threw unknown exception at cycle=%u",
+                gameCycleCount);
         }
 
         // Power shortage warning: notify player when zones lose power

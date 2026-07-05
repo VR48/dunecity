@@ -316,16 +316,8 @@ void Tile::blitGround(int xPos, int yPos) {
 
     //draw terrain
     if (destroyedStructureTile == DestroyedStructure_None || destroyedStructureTile == DestroyedStructure_Wall) {
-        // DuneCity/Tornie:
-        // - red/green spice field tiles use a custom sprite strip;
-        // - red/green bloom tiles fall through to the custom strip's column 16
-        //   (the bloom frame) over a sand base;
-        // - vanilla spice bloom (Terrain_SpiceBloom) uses the standard vanilla
-        //   SpiceBloom frame from the same atlas.
-        // Per user request, the space-bloom tile (Terrain_SpiceBloom) is the
-        // same graphic as the vanilla spice tile — this is the default
-        // behaviour and needs no change. Custom red/green bloom graphics live
-        // in the Tornie_SpiceRed.png / Tornie_SpiceGreen.png strips.
+        // Tornie: red/green spice field tiles use a custom sprite strip;
+        // red/green bloom tiles fall through to the vanilla terrain atlas (SpiceBloom frame)
         bool drewCustomSpice = false;
         if (type == Terrain_RedSpice || type == Terrain_GreenSpice) {
             int customObjPic = (type == Terrain_RedSpice)

@@ -19,7 +19,6 @@
 
 #include <globals.h>
 
-#include <mod/ModManager.h>
 #include <FileClasses/TextManager.h>
 
 #include <misc/FileSystem.h>
@@ -144,29 +143,6 @@ std::vector<std::string> FileManager::getMissingFiles() {
 sdl2::RWops_ptr FileManager::openFile(const std::string& filename) {
     sdl2::RWops_ptr ret;
 
-    // DuneCity/Tornie: prefer active mod's campaign/ directory for scenario
-    // files (SCEN?0??.INI, REGION?0??.INI) so per-mod campaigns override the
-    // PAK-bundled ones. This is the same lookup pattern MapChoice uses for
-    // REGION%c.INI — we just apply it transparently to all campaign files.
-    {
-        const bool looksLikeCampaignFile =
-            (filename.size() >= 12
-             && (filename.compare(0, 4, "SCEN") == 0 || filename.compare(0, 6, "REGION") == 0)
-             && (filename.size() >= 8 && filename[filename.size()-4] == '.'));
-        if(looksLikeCampaignFile) {
-            std::string modCampaign = ModManager::instance().getActiveCampaignDir();
-            if(!modCampaign.empty()) {
-                std::string modPath = modCampaign + "/" + filename;
-                if(getCaseInsensitiveFilename(modPath)) {
-                    ret = sdl2::RWops_ptr{SDL_RWFromFile(modPath.c_str(), "rb")};
-                    if(ret) {
-                        return ret;
-                    }
-                }
-            }
-        }
-    }
-
     // try loading external file
     for(const auto& searchPath : getSearchPath()) {
         auto externalFilename = searchPath + "/";
@@ -190,23 +166,6 @@ sdl2::RWops_ptr FileManager::openFile(const std::string& filename) {
 }
 
 bool FileManager::exists(const std::string& filename) const {
-
-    // DuneCity/Tornie: same campaign-file mod override as openFile()
-    {
-        const bool looksLikeCampaignFile =
-            (filename.size() >= 12
-             && (filename.compare(0, 4, "SCEN") == 0 || filename.compare(0, 6, "REGION") == 0)
-             && (filename.size() >= 8 && filename[filename.size()-4] == '.'));
-        if(looksLikeCampaignFile) {
-            std::string modCampaign = ModManager::instance().getActiveCampaignDir();
-            if(!modCampaign.empty()) {
-                std::string modPath = modCampaign + "/" + filename;
-                if(getCaseInsensitiveFilename(modPath)) {
-                    return true;
-                }
-            }
-        }
-    }
 
     // try finding external file
     for(const std::string& searchPath : getSearchPath()) {

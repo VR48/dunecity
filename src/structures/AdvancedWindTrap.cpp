@@ -31,14 +31,10 @@ void AdvancedWindTrap::init() {
 
     graphicID = ObjPic_AdvancedWindTrap;
     graphic = pGFXManager->getObjPic(graphicID, getOwner()->getHouseID());
-    // Animate at ConstructionYard speed: 4-frame strip [frame0, frame1, frame0, frame1]
-    // cycling frames 2 and 3 to alternate the lit-corner pixels between the two
-    // dedicated Tornie frames. Frames 0 and 1 are the static base drawn when
-    // just placed or while the justPlacedTimer > 0 (placement animation).
-    numImagesX = 4;
-    numImagesY = 1;
-    firstAnimFrame = 2;
-    lastAnimFrame = 3;
+    numImagesX = NUM_WINDTRAP_ANIMATIONS_PER_ROW;
+    numImagesY = (2 + NUM_WINDTRAP_ANIMATIONS + NUM_WINDTRAP_ANIMATIONS_PER_ROW - 1) / NUM_WINDTRAP_ANIMATIONS_PER_ROW;
+    firstAnimFrame = 0;
+    lastAnimFrame = 2 + NUM_WINDTRAP_ANIMATIONS - 1;
 }
 
 AdvancedWindTrap::~AdvancedWindTrap() = default;
@@ -48,9 +44,7 @@ bool AdvancedWindTrap::update() {
 
     if(bResult) {
         if(justPlacedTimer <= 0) {
-            // Match ConstructionYard's per-frame cycle exactly: STRUCTURE_ANIMATIONTIMER (31)
-            // cycles per frame, looping between firstAnimFrame (2) and lastAnimFrame (3).
-            curAnimFrame = 2 + ((currentGame->getGameCycleCount() / STRUCTURE_ANIMATIONTIMER) % 2);
+            curAnimFrame = 2 + ((currentGame->getGameCycleCount()/8) % NUM_WINDTRAP_ANIMATIONS);
         }
 
         auto* citySim = currentGame->getCitySimulation();

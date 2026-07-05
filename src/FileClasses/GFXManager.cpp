@@ -1539,24 +1539,13 @@ GFXManager::GFXManager() {
             }
 
             sdl2::surface_ptr superSrc;
-            // Prefer Tornie's animated 4-frame sprite (192×48) at ConstructionYard
-            // cycle speed. Falls back to the single 48×48 frame (which becomes a
-            // static atlas with no animation) if the 4-frame variant isn't shipped.
-            static const int kAdvWindFrames = 4;  // matches ConstructionYard's numImagesX
-            if (pFileManager->exists("Tornie_AdvancedWindtrap_gfx_4frame.png")) {
-                auto gfxSurf = LoadPNG_RW(pFileManager->openFile("Tornie_AdvancedWindtrap_gfx_4frame.png").get());
-                if (gfxSurf) {
-                    sdl2::surface_ptr converted{ SDL_ConvertSurfaceFormat(gfxSurf.get(), SDL_PIXELFORMAT_RGBA32, 0) };
-                    superSrc = converted ? std::move(converted) : std::move(gfxSurf);
-                    SDL_Log("Loaded AdvancedWindtrap animated 4-frame gfx from Tornie_AdvancedWindtrap_gfx_4frame.png");
-                }
-            }
-            if (!superSrc && pFileManager->exists("Tornie_AdvancedWindtrap_gfx.png")) {
+            // Prefer Tornie's custom gfx (single 48x48 frame)
+            if (pFileManager->exists("Tornie_AdvancedWindtrap_gfx.png")) {
                 auto gfxSurf = LoadPNG_RW(pFileManager->openFile("Tornie_AdvancedWindtrap_gfx.png").get());
                 if (gfxSurf) {
                     sdl2::surface_ptr converted{ SDL_ConvertSurfaceFormat(gfxSurf.get(), SDL_PIXELFORMAT_RGBA32, 0) };
                     superSrc = converted ? std::move(converted) : std::move(gfxSurf);
-                    SDL_Log("Loaded AdvancedWindtrap gfx from Tornie_AdvancedWindtrap_gfx.png (single-frame fallback)");
+                    SDL_Log("Loaded AdvancedWindtrap gfx from Tornie_AdvancedWindtrap_gfx.png");
                 }
             }
             if (!superSrc) for (const auto& dir : superDirs) {
@@ -1574,18 +1563,13 @@ GFXManager::GFXManager() {
                 }
             }
 
-            // If we loaded a 4-frame sprite (192×48), blit each frame into the atlas
-            // preserving its native content. Otherwise (single-frame source), scale
-            // the source up to fill every atlas frame so every animation cell shows
-            // the same static image.
             if (atlas && superSrc) {
-                const int srcFrames = (superSrc->w >= 192 && superSrc->h >= 48) ? kAdvWindFrames : 1;
-                const int srcFrameW = superSrc->w / srcFrames;
+                // Scale the source to fill the full 48×48 frame so the
+                // advanced wind trap occupies its entire 3×3 gameplay footprint.
                 SDL_SetSurfaceBlendMode(superSrc.get(), SDL_BLENDMODE_NONE);
-                for (int f = 0; f < kAdvWindFrames; ++f) {
-                    SDL_Rect srcRect = { (f % srcFrames) * srcFrameW, 0, srcFrameW, superSrc->h };
+                for (int f = 0; f < numFrames; ++f) {
                     SDL_Rect frameDst = { f * frameW, 0, frameW, frameH };
-                    SDL_BlitScaled(superSrc.get(), &srcRect, atlas.get(), &frameDst);
+                    SDL_BlitScaled(superSrc.get(), nullptr, atlas.get(), &frameDst);
                 }
 
                 objPic[ObjPic_AdvancedWindTrap][HOUSE_HARKONNEN][0] = std::move(atlas);
@@ -2585,41 +2569,25 @@ GFXManager::GFXManager() {
     PicFactory->drawFrame(uiGraphic[UI_DuneLegacy][HOUSE_HARKONNEN].get(),PictureFactory::SimpleFrame);
 
     uiGraphic[UI_MentatBackground][HOUSE_HARKONNEN] = Scaler::defaultDoubleSurface(LoadCPS_RW(pFileManager->openFile("MENTATH.CPS").get()).get());
-    // Default Atreides mentat = vanilla MENTATA.CPS (Cyril). Per Tornie mod
-    // request: only override with PaulAtreidesMentat.png when the Tornie mod
-    // is actually active. The previous code loaded the Paul background
-    // whenever the file existed, which broke Cyril's portrait for any user
-    // who happened to have the PNG on disk without the mod enabled.
-    const bool bTornieActive = (ModManager::instance().getActiveModName() == "Tornie");
-    {
-        sdl2::surface_ptr atreidesBg = Scaler::defaultDoubleSurface(LoadCPS_RW(pFileManager->openFile("MENTATA.CPS").get()).get());
-        if (bTornieActive && pFileManager->exists("PaulAtreidesMentat.png")) {
-            auto paulBg = LoadPNG_RW(pFileManager->openFile("PaulAtreidesMentat.png").get());
-            if (paulBg) {
-                SDL_Log("GFX INIT: Paul Atreides mentat background loaded (%dx%d)", paulBg->w, paulBg->h);
-                uiGraphic[UI_MentatBackground][HOUSE_ATREIDES] = std::move(paulBg);
-            } else {
-                uiGraphic[UI_MentatBackground][HOUSE_ATREIDES] = std::move(atreidesBg);
-            }
-        } else {
-            uiGraphic[UI_MentatBackground][HOUSE_ATREIDES] = std::move(atreidesBg);
+    uiGraphic[UI_MentatBackground][HOUSE_ATREIDES] = Scaler::defaultDoubleSurface(LoadCPS_RW(pFileManager->openFile("MENTATA.CPS").get()).get());
+    // Paul Atreides mentat background override (Tornie mod)
+    if (pFileManager->exists("PaulAtreidesMentat.png")) {
+        auto paulBg = LoadPNG_RW(pFileManager->openFile("PaulAtreidesMentat.png").get());
+        if (paulBg) {
+            SDL_Log("GFX INIT: Paul Atreides mentat background loaded (%dx%d)", paulBg->w, paulBg->h);
+            uiGraphic[UI_MentatBackground][HOUSE_ATREIDES] = std::move(paulBg);
         }
     }
-    // Fremen mentat is derived from Atreides (vanilla Cyril) by recolour.
-    // Same path applies — when Tornie is active, Fremen will pick up the
-    // Atreides override above; when Tornie is inactive, Fremen sees vanilla
-    // Cyril. There is no separate Tornie Fremen mentat art in the repo, so
-    // the Atreides branch is sufficient.
     uiGraphic[UI_MentatBackground][HOUSE_ORDOS] = Scaler::defaultDoubleSurface(LoadCPS_RW(pFileManager->openFile("MENTATO.CPS").get()).get());
     uiGraphic[UI_MentatBackground][HOUSE_FREMEN] = PictureFactory::mapMentatSurfaceToFremen(uiGraphic[UI_MentatBackground][HOUSE_ATREIDES].get());
     uiGraphic[UI_MentatBackground][HOUSE_SARDAUKAR] = PictureFactory::mapMentatSurfaceToSardaukar(uiGraphic[UI_MentatBackground][HOUSE_HARKONNEN].get());
     uiGraphic[UI_MentatBackground][HOUSE_MERCENARY] = PictureFactory::mapMentatSurfaceToMercenary(uiGraphic[UI_MentatBackground][HOUSE_ORDOS].get());
     // DuneCity: Neutral mentat background.
     // Tornie mod: use ChaniMentat.png (320×200 palette-indexed) if available.
-    // Default: Mentat Cyril — remap Atreides portrait blue to neutral grey.
+    // Default: Mentat Cyrit — remap Atreides portrait blue to neutral grey.
     {
         bool loadedChani = false;
-        if (bTornieActive && pFileManager->exists("ChaniMentat.png")) {
+        if (ModManager::instance().getActiveModName() == "Tornie" && pFileManager->exists("ChaniMentat.png")) {
             auto chaniSurf = LoadPNG_RW(pFileManager->openFile("ChaniMentat.png").get());
             if (chaniSurf) {
                 if (chaniSurf->format->BitsPerPixel == 8)
@@ -3056,51 +3024,13 @@ GFXManager::GFXManager() {
         }
     }
 
-    // Advanced Windtrap: prefer the dedicated editor icon (48×48) if it ships,
-    // otherwise crop frame 0 of the in-game sprite atlas (now animated, so
-    // frame 0 is the static "just placed" base). The dedicated icon is identical
-    // to the in-game frame 0 but lets the editor visual stay static regardless
-    // of animation-state changes.
-    {
-        bool loadedEditorIcon = false;
-        if (pFileManager->exists("Tornie_AdvancedWindtrap_editor.png")) {
-            auto iconSurf = LoadPNG_RW(pFileManager->openFile("Tornie_AdvancedWindtrap_editor.png").get());
-            if (iconSurf) {
-                sdl2::surface_ptr iconRGBA{ SDL_ConvertSurfaceFormat(iconSurf.get(), SDL_PIXELFORMAT_RGBA32, 0) };
-                if (!iconRGBA) iconRGBA = std::move(iconSurf);
-                SDL_Surface* base = iconRGBA.get();
-                if (base) {
-                    const int editorW = 3 * D2_TILESIZE;
-                    const int editorH = 3 * D2_TILESIZE;
-                    sdl2::surface_ptr editorAtlas{ SDL_CreateRGBSurfaceWithFormat(0, editorW, editorH, 32, SDL_PIXELFORMAT_RGBA32) };
-                    if (editorAtlas) {
-                        SDL_BlitScaled(base, nullptr, editorAtlas.get(), nullptr);
-                        for (int hh = 0; hh < (int)NUM_HOUSES; ++hh) {
-                            uiGraphic[UI_MapEditor_AdvancedWindTrap][hh] = std::move(editorAtlas);
-                            // We only have one atlas; copy for each house so the
-                            // per-house remap pipeline (which consumes them in
-                            // sequence) doesn't move the same surface twice.
-                            if (hh + 1 < (int)NUM_HOUSES) {
-                                editorAtlas = sdl2::surface_ptr{
-                                    SDL_ConvertSurface(uiGraphic[UI_MapEditor_AdvancedWindTrap][hh].get(),
-                                                       uiGraphic[UI_MapEditor_AdvancedWindTrap][hh]->format, 0)
-                                };
-                            }
-                        }
-                        loadedEditorIcon = true;
-                        SDL_Log("GFXManager: Loaded editor icon for AdvancedWindtrap from Tornie_AdvancedWindtrap_editor.png");
-                    }
-                }
-            }
-        }
-        if (!loadedEditorIcon) {
-            for (int h = 0; h < (int)NUM_HOUSES; ++h) {
-                if (objPic[ObjPic_AdvancedWindTrap][HOUSE_HARKONNEN][0]) {
-                    uiGraphic[UI_MapEditor_AdvancedWindTrap][h] = getSubPicture(objPic[ObjPic_AdvancedWindTrap][HOUSE_HARKONNEN][0].get(), 0, 0, 3*D2_TILESIZE, 3*D2_TILESIZE);
-                } else {
-                    uiGraphic[UI_MapEditor_AdvancedWindTrap][h] = getSubPicture(objPic[ObjPic_Windtrap][HOUSE_HARKONNEN][0].get(), 2*2*D2_TILESIZE, 0, 2*D2_TILESIZE, 2*D2_TILESIZE);
-                }
-            }
+    // Advanced Windtrap: use the custom icon PNG if available, otherwise crop
+    // frame 0 of the sprite atlas (all 8 frames are identical).
+    for (int h = 0; h < (int)NUM_HOUSES; ++h) {
+        if (objPic[ObjPic_AdvancedWindTrap][HOUSE_HARKONNEN][0]) {
+            uiGraphic[UI_MapEditor_AdvancedWindTrap][h] = getSubPicture(objPic[ObjPic_AdvancedWindTrap][HOUSE_HARKONNEN][0].get(), 0, 0, 3*D2_TILESIZE, 3*D2_TILESIZE);
+        } else {
+            uiGraphic[UI_MapEditor_AdvancedWindTrap][h] = getSubPicture(objPic[ObjPic_Windtrap][HOUSE_HARKONNEN][0].get(), 2*2*D2_TILESIZE, 0, 2*D2_TILESIZE, 2*D2_TILESIZE);
         }
     }
 
