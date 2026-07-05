@@ -445,15 +445,21 @@ CustomGamePlayers::CustomGamePlayers(const GameInitSettings& newGameInitSettings
         // Add a "Teal" entry for spec / extra color picked from the
         // tornie-tornie-mod svan058/dunelegacy.com color stack at
         // index 176 (custom pal color). Teal is opt-in below.
-        bool tealUsedBySpectator = false;
-        for(int j=0; j<NUM_HOUSES; j++) {
-            if(houseInfo[j].colorDropDown.getSelectedEntryIntData() == -2) {
-                tealUsedBySpectator = true;
-                break;
+        // DuneCity 1.0.371: Ordos skips Teal entirely (the user
+        // instruction: 'Normal Ordos don't need a color swapping
+        // for teal (only if chosen)' - the dropdown shouldn't even
+        // present Teal as an option for HOUSE_ORDOS).
+        if(i != HOUSE_ORDOS) {
+            bool tealUsedBySpectator = false;
+            for(int j=0; j<NUM_HOUSES; j++) {
+                if(houseInfo[j].colorDropDown.getSelectedEntryIntData() == -2) {
+                    tealUsedBySpectator = true;
+                    break;
+                }
             }
-        }
-        if(!tealUsedBySpectator) {
-            curHouseInfo.colorDropDown.addEntry(_("Teal"), -2);
+            if(!tealUsedBySpectator) {
+                curHouseInfo.colorDropDown.addEntry(_("Teal"), -2);
+            }
         }
 
         // For now, list each house's index as the available

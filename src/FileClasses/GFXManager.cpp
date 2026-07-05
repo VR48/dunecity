@@ -302,6 +302,56 @@ GFXManager::GFXManager() {
     objPic[ObjPic_Quad][HOUSE_HARKONNEN][0] = units->getPictureArray(8,1,GROUNDUNIT_ROW(0));
     objPic[ObjPic_Trike][HOUSE_HARKONNEN][0] = units->getPictureArray(8,1,GROUNDUNIT_ROW(5));
 
+    // DuneCity 1.0.371: per-house remap of unit sprites
+    // (Tank/Quad/Trike). The default Dune Legacy load leaves only
+    // HOUSE_HARKONNEN populated and the runtime remap-on-demand
+    // path in getZoomedObjPic also reads PALCOLOR_HARKONNEN
+    // indices. Result: every other house (including HOUSE_REBELS)
+    // shows the orange Harkonnen sprite. This block clones each
+    // sprite to every house and remaps the 8 palette indices
+    // PALCOLOR_HARKONNEN..+7 to the per-house equivalent.
+    // (Fremen is treated specially - reads from ibmPalette so
+    // Custom_IBM.pal's dark grey doesn't bleed in.)
+    {
+        static const struct { int objPicID; const char* name; } tankSprites[] = {
+            {ObjPic_Tank_Base,         "Tank_Base"},
+            {ObjPic_Tank_Gun,           "Tank_Gun"},
+            {ObjPic_Siegetank_Base,     "Siegetank_Base"},
+            {ObjPic_Siegetank_Gun,      "Siegetank_Gun"},
+            {ObjPic_Devastator_Base,    "Devastator_Base"},
+            {ObjPic_Devastator_Gun,     "Devastator_Gun"},
+            {ObjPic_Quad,               "Quad"},
+            {ObjPic_Trike,              "Trike"},
+        };
+        for(auto& spec : tankSprites) {
+            if(!objPic[spec.objPicID][HOUSE_HARKONNEN][0]) continue;
+            for(int h = 0; h < NUM_HOUSES; h++) {
+                if(h == HOUSE_HARKONNEN) continue;
+                // Fremen uses vanilla ibmPalette so the original
+                // orange-gold Harkonnen template doesn't get the
+                // Custom_IBM.pal dark grey override.
+                const Palette& srcPal = (h == HOUSE_FREMEN) ? ibmPalette : palette;
+                objPic[spec.objPicID][h][0] = sdl2::surface_ptr{
+                    SDL_ConvertSurface(objPic[spec.objPicID][HOUSE_HARKONNEN][0].get(),
+                                       objPic[spec.objPicID][HOUSE_HARKONNEN][0]->format, 0)
+                };
+                if(objPic[spec.objPicID][h][0] && objPic[spec.objPicID][h][0]->format->palette) {
+                    // 8-cell remap: PALCOLOR_HARKONNEN..+7 to
+                    // houseToPaletteIndex[h]..+7. Each house
+                    // picks up its own color (Harkonnen red,
+                    // Atreides blue/green, Ordos orange, Fremen
+                    // orange, Sardaukar, Mercenary, Neutral,
+                    // Rebels dark grey).
+                    for(int k = 0; k < 8; k++) {
+                        objPic[spec.objPicID][h][0]->format->palette->colors[PALCOLOR_HARKONNEN + k] =
+                            srcPal[houseToPaletteIndex[h] + k];
+                    }
+                }
+            }
+        }
+        SDL_Log("DuneCity 1.0.371: per-house unit sprite remap (Tank/Quad/Trike/Siege/Devastator)");
+    }
+
     // DuneCity: the Rocket Trike in-world sprite.
     // Preferred path: RocketTrikeMask.png as 8-bit palette-indexed strip — load
     // into HOUSE_HARKONNEN only; getZoomedObjPic remaps palette indices 144-150
