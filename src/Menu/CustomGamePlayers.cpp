@@ -1634,12 +1634,10 @@ void CustomGamePlayers::onChangeColorDropDownBoxes(bool bInteractive, int houseI
         // 'Original' - restore own slot
         pickedSlot = houseInfoNum;
     } else if(selected == -2) {
-        // Teal: pick svan058/dunelegacy.com palette slot 176
-        // (PALCOLOR_ORDOS). The Custom_Pal_Color override at
-        // runtime writes Teal into index 176 - this branch is
-        // only active when the player explicitly picks Teal in
-        // the dropdown. For now, pickedSlot = 176 = PALCOLOR_ORDOS.
-        pickedSlot = 176;
+        // Teal: pick the v1.0.373 Teal slot at 240-247 (was 176
+        // in v1.0.369 but that clobbered the OrdOs vanilla green
+        // ramp so picking Teal left Ordos tinted teal).
+        pickedSlot = 240;
     } else if(selected <= -100 && selected > -100 - NUM_HOUSES) {
         // Foreign house slot
         pickedSlot = -100 - selected;

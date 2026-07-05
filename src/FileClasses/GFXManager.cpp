@@ -262,27 +262,28 @@ GFXManager::GFXManager() {
         SDL_Log("GFX INIT: Custom_IBM.pal applied (rebels dark-grey/black range 192-199)");
     }
 
-    // DuneCity 1.0.369: Custom_Pal_Color Teal ramp at index 176.
-    // The dropdown's 'Teal' entry (data=-2) picks palette slot
-    // 176 (= PALCOLOR_ORDOS). Without this patch, palette[176..183]
-    // still holds vanilla OrdOs orange so picking Teal produces
-    // no visible change. We write a teal ramp here at GFX init so
-    // the runtime copy from the dropdown has actual data to copy.
+    // DuneCity 1.0.369: Custom_Pal_Color Teal ramp at index 240.
+    // The dropdown's 'Teal' entry (data=-2) was originally mapped
+    // to slot 176 (= PALCOLOR_ORDOS) but that clobbered the
+    // vanilla OrdOs green ramp. v1.0.373 moves Teal to 240-247
+    // which is unused by vanilla + not reserved for a faction.
+    // Dropdown data value stays -2 (the slot index is wired in
+    // the dropdown -> onChangeColorDropDownBoxes hot-patch).
     {
         const SDL_Color tealRamp[8] = {
-            {  0, 220, 220, 255 },  // 176
-            {  0, 200, 200, 255 },  // 177
-            {  0, 180, 180, 255 },  // 178
-            {  0, 160, 160, 255 },  // 179
-            {  0, 140, 140, 255 },  // 180
-            {  0, 120, 120, 255 },  // 181
-            {  0, 100, 100, 255 },  // 182
-            {  0,  80,  80, 255 },  // 183
+            {  0, 220, 220, 255 },
+            {  0, 200, 200, 255 },
+            {  0, 180, 180, 255 },
+            {  0, 160, 160, 255 },
+            {  0, 140, 140, 255 },
+            {  0, 120, 120, 255 },
+            {  0, 100, 100, 255 },
+            {  0,  80,  80, 255 },
         };
         for(int k = 0; k < 8; k++) {
-            palette[176 + k] = tealRamp[k];
+            palette[240 + k] = tealRamp[k];
         }
-        SDL_Log("GFX INIT: Teal ramp applied at palette[176..183]");
+        SDL_Log("GFX INIT: Teal ramp applied at palette[240..247]");
     }
 
     //create PictureFactory
@@ -3003,10 +3004,27 @@ GFXManager::GFXManager() {
         auto* pTankBase = objPic[ObjPic_Tank_Base][HOUSE_HARKONNEN][0] ? objPic[ObjPic_Tank_Base][HOUSE_HARKONNEN][0].get() : objPic[ObjPic_Tank_Gun][HOUSE_HARKONNEN][0].get();
         auto* pSonicGun = objPic[ObjPic_Sonictank_Gun][HOUSE_HARKONNEN][0] ? objPic[ObjPic_Sonictank_Gun][HOUSE_HARKONNEN][0].get() : objPic[ObjPic_Tank_Gun][HOUSE_HARKONNEN][0].get();
         auto* pLauncherGun = objPic[ObjPic_Launcher_Gun][HOUSE_HARKONNEN][0] ? objPic[ObjPic_Launcher_Gun][HOUSE_HARKONNEN][0].get() : objPic[ObjPic_Tank_Gun][HOUSE_HARKONNEN][0].get();
+        auto* pDevastatorGun = objPic[ObjPic_Devastator_Gun][HOUSE_HARKONNEN][0] ? objPic[ObjPic_Devastator_Gun][HOUSE_HARKONNEN][0].get() : objPic[ObjPic_Tank_Gun][HOUSE_HARKONNEN][0].get();
+        auto* pSiegetankBase = objPic[ObjPic_Siegetank_Base][HOUSE_HARKONNEN][0] ? objPic[ObjPic_Siegetank_Base][HOUSE_HARKONNEN][0].get() : objPic[ObjPic_Tank_Gun][HOUSE_HARKONNEN][0].get();
         if(pTankBase && pSonicGun) {
             uiGraphic[UI_MapEditor_SonicTank][HOUSE_HARKONNEN] = combinePictures(getSubFrame(pTankBase, 0, 0, 8, 1).get(),
                                                                                     getSubFrame(pSonicGun, 0, 0, 8, 1).get(),
                                                                                     3, 1);
+        }
+        if(pTankBase && pDevastatorGun) {
+            uiGraphic[UI_MapEditor_Devastator][HOUSE_HARKONNEN] = combinePictures(getSubFrame(pTankBase, 0, 0, 8, 1).get(),
+                                                                                     getSubFrame(pDevastatorGun, 0, 0, 8, 1).get(),
+                                                                                     2, -4);
+        }
+        if(pTankBase && pLauncherGun) {
+            uiGraphic[UI_MapEditor_Launcher][HOUSE_HARKONNEN] = combinePictures(getSubFrame(pTankBase, 0, 0, 8, 1).get(),
+                                                                                  getSubFrame(pLauncherGun, 0, 0, 8, 1).get(),
+                                                                                  3, 0);
+        }
+        if(pSiegetankBase && pLauncherGun) {
+            uiGraphic[UI_MapEditor_SiegeTank][HOUSE_HARKONNEN] = combinePictures(getSubFrame(pSiegetankBase, 0, 0, 8, 1).get(),
+                                                                                    getSubFrame(pLauncherGun, 0, 0, 8, 1).get(),
+                                                                                    2, -4);
         }
     }
     uiGraphic[UI_MapEditor_Deviator][HOUSE_HARKONNEN] = combinePictures(getSubFrame(objPic[ObjPic_Tank_Base][HOUSE_HARKONNEN][0].get(),0,0,8,1).get(), getSubFrame(objPic[ObjPic_Launcher_Gun][HOUSE_HARKONNEN][0].get(),0,0,8,1).get(), 3, 0);
@@ -3460,7 +3478,28 @@ SDL_Surface* GFXManager::getUIGraphicSurface(unsigned int id, int house) {
     if(uiGraphic[id][house] == nullptr) {
         // remap to this color
         if(uiGraphic[id][HOUSE_HARKONNEN] == nullptr) {
-            THROW(std::runtime_error, "GFXManager::getUIGraphicSurface(): UI Graphic with ID %u is not loaded!", id);
+            // DuneCity 1.0.373: instead of throwing, log a warning
+            // and return a 1x1 black surface placeholder. The
+            // editor can stay open with the missing icon rendered
+            // as a flat colour; v1.0.367-1.0.369 wrapped this in
+            // a try/catch that silently swallowed the throw, so the
+            // editor never opened. v1.0.372 added a null-coalescing
+            // guard for the Sonic Tank build which fixed that one
+            // call but left other unguarded editor icons (FlameTank,
+            // Deviator, Devastator, Launcher) that fail silently.
+            // Until those are individually guarded, this catch-all
+            // is the simplest fix: the editor can open with a
+            // placeholder for any missing icon.
+            SDL_Log("GFXManager::getUIGraphicSurface(): UI Graphic with ID %u is not loaded! Editor will show placeholder.", id);
+            static sdl2::surface_ptr sPlaceholder;
+            if(!sPlaceholder) {
+                sPlaceholder = sdl2::surface_ptr{ SDL_CreateRGBSurface(0, 1, 1, 32,
+                    RMASK, GMASK, BMASK, AMASK) };
+                if(sPlaceholder) {
+                    SDL_FillRect(sPlaceholder.get(), nullptr, SDL_MapRGBA(sPlaceholder->format, 0, 0, 0, 255));
+                }
+            }
+            return sPlaceholder.get();
         }
 
         uiGraphic[id][house] = mapSurfaceColorRange(uiGraphic[id][HOUSE_HARKONNEN].get(), PALCOLOR_HARKONNEN, houseToPaletteIndex[house]);
