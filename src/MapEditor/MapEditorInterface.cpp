@@ -307,32 +307,44 @@ MapEditorInterface::MapEditorInterface(MapEditor* pMapEditor)
     // Tornie: red/green spice bloom buttons in their own row (hidden unless Tornie mod is active)
     const bool isTornie = ModManager::instance().getActiveModName() == "Tornie";
     editorModeTerrain_VBox.addWidget(VSpacer::create(2));
-    editorModeTerrain_VBox.addWidget(&editorModeTerrain_HBox4);
-    editorModeTerrain_HBox4.setVisible(isTornie);
-
-    editorModeTerrain_RedSpice.setToggleButton(true);
-    editorModeTerrain_RedSpice.setOnClick(std::bind(&MapEditorInterface::onTerrainButton, this, Terrain_RedSpice));
-    editorModeTerrain_HBox4.addWidget(&editorModeTerrain_RedSpice);
-
-    editorModeTerrain_HBox4.addWidget(HSpacer::create(2));
-
-    editorModeTerrain_GreenSpice.setToggleButton(true);
-    editorModeTerrain_GreenSpice.setOnClick(std::bind(&MapEditorInterface::onTerrainButton, this, Terrain_GreenSpice));
-    editorModeTerrain_HBox4.addWidget(&editorModeTerrain_GreenSpice);
-
-    editorModeTerrain_HBox4.addWidget(HSpacer::create(4));
-
-    editorModeTerrain_RedSpiceBloom.setToggleButton(true);
-    editorModeTerrain_RedSpiceBloom.setOnClick(std::bind(&MapEditorInterface::onTerrainButton, this, Terrain_RedSpiceBloom));
-    editorModeTerrain_HBox4.addWidget(&editorModeTerrain_RedSpiceBloom);
-
-    editorModeTerrain_HBox4.addWidget(HSpacer::create(2));
-
-    editorModeTerrain_GreenSpiceBloom.setToggleButton(true);
-    editorModeTerrain_GreenSpiceBloom.setOnClick(std::bind(&MapEditorInterface::onTerrainButton, this, Terrain_GreenSpiceBloom));
-    editorModeTerrain_HBox4.addWidget(&editorModeTerrain_GreenSpiceBloom);
-
-    editorModeTerrain_HBox4.addWidget(Spacer::create());
+    // DuneCity 1.0.389: removed the red/green spice field + bloom
+    // terrain buttons from the editor toolbar. Tornie's spec 'il y a
+    // des boutons en trop quand le mods Tornie est actif dans les
+    // brosses terrain de l'editeur. l'epice Verte et rouge je crois.
+    // serais-t-il possible de les enlever comme dans celui vanilla'.
+    // The vanilla editor has Sand/Dunes/SpecialBloom/Spice/
+    // ThickSpice/Rock/Mountain = 7 brushes. The Tornie mod added
+    // RedSpice/GreenSpice/RedSpiceBloom/GreenSpiceBloom = 4 extra
+    // buttons. They're now commented out (button declarations kept
+    // so the icons still load for the map-editor menu icon path,
+    // but they don't appear in the editor toolbar).
+    //
+    // editorModeTerrain_VBox.addWidget(&editorModeTerrain_HBox4);
+    // editorModeTerrain_HBox4.setVisible(false);
+    //
+    // editorModeTerrain_RedSpice.setToggleButton(true);
+    // editorModeTerrain_RedSpice.setOnClick(std::bind(&MapEditorInterface::onTerrainButton, this, Terrain_RedSpice));
+    // editorModeTerrain_HBox4.addWidget(&editorModeTerrain_RedSpice);
+    //
+    // editorModeTerrain_HBox4.addWidget(HSpacer::create(2));
+    //
+    // editorModeTerrain_GreenSpice.setToggleButton(true);
+    // editorModeTerrain_GreenSpice.setOnClick(std::bind(&MapEditorInterface::onTerrainButton, this, Terrain_GreenSpice));
+    // editorModeTerrain_HBox4.addWidget(&editorModeTerrain_GreenSpice);
+    //
+    // editorModeTerrain_HBox4.addWidget(HSpacer::create(4));
+    //
+    // editorModeTerrain_RedSpiceBloom.setToggleButton(true);
+    // editorModeTerrain_RedSpiceBloom.setOnClick(std::bind(&MapEditorInterface::onTerrainButton, this, Terrain_RedSpiceBloom));
+    // editorModeTerrain_HBox4.addWidget(&editorModeTerrain_RedSpiceBloom);
+    //
+    // editorModeTerrain_HBox4.addWidget(HSpacer::create(2));
+    //
+    // editorModeTerrain_GreenSpiceBloom.setToggleButton(true);
+    // editorModeTerrain_GreenSpiceBloom.setOnClick(std::bind(&MapEditorInterface::onTerrainButton, this, Terrain_GreenSpiceBloom));
+    // editorModeTerrain_HBox4.addWidget(&editorModeTerrain_GreenSpiceBloom);
+    //
+    // editorModeTerrain_HBox4.addWidget(Spacer::create());
 
 
     editorModeTerrainVBox.addWidget(VSpacer::create(10));
