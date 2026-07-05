@@ -255,6 +255,20 @@ CustomGamePlayers::CustomGamePlayers(const GameInitSettings& newGameInitSettings
         curHouseInfo.houseHBox.addWidget(HSpacer::create(10));
         curHouseInfo.houseHBox.addWidget(&curHouseInfo.teamDropDown, 85);
 
+        // DuneCity 1.0.366: color-swap dropdown. Each player can
+        // pick a palette slot to render their house in. Default =
+        // own house color. Disabled when 8 active players exist.
+        curHouseInfo.colorLabel.setText(_("Color"));
+        curHouseInfo.houseHBox.addWidget(HSpacer::create(10));
+        curHouseInfo.houseHBox.addWidget(&curHouseInfo.colorLabel, 40);
+
+        // The dropdown lists existing house colors for selection.
+        // We populate it after the master houseInfo[] is filled
+        // in (post-loop) because the entries depend on all houses
+        // being known. Until then the dropdown is empty + disabled.
+        curHouseInfo.colorDropDown.setEnabled(false);
+        curHouseInfo.houseHBox.addWidget(&curHouseInfo.colorDropDown, 95);
+
         curHouseInfo.houseInfoVBox.addWidget(&curHouseInfo.houseHBox);
 
         // add 1. player
@@ -406,7 +420,47 @@ CustomGamePlayers::CustomGamePlayers(const GameInitSettings& newGameInitSettings
         }
     }
 
-    onChangeHousesDropDownBoxes(false);
+    // DuneCity 1.0.366: After the master for-loop ends and
+    // all houseInfo[i] are known, populate each colorDropDown
+    // with the available palette slots (= each existing house's
+    // color). Disabled when 8 active players exist (the slider
+    // is the 8-faction rolling feature from earlier Tornie
+    // work, so the dropdown is the only way to swap here).
+    const bool colorSwapEnabled = (numHouses < NUM_HOUSES);
+    for(int i=0; i<NUM_HOUSES; i++) {
+        HouseInfo& curHouseInfo = houseInfo[i];
+        // DropDownBox has no removeAllEntries — clear by
+        // removing from index 0 until empty.
+        while(curHouseInfo.colorDropDown.getNumEntries() > 0) {
+            curHouseInfo.colorDropDown.removeEntry(0);
+        }
+        curHouseInfo.colorDropDown.addEntry(_("Original"), i);
+
+        // Add a "Teal" entry for spec / extra color picked from the
+        // tornie-tornie-mod svan058/dunelegacy.com color stack at
+        // index 176 (custom pal color). Teal is opt-in below.
+        bool tealUsedBySpectator = false;
+        for(int j=0; j<NUM_HOUSES; j++) {
+            if(houseInfo[j].colorDropDown.getSelectedEntryIntData() == -2) {
+                tealUsedBySpectator = true;
+                break;
+            }
+        }
+        if(!tealUsedBySpectator) {
+            curHouseInfo.colorDropDown.addEntry(_("Teal"), -2);
+        }
+
+        // For now, list each house's index as the available
+        // swap targets (the same palette slot each house
+        // originally used).
+        for(int j=0; j<NUM_HOUSES; j++) {
+            curHouseInfo.colorDropDown.addEntry(getHouseNameByNumber((HOUSETYPE) j), -100 - j);
+        }
+
+        // Default = Original (self)
+        curHouseInfo.colorDropDown.setSelectedItem(0);
+        curHouseInfo.colorDropDown.setEnabled(colorSwapEnabled);
+    }
 
     checkPlayerBoxes();
 

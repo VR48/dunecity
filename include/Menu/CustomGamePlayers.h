@@ -148,6 +148,8 @@ private:
         DropDownBox     player1DropDown;
         Label           player2Label;
         DropDownBox     player2DropDown;
+        Label           colorLabel;                   ///< DuneCity 1.0.366: 'Color' dropdown label
+        DropDownBox     colorDropDown;                ///< DuneCity 1.0.366: color-swap dropdown (selects the palette slot to render this house in)
     };
 
     bool                    bServer;
