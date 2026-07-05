@@ -208,6 +208,9 @@ public:
     inline void addHouseInfo(const HouseInfo& newHouseInfo) { houseInfoList.push_back(newHouseInfo); };
     inline void clearHouseInfo() { houseInfoList.clear(); };
     inline const HouseInfoList& getHouseInfoList() const { return houseInfoList; };
+    // DuneCity 1.0.367: non-const accessor for CustomGamePlayers
+    // color-dropdown onChange to mutate colorIndex directly.
+    inline HouseInfoList& getHouseInfoListMutable() { return houseInfoList; };
 
     inline void setHouseID(HOUSETYPE houseID) { this->houseID = houseID; };
 

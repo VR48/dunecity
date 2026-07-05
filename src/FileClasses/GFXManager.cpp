@@ -2686,9 +2686,21 @@ GFXManager::GFXManager() {
         uiGraphic[UI_Herald_ColoredLarge][HOUSE_NEUTRAL] = Scaler::defaultDoubleSurface(uiGraphic[UI_Herald_Colored][HOUSE_NEUTRAL].get());
 
         // HOUSE_REBELS herald
-        // Try the explicit HeraldRebels.png first if the mod ships one.
-        if (ModManager::instance().getActiveModName() == "Tornie" && pFileManager->exists("HeraldRebels.png")) {
-            auto pRebels = LoadPNG_RW(pFileManager->openFile("HeraldRebels.png").get());
+        // DuneCity 1.0.367: ALWAYS try HeraldRebels.png regardless
+        // of the active mod. Until 1.0.367 the load was gated on
+        // ModManager.getActiveModName() == "Tornie" + file exists,
+        // which left non-Tornie sessions (vanilla, dunecity, future)
+        // seeing the Sonic Tank fallback. Tornie's instruction:
+        // "Vanilla Rebels Banner need to be the same of Tornie Mods.
+        // Keep Tornie Mods intact but apply it to vanilla Rebels Banner".
+        // The file is shipped at data/HeraldRebels.png and mirrored at
+        // mods/Tornie/data/HeraldRebels.png so the FileManager search
+        // path always finds it regardless of which mod is active.
+        {
+            sdl2::surface_ptr pRebels;
+            if (pFileManager->exists("HeraldRebels.png")) {
+                pRebels = LoadPNG_RW(pFileManager->openFile("HeraldRebels.png").get());
+            }
             if (pRebels) {
                 if (pRebels->format->BitsPerPixel == 8)
                     benePalette.applyToSurface(pRebels.get());

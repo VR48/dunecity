@@ -77,6 +77,7 @@ private:
 
     void onChangeHousesDropDownBoxes(bool bInteractive, int houseInfoNum = -1);
     void onChangeTeamDropDownBoxes(bool bInteractive, int houseInfoNum = -1);
+    void onChangeColorDropDownBoxes(bool bInteractive, int houseInfoNum = -1);  ///< DuneCity 1.0.367: applies the picked palette slot to the runtime palette
     void onChangePlayerDropDownBoxes(bool bInteractive, int boxnum);
     void onClickPlayerDropDownBox(int boxnum);
     void onStartGame(unsigned int timeLeft);

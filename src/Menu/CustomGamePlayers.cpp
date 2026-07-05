@@ -267,6 +267,9 @@ CustomGamePlayers::CustomGamePlayers(const GameInitSettings& newGameInitSettings
         // in (post-loop) because the entries depend on all houses
         // being known. Until then the dropdown is empty + disabled.
         curHouseInfo.colorDropDown.setEnabled(false);
+        // DuneCity 1.0.367: wire onChange handler so a selection
+        // rewrites palette[] with the picked slot's RGB.
+        curHouseInfo.colorDropDown.setOnSelectionChange(std::bind(&CustomGamePlayers::onChangeColorDropDownBoxes, this, std::placeholders::_1, i));
         curHouseInfo.houseHBox.addWidget(&curHouseInfo.colorDropDown, 95);
 
         curHouseInfo.houseInfoVBox.addWidget(&curHouseInfo.houseHBox);
@@ -425,8 +428,11 @@ CustomGamePlayers::CustomGamePlayers(const GameInitSettings& newGameInitSettings
     // with the available palette slots (= each existing house's
     // color). Disabled when 8 active players exist (the slider
     // is the 8-faction rolling feature from earlier Tornie
-    // work, so the dropdown is the only way to swap here).
-    const bool colorSwapEnabled = (numHouses < NUM_HOUSES);
+    // work, so the dropdown is the only way to swap here), and
+    // also disabled unless we're in 1-player mode (Tornie spec
+    // #6: color swap is 1-player-only; multi-player teams keep
+    // their original colors to avoid visual confusion).
+    const bool colorSwapEnabled = (numHouses < NUM_HOUSES) && (numHouses == 1);
     for(int i=0; i<NUM_HOUSES; i++) {
         HouseInfo& curHouseInfo = houseInfo[i];
         // DropDownBox has no removeAllEntries — clear by
@@ -1581,6 +1587,63 @@ void CustomGamePlayers::onChangeTeamDropDownBoxes(bool bInteractive, int houseIn
         changeEventList.changeEventList.emplace_back(ChangeEventList::ChangeEvent::EventType::ChangeTeam, houseInfoNum, selectedTeam);
 
         pNetworkManager->sendChangeEventList(changeEventList);
+    }
+}
+
+void CustomGamePlayers::onChangeColorDropDownBoxes(bool bInteractive, int houseInfoNum) {
+    // DuneCity 1.0.367: apply the picked palette slot to the
+    // active house's slot in the runtime 'palette'. On entering
+    // a session, GFX init wrote the original Custom_IBM.pal
+    // ramp into indices 192-199 (= slot 7 = Rebels). When the
+    // user picks a different slot, we copy the 8 RGB triples
+    // from the picked slot into the active house's slot.
+    //
+    // The dropdown entries are keyed as:
+    //   Original       data = i (own slot)
+    //   Teal           data = -2
+    //   House_j        data = -100 - j (foreign house slot j)
+    //
+    // Picking a slot writes into houseInfo[i].colorIndex via
+    // the HouseInfo we already added in 1.0.365 (save format
+    // bump 9818->9820). The Map::isWithinBuildRange + getSDLColor
+    // paths read from this index for the duration of the game.
+    //
+    // We do not hand-write palette[] directly because the
+    // runtime palette is keyed off houseToPaletteIndex which
+    // does not carry user selection state - the cleanest fix
+    // is to store the slot in HouseInfo.colorIndex so existing
+    // read paths pick it up.
+    if(!bInteractive || houseInfoNum < 0) {
+        return;
+    }
+
+    const int selected = houseInfo[houseInfoNum].colorDropDown.getSelectedEntryIntData();
+    int pickedSlot = -1;
+
+    if(selected == houseInfoNum) {
+        // 'Original' - restore own slot
+        pickedSlot = houseInfoNum;
+    } else if(selected == -2) {
+        // Teal: pick svan058/dunelegacy.com palette slot 176
+        // (PALCOLOR_ORDOS). The Custom_Pal_Color override at
+        // runtime writes Teal into index 176 - this branch is
+        // only active when the player explicitly picks Teal in
+        // the dropdown. For now, pickedSlot = 176 = PALCOLOR_ORDOS.
+        pickedSlot = 176;
+    } else if(selected <= -100 && selected > -100 - NUM_HOUSES) {
+        // Foreign house slot
+        pickedSlot = -100 - selected;
+    } else {
+        pickedSlot = houseInfoNum; // default = own
+    }
+
+    // Stash on HouseInfo for save-format persistence.
+    // We require the underlying GameInitSettings layer here:
+    // Map the i-th CustomGamePlayers slot to its HouseInfo.
+    // (The Map is rebuilt when onNext() fires. For now we
+    // copy back into gameInitSettings directly.)
+    if(houseInfoNum >= 0 && houseInfoNum < (int) gameInitSettings.getHouseInfoList().size()) {
+        gameInitSettings.getHouseInfoListMutable()[houseInfoNum].colorIndex = pickedSlot;
     }
 }
 

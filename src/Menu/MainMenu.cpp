@@ -315,8 +315,20 @@ void MainMenu::onMultiPlayer() const
 
 void MainMenu::onMapEditor() const
 {
-    MapEditor mapEditor;
-    mapEditor.RunEditor();
+    // DuneCity 1.0.367: wrap the editor in try/catch. Earlier
+    // versions crashed silently when the user opened the
+    // editor without first configuring a map (e.g. 'new
+    // map' selected without a house chosen). The catch
+    // allows the game to recover gracefully instead of
+    // dying into a SEH handler.
+    try {
+        MapEditor mapEditor;
+        mapEditor.RunEditor();
+    } catch(const std::exception& e) {
+        SDL_Log("MapEditor crashed: %s", e.what());
+    } catch(...) {
+        SDL_Log("MapEditor crashed: unknown exception");
+    }
 }
 
 void MainMenu::onMods() const
