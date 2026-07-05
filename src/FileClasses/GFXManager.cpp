@@ -262,6 +262,29 @@ GFXManager::GFXManager() {
         SDL_Log("GFX INIT: Custom_IBM.pal applied (rebels dark-grey/black range 192-199)");
     }
 
+    // DuneCity 1.0.369: Custom_Pal_Color Teal ramp at index 176.
+    // The dropdown's 'Teal' entry (data=-2) picks palette slot
+    // 176 (= PALCOLOR_ORDOS). Without this patch, palette[176..183]
+    // still holds vanilla OrdOs orange so picking Teal produces
+    // no visible change. We write a teal ramp here at GFX init so
+    // the runtime copy from the dropdown has actual data to copy.
+    {
+        const SDL_Color tealRamp[8] = {
+            {  0, 220, 220, 255 },  // 176
+            {  0, 200, 200, 255 },  // 177
+            {  0, 180, 180, 255 },  // 178
+            {  0, 160, 160, 255 },  // 179
+            {  0, 140, 140, 255 },  // 180
+            {  0, 120, 120, 255 },  // 181
+            {  0, 100, 100, 255 },  // 182
+            {  0,  80,  80, 255 },  // 183
+        };
+        for(int k = 0; k < 8; k++) {
+            palette[176 + k] = tealRamp[k];
+        }
+        SDL_Log("GFX INIT: Teal ramp applied at palette[176..183]");
+    }
+
     //create PictureFactory
     std::unique_ptr<PictureFactory> PicFactory = std::make_unique<PictureFactory>();
 

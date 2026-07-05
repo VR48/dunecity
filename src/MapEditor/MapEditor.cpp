@@ -141,8 +141,26 @@ void MapEditor::RunEditor() {
 
         int frameStart = SDL_GetTicks();
 
-        processInput();
-        drawScreen();
+        // DuneCity 1.0.369: wrap each frame's processInput and
+        // drawScreen in their own try/catch. v1.0.367 wrapped only
+        // the entry; the underlying null deref or rendering exception
+        // would still abort the loop. Per-frame recovery keeps
+        // the editor responsive after a transient issue.
+        try {
+            processInput();
+        } catch(const std::exception& e) {
+            SDL_Log("MapEditor::processInput threw: %s", e.what());
+        } catch(...) {
+            SDL_Log("MapEditor::processInput threw unknown");
+        }
+
+        try {
+            drawScreen();
+        } catch(const std::exception& e) {
+            SDL_Log("MapEditor::drawScreen threw: %s", e.what());
+        } catch(...) {
+            SDL_Log("MapEditor::drawScreen threw unknown");
+        }
 
         // VSync is controlled via SDL_HINT_RENDER_VSYNC in main.cpp
         // No software frame limiting needed in map editor

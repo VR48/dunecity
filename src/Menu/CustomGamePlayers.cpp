@@ -466,6 +466,10 @@ CustomGamePlayers::CustomGamePlayers(const GameInitSettings& newGameInitSettings
         // Default = Original (self)
         curHouseInfo.colorDropDown.setSelectedItem(0);
         curHouseInfo.colorDropDown.setEnabled(colorSwapEnabled);
+        curHouseInfo.colorDropDown.setVisible(colorSwapEnabled);
+        // The label sits next to the dropdown — hide it too so the
+        // row doesn't have empty space when the dropdown is gone.
+        curHouseInfo.colorLabel.setVisible(colorSwapEnabled);
     }
 
     checkPlayerBoxes();
