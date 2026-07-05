@@ -451,14 +451,12 @@ CustomGamePlayers::CustomGamePlayers(const GameInitSettings& newGameInitSettings
         }
         curHouseInfo.colorDropDown.addEntry(_("Original"), i);
 
-        // Add a "Teal" entry for spec / extra color picked from the
-        // tornie-tornie-mod svan058/dunelegacy.com color stack at
-        // index 176 (custom pal color). Teal is opt-in below.
-        // DuneCity 1.0.371: Ordos skips Teal entirely (the user
-        // instruction: 'Normal Ordos don't need a color swapping
-        // for teal (only if chosen)' - the dropdown shouldn't even
-        // present Teal as an option for HOUSE_ORDOS).
-        if(i != HOUSE_ORDOS) {
+        // DuneCity 1.0.398: Teal entry kept (still goes to slot 192
+        // via the per-house swap path in setHouseColorSwap).
+        // The Teal/Ordos-skip logic is removed since Ordos no
+        // longer conflicts with Teal (Teal writes to slot 192,
+        // not 176 in v1.0.395+).
+        if(true) {  // always offer Teal
             bool tealUsedBySpectator = false;
             for(int j=0; j<NUM_HOUSES; j++) {
                 if(houseInfo[j].colorDropDown.getSelectedEntryIntData() == -2) {
@@ -467,15 +465,33 @@ CustomGamePlayers::CustomGamePlayers(const GameInitSettings& newGameInitSettings
                 }
             }
             if(!tealUsedBySpectator) {
-                curHouseInfo.colorDropDown.addEntry(_("Teal"), -2);
+                curHouseInfo.colorDropDown.addEntry(_("Teal (color)"), -2);
             }
         }
 
-        // For now, list each house's index as the available
-        // swap targets (the same palette slot each house
-        // originally used).
-        for(int j=0; j<NUM_HOUSES; j++) {
-            curHouseInfo.colorDropDown.addEntry(getHouseNameByNumber((HOUSETYPE) j), -100 - j);
+        // DuneCity 1.0.398: REMOVED the foreign-house color entries
+        // from this dropdown. They were named with the house name
+        // (e.g. "Harkonnen") which caused confusion with the house
+        // selection dropdown right next to them - users thought
+        // they were picking the house to play, not picking that
+        // house's color. The CustomGamePlayers color dropdown is
+        // now ONLY: Original + Teal + 4 Custom_IBM.PAL-sourced
+        // colors (Fushia, Apple Green, Dark Purple, Light Pink).
+        // The per-house swap path in Game::initGame
+        // (setHouseColorSwap) handles slot translation so users
+        // pick a color value, not a foreign-house reference.
+        if(true) {
+            // 4 custom colors sourced from Custom_IBM.PAL at the
+            // user-specified indices (160, 208, 144, 224).
+            const struct { int data; const char* name; } customColors[] = {
+                { -3, "Fushia (color)" },
+                { -4, "Apple Green (color)" },
+                { -5, "Dark Purple (color)" },
+                { -6, "Light Pink (color)" },
+            };
+            for(const auto& cc : customColors) {
+                curHouseInfo.colorDropDown.addEntry(_(cc.name), cc.data);
+            }
         }
 
         // Default = Original (self)

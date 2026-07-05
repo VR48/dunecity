@@ -269,15 +269,25 @@ GFXManager::GFXManager() {
         // runtime 'palette[192..199]' is dark grey but ibmPalette
         // (used for Fremen only per include/globals.h:115) is
         // still vanilla orange.
-        for (int i = PALCOLOR_REBELS; i < PALCOLOR_REBELS + 8; ++i) {
-            SDL_Color c;
-            c.r = palData[i*3+0];
-            c.g = palData[i*3+1];
-            c.b = palData[i*3+2];
-            c.a = 255;
-            palette[i] = c;
-        }
-        SDL_Log("GFX INIT: Custom_IBM.pal applied (rebels dark-grey/black range 192-199)");
+        //
+        // DuneCity 1.0.397: REVERTED the unconditional Custom_IBM.pal
+        // load. Tornie's OOB: 'on doit revenir en arriere sur une
+        // chose particuliere n'applique pas la palette Custom_IBM.PAL
+        // sur toute le jeu elle ne doit jamais etre par defaut' =
+        // the Custom_IBM.PAL palette must NEVER be applied by default
+        // to the whole game. It's now loaded ONLY when the player
+        // explicitly picks a custom color via CustomGamePlayers
+        // (the per-house swap path in Game::initGame sets
+        // houseColorSwap[HOUSE_REBELS] = PALCOLOR_REBELS for that
+        // house, which then triggers a targeted write in
+        // getZoomedObjPic). The startup palette stays vanilla
+        // IBM.PAL for all houses; Custom_IBM.pal values are
+        // applied only at unit-render time when a swap is active.
+        // The Custom_IBM.pal file is still loaded (to capture
+        // the values) but NOT applied to the runtime palette[]
+        // at GFX init anymore.
+        (void)palData;  // suppress unused warning; values captured but not applied at GFX init
+        SDL_Log("GFX INIT: Custom_IBM.pal found but NOT applied as default (v1.0.397); values captured for swap-on-demand use");
     }
 
     // DuneCity 1.0.369: Custom_Pal_Color Teal ramp at the REBELS slot.
