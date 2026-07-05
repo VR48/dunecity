@@ -1643,10 +1643,16 @@ void CustomGamePlayers::onChangeColorDropDownBoxes(bool bInteractive, int houseI
         // 'Original' - restore own slot
         pickedSlot = houseInfoNum;
     } else if(selected == -2) {
-        // Teal: pick the v1.0.373 Teal slot at 240-247 (was 176
+        // Teal: pick the v1.0.393 Ordos slot at 176-183 (was 240
         // in v1.0.369 but that clobbered the OrdOs vanilla green
-        // ramp so picking Teal left Ordos tinted teal).
-        pickedSlot = 240;
+        // ramp so picking Teal left Ordos tinted teal). v1.0.373
+        // moved Teal to 240-247 (unused slot). v1.0.393 moves
+        // Teal BACK to 176-183 per Tornie's OOB: 'Teal si same
+        // from Rebels but with Ordos Color slot but with
+        // Custom_IBM.Pal' = the Teal slot 176 should be sourced
+        // from Custom_IBM.pal so the dropdown picks up the
+        // Ordos color values at runtime.
+        pickedSlot = PALCOLOR_ORDOS;  // 176
     } else if(selected <= -100 && selected > -100 - NUM_HOUSES) {
         // Foreign house slot
         pickedSlot = -100 - selected;

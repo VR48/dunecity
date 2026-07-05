@@ -280,23 +280,29 @@ GFXManager::GFXManager() {
         SDL_Log("GFX INIT: Custom_IBM.pal applied (rebels dark-grey/black range 192-199)");
     }
 
-    // DuneCity 1.0.369: Custom_Pal_Color Teal ramp at index 240.
+    // DuneCity 1.0.369: Custom_Pal_Color Teal ramp at the Ordos slot.
     // The dropdown's 'Teal' entry (data=-2) was originally mapped
     // to slot 176 (= PALCOLOR_ORDOS) but that clobbered the
     // vanilla OrdOs green ramp. v1.0.373 moves Teal to 240-247
     // which is unused by vanilla + not reserved for a faction.
-    // Dropdown data value stays -2 (the slot index is wired in
-    // the dropdown -> onChangeColorDropDownBoxes hot-patch).
+    // v1.0.393 moves Teal BACK to 176-183 per Tornie's OOB: 'Teal
+    // si same from Rebels but with Ordos Color slot but with
+    // Custom_IBM.Pal' = the Teal slot 176 should be sourced from
+    // Custom_IBM.pal so the dropdown picks up the Ordos color
+    // values at runtime. The hardcoded fallback writes a teal
+    // ramp (Ordos green) at 176-183 when Custom_IBM.pal doesn't
+    // include the teal slot override (default state).
     // v1.0.385: prefer SpectatorTeal.pal file if shipped (lets
     // tornie tune the teal ramp without rebuilding). Falls back to
     // the v1.0.369 hardcoded teal ramp if the file is absent.
     {
+        const int tealSlot = PALCOLOR_ORDOS;  // 176 - Ordos slot
         if(pFileManager->exists("SpectatorTeal.pal")) {
             auto tealRw = pFileManager->openFile("SpectatorTeal.pal");
             std::vector<Uint8> tealData(768);
             SDL_RWread(tealRw.get(), tealData.data(), 1, 768);
             for(int k = 0; k < 8; k++) {
-                int idx = 240 + k;
+                int idx = tealSlot + k;
                 SDL_Color c;
                 c.r = tealData[idx*3+0];
                 c.g = tealData[idx*3+1];
@@ -304,8 +310,12 @@ GFXManager::GFXManager() {
                 c.a = 255;
                 palette[idx] = c;
             }
-            SDL_Log("GFX INIT: SpectatorTeal.pal applied at palette[240..247] (file override)");
+            SDL_Log("GFX INIT: SpectatorTeal.pal applied at palette[%d..%d] (file override, Ordos slot)", tealSlot, tealSlot+7);
         } else {
+            // Fallback teal ramp - sourced from Custom_IBM.pal
+            // at the Ordos slot 176-183 which the user uploaded
+            // with teal/cyan color values. The teal ramp mirrors
+            // vanilla's PALCOLOR_ORDOS green ramp.
             const SDL_Color tealRamp[8] = {
                 {  0, 220, 220, 255 },
                 {  0, 200, 200, 255 },
@@ -317,9 +327,9 @@ GFXManager::GFXManager() {
                 {  0,  80,  80, 255 },
             };
             for(int k = 0; k < 8; k++) {
-                palette[240 + k] = tealRamp[k];
+                palette[tealSlot + k] = tealRamp[k];
             }
-            SDL_Log("GFX INIT: Teal ramp applied at palette[240..247] (hardcoded fallback)");
+            SDL_Log("GFX INIT: Teal ramp applied at palette[%d..%d] (hardcoded fallback, Ordos slot)", tealSlot, tealSlot+7);
         }
     }
 
@@ -2207,7 +2217,27 @@ GFXManager::GFXManager() {
     // Vanilla vanilla-HARKONNEN slot keeps its vanilla tinted
     // appearance; the per-house clones for non-HARKONNEN get the
     // Custom_IBM.pal dark grey on Fremen/Rebels/Neutral slots.
+    //
+    // DuneCity 1.0.393: only apply the 192-199 (Rebels/Fremen
+    // shared slot) override to the per-house terrain clones. The
+    // Custom_IBM.pal uploaded by Tornie modifies ALL house slots
+    // (Harkonnen=purple, Atreides=pink, Ordos=teal, etc.) which
+    // re-brands the other factions away from vanilla. Tornie's
+    // spec 'il est pris encore une fois sur IBM.PAL' = 'it's still
+    // being read from IBM.PAL' = the runtime reads from
+    // ibmPalette[192] (vanilla orange) instead of palette[192]
+    // (Custom_IBM dark grey) somewhere. The targeted write
+    // below forces the dark grey onto the per-house surface at
+    // 192-199 only - leaving other house slots as vanilla IBM.PAL
+    // (Harkonnen=red, Ordos=green, etc.) so the rest of the
+    // factions keep their native colors.
     {
+        // Build a temporary 8-color array holding only the
+        // 192-199 override from the runtime palette.
+        SDL_Color rebelsOverride[8];
+        for(int k = 0; k < 8; k++) {
+            rebelsOverride[k] = palette[PALCOLOR_FREMEN + k];
+        }
         // Clone for each non-HARKONNEN house
         for(int h = 0; h < NUM_HOUSES; h++) {
             if(h == HOUSE_HARKONNEN) continue;
@@ -2216,15 +2246,15 @@ GFXManager::GFXManager() {
                                    objPic[ObjPic_Terrain][HOUSE_HARKONNEN][0]->format, 0)
             };
             if(objPic[ObjPic_Terrain][h][0] && objPic[ObjPic_Terrain][h][0]->format->palette) {
-                // Apply runtime 'palette' to the cloned surface's
-                // embedded palette. This includes the Custom_IBM.pal
-                // override at indices 192-199 (dark grey) which
-                // makes Rebels + Fremen tiles look dark grey instead
-                // of vanilla orange.
-                palette.applyToSurface(objPic[ObjPic_Terrain][h][0].get());
+                // Apply only the 192-199 override to the cloned
+                // surface. Other house slots (144, 160, 176, 208,
+                // 224, 128) stay as vanilla IBM.PAL values from
+                // the source surface.
+                SDL_SetPaletteColors(objPic[ObjPic_Terrain][h][0]->format->palette,
+                                      rebelsOverride, PALCOLOR_FREMEN, 8);
             }
         }
-        SDL_Log("DuneCity 1.0.387: per-house terrain atlas remap (Custom_IBM.pal applied to Rebels/Fremen tiles)");
+        SDL_Log("DuneCity 1.0.387+1.0.393: per-house terrain atlas remap (Custom_IBM.pal 192-199 applied to Rebels/Fremen tiles only)");
     }
     objPic[ObjPic_DestroyedStructure][HOUSE_HARKONNEN][0] = icon->getPictureRow2(14, 33, 125, 213, 214, 215, 223, 224, 225, 232, 233, 234, 240, 246, 247);
     objPic[ObjPic_RockDamage][HOUSE_HARKONNEN][0] = icon->getPictureRow(1,6);
@@ -3583,19 +3613,23 @@ SDL_Texture* GFXManager::getZoomedObjPic(unsigned int id, int house, unsigned in
 
         objPic[id][house][z] = mapSurfaceColorRange(objPic[id][HOUSE_HARKONNEN][z].get(), PALCOLOR_HARKONNEN, houseToPaletteIndex[house]);
 
-        // DuneCity 1.0.392: for HOUSE_REBELS, re-apply the runtime
-        // 'palette' (which has the Custom_IBM.pal dark grey override
-        // at indices 192-199) to the remapped surface's embedded
+        // DuneCity 1.0.393: for HOUSE_REBELS, re-apply ONLY the
+        // 192-199 (Rebels/Fremen shared slot) override from the
+        // runtime 'palette' to the remapped surface's embedded
         // palette. Tornie's spec: 'il est pris encore une fois sur
-        // IBM.PAL' - the objPic remap-on-demand path in
-        // mapSurfaceColorRange copies the source's palette to the
-        // destination surface. If the source's palette at 192-199
-        // is still the vanilla IBM.PAL (orange Fremen), the
-        // destination ends up orange too. Re-applying 'palette'
-        // forces the Custom_IBM.pal values onto the remapped
-        // surface so HOUSE_REBELS shows dark grey.
+        // IBM.PAL' = the remapped surface inherited the source's
+        // vanilla IBM.PAL colors at 192-199 (orange Fremen).
+        // Targeting the write to 192-199 forces Custom_IBM.pal
+        // dark grey onto the remapped surface so HOUSE_REBELS
+        // shows dark grey. Other house slots (144, 160, 176, 208,
+        // 224, 128) keep their vanilla values.
         if(house == HOUSE_REBELS && objPic[id][house][z] && objPic[id][house][z]->format->palette) {
-            palette.applyToSurface(objPic[id][house][z].get());
+            SDL_Color rebelsOverride[8];
+            for(int k = 0; k < 8; k++) {
+                rebelsOverride[k] = palette[PALCOLOR_FREMEN + k];
+            }
+            SDL_SetPaletteColors(objPic[id][house][z]->format->palette,
+                                  rebelsOverride, PALCOLOR_FREMEN, 8);
         }
 
         // DuneCity 1.0.383: removed the ibmPalette[PALCOLOR_FREMEN..+15]
