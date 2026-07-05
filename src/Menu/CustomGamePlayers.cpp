@@ -1645,6 +1645,25 @@ void CustomGamePlayers::onChangeColorDropDownBoxes(bool bInteractive, int houseI
     if(houseInfoNum >= 0 && houseInfoNum < (int) gameInitSettings.getHouseInfoList().size()) {
         gameInitSettings.getHouseInfoListMutable()[houseInfoNum].colorIndex = pickedSlot;
     }
+
+    // DuneCity 1.0.367 (hot-patch): actually mutate the runtime
+    // 'palette' array so the screen reflects the user's pick.
+    // The runtime palette is the 8x16-cell array indexed by
+    // 'houseToPaletteIndex[houseID] + offset' (offset 0..7 for
+    // body/shadow/highlight). To swap, we copy the 8 RGB triples
+    // from the picked slot's range into the active house's
+    // range. Custom_Pal_Color slot 176 (= PALCOLOR_ORDOS) is
+    // required when 'Teal' is the picked value.
+    if(houseInfoNum >= 0 && houseInfoNum < NUM_HOUSES && pickedSlot >= 0) {
+        const int activeIdx = houseToPaletteIndex[houseInfoNum];
+        const int pickedIdx  = pickedSlot;
+        if(pickedIdx >= 0 && activeIdx + 8 <= 256 && pickedIdx + 8 <= 256) {
+            for(int k = 0; k < 8; k++) {
+                palette[activeIdx + k] = palette[pickedIdx + k];
+            }
+            SDL_Log("DuneCity 1.0.367: house %d swapped color slot to %d (8 cells copied)", houseInfoNum, pickedSlot);
+        }
+    }
 }
 
 void CustomGamePlayers::onChangePlayerDropDownBoxes(bool bInteractive, int boxnum) {
