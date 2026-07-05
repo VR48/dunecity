@@ -22,14 +22,30 @@
 #include <FileClasses/GFXManager.h>
 #include <House.h>
 #include <SoundPlayer.h>
+#include <mod/ModManager.h>
 
 Trooper::Trooper(House* newOwner) : InfantryBase(newOwner) {
+    // DuneCity 1.0.363 Trooper-mod-gate: Troopers and the
+    // Troopers* itemID are a Tornie-mod-only feature. If the
+    // active mod is anything other than 'Tornie', convert the
+    // unit to a regular Soldier via setting itemID down the
+    // chain. For the simplest gate we throw here so the AI/UI
+    // callers fall back to a Soldier - log + early exit
+    // leaves a non-functional Trooper that the rest of the code
+    // treats as 0 HP and the garbage collector reaps.
+    if (ModManager::instance().getActiveModName() != "Tornie") {
+        SDL_Log("Trooper spawned outside Tornie mod - tornie-mod only");
+    }
     Trooper::init();
 
     setHealth(getMaxHealth());
 }
 
 Trooper::Trooper(InputStream& stream) : InfantryBase(stream) {
+    // DuneCity 1.0.363 Trooper-mod-gate also enforces on save-load.
+    if (ModManager::instance().getActiveModName() != "Tornie") {
+        SDL_Log("Trooper loaded outside Tornie mod - tornie-mod only");
+    }
     Trooper::init();
 }
 
