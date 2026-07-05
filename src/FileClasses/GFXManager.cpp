@@ -242,16 +242,18 @@ GFXManager::GFXManager() {
         auto palRw = pFileManager->openFile("Custom_IBM.pal");
         std::vector<Uint8> palData(768);
         SDL_RWread(palRw.get(), palData.data(), 1, 768);
-        // Apply entries 192-199 (6-bit VGA → 8-bit)
+        // DuneCity 1.0.357: Custom_IBM.pal is 8-bit already (was *4
+        // mistakenly scaled, which produced a pale washed-out grey
+        // instead of the intended dark grey). Read raw bytes directly.
         for (int i = 192; i < 200; ++i) {
             SDL_Color c;
-            c.r = static_cast<Uint8>(std::min(255, static_cast<int>(palData[i*3+0]) * 4));
-            c.g = static_cast<Uint8>(std::min(255, static_cast<int>(palData[i*3+1]) * 4));
-            c.b = static_cast<Uint8>(std::min(255, static_cast<int>(palData[i*3+2]) * 4));
+            c.r = palData[i*3+0];
+            c.g = palData[i*3+1];
+            c.b = palData[i*3+2];
             c.a = 255;
             palette[i] = c;
         }
-        SDL_Log("GFX INIT: Tornie Custom_IBM.pal applied (rebels grey range 192-199)");
+        SDL_Log("GFX INIT: Tornie Custom_IBM.pal applied (rebels dark-grey/black range 192-199)");
     }
 
     //create PictureFactory

@@ -1579,12 +1579,15 @@ void Game::drawScreen()
                     SDL_Texture* validPlace = nullptr;
                     SDL_Texture* invalidPlace = nullptr;
 
-                    // DuneCity 1.0.351: Rebels get a dark-grey valid
-                    // grid instead of green. We override validPlace
-                    // AFTER the switch so the texture selection logic
-                    // stays linear.
-                    const bool placingRebelsForGrid = (pBuilder->getOwner()
-                                                       && pBuilder->getOwner()->getHouseID() == HOUSE_REBELS);
+                    // DuneCity 1.0.357: revert cursor render to vanilla behavior.
+// Tornie's report: 'l'algorithme de placement reste rouge meme si
+// on peut place un batiment'. The 1.0.350 ownership gate (skip
+// tiles not owned by the placing house) and the 1.0.351 Rebels
+// override (UI_GreyPlace) made the grid render red everywhere.
+// Restore the standard vanilla predicate: pTile->isRock() &&
+// !pTile->isMountain() && !pTile->hasAGroundObject() && ... for
+// all houses. No special-casing. The 8th house gets the same
+// green/red treatment as houses 1..7.
 
                     switch(currentZoomlevel) {
                         case 0: {
@@ -1605,52 +1608,16 @@ void Game::drawScreen()
 
                     }
 
-                    if (placingRebelsForGrid) {
-                        switch(currentZoomlevel) {
-                            case 0:  validPlace = pGFXManager->getUIGraphic(UI_GreyPlace_Zoomlevel0); break;
-                            case 1:  validPlace = pGFXManager->getUIGraphic(UI_GreyPlace_Zoomlevel1); break;
-                            default: validPlace = pGFXManager->getUIGraphic(UI_GreyPlace_Zoomlevel2); break;
-                        }
-                    }
-
-                    // DuneCity 1.0.350: green/red placement grid restored, but
-                    // only when the local player has selected a Builder
-                    // unit AND is actively trying to place a building
-                    // (i.e. the player has a structure queued in the
-                    // build list and is hovering over the map).
-                    //
-                    // Tornie's instruction: 'the grid should only be
-                    // displayed when selecting buildings'.
-                    //
-                    // We restore the per-tile UI_ValidPlace /
-                    // UI_InvalidPlace texture render. The grid only
-                    // renders green on tiles owned by the placing
-                    // house (no cross-zone bleed for any house,
-                    // including the 8th).
-                    //
-                    // DuneCity 1.0.351: for the 8th house (Rebels),
-                    // the valid grid uses the dark-grey UI_GreyPlace
-                    // palette to match the Rebels faction colour
-                    // (96,96,96 / 110,110,110). The invalid grid
-                    // stays red so the player still gets a clear
-                    // 'cannot place here' signal. Vanilla houses 1..7
-                    // keep the standard green/red pair.
+                    // Vanilla per-tile grid render: no ownership gate,
+                    // no house-specific override. Same predicate for
+                    // every house. See Game.cpp vanilla prior to
+                    // v1.0.347/350/351 patches.
                     for(int i = xPos; i < (xPos + structuresize.x); i++) {
                         for(int j = yPos; j < (yPos + structuresize.y); j++) {
                             SDL_Texture* image;
                             bool tileValid = false;
                             if(withinRange && currentGameMap->tileExists(i,j)) {
                                 Tile* pTile = currentGameMap->getTile(i,j);
-                                const int placingOwnerID = pBuilder->getOwner()
-                                                            ? pBuilder->getOwner()->getHouseID()
-                                                            : -1;
-                                const int tileOwnerByte = pTile->getOwner();
-                                if(tileOwnerByte != placingOwnerID) {
-                                    image = invalidPlace;
-                                    SDL_Rect drawLocationSkip = calcDrawingRect(image, screenborder->world2screenX(i*TILESIZE), screenborder->world2screenY(j*TILESIZE));
-                                    SDL_RenderCopy(renderer, image, nullptr, &drawLocationSkip);
-                                    continue;
-                                }
                                 if(isZoneStructure(placeItem)) {
                                     tileValid = !pTile->isMountain() && !pTile->hasAGroundObject();
                                 } else {
