@@ -2762,6 +2762,42 @@ GFXManager::GFXManager() {
     if(uiGraphic[UI_MentatBackgroundBene][HOUSE_HARKONNEN] != nullptr) {
         benePalette.applyToSurface(uiGraphic[UI_MentatBackgroundBene][HOUSE_HARKONNEN].get());
     }
+    // DuneCity 1.0.381: also pre-build HOUSE_NEUTRAL + HOUSE_REBELS
+    // slots from MENTATA.CPS (the canonical Atreides palette) so the
+    // Bene cyan/teal hint from MENTATM.CPS + benePalette.applyToSurface
+    // doesn't bleed in. v1.0.305 era loaded MENTATM.CPS with benePalette
+    // for all non-HARKONNEN slots which gave them the same cyan skin
+    // tones as the actual Bene Gesserit portrait - that's the bug tornie
+    // calls 'cyan skin'. We avoid this by basing the Rebels/Neutral
+    // slots on MENTATA.CPS (the cleaner Atreides palette, no Bene
+    // tint), and the per-house remap in getUIGraphicSurface re-tints
+    // to the house color.
+    for(int h = 0; h < NUM_HOUSES; h++) {
+        if(h == HOUSE_HARKONNEN) continue;
+        if((h == HOUSE_REBELS || h == HOUSE_NEUTRAL)) {
+            // Rebels + Neutral: MENTATA.CPS source (Atreides palette,
+            // no Bene cyan tint).
+            auto raw = LoadCPS_RW(pFileManager->openFile("MENTATA.CPS").get());
+            if(raw) {
+                sdl2::surface_ptr doubled = Scaler::defaultDoubleSurface(raw.get());
+                if(doubled) {
+                    // Apply vanilla ibmPalette (not the Custom_IBM
+                    // override) so the Atreides palette stays clean
+                    // and the per-house remap can do its work.
+                    ibmPalette.applyToSurface(doubled.get());
+                    uiGraphic[UI_MentatBackgroundBene][h] = std::move(doubled);
+                }
+            }
+        } else {
+            // Other houses (Atreides, Ordos, Fremen, Sardaukar, Mercenary):
+            // existing path - clone HARKONNEN, remap applies via the
+            // lazy remap in getUIGraphicSurface.
+            uiGraphic[UI_MentatBackgroundBene][h] = sdl2::surface_ptr{
+                SDL_ConvertSurface(uiGraphic[UI_MentatBackgroundBene][HOUSE_HARKONNEN].get(),
+                                   uiGraphic[UI_MentatBackgroundBene][HOUSE_HARKONNEN]->format, 0)
+            };
+        }
+    }
 
     uiGraphic[UI_MentatHouseChoiceInfoQuestion][HOUSE_HARKONNEN] = PicFactory->createMentatHouseChoiceQuestion(HOUSE_HARKONNEN, benePalette);
     uiGraphic[UI_MentatHouseChoiceInfoQuestion][HOUSE_ATREIDES] = PicFactory->createMentatHouseChoiceQuestion(HOUSE_ATREIDES, benePalette);

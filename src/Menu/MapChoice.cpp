@@ -403,7 +403,16 @@ void MapChoice::loadINI() {
         }
     }
     if (!pRegionINI) {
-        pRegionINI = std::make_unique<INIFile>(pFileManager->openFile(filename).get());
+        // DuneCity 1.0.381: wrap in try/catch so a missing
+        // REGION*.INI for a non-existent campaign degrades
+        // gracefully (empty MapChoice) instead of throwing
+        // std::runtime_error and crashing the game.
+        try {
+            pRegionINI = std::make_unique<INIFile>(pFileManager->openFile(filename).get());
+        } catch(const std::exception& e) {
+            SDL_Log("MapChoice::loadINI WARNING: campaign REGION file '%s' missing or invalid (%s)", filename.c_str(), e.what());
+            pRegionINI.reset();
+        }
     }
     INIFile& RegionINI = *pRegionINI;
 
