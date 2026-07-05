@@ -229,6 +229,7 @@ target_sources(dunecity
         players/MentatBuildOrderMentat.cpp
         players/QuantBotConfig.cpp
         players/SmartBot.cpp
+        players/SpectatorPlayer.cpp
 
         # Mod System
         mod/ModManager.cpp

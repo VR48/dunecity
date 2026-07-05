@@ -23,10 +23,19 @@
 #include <players/SmartBot.h>
 #include <players/QuantBot.h>
 #include <players/Mentat.h>
+#include <players/SpectatorPlayer.h>
 
 std::vector<PlayerFactory::PlayerData> PlayerFactory::playerDataList;
 
 void PlayerFactory::registerAllPlayers() {
+
+    // DuneCity 1.0.370: Spectator entry. Listed FIRST so it
+    // sits at the top of the player dropdown in CustomGamePlayers
+    // for AI-vs-AI solo and MP spectator sessions.
+    playerDataList.emplace_back(  "Spectator",
+                                            "Spectator",
+        [](House* house, const std::string& playername) { return std::make_unique<SpectatorPlayer>(house, playername); },
+        [](InputStream& inputStream, House* house) { return std::make_unique<SpectatorPlayer>(inputStream, house); });
 
     playerDataList.emplace_back(  HUMANPLAYERCLASS,
                                             "Human Player",
