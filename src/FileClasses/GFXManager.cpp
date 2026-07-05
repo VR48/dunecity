@@ -237,8 +237,14 @@ GFXManager::GFXManager() {
     // open bene palette
     Palette benePalette = LoadPalette_RW(pFileManager->openFile("BENE.PAL").get());
 
-    // Tornie mod: load Custom_IBM.pal to replace palette entries 192-199 with rebels grey
-    if (ModManager::instance().getActiveModName() == "Tornie" && pFileManager->exists("Custom_IBM.pal")) {
+    // Custom_IBM.pal: load whenever present. Originally gated on
+    // 'ModManager.getActiveModName() == "Tornie"' but that gate
+    // made the load inactive if the user had selected the mod
+    // after GFX init or if the search-path lookup missed the
+    // file. The .pal file is unambiguously the 8th-faction tint
+    // override and always exists in both the source 'data/'
+    // dir and the mod-side 'mods/Tornie/data/' mirror.
+    if (pFileManager->exists("Custom_IBM.pal")) {
         auto palRw = pFileManager->openFile("Custom_IBM.pal");
         std::vector<Uint8> palData(768);
         SDL_RWread(palRw.get(), palData.data(), 1, 768);
@@ -253,7 +259,7 @@ GFXManager::GFXManager() {
             c.a = 255;
             palette[i] = c;
         }
-        SDL_Log("GFX INIT: Tornie Custom_IBM.pal applied (rebels dark-grey/black range 192-199)");
+        SDL_Log("GFX INIT: Custom_IBM.pal applied (rebels dark-grey/black range 192-199)");
     }
 
     //create PictureFactory
