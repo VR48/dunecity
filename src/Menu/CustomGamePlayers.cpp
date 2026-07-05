@@ -435,10 +435,13 @@ CustomGamePlayers::CustomGamePlayers(const GameInitSettings& newGameInitSettings
     // color). Disabled when 8 active players exist (the slider
     // is the 8-faction rolling feature from earlier Tornie
     // work, so the dropdown is the only way to swap here), and
-    // also disabled unless we're in 1-player mode (Tornie spec
-    // #6: color swap is 1-player-only; multi-player teams keep
-    // their original colors to avoid visual confusion).
-    const bool colorSwapEnabled = (numHouses < NUM_HOUSES) && (numHouses == 1);
+    // DuneCity 1.0.386: relax the color-swap gate so the dropdown is
+    // visible for any numHouses count, not just == 1. The Teal
+    // option (Custom_Pal_Color at index 240) is always available so
+    // the spectator can pre-pick it even with 8 active players.
+    // Per-house foreign-color swaps remain gated by the team
+    // uniqueness check inside the onChangeColorDropDownBoxes handler.
+    const bool colorSwapEnabled = true;
     for(int i=0; i<NUM_HOUSES; i++) {
         HouseInfo& curHouseInfo = houseInfo[i];
         // DropDownBox has no removeAllEntries — clear by
