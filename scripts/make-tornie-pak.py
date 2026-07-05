@@ -102,6 +102,7 @@ ENTRIES = [
     "Tornie_AdvancedWindtrap_gfx_two_frames.png",
     "Tornie_AdvancedWindtrap_icon.png",
     "Tornie_CornerFlag.png",
+    "SpectatorTeal.pal",
     "PaulAtreidesEyes.png",
     "PaulAtreidesMentat.png",
     "PaulAtreidesMouth.png",

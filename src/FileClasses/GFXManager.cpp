@@ -269,21 +269,40 @@ GFXManager::GFXManager() {
     // which is unused by vanilla + not reserved for a faction.
     // Dropdown data value stays -2 (the slot index is wired in
     // the dropdown -> onChangeColorDropDownBoxes hot-patch).
+    // v1.0.385: prefer SpectatorTeal.pal file if shipped (lets
+    // tornie tune the teal ramp without rebuilding). Falls back to
+    // the v1.0.369 hardcoded teal ramp if the file is absent.
     {
-        const SDL_Color tealRamp[8] = {
-            {  0, 220, 220, 255 },
-            {  0, 200, 200, 255 },
-            {  0, 180, 180, 255 },
-            {  0, 160, 160, 255 },
-            {  0, 140, 140, 255 },
-            {  0, 120, 120, 255 },
-            {  0, 100, 100, 255 },
-            {  0,  80,  80, 255 },
-        };
-        for(int k = 0; k < 8; k++) {
-            palette[240 + k] = tealRamp[k];
+        if(pFileManager->exists("SpectatorTeal.pal")) {
+            auto tealRw = pFileManager->openFile("SpectatorTeal.pal");
+            std::vector<Uint8> tealData(768);
+            SDL_RWread(tealRw.get(), tealData.data(), 1, 768);
+            for(int k = 0; k < 8; k++) {
+                int idx = 240 + k;
+                SDL_Color c;
+                c.r = tealData[idx*3+0];
+                c.g = tealData[idx*3+1];
+                c.b = tealData[idx*3+2];
+                c.a = 255;
+                palette[idx] = c;
+            }
+            SDL_Log("GFX INIT: SpectatorTeal.pal applied at palette[240..247] (file override)");
+        } else {
+            const SDL_Color tealRamp[8] = {
+                {  0, 220, 220, 255 },
+                {  0, 200, 200, 255 },
+                {  0, 180, 180, 255 },
+                {  0, 160, 160, 255 },
+                {  0, 140, 140, 255 },
+                {  0, 120, 120, 255 },
+                {  0, 100, 100, 255 },
+                {  0,  80,  80, 255 },
+            };
+            for(int k = 0; k < 8; k++) {
+                palette[240 + k] = tealRamp[k];
+            }
+            SDL_Log("GFX INIT: Teal ramp applied at palette[240..247] (hardcoded fallback)");
         }
-        SDL_Log("GFX INIT: Teal ramp applied at palette[240..247]");
     }
 
     //create PictureFactory
