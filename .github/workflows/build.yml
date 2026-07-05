@@ -2,7 +2,7 @@ name: Build Dune Legacy
 
 on:
   push:
-    branches: [ main, release-* ]
+    branches: [ main, release-*, tornie-beta ]
     tags:     [ 'v*' ]
   pull_request:
     branches: [ main ]
@@ -313,6 +313,64 @@ jobs:
           if [ ${#FILES[@]} -gt 0 ]; then
             echo -e "$NOTES" | gh release create latest-dev "${FILES[@]}" \
               --title "Dev Build v${VERSION}" \
+              --notes-file - \
+              --prerelease
+          fi
+
+  # Tornie Mod beta build: update a "tornie-beta" pre-release on every
+  # push to the tornie-beta branch so Tornie's mod build is always
+  # downloadable from the releases page alongside the stable main dev.
+  tornie-release:
+    needs: [build-windows, build-linux, build-macos]
+    if: |
+      always() &&
+      github.ref == 'refs/heads/tornie-beta' &&
+      (needs.build-windows.result == 'success' || needs.build-linux.result == 'success' || needs.build-macos.result == 'success')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: DuneCity-Windows-Installer
+          path: dist/windows
+
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: DuneCity-macOS-DMG
+          path: dist/macos
+
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: DuneCity-Linux-Packages
+          path: dist/linux
+
+      - name: Update tornie-beta release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(sed -n 's/^project(DuneCity VERSION \([0-9]*\.[0-9]*\.[0-9]*\).*/\1/p' CMakeLists.txt)
+          SHA="${GITHUB_SHA::8}"
+          NOTES="Tornie Mod beta v${VERSION} (${SHA})\n\nAuto-built from tornie-beta @ $(date -u '+%Y-%m-%d %H:%M UTC')\n\nThe Tornie mod is bundled as the active mod. Use the in-game Mod menu to switch back to vanilla or to Tornie.\n\n**Downloads** (attached below)"
+
+          # Delete old tornie-beta release if it exists, then create fresh
+          gh release delete tornie-beta --yes 2>/dev/null || true
+          git push origin :refs/tags/tornie-beta 2>/dev/null || true
+
+          # Collect whatever artifacts succeeded
+          shopt -s nullglob
+          FILES=(dist/*/*)
+          if [ ${#FILES[@]} -gt 0 ]; then
+            echo -e "$NOTES" | gh release create tornie-beta "${FILES[@]}" \
+              --title "Tornie Mod Beta v${VERSION}" \
               --notes-file - \
               --prerelease
           fi
