@@ -3507,6 +3507,62 @@ SDL_Surface* GFXManager::getUIGraphicSurface(unsigned int id, int house) {
         if (house == HOUSE_FREMEN && uiGraphic[id][house] && uiGraphic[id][house]->format->palette) {
             ibmPalette.applyToSurface(uiGraphic[id][house].get(), PALCOLOR_FREMEN, PALCOLOR_FREMEN + 15);
         }
+        // DuneCity 1.0.374: HOUSE_REBELS + HOUSE_NEUTRAL UI graphics
+        // are tinted from Custom_IBM.Pal so the runtime palette at
+        // houseToPaletteIndex[house] (= 192 for Rebels, 160 for Neutral)
+        // already contains the right teal/dark-grey values. The
+        // exception is mentat portraits: per tornie spec 'Mentats
+        // never use Custom_IBM.Pal' - so for the mentat portrait
+        // IDs (the UI_MentatBackground* family + Bene Gesserit set)
+        // we explicitly re-tint with ibmPalette so Custom_IBM.pal
+        // never affects the mentat portrait tint.
+        if(id == UI_MentatBackground || id == UI_MentatBackgroundBene
+           || id == UI_MentatHouseChoiceInfoQuestion
+           || id == UI_MentatYes || id == UI_MentatYes_Pressed
+           || id == UI_MentatNo || id == UI_MentatNo_Pressed) {
+            if(house == HOUSE_REBELS && uiGraphic[id][house] && uiGraphic[id][house]->format->palette) {
+                ibmPalette.applyToSurface(uiGraphic[id][house].get(), PALCOLOR_REBELS, PALCOLOR_REBELS + 7);
+            }
+            if(house == HOUSE_NEUTRAL && uiGraphic[id][house] && uiGraphic[id][house]->format->palette) {
+                ibmPalette.applyToSurface(uiGraphic[id][house].get(), PALCOLOR_NEUTRAL, PALCOLOR_NEUTRAL + 7);
+            }
+        }
+        // DuneCity 1.0.374: rebin MENTATM.CPS for Rebels+Neutral from
+        // the vanilla source so it applies to all mods. Previously
+        // the lazy remap read the source 'palette' for both slots
+        // and any mod-side MENTATM.CPS would have leaked through.
+        // Now we explicitly remap to vanilla (PALCOLOR_MERCENARY
+        // range) before applying ibmPalette.
+        if(id == UI_MentatBackgroundBene
+           && (house == HOUSE_REBELS || house == HOUSE_NEUTRAL)) {
+            // The HARKONNEN slot is built from MENTATM.CPS. The
+            // rebin writes the same pixels; for the rebin set we
+            // re-derive from the original CPS file each call so
+            // mods cannot influence the tint source.
+            static thread_local sdl2::surface_ptr sMentatMVanilla;
+            if(!sMentatMVanilla && pFileManager != nullptr) {
+                auto raw = LoadCPS_RW(pFileManager->openFile("MENTATM.CPS").get());
+                if(raw) {
+                    sMentatMVanilla = Scaler::defaultDoubleSurface(raw.get());
+                    // apply BENE.PAL so the underlying artwork uses
+                    // the Bene Gesserit palette instead of the
+                    // MENTATA/ATREIDES palette baked into MENTATM.CPS.
+                    if(sMentatMVanilla) {
+                        // use a local BENE.PAL copy so we don't depend
+                        // on the constructor-local benePalette (gone
+                        // by the time getUIGraphicSurface runs).
+                        Palette bene = LoadPalette_RW(pFileManager->openFile("BENE.PAL").get());
+                        bene.applyToSurface(sMentatMVanilla.get());
+                    }
+                }
+            }
+            if(sMentatMVanilla && uiGraphic[id][house]) {
+                // Replace the existing entry with the vanilla-derived one.
+                uiGraphic[id][house] = sdl2::surface_ptr{
+                    SDL_ConvertSurface(sMentatMVanilla.get(), sMentatMVanilla->format, 0)
+                };
+            }
+        }
     }
 
     return uiGraphic[id][house].get();
