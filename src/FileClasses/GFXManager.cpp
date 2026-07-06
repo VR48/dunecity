@@ -3609,52 +3609,41 @@ SDL_Texture* GFXManager::getZoomedObjPic(unsigned int id, int house, unsigned in
             }
         }
 
-        // DuneCity 1.0.410: per-house remap-on-demand path
-        // restricted to the color swap path only. Tornie's OOB:
-        // 'the color of all except harkonnen (units and structure)
-        // need to be rolled back like vanilla. it's cause a
-        // translucent mask to them and cause a kameleon unit
-        // almost. Rebels colors unit tint don't work it need
-        // to work like when i add it for first time in first
-        // version. (only for color swap)' = the per-house
-        // remap ONLY fires when the player explicitly picked a
-        // custom color via setHouseColorSwap (set at game start
-        // from Game::initGame). When no swap is active
-        // (getHouseColorSwap returns -1), the surface is left
-        // unchanged (HARKONNEN's surface, with HARKONNEN
-        // palette). The vanilla per-house colors are applied
-        // at GFX init by writing each house's vanilla color
-        // into the runtime 'palette' at the house's slot
-        // (see the per-house structure remap loop in the
-        // GFXManager constructor). This way the engine
-        // reads the correct color from palette[] when
-        // rendering any house's sprite (since the sprite
-        // pixels at indices 144-151 point to whatever the
-        // runtime palette has there - which is the active
-        // house's color).
-        const int swapSlot = getHouseColorSwap(house);
+        // DuneCity 1.0.411: per-house remap-on-demand path
+        // restored. The HARKONNEN surface has pixel values at
+        // indices 144-151 (HARKONNEN's color slot). We remap
+        // those pixel values to the active house's slot so
+        // each house shows their own color. The runtime
+        // palette[] holds each house's vanilla color at the
+        // house's slot (e.g. Atreides blue at 160, Ordos
+        // green at 176, etc.) so the engine reads the
+        // correct color from palette[] when rendering the
+        // remapped surface.
+        //
+        // For HOUSE_REBELS with no active color swap, the
+        // remap goes to PALCOLOR_FREMEN (192) and the
+        // surface gets the Custom_IBM.pal dark grey written
+        // to indices 192-199 (from customColorRamp). This
+        // matches Tornie's first-version behavior.
+        //
+        // For color swap (setHouseColorSwap set to a non-1
+        // value), the remap goes to the picked slot instead
+        // of the house's own slot.
+        int destSlot = houseToPaletteIndex[house];
+        int swapSlot = getHouseColorSwap(house);
         if(swapSlot >= 0) {
-            // Color swap active - remap pixels from PALCOLOR_HARKONNEN
-            // (144) to the picked slot, then apply the custom
-            // color override at the destination slot.
-            objPic[id][house][z] = mapSurfaceColorRange(objPic[id][HOUSE_HARKONNEN][z].get(), PALCOLOR_HARKONNEN, swapSlot);
-            if(house == HOUSE_REBELS && objPic[id][house][z] && objPic[id][house][z]->format->palette) {
-                SDL_Color rebelsOverride[8];
-                for(int k = 0; k < 8; k++) {
-                    rebelsOverride[k] = customColorRamp[PALCOLOR_FREMEN + k];
-                }
-                SDL_SetPaletteColors(objPic[id][house][z]->format->palette,
-                                      rebelsOverride, PALCOLOR_FREMEN, 8);
-            }
+            destSlot = swapSlot;
         }
-        // When no swap is active, we don't create a per-house
-        // remapped surface - the HARKONNEN surface is used
-        // directly (no remap), and the runtime palette[]
-        // holds each house's vanilla color at its slot
-        // (set by the per-house structure remap at GFX init).
-        // The sprite pixels at indices 144-151 point to
-        // PALCOLOR_HARKONNEN's slot in the runtime palette
-        // which now holds the active house's color.
+        objPic[id][house][z] = mapSurfaceColorRange(objPic[id][HOUSE_HARKONNEN][z].get(), PALCOLOR_HARKONNEN, destSlot);
+
+        if(house == HOUSE_REBELS && objPic[id][house][z] && objPic[id][house][z]->format->palette) {
+            SDL_Color rebelsOverride[8];
+            for(int k = 0; k < 8; k++) {
+                rebelsOverride[k] = customColorRamp[PALCOLOR_FREMEN + k];
+            }
+            SDL_SetPaletteColors(objPic[id][house][z]->format->palette,
+                                  rebelsOverride, PALCOLOR_FREMEN, 8);
+        }
 
         // DuneCity 1.0.383: removed the ibmPalette[PALCOLOR_FREMEN..+15]
         // restore for HOUSE_FREMEN. The previous code overrode the
