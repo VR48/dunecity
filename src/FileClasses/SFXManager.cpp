@@ -118,8 +118,19 @@ void SFXManager::loadEnglishVoice() {
                 break;
             case HOUSE_NEUTRAL:
                 HouseString = "A";
-                HouseNameChunk = getChunkFromFile("NNEU.VOC", "ANEU.VOC");
-                break; // Neutral house name call - NNEU.VOC is the dedicated Neutral sound
+                // DuneCity 1.0.437: prefer the dedicated
+                // NEUTRAL.VOC for the house-name voice.
+                // Falls back to NNEU.VOC / ANEU.VOC if the
+                // dedicated file is missing. The dedicated
+                // NEUTRAL.VOC was created from Tornie's OOB
+                // 'les sons d'appellation pour Rebels et
+                // Neutral doivent etre convertis en Voc
+                // compatible avec dune 2'.
+                HouseNameChunk = getChunkFromFile("NEUTRAL.VOC");
+                if(!HouseNameChunk) {
+                    HouseNameChunk = getChunkFromFile("NNEU.VOC", "ANEU.VOC");
+                }
+                break; // Neutral house name call - NEUTRAL.VOC is the dedicated Neutral sound
             case HOUSE_REBELS:
                 // DuneCity 1.0.392: use Harkonnen's "H" HouseString
                 // prefix for non-house-name voice calls (HARVEST,
