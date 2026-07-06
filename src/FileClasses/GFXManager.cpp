@@ -662,8 +662,8 @@ GFXManager::GFXManager() {
     // Tiles must match the vanilla SiegeTank (same frame count/dimensions) so blitToScreen
     // picks up the correct frame offsets.  Uses ibmPalette (not benePalette) because the
     // sprite is authored against IBM.PAL indices just like all other vehicle sprites.
-    if(pFileManager->exists("Tornie_EliteSiegeTank.png")) {
-        auto estRaw = LoadPNG_RW(pFileManager->openFile("Tornie_EliteSiegeTank.png").get());
+    if(pFileManager->exists("EliteSiegeTank.png")) {
+        auto estRaw = LoadPNG_RW(pFileManager->openFile("EliteSiegeTank.png").get());
         if(estRaw && estRaw->format->BitsPerPixel == 8) {
             ibmPalette.applyToSurface(estRaw.get());
             objPic[ObjPic_EliteSiegeTankCustom][HOUSE_HARKONNEN][0] = std::move(estRaw);
@@ -3775,6 +3775,25 @@ SDL_Texture* GFXManager::getZoomedObjPic(unsigned int id, int house, unsigned in
 zoomable_texture GFXManager::getObjPic(unsigned int id, int house) {
     if(id >= NUM_OBJPICS) {
         THROW(std::invalid_argument, "GFXManager::getObjPic(): Unit Picture with ID %u is not available!", id);
+    }
+
+    // DuneCity 1.0.415: Advanced Windtrap in-map preview uses
+    // the same icon as the editor palette
+    // (Tornie_AdvancedWindtrap_gfx_editor.png) = static 48x48
+    // paletted PNG with no animation and no magenta color
+    // cycle. This matches v1.0.305 behavior where the in-map
+    // preview shows the static editor icon (not the 2-frame
+    // animated in-world sprite). Tornie's OOB: 'Advanced
+    // windtrap editor tile and in map editor on terrain need
+    // to be same. Take both from Icon file i talk in previous.'
+    if(id == ObjPic_AdvancedWindTrap && pFileManager->exists("Tornie_AdvancedWindtrap_gfx_editor.png") && objPic[ObjPic_AdvancedWindTrap][HOUSE_HARKONNEN][0] == nullptr) {
+        auto editorRaw = LoadPNG_RW(pFileManager->openFile("Tornie_AdvancedWindtrap_gfx_editor.png").get());
+        if(editorRaw) {
+            if(editorRaw->format->palette) {
+                palette.applyToSurface(editorRaw.get());
+            }
+            objPic[ObjPic_AdvancedWindTrap][HOUSE_HARKONNEN][0] = std::move(editorRaw);
+        }
     }
 
     for(int z = 0; z < NUM_ZOOMLEVEL; z++) {
