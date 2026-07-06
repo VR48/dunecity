@@ -245,18 +245,6 @@ GFXManager::GFXManager() {
     // file. The .pal file is unambiguously the 8th-faction tint
     // override and always exists in both the source 'data/'
     // dir and the mod-side 'mods/Tornie/data/' mirror.
-    // DuneCity 1.0.433: default dark grey ramp for HOUSE_REBELS
-    // when Custom_IBM.pal is missing. Used in the else branch.
-    const SDL_Color defaultRebelsRamp[8] = {
-        { 25, 25, 25, 255 },
-        { 17, 17, 17, 255 },
-        { 15, 15, 15, 255 },
-        { 10, 10, 10, 255 },
-        {  7,  7,  7, 255 },
-        {  2,  2,  2, 255 },
-        {  0,  0,  0, 255 },
-        { 13, 42, 42, 255 },
-    };
     if (pFileManager->exists("Custom_IBM.pal")) {
         auto palRw = pFileManager->openFile("Custom_IBM.pal");
         std::vector<Uint8> palData(768);
@@ -287,6 +275,20 @@ GFXManager::GFXManager() {
         // Other house slots (144, 160, 176, 208, 224, 128) keep
         // vanilla IBM.PAL values in palette[]. The per-house
         // remap loops still apply for in-world sprite tinting.
+        // DuneCity 1.0.443: v1.0.173 path - all 8 houses read
+        // from the SAME runtime palette (vanilla IBM.PAL).
+        // Custom_IBM.pal[192..199] dark grey is NOT applied
+        // to the runtime palette. REBELS instead reads the
+        // nearest IBM.PAL colors at 192-199 (vanilla orange
+        // - FREMEN's original color). This matches v1.0.173
+        // behavior: no PAL override, runtime palette stays vanilla.
+        //
+        // The Custom_IBM.pal file is captured in customColorRamp
+        // only - reserved for the future color-swap-in-custom-game
+        // feature for spectators (per Tornie's OOB: 'Custom_IBM.PAL
+        // sera pour faire un color swap dans les custom game
+        // seulement en option pour les spectateurs (pour le
+        // moment on verra plus tard)').
         for (int i = 0; i < 256; i++) {
             SDL_Color c;
             c.r = palData[i*3+0];
@@ -294,14 +296,6 @@ GFXManager::GFXManager() {
             c.b = palData[i*3+2];
             c.a = 255;
             customColorRamp[i] = c;
-            // DuneCity 1.0.442: write Custom_IBM.pal[192..199] to
-            // the runtime palette so getHouseSDLColor(HOUSE_REBELS)
-            // returns the dark grey. Restores the v1.0.410 fix.
-            // FREMEN shares slot 192 (Tornie accepted FREMEN reads
-            // dark grey too in exchange for REBELS tint).
-            if(i >= PALCOLOR_REBELS && i < PALCOLOR_REBELS + 8) {
-                palette[i] = c;
-            }
         }
         SDL_Log("GFX INIT: Custom_IBM.pal values captured in customColorRamp[192..199] (runtime palette[192..199] stays vanilla Fremen orange for FREMEN)");
     } else {
@@ -313,15 +307,10 @@ GFXManager::GFXManager() {
         // seulement les rebels sont transparent comme un
         // kameleon' = the vanilla mod path also needs the dark
         // grey for Rebels.
-        // DuneCity 1.0.435: REBELS dark grey is captured in
-        // customColorRamp[192..199] for the per-sprite
-        // surface palette write in getZoomedObjPic. The
-        // runtime palette[192..199] stays vanilla IBM.PAL
-        // (Fremen orange) so FREMEN keeps its native tint.
-        for(int k = 0; k < 8; k++) {
-            customColorRamp[PALCOLOR_REBELS + k] = defaultRebelsRamp[k];
-        }
-        SDL_Log("GFX INIT: Custom_IBM.pal missing (vanilla mod) - default dark grey in customColorRamp[192..199] (runtime palette[192..199] stays vanilla Fremen orange)");
+        // DuneCity 1.0.443: no default ramp - vanilla
+        // IBM.PAL stays for all 8 houses. REBELS reads
+        // vanilla orange from runtime palette[192..199].
+        SDL_Log("GFX INIT: Custom_IBM.pal missing (vanilla mod) - REBELS uses vanilla Fremen orange at runtime palette[192..199] (matching v1.0.173 behavior)");
     }
 
     // DuneCity 1.0.369: Custom_Pal_Color Teal ramp at the REBELS slot.
@@ -3694,31 +3683,19 @@ SDL_Texture* GFXManager::getZoomedObjPic(unsigned int id, int house, unsigned in
         // For color swap (setHouseColorSwap set to a
         // non-1 value), the remap goes to the picked
         // slot instead of the house's own slot.
-        objPic[id][house][z] = mapSurfaceColorRange(objPic[id][HOUSE_HARKONNEN][z].get(), PALCOLOR_HARKONNEN, destSlot);
+                // DuneCity 1.0.443: v1.0.173 vanilla remap path restored.
+        // No surface palette write. Runtime palette at
+        // houseToPaletteIndex[house] has the house color.
+        // SDL_CreateTextureFromSurface reads the surface palette,
+        // but SDL2 hardware-renderer rendering uses the runtime
+        // palette set up at GFX init from ibmPalette. All 8
+        // houses read their color from the SAME palette via
+        // the runtime palette. The surface palette stays
+        // as the source (Harkonnen), but pixel values are
+        // remapped to the active house slot, so the engine
+        // reads the runtime palette at the active slot.
 
-        // DuneCity 1.0.405: for HOUSE_REBELS with no color swap,
-        // write the Custom_IBM.pal dark grey to the surface
-        // palette at PALCOLOR_REBELS..+7 (192-199). The remap
-        // above shifts pixels 144-151 to 192-199, but the
-        // surface palette at 192-199 stays as vanilla Fremen
-        // orange (copied from the source). Without this write,
-        // pixel value 192 reads vanilla orange instead of
-        // dark grey. The runtime palette[] has the dark grey
-        // (set in v1.0.410 from Custom_IBM.pal), but the
-        // engine reads from the surface palette, not the
-        // runtime palette. Other houses don't need this
-        // because their surface palette at destSlot is also
-        // vanilla (the engine reads what the runtime palette
-        // has at destSlot via SDL_CreateTextureFromSurface
-        // which uses the surface palette at conversion time).
-        if(house == HOUSE_REBELS && objPic[id][house][z] && objPic[id][house][z]->format->palette) {
-            for(int k = 0; k < 8; k++) {
-                objPic[id][house][z]->format->palette->colors[PALCOLOR_REBELS + k] =
-                    customColorRamp[PALCOLOR_REBELS + k];
-            }
-        }
-
-        // DuneCity 1.0.383: removed the ibmPalette[PALCOLOR_FREMEN..+15]
+// DuneCity 1.0.383: removed the ibmPalette[PALCOLOR_FREMEN..+15]
         // restore for HOUSE_FREMEN. The previous code overrode the
         // objPic palette with vanilla IBM.PAL colors at 192-207, which
         // made Fremen tanks/structures render in vanilla orange instead
