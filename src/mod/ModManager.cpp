@@ -40,6 +40,7 @@ static const char* QUANTBOT_CONFIG_FILE = "QuantBot Config.ini";
 static const char* GAME_OPTIONS_FILE = "GameOptions.ini";
 static const char* VANILLA_MOD_NAME = "vanilla";
 static const char* DUNECITY_MOD_NAME = "dunecity";
+static const char* TORNIE_MOD_NAME = "Tornie";
 
 // Install config file names (with .default suffix)
 static const char* OBJECT_DATA_DEFAULT = "ObjectData.ini.default";
@@ -83,6 +84,17 @@ void ModManager::initialize() {
     // Seed built-in dunecity mod if needed
     if (!modExists(DUNECITY_MOD_NAME) || dunecityNeedsReseed()) {
         seedDunecityFromDefaults();
+    }
+
+    // Seed built-in Tornie mod if needed. DuneCity 1.0.492:
+    // both "dunecity" and "Tornie" mods are seeded on first
+    // opening per Tornie's OOB. The Tornie mod contains the
+    // 8-house campaigns, custom units (Deviator/Flame Tank/
+    // Sonic Tank/Elite Siege Tank), custom buildings
+    // (Advanced Windtrap), palettes (Custom_IBM.PAL),
+    // and VOC files.
+    if (!modExists(TORNIE_MOD_NAME) || tornieNeedsReseed()) {
+        seedTornieFromDefaults();
     }
     
     // Load active mod from file
@@ -791,6 +803,68 @@ void ModManager::seedDunecityFromDefaults() {
     SDL_Log("ModManager: Dunecity mod seeded successfully");
 }
 
+// DuneCity 1.0.492: seed the Tornie mod. The source files
+// (mod.ini, ObjectData.ini, campaign/) are shipped in the
+// install at mods/Tornie/. We register this directory as
+// a mod so it appears in the Mods menu and can be activated.
+void ModManager::seedTornieFromDefaults() {
+    SDL_Log("ModManager: Seeding Tornie mod from install defaults...");
+
+    std::string torniePath = getModPath(TORNIE_MOD_NAME);
+    std::string installModsPath = getDuneLegacyDataDir() + "/../mods/" + TORNIE_MOD_NAME;
+
+    createDir(torniePath);
+
+    // Copy mod.ini (the [Mod] section is required for the mod
+    // to appear in the Mods menu)
+    std::string srcModIni = installModsPath + "/" + MOD_INI_FILE;
+    std::string dstModIni = torniePath + "/" + MOD_INI_FILE;
+    if (existsFile(srcModIni)) {
+        copyFile(srcModIni, dstModIni);
+        SDL_Log("ModManager: Copied %s (Tornie)", MOD_INI_FILE);
+    } else {
+        SDL_Log("ModManager: Warning - %s not found at %s", MOD_INI_FILE, srcModIni.c_str());
+    }
+
+    // Copy ObjectData.ini (units + structures config for the mod)
+    std::string srcObjectData = installModsPath + "/" + OBJECT_DATA_FILE;
+    std::string dstObjectData = torniePath + "/" + OBJECT_DATA_FILE;
+    if (existsFile(srcObjectData)) {
+        copyFile(srcObjectData, dstObjectData);
+        SDL_Log("ModManager: Copied %s (Tornie)", OBJECT_DATA_FILE);
+    } else {
+        SDL_Log("ModManager: Warning - %s not found at %s", OBJECT_DATA_FILE, srcObjectData.c_str());
+    }
+
+    // Copy QuantBot Config.ini
+    std::string srcQuantBot = installModsPath + "/" + QUANTBOT_CONFIG_FILE;
+    std::string dstQuantBot = torniePath + "/" + QUANTBOT_CONFIG_FILE;
+    if (existsFile(srcQuantBot)) {
+        copyFile(srcQuantBot, dstQuantBot);
+        SDL_Log("ModManager: Copied %s (Tornie)", QUANTBOT_CONFIG_FILE);
+    }
+
+    // Copy GameOptions.ini
+    std::string srcGameOptions = installModsPath + "/" + GAME_OPTIONS_FILE;
+    std::string dstGameOptions = torniePath + "/" + GAME_OPTIONS_FILE;
+    if (existsFile(srcGameOptions)) {
+        copyFile(srcGameOptions, dstGameOptions);
+        SDL_Log("ModManager: Copied %s (Tornie)", GAME_OPTIONS_FILE);
+    }
+
+    // Register the mod in the mod list
+    ModInfo info;
+    info.name = TORNIE_MOD_NAME;
+    info.displayName = "Tornie";
+    info.author = "Tornie_Panther";
+    info.description = "8-house campaign system, custom units (Deviator/Flame Tank/Sonic Tank/Elite Siege Tank), custom buildings (Advanced Windtrap), and tinted palette for REBELS + NEUTRAL.";
+    info.gameVersion = VERSION;
+    info.enablesCityMode = false;
+    writeModInfo(torniePath, info);
+
+    SDL_Log("ModManager: Tornie mod seeded successfully");
+}
+
 bool ModManager::dunecityNeedsReseed() const {
     std::string dunecityPath = getModPath(DUNECITY_MOD_NAME);
 
@@ -837,6 +911,13 @@ bool ModManager::dunecityNeedsReseed() const {
 
     return false;
 }
+
+bool ModManager::tornieNeedsReseed() const {
+    // DuneCity 1.0.492: for now, only seed once (modExists
+    // check handles it)
+    return false;
+}
+
 
 bool ModManager::vanillaNeedsReseed() const {
     std::string vanillaPath = getModPath(VANILLA_MOD_NAME);
