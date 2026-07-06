@@ -3687,13 +3687,34 @@ SDL_Texture* GFXManager::getZoomedObjPic(unsigned int id, int house, unsigned in
         }
         objPic[id][house][z] = mapSurfaceColorRange(objPic[id][HOUSE_HARKONNEN][z].get(), PALCOLOR_HARKONNEN, destSlot);
 
-        if(house == HOUSE_REBELS && objPic[id][house][z] && objPic[id][house][z]->format->palette) {
-            SDL_Color rebelsOverride[8];
+        // DuneCity 1.0.416: also write the destination slot's
+        // ibmPalette color to the surface palette so the
+        // engine reads the right color when rendering. This
+        // matches the v1.0.413 structure remap pattern.
+        // Without this, the surface palette at indices
+        // 144-151 (HARKONNEN's slot) still has HARKONNEN
+        // red, and the remapped pixel values at the
+        // destination slot read HARKONNEN red instead of
+        // the active house's color. This is why units
+        // showed the wrong color (e.g. Atreides blue
+        // looked Harkonnen red) while buildings (which
+        // had this fix in v1.0.413) were correct.
+        if(objPic[id][house][z] && objPic[id][house][z]->format->palette) {
+            // Use ibmPalette[] (vanilla) as source for
+            // non-REBELS houses so the translucent mask
+            // effect doesn't happen. For REBELS, use
+            // customColorRamp[192..199] (Custom_IBM.pal
+            // dark grey) which is the dark grey color the
+            // user uploaded.
             for(int k = 0; k < 8; k++) {
-                rebelsOverride[k] = customColorRamp[PALCOLOR_FREMEN + k];
+                if(house == HOUSE_REBELS) {
+                    objPic[id][house][z]->format->palette->colors[destSlot + k] =
+                        customColorRamp[PALCOLOR_REBELS + k];
+                } else {
+                    objPic[id][house][z]->format->palette->colors[destSlot + k] =
+                        ibmPalette[destSlot + k];
+                }
             }
-            SDL_SetPaletteColors(objPic[id][house][z]->format->palette,
-                                  rebelsOverride, PALCOLOR_FREMEN, 8);
         }
 
         // DuneCity 1.0.383: removed the ibmPalette[PALCOLOR_FREMEN..+15]
