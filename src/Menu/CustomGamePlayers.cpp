@@ -505,47 +505,76 @@ CustomGamePlayers::CustomGamePlayers(const GameInitSettings& newGameInitSettings
             }
         }
 
-        // DuneCity 1.0.409: The 4 custom colors (Fushia, Apple Green,
-        // Dark Purple, Light Pink) are SPECTATOR-ONLY. Tornie's OOB:
-        // 'Teal Color/Fushia Color/Dark Purple Color/Apple Green
-        // Color need to be added like that but with color swap for
-        // spectator only' = the 4 colors should be in the dropdown
-        // but the color swap should ONLY apply to the Spectator
-        // player. We detect the Spectator by checking the houseInfo
-        // player1 player class. If the current slot's player1 is
-        // SpectatorPlayer, the 4 colors are offered; otherwise
-        // only Original is offered.
+        // DuneCity 1.0.414: reactivate all color swap options in
+        // custom maps. The color dropdown offers all 8 vanilla
+        // house color slots (Harkonnen, Atreides, Ordos, Fremen,
+        // Sardaukar, Mercenary, Neutral, Rebels) plus the
+        // previously added Teal/Fushia/Apple Green/Dark Purple/
+        // Light Pink entries. All players see all options (not
+        // just spectators as in v1.0.409). The foreign-house
+        // color entries were removed in v1.0.398 because they
+        // caused confusion with the house selection dropdown.
+        //
+        // Tornie's OOB: 'si c'est cette fonction la pourrais-ton
+        // reactiver la fonction de Colors swap dans les custom
+        // maps et activer toutes les possibilites non prises
+        // pour les couleurs dans la liste' = the user wants
+        // the color swap dropdown entries (which were filtered
+        // in v1.0.398 to only Original/Teal/4 custom colors)
+        // reactivated with all 8 house color options available
+        // for color swap (you can pick any of the 8 vanilla
+        // house color slots for your player).
         //
         // The data values map to specific palette indices:
-        //   Teal        data=-2 -> palette index 192 (Rebels slot)
-        //   Fushia      data=-3 -> palette index 160 (Atreides slot)
-        //   Apple Green data=-4 -> palette index 208 (Sardaukar slot)
-        //   Dark Purple data=-5 -> palette index 144 (Harkonnen slot)
-        //   Light Pink  data=-6 -> palette index 224 (Mercenary slot)
+        //   Original   data= i   -> house's own slot (no swap)
+        //   Teal       data=-2  -> palette index 192 (Rebels slot)
+        //   Fushia     data=-3  -> palette index 160 (Atreides slot)
+        //   App Green  data=-4  -> palette index 208 (Sardaukar slot)
+        //   Dark Purp  data=-5  -> palette index 144 (Harkonnen slot)
+        //   Light Pink data=-6  -> palette index 224 (Mercenary slot)
+        //   Harkonnen  data=-7  -> palette index 144 (Harkonnen slot, vanilla)
+        //   Atreides   data=-8  -> palette index 160 (Atreides slot, vanilla)
+        //   Ordos      data=-9  -> palette index 176 (Ordos slot, vanilla)
+        //   Fremen     data=-10 -> palette index 192 (Fremen slot, vanilla)
+        //   Sardaukar  data=-11 -> palette index 208 (Sardaukar slot, vanilla)
+        //   Mercenary  data=-12 -> palette index 224 (Mercenary slot, vanilla)
+        //   Neutral    data=-13 -> palette index 128 (Neutral slot, vanilla)
+        curHouseInfo.colorDropDown.addEntry(_("Original"), i);
+        // Teal is only offered once (per-slot), but the
+        // tealUsedBySpectator check is no longer needed since
+        // we removed the spectator filter in v1.0.414.
+        curHouseInfo.colorDropDown.addEntry(_("Teal (color)"), -2);
+        // The 4 Custom_IBM.pal-sourced colors (Fushia, Apple
+        // Green, Dark Purple, Light Pink) - always offered
+        // for all players (no spectator filter in v1.0.414).
         {
-            // Detect if this slot's player1 is a Spectator.
-            bool isSpectatorSlot = false;
-            const auto& houseInfoList = gameInitSettings.getHouseInfoList();
-            if(i >= 0 && i < (int) houseInfoList.size()) {
-                for(const auto& pi : houseInfoList[i].playerInfoList) {
-                    if(pi.playerClass == "SpectatorPlayer") {
-                        isSpectatorSlot = true;
-                        break;
-                    }
-                }
+            const struct { int data; const char* name; } customColors[] = {
+                { -3, "Fushia (color)" },
+                { -4, "Apple Green (color)" },
+                { -5, "Dark Purple (color)" },
+                { -6, "Light Pink (color)" },
+            };
+            for(const auto& cc : customColors) {
+                curHouseInfo.colorDropDown.addEntry(_(cc.name), cc.data);
             }
-            // If this slot is NOT a spectator, only offer 'Original'.
-            // If it IS a spectator, offer the 4 custom colors.
-            if(isSpectatorSlot) {
-                const struct { int data; const char* name; } customColors[] = {
-                    { -3, "Fushia (color)" },
-                    { -4, "Apple Green (color)" },
-                    { -5, "Dark Purple (color)" },
-                    { -6, "Light Pink (color)" },
-                };
-                for(const auto& cc : customColors) {
-                    curHouseInfo.colorDropDown.addEntry(_(cc.name), cc.data);
-                }
+        }
+        // The 7 vanilla house color slots (Harkonnen, Atreides,
+        // Ordos, Fremen, Sardaukar, Mercenary, Neutral) - always
+        // offered for all players. The user can pick any of these
+        // to swap their player's color to that house's vanilla
+        // color slot.
+        {
+            const struct { int data; int slot; const char* name; } houseColors[] = {
+                { -7,  PALCOLOR_HARKONNEN, "Harkonnen color" },
+                { -8,  PALCOLOR_ATREIDES,  "Atreides color" },
+                { -9,  PALCOLOR_ORDOS,     "Ordos color" },
+                { -10, PALCOLOR_FREMEN,    "Fremen color" },
+                { -11, PALCOLOR_SARDAUKAR, "Sardaukar color" },
+                { -12, PALCOLOR_MERCENARY, "Mercenary color" },
+                { -13, PALCOLOR_NEUTRAL,   "Neutral color" },
+            };
+            for(const auto& hc : houseColors) {
+                curHouseInfo.colorDropDown.addEntry(_(hc.name), hc.data);
             }
         }
 
@@ -1745,6 +1774,29 @@ void CustomGamePlayers::onChangeColorDropDownBoxes(bool bInteractive, int houseI
         // the same slot, so the dropdown's Teal entry surfaces
         // whatever color is at slot 192 at runtime.
         pickedSlot = PALCOLOR_REBELS;  // 192
+    } else if(selected <= -7 && selected >= -13) {
+        // DuneCity 1.0.414: vanilla house color slots for color
+        // swap. The user picks one of the 7 vanilla house colors
+        // (Harkonnen, Atreides, Ordos, Fremen, Sardaukar,
+        // Mercenary, Neutral) to swap the active house's color
+        // to that house's vanilla color slot.
+        //   Harkonnen  data=-7  -> PALCOLOR_HARKONNEN (144)
+        //   Atreides   data=-8  -> PALCOLOR_ATREIDES  (160)
+        //   Ordos      data=-9  -> PALCOLOR_ORDOS     (176)
+        //   Fremen     data=-10 -> PALCOLOR_FREMEN    (192)
+        //   Sardaukar  data=-11 -> PALCOLOR_SARDAUKAR (208)
+        //   Mercenary  data=-12 -> PALCOLOR_MERCENARY (224)
+        //   Neutral    data=-13 -> PALCOLOR_NEUTRAL   (128)
+        const int vanillaSlotMap[7] = {
+            PALCOLOR_HARKONNEN,  // -7
+            PALCOLOR_ATREIDES,   // -8
+            PALCOLOR_ORDOS,      // -9
+            PALCOLOR_FREMEN,     // -10
+            PALCOLOR_SARDAUKAR,  // -11
+            PALCOLOR_MERCENARY,  // -12
+            PALCOLOR_NEUTRAL,    // -13
+        };
+        pickedSlot = vanillaSlotMap[-7 - selected];  // -7 -> 0, -8 -> 1, ..., -13 -> 6
     } else if(selected <= -100 && selected > -100 - NUM_HOUSES) {
         // Foreign house slot
         pickedSlot = -100 - selected;
