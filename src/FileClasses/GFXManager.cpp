@@ -3715,18 +3715,29 @@ SDL_Texture* GFXManager::getZoomedObjPic(unsigned int id, int house, unsigned in
         // looked Harkonnen red) while buildings (which
         // had this fix in v1.0.413) were correct.
         if(objPic[id][house][z] && objPic[id][house][z]->format->palette) {
-            // Use ibmPalette[] (vanilla) as source for
-            // non-REBELS houses so the translucent mask
-            // effect doesn't happen. For REBELS, use
-            // customColorRamp[192..199] (Custom_IBM.pal
-            // dark grey) which is the dark grey color the
-            // user uploaded.
+            // DuneCity 1.0.418: write BOTH the source slot
+            // (144-151) and the destination slot to the
+            // active house's vanilla color. Pixels at 144-151
+            // that aren't remapped (e.g. in the HARKONNEN
+            // highlight area, or sprites where some palette
+            // indices fall outside 144-151) need to also
+            // render the active house's color. Otherwise
+            // the 'multi-color ghost' effect appears (red
+            // HARKONNEN + green ORDOS + blue ATREIDES all
+            // visible on the same unit because the surface
+            // palette still holds the source's colors at
+            // slots that the remap didn't cover).
+            const int sourceSlot = PALCOLOR_HARKONNEN;  // 144
             for(int k = 0; k < 8; k++) {
                 if(house == HOUSE_REBELS) {
                     objPic[id][house][z]->format->palette->colors[destSlot + k] =
                         customColorRamp[PALCOLOR_REBELS + k];
+                    objPic[id][house][z]->format->palette->colors[sourceSlot + k] =
+                        customColorRamp[PALCOLOR_REBELS + k];
                 } else {
                     objPic[id][house][z]->format->palette->colors[destSlot + k] =
+                        ibmPalette[destSlot + k];
+                    objPic[id][house][z]->format->palette->colors[sourceSlot + k] =
                         ibmPalette[destSlot + k];
                 }
             }
