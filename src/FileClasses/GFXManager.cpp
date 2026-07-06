@@ -3937,6 +3937,20 @@ SDL_Surface* GFXManager::getUIGraphicSurface(unsigned int id, int house) {
         }
 
         uiGraphic[id][house] = mapSurfaceColorRange(uiGraphic[id][HOUSE_HARKONNEN].get(), PALCOLOR_HARKONNEN, houseToPaletteIndex[house]);
+        // DuneCity 1.0.481: apply REBELS tint to UI graphic for
+        // editor preview. Tornie's OOB: 'i was talking for this
+        // message about 1.475' + 'except for rebel desaturating,
+        // it's work about the correct colors in tile view' =
+        // the editor colors work, the tile view colors are
+        // correct, but the REBELS desaturation doesn't show.
+        // The getZoomedObjPic path already has applyRebelsTint
+        // (v1.0.480) but getUIGraphicSurface didn't - so the
+        // editor preview of REBELS structures didn't show the
+        // dark grey desaturation. This v1.0.481 fix adds the
+        // applyRebelsTint call to the UI graphic path too.
+        if(house == HOUSE_REBELS) {
+            applyRebelsTint(uiGraphic[id][house].get());
+        }
         // Restore vanilla IBM.PAL at 192-207 for Fremen so rebels grey doesn't corrupt Fremen UI graphics
         if (house == HOUSE_FREMEN && uiGraphic[id][house] && uiGraphic[id][house]->format->palette) {
             ibmPalette.applyToSurface(uiGraphic[id][house].get(), PALCOLOR_FREMEN, PALCOLOR_FREMEN + 15);
