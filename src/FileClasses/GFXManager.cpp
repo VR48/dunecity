@@ -3699,23 +3699,22 @@ SDL_Texture* GFXManager::getZoomedObjPic(unsigned int id, int house, unsigned in
         // house slot, so all surfaces stayed at HARKONNEN's
         // slot (144-151) and the engine read HARKONNEN red
         // for everything.
+        //
+        // DuneCity 1.0.470: removed the v1.0.464 surface
+        // palette write. Tornie's OOB: 'the tint function
+        // maybe corrupted' - the surface palette write was
+        // causing color corruption on the hardware renderer
+        // path because it modified the surface palette to a
+        // state inconsistent with the runtime palette. The
+        // v1.0.305 path works correctly via the runtime
+        // palette read (SDL2 hardware renderer uses the
+        // global runtime palette at the remapped slot).
+        //
+        // The runtime palette[destSlot..+7] has the correct
+        // color (vanilla for 7 houses, Custom_IBM.PAL
+        // greyscale at 52-59 for REBELS). No surface write
+        // is needed - the engine reads from runtime palette.
         objPic[id][house][z] = mapSurfaceColorRange(objPic[id][HOUSE_HARKONNEN][z].get(), PALCOLOR_HARKONNEN, destSlot);
-
-        // DuneCity 1.0.464: write palette[destSlot..destSlot+7] to
-        // the surface palette for ALL houses. SDL_CreateTextureFromSurface
-        // uses the surface palette (not the runtime palette), so the
-        // surface palette at destSlot must contain the right color.
-        // For REBELS: palette[52..59] = true greyscale dark ramp.
-        // For other houses: palette[destSlot..destSlot+7] = vanilla
-        // IBM.PAL color at that slot (which is the house's own color).
-        // This fixes the multi-color ghost bug (Tornie's OOB: 'color
-        // tint for non-rebels/non-harkonnen tint are strange').
-        if(objPic[id][house][z] && objPic[id][house][z]->format->palette) {
-            for(int k = 0; k < 8; k++) {
-                objPic[id][house][z]->format->palette->colors[destSlot + k] =
-                    palette[destSlot + k];
-            }
-        }
 
 // DuneCity 1.0.383: removed the ibmPalette[PALCOLOR_FREMEN..+15]
         // restore for HOUSE_FREMEN. The previous code overrode the
