@@ -295,6 +295,15 @@ void Game::logPerformance(const char* format, ...) {
 void Game::initGame(const GameInitSettings& newGameInitSettings) {
     gameInitSettings = newGameInitSettings;
 
+    // DuneCity 1.0.465: invalidate the sprite texture cache on game
+    // init so all sprites get re-rendered with the current house
+    // color swap. Without this, cached textures from a previous
+    // game session show wrong colors (the multi-color ghost bug
+    // Tornie reported on the second game load).
+    if(pGFXManager) {
+        pGFXManager->invalidateAllSpriteTextures();
+    }
+
     // The host's mod choice is the source of truth for whether the
     // city-sim feature flag is on — not whatever mod the local player
     // happens to have active in their main menu. This matters most for

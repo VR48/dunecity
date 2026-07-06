@@ -4342,3 +4342,25 @@ sdl2::surface_ptr GFXManager::generateTripledObjPic(unsigned int id, int h) cons
 
     return pSurface;
 }
+void GFXManager::invalidateAllSpriteTextures() {
+    // DuneCity 1.0.465: clear all cached sprite textures.
+    // The lazy remap in getZoomedObjPic will recreate them
+    // with the correct per-house palette on the next render.
+    SDL_Log("GFXManager::invalidateAllSpriteTextures(): clearing all sprite texture caches");
+    for(int id = 0; id < NUM_OBJPICS; id++) {
+        for(int h = 0; h < NUM_HOUSES; h++) {
+            for(unsigned int z = 0; z < NUM_ZOOMLEVEL; z++) {
+                objPicTex[id][h][z].reset();
+                // Also clear the surface so the remap runs again
+                objPic[id][h][z].reset();
+            }
+        }
+    }
+    for(unsigned int id = 0; id < NUM_UIGRAPHICS; id++) {
+        for(int h = 0; h < NUM_HOUSES; h++) {
+            uiGraphic[id][h].reset();
+        }
+    }
+}
+
+
