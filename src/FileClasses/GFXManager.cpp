@@ -2259,6 +2259,44 @@ GFXManager::GFXManager() {
     objPic[ObjPic_SandwormShimmerTemp][HOUSE_HARKONNEN][0] = units1->getPicture(10);
     objPic[ObjPic_Terrain][HOUSE_HARKONNEN][0] = icon->getPictureRow(124,209,NUM_TERRAIN_TILES_X);
 
+    // DuneCity 1.0.428: per-house clone of the terrain atlas.
+    // The v1.0.412 terrain remap was removed in v1.0.413 (rolled
+    // back to remove the v1.0.418 multi-color ghost fix). Tornie's
+    // v1.0.427 OOB: 'editor tiles and ordos colors still wrong'
+    // = the terrain atlas needs per-house clones so the editor
+    // shows the correct per-house color on tiles. Each non-
+    // HARKONNEN house gets a clone with per-house pixel remap
+    // (PALCOLOR_HARKONNEN to houseToPaletteIndex[house]) and the
+    // surface palette at destSlot set to ibmPalette[destSlot]
+    // (vanilla house color).
+    {
+        for(int h = 0; h < NUM_HOUSES; h++) {
+            if(h == HOUSE_HARKONNEN) continue;
+            if(!objPic[ObjPic_Terrain][HOUSE_HARKONNEN][0]) continue;
+            objPic[ObjPic_Terrain][h][0] = sdl2::surface_ptr{
+                SDL_ConvertSurface(objPic[ObjPic_Terrain][HOUSE_HARKONNEN][0].get(),
+                                   objPic[ObjPic_Terrain][HOUSE_HARKONNEN][0]->format, 0)
+            };
+            if(!objPic[ObjPic_Terrain][h][0]) continue;
+            int destSlot = houseToPaletteIndex[h];
+            objPic[ObjPic_Terrain][h][0] = mapSurfaceColorRange(
+                objPic[ObjPic_Terrain][h][0].get(),
+                PALCOLOR_HARKONNEN, destSlot);
+            if(objPic[ObjPic_Terrain][h][0]->format->palette) {
+                for(int k = 0; k < 8; k++) {
+                    if(h == HOUSE_REBELS) {
+                        objPic[ObjPic_Terrain][h][0]->format->palette->colors[destSlot + k] =
+                            customColorRamp[PALCOLOR_REBELS + k];
+                    } else {
+                        objPic[ObjPic_Terrain][h][0]->format->palette->colors[destSlot + k] =
+                            ibmPalette[destSlot + k];
+                    }
+                }
+            }
+        }
+        SDL_Log("DuneCity 1.0.428: per-house terrain atlas remap restored");
+    }
+
 
 
     objPic[ObjPic_DestroyedStructure][HOUSE_HARKONNEN][0] = icon->getPictureRow2(14, 33, 125, 213, 214, 215, 223, 224, 225, 232, 233, 234, 240, 246, 247);
