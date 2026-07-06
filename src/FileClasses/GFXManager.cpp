@@ -3626,12 +3626,14 @@ SDL_Color GFXManager::getCustomColorRamp(int idx) const {
 // to a surface for HOUSE_REBELS tint. The surface must be
 // 8-bit palette-indexed (the result of mapSurfaceColorRange).
 //
-// Algorithm:
+// Algorithm (v1.0.480: 100% desaturation):
 //   For each pixel in the surface:
 //     - If the pixel value is in the REBELS color slot range
 //       (houseToPaletteIndex[HOUSE_REBELS] to +7, currently 52-59):
 //       - Get the current color (r, g, b) from the surface palette
-//       - Desaturate to greyscale: r, g, b = (0.299*r + 0.587*g + 0.114*b)
+//       - 100% desaturate to true greyscale: R = G = B = (R+G+B)/3
+//         (simple average, NOT Rec. 601 luminance which leaves
+//         a slight color tint)
 //       - Darken 75%: r, g, b *= 0.25
 //       - Write the new color back to the surface palette at the
 //         REBELS slot position
@@ -3644,15 +3646,22 @@ static void applyRebelsTint(SDL_Surface* surface) {
     const int rebelsBase = houseToPaletteIndex[HOUSE_REBELS];
     for(int k = 0; k < 8; k++) {
         SDL_Color c = surface->format->palette->colors[rebelsBase + k];
-        // Greyscale via Rec. 601 luminance
-        Uint8 lum = (Uint8)(0.299 * c.r + 0.587 * c.g + 0.114 * c.b);
+        // 100% desaturation: simple RGB average (R == G == B)
+        // This is the most common desaturate-to-greyscale method
+        // and produces true grey (no color hue).
+        // The previous v1.0.476 used Rec. 601 luminance which
+        // gave a slight color tint because the formula weights
+        // channels differently (0.299, 0.587, 0.114) - the result
+        // is perceptually-correct but not a pure grey.
+        // Tornie's OOB: 'desaturate 100% for rebels tint color
+        // not just a bit' = use the simple average for full
+        // desaturation.
+        const Uint8 grey = (Uint8)((c.r + c.g + c.b) / 3);
         // Darken 75% (multiply by 0.25)
-        Uint8 dr = (Uint8)(lum * 0.25);
-        Uint8 dg = (Uint8)(lum * 0.25);
-        Uint8 db = (Uint8)(lum * 0.25);
-        surface->format->palette->colors[rebelsBase + k].r = dr;
-        surface->format->palette->colors[rebelsBase + k].g = dg;
-        surface->format->palette->colors[rebelsBase + k].b = db;
+        const Uint8 dark = (Uint8)(grey * 0.25);
+        surface->format->palette->colors[rebelsBase + k].r = dark;
+        surface->format->palette->colors[rebelsBase + k].g = dark;
+        surface->format->palette->colors[rebelsBase + k].b = dark;
     }
 }
 
