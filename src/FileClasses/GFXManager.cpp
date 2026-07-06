@@ -854,51 +854,7 @@ GFXManager::GFXManager() {
     // using the per-house lazy remap path (mapSurfaceColorRange
     // + surface palette write). For REBELS, the Custom_IBM.pal
     // dark grey is applied.
-    {
-        static const int editorUnitIcons[] = {
-            UI_MapEditor_Harvester,
-            UI_MapEditor_Trike,
-            UI_MapEditor_Quad,
-            UI_MapEditor_Tank,
-            UI_MapEditor_SiegeTank,
-            UI_MapEditor_Devastator,
-        };
-        for (int ui : editorUnitIcons) {
-            if(!uiGraphic[ui][HOUSE_HARKONNEN]) continue;
-            for (int h = 1; h < NUM_HOUSES; h++) {
-                if (uiGraphic[ui][h]) continue;
-                SDL_Surface* src = uiGraphic[ui][HOUSE_HARKONNEN].get();
-                if (!src) continue;
-                sdl2::surface_ptr clone{ SDL_ConvertSurface(src, src->format, 0) };
-                if (!clone) continue;
-                // Apply the per-house pixel remap.
-                int destSlot = houseToPaletteIndex[h];
-                clone = mapSurfaceColorRange(clone.get(),
-                                             PALCOLOR_HARKONNEN, destSlot);
-                if (clone && clone->format->palette) {
-                    SDL_Color activeColor;
-                    for (int k = 0; k < 8; k++) {
-                        if (h == HOUSE_REBELS) {
-                            activeColor = customColorRamp[PALCOLOR_REBELS + k];
-                        } else {
-                            activeColor = ibmPalette[houseToPaletteIndex[h] + k];
-                        }
-                        // Write all 7 house slots to the active color
-                        // (same as v1.0.419 to avoid multi-color ghost).
-                        clone->format->palette->colors[PALCOLOR_NEUTRAL + k]   = activeColor;
-                        clone->format->palette->colors[PALCOLOR_HARKONNEN + k] = activeColor;
-                        clone->format->palette->colors[PALCOLOR_ATREIDES + k]  = activeColor;
-                        clone->format->palette->colors[PALCOLOR_ORDOS + k]     = activeColor;
-                        clone->format->palette->colors[PALCOLOR_FREMEN + k]    = activeColor;
-                        clone->format->palette->colors[PALCOLOR_SARDAUKAR + k] = activeColor;
-                        clone->format->palette->colors[PALCOLOR_MERCENARY + k] = activeColor;
-                    }
-                }
-                uiGraphic[ui][h] = std::move(clone);
-            }
-        }
-        SDL_Log("DuneCity 1.0.421: per-house UI_MapEditor_* icon clones created (UI_MapEditor_Tank/Quad/Siege/Devastator/Harvester/Trike per house)");
-    }
+
 
 
 
@@ -3356,7 +3312,52 @@ GFXManager::GFXManager() {
     uiGraphic[UI_MapEditor_SiegeTank][HOUSE_HARKONNEN] = combinePictures(getSubFrame(objPic[ObjPic_Siegetank_Base][HOUSE_HARKONNEN][0].get(),0,0,8,1).get(), getSubFrame(objPic[ObjPic_Siegetank_Gun][HOUSE_HARKONNEN][0].get(),0,0,8,1).get(), 2, -4);
     uiGraphic[UI_MapEditor_Launcher][HOUSE_HARKONNEN] = combinePictures(getSubFrame(objPic[ObjPic_Tank_Base][HOUSE_HARKONNEN][0].get(),0,0,8,1).get(), getSubFrame(objPic[ObjPic_Launcher_Gun][HOUSE_HARKONNEN][0].get(),0,0,8,1).get(), 3, 0);
     uiGraphic[UI_MapEditor_Devastator][HOUSE_HARKONNEN] = combinePictures(getSubFrame(objPic[ObjPic_Devastator_Base][HOUSE_HARKONNEN][0].get(),0,0,8,1).get(), getSubFrame(objPic[ObjPic_Devastator_Gun][HOUSE_HARKONNEN][0].get(),0,0,8,1).get(), 2, -4);
-    // DuneCity 1.0.372: guard the editor icon combinePictures
+
+    {
+        static const int editorUnitIcons[] = {
+            UI_MapEditor_Harvester,
+            UI_MapEditor_Trike,
+            UI_MapEditor_Quad,
+            UI_MapEditor_Tank,
+            UI_MapEditor_SiegeTank,
+            UI_MapEditor_Devastator,
+        };
+        for (int ui : editorUnitIcons) {
+            if(!uiGraphic[ui][HOUSE_HARKONNEN]) continue;
+            for (int h = 1; h < NUM_HOUSES; h++) {
+                if (uiGraphic[ui][h]) continue;
+                SDL_Surface* src = uiGraphic[ui][HOUSE_HARKONNEN].get();
+                if (!src) continue;
+                sdl2::surface_ptr clone{ SDL_ConvertSurface(src, src->format, 0) };
+                if (!clone) continue;
+                // Apply the per-house pixel remap.
+                int destSlot = houseToPaletteIndex[h];
+                clone = mapSurfaceColorRange(clone.get(),
+                                             PALCOLOR_HARKONNEN, destSlot);
+                if (clone && clone->format->palette) {
+                    SDL_Color activeColor;
+                    for (int k = 0; k < 8; k++) {
+                        if (h == HOUSE_REBELS) {
+                            activeColor = customColorRamp[PALCOLOR_REBELS + k];
+                        } else {
+                            activeColor = ibmPalette[houseToPaletteIndex[h] + k];
+                        }
+                        // Write all 7 house slots to the active color
+                        // (same as v1.0.419 to avoid multi-color ghost).
+                        clone->format->palette->colors[PALCOLOR_NEUTRAL + k]   = activeColor;
+                        clone->format->palette->colors[PALCOLOR_HARKONNEN + k] = activeColor;
+                        clone->format->palette->colors[PALCOLOR_ATREIDES + k]  = activeColor;
+                        clone->format->palette->colors[PALCOLOR_ORDOS + k]     = activeColor;
+                        clone->format->palette->colors[PALCOLOR_FREMEN + k]    = activeColor;
+                        clone->format->palette->colors[PALCOLOR_SARDAUKAR + k] = activeColor;
+                        clone->format->palette->colors[PALCOLOR_MERCENARY + k] = activeColor;
+                    }
+                }
+                uiGraphic[ui][h] = std::move(clone);
+            }
+        }
+        SDL_Log("DuneCity 1.0.421: per-house UI_MapEditor_* icon clones created (UI_MapEditor_Tank/Quad/Siege/Devastator/Harvester/Trike per house)");
+    }    // DuneCity 1.0.372: guard the editor icon combinePictures
     // calls. If either source objPic is null (vanilla UNITS2.SHP
     // row missing, FlameTank/Sonictank_Gun/etc. failed to load),
     // the resulting uiGraphic stays null and getUIGraphicSurface
