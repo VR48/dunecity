@@ -1067,17 +1067,19 @@ int main(int argc, char *argv[]) {
                 palette = LoadPalette_RW(pFileManager->openFile("IBM.PAL").get());
                 ibmPalette = palette;  // save vanilla IBM.PAL before any mod overrides
 
-                // DuneCity 1.0.445: REBELS tint applies the picked
-                // IBM.PAL indices from Tornie's OOB:
-                // 28, 29, 30, 31, 122, 175, 12, 12 to runtime
-                // palette[30..37]. This makes REBELS show as dark
-                // grey in-game without needing Custom_IBM.pal at
-                // all. Custom_IBM.pal is reserved for the future
-                // color-swap-for-spectators feature.
-                for(int k = 0; k < 8; k++) {
-                    palette[30 + k] = ibmPalette[REBELS_TINT_INDICES[k]];
-                }
-                SDL_Log("GFX INIT: REBELS tint ramp set at palette[30..37] from IBM.PAL indices 28,29,30,31,122,175,12,12");
+                // DuneCity 1.0.455: no runtime palette override.
+                // The runtime palette stays vanilla IBM.PAL for all
+                // 8 houses. REBELS tint via per-house remap at the
+                // tile sprite surface (uses the runtime palette
+                // at houseToPaletteIndex[house] which is 30 for
+                // REBELS). The vanilla IBM.PAL[30..37] colors are
+                // whatever vanilla has there (no override).
+                // The v1.0.444-454 runtime palette override caused
+                // crashes during mission load (DUNE4, DUNE18) due
+                // to cached textures referencing stale palette state.
+                // The override is removed - REBELS tint comes from
+                // the per-sprite surface palette write in Tile.cpp
+                // (already at line 67 in v1.0.447 era).
 
                 SDL_Log("Setting video mode...");
                 setVideoMode(currentDisplayIndex);
