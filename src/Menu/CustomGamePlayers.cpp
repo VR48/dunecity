@@ -484,14 +484,14 @@ CustomGamePlayers::CustomGamePlayers(const GameInitSettings& newGameInitSettings
                 housesTakenByOthers.insert(selHouse);
             }
         }
-        // DuneCity 1.0.456: Original is added unconditionally at the
-        // end of this block (see below) to avoid duplicates.
-        // The previous 'if not taken by others' check created a
-        // duplicate entry when the same player could pick Original
-        // more than once. Now only the final addEntry populates Original.
-        //
-        // Teal entry kept (still goes to slot 192 via the per-house
-        // swap path in setHouseColorSwap).
+        // Add 'Original' only if this house isn't already taken by
+        // another player.
+        if(housesTakenByOthers.find(i) == housesTakenByOthers.end()) {
+            curHouseInfo.colorDropDown.addEntry(_("Original"), i);
+        }
+
+        // DuneCity 1.0.398: Teal entry kept (still goes to slot 192
+        // via the per-house swap path in setHouseColorSwap).
         if(true) {  // always offer Teal
             bool tealUsedBySpectator = false;
             for(int j=0; j<NUM_HOUSES; j++) {
@@ -558,14 +558,6 @@ CustomGamePlayers::CustomGamePlayers(const GameInitSettings& newGameInitSettings
                 curHouseInfo.colorDropDown.addEntry(_(cc.name), cc.data);
             }
         }
-
-        // DuneCity 1.0.458: Bright Yellow - Custom_IBM.PAL[192..199]
-        // ramp (v1.0.450 yellow spectator color). Reserved for
-        // future use as the spectator color in custom game.
-        // Tornie's OOB confirms the 6 spectator colors are:
-        // Teal Fushia Apple Green Dark Purple Light Pink and
-        // Bright Yellow.
-        curHouseInfo.colorDropDown.addEntry(_("Bright Yellow (color)"), -14);
         // The 7 vanilla house color slots (Harkonnen, Atreides,
         // Ordos, Fremen, Sardaukar, Mercenary, Neutral) - always
         // offered for all players. The user can pick any of these

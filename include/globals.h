@@ -101,36 +101,24 @@ EXTERN bool debug;                                      ///< is set for debuggin
 
 
 // constants
-// DuneCity 1.0.460: REBELS uses palette index 52 (was 30
-// in v1.0.444-459). The colors at 52-59 in Custom_IBM.PAL
-// are now the desaturated + 75% darker version of the
-// original (saturation 0%, darker 75% per Tornie's OOB).
-// This gives REBELS a darker, greyscale ramp that
-// preserves the logical color hue while being much
-// darker than the vanilla house colors.
-//
-// Tornie's OOB: 'le nouvel indice est 52 mais je
-// voudrais juste ajuste en faisant ceci : saturation
-// 0% et darker 75%' = use new index 52 and adjust
-// the colors with saturation 0% (greyscale) and
-// darker 75%.
-static const int houseToPaletteIndex[NUM_HOUSES] = { PALCOLOR_HARKONNEN, PALCOLOR_ATREIDES, PALCOLOR_ORDOS, PALCOLOR_FREMEN, PALCOLOR_SARDAUKAR, PALCOLOR_MERCENARY, PALCOLOR_NEUTRAL, 52 };    ///< the base colors for the different houses (REBELS = 52)
-
-// DuneCity 1.0.445: Tornie's picked REBELS tint indices
-// from vanilla IBM.PAL. Tornie specified the 8 indices to
-// use for the REBELS tint ramp - 28, 29, 30, 31, 122, 175,
-// 12, 12 (the 8th slot repeats 12 per Tornie's OOB 'last
-// is 12 again'). These 7 unique dark grey colors give
-// REBELS a dark grey tint matching the Tornie mod aesthetic.
-static const int REBELS_TINT_INDICES[8] = { 27, 28, 29, 30, 31, 122, 175, 12 };    ///< IBM.PAL indices for REBELS tint ramp
+static const int houseToPaletteIndex[NUM_HOUSES] = { PALCOLOR_HARKONNEN, PALCOLOR_ATREIDES, PALCOLOR_ORDOS, PALCOLOR_FREMEN, PALCOLOR_SARDAUKAR, PALCOLOR_MERCENARY, PALCOLOR_NEUTRAL, PALCOLOR_REBELS };    ///< the base colors for the different houses
 static const char houseChar[] = { 'H', 'A', 'O', 'F', 'S', 'M', 'N', 'R' };   ///< character for each house
 
 /// Returns the SDL_Color for the given house at palette offset.
-/// All 8 houses read from the same runtime palette via
-/// houseToPaletteIndex[house]. REBELS reads from index 30 which
-/// was populated at GFX init from the Tornie-picked IBM.PAL indices.
+/// Houses 1..7 use the vanilla ibmPalette so the editor shows the
+/// correct vanilla colour.  The 8th house (HOUSE_REBELS) reads from
+/// the runtime 'palette' which has been overridden by Custom_IBM.pal
+/// at indices 192-199 with a dark-grey/black ramp. Fremen keeps
+/// using ibmPalette so the orange vanilla colour shows through.
+///
+/// DuneCity 1.0.408: HOUSE_FREMEN still reads from ibmPalette
+/// (vanilla orange). Only HOUSE_REBELS reads from the runtime
+/// 'palette' (Custom_IBM.pal values). Tornie's OOB clarification
+/// 'i correct my sentence' = the getHouseSDLColor function
+/// should keep Fremen on ibmPalette and Rebels on palette.
 inline SDL_Color getHouseSDLColor(int house, int offset = 3) {
-    return palette[houseToPaletteIndex[house] + offset];
+    const Palette& pal = (house == HOUSE_REBELS) ? palette : ibmPalette;
+    return pal[houseToPaletteIndex[house] + offset];
 }
 
 #endif //GLOBALS_H

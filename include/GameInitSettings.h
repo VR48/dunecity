@@ -71,16 +71,6 @@ public:
             // colorIndex field exists only in saves version 9820+
             if (savegameVersion == 0 || savegameVersion >= 9820) {
                 colorIndex = stream.readSint32();
-            } else {
-                // DuneCity 1.0.467: for old saves (< 9820) without
-                // colorIndex, default to the new REBELS palette index
-                // if houseID is REBELS. Otherwise default to houseID
-                // (vanilla behavior).
-                if(houseID == HOUSE_REBELS) {
-                    colorIndex = 52;  // v1.0.460 REBELS slot
-                } else {
-                    colorIndex = houseID;
-                }
             }
 
             Uint32 numPlayerInfo = stream.readUint32();

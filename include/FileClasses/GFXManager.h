@@ -588,11 +588,6 @@ public:
     SDL_Color       getCustomColorRamp(int idx) const;
     zoomable_texture getObjPic(unsigned int id, int house=HOUSE_HARKONNEN);
 
-    // DuneCity 1.0.465: invalidate all sprite textures so they
-    // get re-rendered with the current color swap. Used on game
-    // init to clear stale caches from previous game sessions.
-    void invalidateAllSpriteTextures();
-
     SDL_Texture*     getSmallDetailPic(unsigned int id);
     SDL_Texture*     getTinyPicture(unsigned int id);
     SDL_Texture*     getUIGraphic(unsigned int id, int house=HOUSE_HARKONNEN);

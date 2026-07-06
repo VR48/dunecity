@@ -1067,35 +1067,20 @@ int main(int argc, char *argv[]) {
                 palette = LoadPalette_RW(pFileManager->openFile("IBM.PAL").get());
                 ibmPalette = palette;  // save vanilla IBM.PAL before any mod overrides
 
-                // DuneCity 1.0.461: write Custom_IBM.PAL[52..59]
-                // (sat0/dark75 ramp) to runtime palette[52..59]
-                // for REBELS tint. The vanilla IBM.PAL[52..59]
-                // (reddish dark colors at slots 52-59 in vanilla
-                // IBM.PAL) is overwritten with the dark grey ramp
-                // from Custom_IBM.PAL. This is the runtime path
-                // for REBELS tint at index 52 (v1.0.460).
-                //
-                // The previous v1.0.444-454 runtime palette override
-                // caused crashes during mission load due to texture
-                // cache corruption. The override was reverted in
-                // v1.0.455. Now we re-apply the override with a
-                // different mechanism: only REBELS slot (52-59) is
-                // overridden, the rest of the palette stays vanilla.
-                // This matches the v1.0.410 fix that worked
-                // correctly before the regression.
-                if(pFileManager->exists("Custom_IBM.pal")) {
+                // Tornie mod: load Custom_IBM.pal to replace palette entries 192-199 with rebels grey
+                if (ModManager::instance().getActiveModName() == "Tornie" && pFileManager->exists("Custom_IBM.pal")) {
                     auto palRw = pFileManager->openFile("Custom_IBM.pal");
                     std::vector<Uint8> palData(768);
                     SDL_RWread(palRw.get(), palData.data(), 1, 768);
-                    for(int k = 0; k < 8; k++) {
+                    for (int i = 192; i < 200; ++i) {
                         SDL_Color c;
-                        c.r = palData[(52 + k) * 3 + 0];
-                        c.g = palData[(52 + k) * 3 + 1];
-                        c.b = palData[(52 + k) * 3 + 2];
+                        c.r = std::min(255, (int)palData[i*3+0] * 4);
+                        c.g = std::min(255, (int)palData[i*3+1] * 4);
+                        c.b = std::min(255, (int)palData[i*3+2] * 4);
                         c.a = 255;
-                        palette[52 + k] = c;
+                        palette[i] = c;
                     }
-                    SDL_Log("GFX INIT: REBELS dark grey ramp written to palette[52..59] from Custom_IBM.PAL[52..59] (sat0/dark75)");
+                    SDL_Log("Tornie Custom_IBM.pal applied (rebels grey range 192-199)");
                 }
 
                 SDL_Log("Setting video mode...");

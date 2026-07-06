@@ -51,10 +51,6 @@ Tile::Tile() {
 
     spice = 0;
 
-    // DuneCity 1.0.447: v1.0.173-like per-house tile tinting.
-    // The v1.0.173 vanilla remap is just mapSurfaceColorRange
-    // (no surface palette write) because the runtime palette
-    // has the right color at each house's slot. For REBELS we
     sprite = pGFXManager->getObjPic(ObjPic_Terrain);
 
     for (auto& time : tracksCreationTime) {

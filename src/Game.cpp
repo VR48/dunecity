@@ -295,38 +295,6 @@ void Game::logPerformance(const char* format, ...) {
 void Game::initGame(const GameInitSettings& newGameInitSettings) {
     gameInitSettings = newGameInitSettings;
 
-    // DuneCity 1.0.465: invalidate the sprite texture cache on game
-    // init so all sprites get re-rendered with the current house
-    // color swap. Without this, cached textures from a previous
-    // game session show wrong colors (the multi-color ghost bug
-    // Tornie reported on the second game load).
-    if(pGFXManager) {
-        pGFXManager->invalidateAllSpriteTextures();
-    }
-
-    // DuneCity 1.0.466: re-write the runtime palette[52..59]
-    // (REBELS dark grey ramp from Custom_IBM.PAL) at every game
-    // init. The v1.0.461 fix only wrote at first GFX init in
-    // main.cpp, so subsequent game sessions (returning to the
-    // main menu and starting a new game) had vanilla palette
-    // values at 52-59, causing REBELS to render as the wrong
-    // color. This inline re-write ensures the runtime palette
-    // is always fresh when a new game starts.
-    if(pFileManager->exists("Custom_IBM.pal")) {
-        auto palRw = pFileManager->openFile("Custom_IBM.pal");
-        std::vector<Uint8> palData(768);
-        SDL_RWread(palRw.get(), palData.data(), 1, 768);
-        for(int k = 0; k < 8; k++) {
-            SDL_Color c;
-            c.r = palData[(52 + k) * 3 + 0];
-            c.g = palData[(52 + k) * 3 + 1];
-            c.b = palData[(52 + k) * 3 + 2];
-            c.a = 255;
-            palette[52 + k] = c;
-        }
-        SDL_Log("DuneCity 1.0.466: REBELS dark grey ramp re-applied to runtime palette[52..59] at game init");
-    }
-
     // The host's mod choice is the source of truth for whether the
     // city-sim feature flag is on — not whatever mod the local player
     // happens to have active in their main menu. This matters most for
@@ -530,12 +498,7 @@ void Game::initGame(const GameInitSettings& newGameInitSettings) {
                             if(pickedSlot == hi.houseID) {
                                 pickedSlot = -1;  // 'Original' = no swap
                             } else if(pickedSlot == -2) {
-                                // DuneCity 1.0.459: Teal is at the
-                                // ORDOS slot (176) per Tornie's OOB,
-                                // not the Rebels slot (192). The
-                                // Rebels slot is now used for Bright
-                                // Yellow (data=-14 in v1.0.458).
-                                pickedSlot = PALCOLOR_ORDOS;  // 176
+                                pickedSlot = PALCOLOR_REBELS;  // 192
                             } else if(pickedSlot < -100 && pickedSlot > -100 - NUM_HOUSES) {
                                 pickedSlot = -100 - pickedSlot;
                             } else if(pickedSlot < 0 || pickedSlot >= 256) {
