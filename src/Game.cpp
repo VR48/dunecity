@@ -303,6 +303,28 @@ void Game::initGame(const GameInitSettings& newGameInitSettings) {
         pGFXManager->invalidateAllSpriteTextures();
     }
 
+    // DuneCity 1.0.484: re-apply runtime palette[52..59] (REBELS
+    // dark grey ramp from Custom_IBM.PAL) at every game init.
+    // Tornie's OOB: 'v1.0.466 runtime palette[52..59] override
+    // (tu peux c'est la couleur)' = re-apply the runtime
+    // palette write. This ensures the runtime palette is
+    // always fresh for the REBELS tint. Source data is the
+    // Custom_IBM.PAL sat0/dark75 dark grey ramp.
+    if(pFileManager->exists("Custom_IBM.pal")) {
+        auto palRw = pFileManager->openFile("Custom_IBM.pal");
+        std::vector<Uint8> palData(768);
+        SDL_RWread(palRw.get(), palData.data(), 1, 768);
+        for(int k = 0; k < 8; k++) {
+            SDL_Color c;
+            c.r = palData[(52 + k) * 3 + 0];
+            c.g = palData[(52 + k) * 3 + 1];
+            c.b = palData[(52 + k) * 3 + 2];
+            c.a = 255;
+            palette[52 + k] = c;
+        }
+        SDL_Log("DuneCity 1.0.484: REBELS dark grey ramp re-applied to runtime palette[52..59] at game init");
+    }
+
     // The host's mod choice is the source of truth for whether the
     // city-sim feature flag is on — not whatever mod the local player
     // happens to have active in their main menu. This matters most for
