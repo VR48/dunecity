@@ -498,7 +498,12 @@ void Game::initGame(const GameInitSettings& newGameInitSettings) {
                             if(pickedSlot == hi.houseID) {
                                 pickedSlot = -1;  // 'Original' = no swap
                             } else if(pickedSlot == -2) {
-                                pickedSlot = PALCOLOR_REBELS;  // 192
+                                // DuneCity 1.0.459: Teal is at the
+                                // ORDOS slot (176) per Tornie's OOB,
+                                // not the Rebels slot (192). The
+                                // Rebels slot is now used for Bright
+                                // Yellow (data=-14 in v1.0.458).
+                                pickedSlot = PALCOLOR_ORDOS;  // 176
                             } else if(pickedSlot < -100 && pickedSlot > -100 - NUM_HOUSES) {
                                 pickedSlot = -100 - pickedSlot;
                             } else if(pickedSlot < 0 || pickedSlot >= 256) {
