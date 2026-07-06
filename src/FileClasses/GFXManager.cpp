@@ -3617,24 +3617,20 @@ SDL_Texture* GFXManager::getZoomedObjPic(unsigned int id, int house, unsigned in
                 // (Deviator / Flame Tank / Sonic / Elite Siege don't have a vanilla
                 // equivalent, but we can render something rather than crash the whole
                 // scenario load. Siege tank is the closest generic heavy unit.)
-                static const unsigned int tornieUnitIds[] = {
-                    ObjPic_DeviatorCustom,
-                    ObjPic_FlameTank,
-                    ObjPic_Sonictank_Gun,
-                    ObjPic_EliteSiegeTankCustom,
-                };
-                bool isTornieUnit = false;
-                for(auto cid : tornieUnitIds) {
-                    if(id == cid) { isTornieUnit = true; break; }
-                }
-                if(isTornieUnit && objPic[ObjPic_Siegetank_Gun][HOUSE_HARKONNEN][z]) {
-                    SDL_Log("GFXManager::getZoomedObjPic(): Tornie unit sprite ID %u not loaded, falling back to Siegetank_Gun (placeholder)", id);
+                // DuneCity 1.0.468: extended Tornie unit fallback to
+                // cover ANY missing unit sprite ID (not just the
+                // 4 hardcoded ones). ID 70 was throwing an exception
+                // which broke scenario load. Use Siege tank as the
+                // generic heavy unit placeholder for any missing
+                // unit when in Tornie mod / custom game.
+                if(objPic[ObjPic_Siegetank_Gun][HOUSE_HARKONNEN][z]) {
+                    SDL_Log("GFXManager::getZoomedObjPic(): Unit Picture with ID %u not loaded, falling back to Siegetank_Gun (placeholder)", id);
                     objPic[id][HOUSE_HARKONNEN][z] = sdl2::surface_ptr{
                         SDL_ConvertSurface(objPic[ObjPic_Siegetank_Gun][HOUSE_HARKONNEN][z].get(),
                                            objPic[ObjPic_Siegetank_Gun][HOUSE_HARKONNEN][z]->format, 0)
                     };
                 } else {
-                    THROW(std::runtime_error, "GFXManager::getZoomedObjPic(): Unit Picture with ID %u is not loaded!", id);
+                    THROW(std::runtime_error, "GFXManager::getZoomedObjPic(): Unit Picture with ID %u is not loaded AND Siegetank_Gun fallback is also missing!", id);
                 }
             }
         }
@@ -4346,7 +4342,14 @@ void GFXManager::invalidateAllSpriteTextures() {
     // DuneCity 1.0.465: clear all cached sprite textures.
     // The lazy remap in getZoomedObjPic will recreate them
     // with the correct per-house palette on the next render.
-    SDL_Log("GFXManager::invalidateAllSpriteTextures(): clearing all sprite texture caches");
+    // DuneCity 1.0.468: do NOT clear uiGraphic[][] - the UI
+    // graphics (mentat background, editor sidebar icons, etc.)
+    // are loaded ONCE at GFX init and shouldn't be invalidated.
+    // Clearing them causes black mentat screen and broken editor
+    // icons. The uiGraphic lazy remap in getUIGraphicSurface
+    // only fires when the per-house clone is needed, so keeping
+    // them cached is correct.
+    SDL_Log("GFXManager::invalidateAllSpriteTextures(): clearing all sprite texture caches (uiGraphic preserved)");
     for(int id = 0; id < NUM_OBJPICS; id++) {
         for(int h = 0; h < NUM_HOUSES; h++) {
             for(unsigned int z = 0; z < NUM_ZOOMLEVEL; z++) {
@@ -4356,11 +4359,13 @@ void GFXManager::invalidateAllSpriteTextures() {
             }
         }
     }
-    for(unsigned int id = 0; id < NUM_UIGRAPHICS; id++) {
-        for(int h = 0; h < NUM_HOUSES; h++) {
-            uiGraphic[id][h].reset();
-        }
-    }
+    // uiGraphic is intentionally NOT cleared - it would break
+    // the mentat screen and editor icons.
+    // for(unsigned int id = 0; id < NUM_UIGRAPHICS; id++) {
+    //     for(int h = 0; h < NUM_HOUSES; h++) {
+    //         uiGraphic[id][h].reset();
+    //     }
+    // }
 }
 
 
