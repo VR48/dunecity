@@ -18,7 +18,6 @@
 #include <Tile.h>
 
 #include <globals.h>
-#include <misc/draw_util.h>
 
 #include <FileClasses/GFXManager.h>
 
@@ -56,24 +55,6 @@ Tile::Tile() {
     // The v1.0.173 vanilla remap is just mapSurfaceColorRange
     // (no surface palette write) because the runtime palette
     // has the right color at each house's slot. For REBELS we
-    // need to write the Custom_IBM.pal dark grey to the surface
-    // palette because the runtime palette slot 192 is shared
-    // with FREMEN (orange) but REBELS needs dark grey.
-    SDL_Surface* terrainSrc = pGFXManager->getObjPicSurface(ObjPic_Terrain);
-    for(int h = 0; h < NUM_HOUSES; h++) {
-        if(terrainSrc && terrainSrc->format && terrainSrc->format->palette) {
-            int destSlot = houseToPaletteIndex[h];
-            SDL_Surface* clone = SDL_ConvertSurface(terrainSrc, terrainSrc->format, 0);
-            if(clone) {
-                // DuneCity 1.0.447: v1.0.173-like per-house remap.
-                mapSurfaceColorRange(clone, PALCOLOR_HARKONNEN, destSlot);
-                // Store the per-house surface + texture.
-                spriteSurfaces[h] = clone;
-                spriteTex[h] = convertSurfaceToTexture(clone).release();
-            }
-        }
-    }
-    // Create the texture for HARKONNEN's sprite (legacy).
     sprite = pGFXManager->getObjPic(ObjPic_Terrain);
 
     for (auto& time : tracksCreationTime) {
@@ -362,7 +343,7 @@ void Tile::blitGround(int xPos, int yPos) {
                 SDL_Rect customSrc = { col * zoomed_tilesize, row * zoomed_tilesize, zoomed_tilesize, zoomed_tilesize };
                 // Draw sand base first, then overlay spice
                 SDL_Rect sandSrc = { TerrainTile_Sand * zoomed_tilesize, 0, zoomed_tilesize, zoomed_tilesize };
-                SDL_RenderCopy(renderer, spriteTex[pLocalHouse->getHouseID()], &sandSrc, &drawLocation);
+                SDL_RenderCopy(renderer, sprite[currentZoomlevel], &sandSrc, &drawLocation);
                 SDL_RenderCopy(renderer, customTex, &customSrc, &drawLocation);
                 drewCustomSpice = true;
             }
@@ -383,10 +364,10 @@ void Tile::blitGround(int xPos, int yPos) {
                     const auto bloomIndexX = TerrainTile_SpiceBloom % NUM_TERRAIN_TILES_X;
                     const auto bloomIndexY = TerrainTile_SpiceBloom / NUM_TERRAIN_TILES_X;
                     SDL_Rect bloomSrc = { bloomIndexX*zoomed_tilesize, bloomIndexY*zoomed_tilesize, zoomed_tilesize, zoomed_tilesize };
-                    SDL_RenderCopy(renderer, spriteTex[pLocalHouse->getHouseID()], &bloomSrc, &drawLocation);
+                    SDL_RenderCopy(renderer, sprite[currentZoomlevel], &bloomSrc, &drawLocation);
                 }
             } else {
-                SDL_RenderCopy(renderer, spriteTex[pLocalHouse->getHouseID()], &source, &drawLocation);
+                SDL_RenderCopy(renderer, sprite[currentZoomlevel], &source, &drawLocation);
             }
         }
     }

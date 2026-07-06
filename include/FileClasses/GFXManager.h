@@ -587,15 +587,7 @@ public:
     void            setCustomColorRamp(int idx, SDL_Color c);
     SDL_Color       getCustomColorRamp(int idx) const;
     zoomable_texture getObjPic(unsigned int id, int house=HOUSE_HARKONNEN);
-
-    // DuneCity 1.0.447: surface getter for per-house remap
-    SDL_Surface* getObjPicSurface(unsigned int id, int house=HOUSE_HARKONNEN, unsigned int z=0) {
-        if(id >= NUM_OBJPICS || house < 0 || house >= NUM_HOUSES) return nullptr;
-        if(!objPic[id][house][z]) {
-            // Trigger the lazy remap
-            getObjPic(id, house);
-        }
-        return objPic[id][house][z] ? objPic[id][house][z].get() : nullptr;
+return objPic[id][house][z] ? objPic[id][house][z].get() : nullptr;
     }
 
     SDL_Texture*     getSmallDetailPic(unsigned int id);

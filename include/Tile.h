@@ -512,15 +512,7 @@ private:
 
     FixPoint    spice;          ///< how much spice on this particular tile is left
 
-    // DuneCity 1.0.447: per-house tile sprites. The v1.0.173 era
-    // had a single zoomable_texture sprite which caused the
-    // entire map to render with one house's tint. Made it
-    // per-house so each player sees their house's color.
-    // We store raw SDL_Surface* and SDL_Texture* per house.
-    // Tile destructor manages the cleanup.
-    SDL_Surface* spriteSurfaces[NUM_HOUSES] = { nullptr };  ///< per-house surface
-    SDL_Texture* spriteTex[NUM_HOUSES] = { nullptr };       ///< per-house texture (zoom level 0)
-    zoomable_texture sprite{};                             ///< HARKONNEN source texture (legacy)
+    zoomable_texture sprite{};  ///< the graphic to draw
 
     Sint32                          destroyedStructureTile;         ///< the tile drawn for a destroyed structure
     Uint32                          tracksCreationTime[NUM_ANGLES]; ///< Contains the game cycle the tracks on sand appeared
