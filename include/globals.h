@@ -101,24 +101,27 @@ EXTERN bool debug;                                      ///< is set for debuggin
 
 
 // constants
-static const int houseToPaletteIndex[NUM_HOUSES] = { PALCOLOR_HARKONNEN, PALCOLOR_ATREIDES, PALCOLOR_ORDOS, PALCOLOR_FREMEN, PALCOLOR_SARDAUKAR, PALCOLOR_MERCENARY, PALCOLOR_NEUTRAL, PALCOLOR_REBELS };    ///< the base colors for the different houses
+// DuneCity 1.0.444: REBELS uses palette index 30 (not 192).
+// The palette index 30 is shared with another graphic slot in
+// vanilla IBM.PAL but the colors at 30-37 are logical darker
+// greys which give REBELS a dark grey tint matching the Tornie
+// mod aesthetic. All 8 houses read from the SAME palette via
+// houseToPaletteIndex[] - no custom overrides.
+//
+// Tornie's OOB: 'the indice 30 for IBM.PAL is the first color
+// who apply to the rebels House. Take logical color darker
+// to keep it dark grey.' = use index 30 as the base REBELS
+// tint. The colors at 30-37 in vanilla IBM.PAL are darker
+// than the other house colors so REBELS shows as dark grey.
+static const int houseToPaletteIndex[NUM_HOUSES] = { PALCOLOR_HARKONNEN, PALCOLOR_ATREIDES, PALCOLOR_ORDOS, PALCOLOR_FREMEN, PALCOLOR_SARDAUKAR, PALCOLOR_MERCENARY, PALCOLOR_NEUTRAL, 30 };    ///< the base colors for the different houses (REBELS = 30)
 static const char houseChar[] = { 'H', 'A', 'O', 'F', 'S', 'M', 'N', 'R' };   ///< character for each house
 
 /// Returns the SDL_Color for the given house at palette offset.
-/// Houses 1..7 use the vanilla ibmPalette so the editor shows the
-/// correct vanilla colour.  The 8th house (HOUSE_REBELS) reads from
-/// the runtime 'palette' which has been overridden by Custom_IBM.pal
-/// at indices 192-199 with a dark-grey/black ramp. Fremen keeps
-/// using ibmPalette so the orange vanilla colour shows through.
-///
-/// DuneCity 1.0.408: HOUSE_FREMEN still reads from ibmPalette
-/// (vanilla orange). Only HOUSE_REBELS reads from the runtime
-/// 'palette' (Custom_IBM.pal values). Tornie's OOB clarification
-/// 'i correct my sentence' = the getHouseSDLColor function
-/// should keep Fremen on ibmPalette and Rebels on palette.
+/// All 8 houses read from the same runtime palette via
+/// houseToPaletteIndex[house]. REBELS reads from index 30 which
+/// gives a logical dark grey color in vanilla IBM.PAL.
 inline SDL_Color getHouseSDLColor(int house, int offset = 3) {
-    const Palette& pal = (house == HOUSE_REBELS) ? palette : ibmPalette;
-    return pal[houseToPaletteIndex[house] + offset];
+    return palette[houseToPaletteIndex[house] + offset];
 }
 
 #endif //GLOBALS_H
