@@ -558,6 +558,14 @@ CustomGamePlayers::CustomGamePlayers(const GameInitSettings& newGameInitSettings
                 curHouseInfo.colorDropDown.addEntry(_(cc.name), cc.data);
             }
         }
+
+        // DuneCity 1.0.458: Bright Yellow - Custom_IBM.PAL[192..199]
+        // ramp (v1.0.450 yellow spectator color). Reserved for
+        // future use as the spectator color in custom game.
+        // Tornie's OOB confirms the 6 spectator colors are:
+        // Teal Fushia Apple Green Dark Purple Light Pink and
+        // Bright Yellow.
+        curHouseInfo.colorDropDown.addEntry(_("Bright Yellow (color)"), -14);
         // The 7 vanilla house color slots (Harkonnen, Atreides,
         // Ordos, Fremen, Sardaukar, Mercenary, Neutral) - always
         // offered for all players. The user can pick any of these
