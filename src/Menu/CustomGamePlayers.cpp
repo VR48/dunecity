@@ -484,14 +484,14 @@ CustomGamePlayers::CustomGamePlayers(const GameInitSettings& newGameInitSettings
                 housesTakenByOthers.insert(selHouse);
             }
         }
-        // Add 'Original' only if this house isn't already taken by
-        // another player.
-        if(housesTakenByOthers.find(i) == housesTakenByOthers.end()) {
-            curHouseInfo.colorDropDown.addEntry(_("Original"), i);
-        }
-
-        // DuneCity 1.0.398: Teal entry kept (still goes to slot 192
-        // via the per-house swap path in setHouseColorSwap).
+        // DuneCity 1.0.456: Original is added unconditionally at the
+        // end of this block (see below) to avoid duplicates.
+        // The previous 'if not taken by others' check created a
+        // duplicate entry when the same player could pick Original
+        // more than once. Now only the final addEntry populates Original.
+        //
+        // Teal entry kept (still goes to slot 192 via the per-house
+        // swap path in setHouseColorSwap).
         if(true) {  // always offer Teal
             bool tealUsedBySpectator = false;
             for(int j=0; j<NUM_HOUSES; j++) {
