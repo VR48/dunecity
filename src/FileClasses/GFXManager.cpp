@@ -3880,58 +3880,6 @@ SDL_Surface* GFXManager::getUIGraphicSurface(unsigned int id, int house) {
         }
 
         uiGraphic[id][house] = mapSurfaceColorRange(uiGraphic[id][HOUSE_HARKONNEN].get(), PALCOLOR_HARKONNEN, houseToPaletteIndex[house]);
-
-        // DuneCity 1.0.436: write the surface palette at
-        // destSlot for the active house. SDL_CreateTextureFromSurface
-        // uses the surface's own palette (not the runtime
-        // palette), so the surface palette at destSlot must
-        // contain the right color. For vanilla houses (1-7),
-        // ibmPalette[destSlot..+7] is the house's vanilla
-        // color. For HOUSE_REBELS, we use customColorRamp
-        // (Custom_IBM.pal dark grey) since FREMEN shares
-        // slot 192 in ibmPalette and runtime palette.
-        // The destSlot is PALCOLOR_REBELS = PALCOLOR_FREMEN = 192
-        // for REBELS, so we write dark grey to surface
-        // palette at 192-199. For other houses, we just
-        // write ibmPalette[destSlot] which is already the
-        // right color (this is essentially a no-op since
-        // SDL_ConvertSurface copied the source's palette
-        // which has Harkonnen red at all slots; writing
-        // ibmPalette[160] for ATREIDES replaces slot 160
-        // with Atreides blue).
-        //
-        // Tornie's OOB: 'le systeme d'attribution graphique
-        // de la 1.0.173 marchait a merveille il faut juste
-        // preserve les couleurs et les palettes pour celles
-        // qui utilisent Custom_IBM.PAL' = the v1.0.173
-        // graphic attribution worked perfectly, preserve
-        // colors and palettes for those using
-        // Custom_IBM.PAL. v1.0.173 didn't have REBELS so
-        // the remap was: mapSurfaceColorRange(src, HARKONNEN,
-        // houseToPaletteIndex[house]) which only changed
-        // pixel values, not the palette. SDL_CreateTextureFromSurface
-        // would then copy the source palette (with all
-        // Harkonnen colors) which is wrong for the per-house
-        // tint. The fact that v1.0.173 "worked" must be
-        // because the engine had a different texture
-        // creation path back then. Our current v1.0.435
-        // does the same remap but the engine reads from
-        // the surface palette which is the source's
-        // (Harkonnen) palette - so all houses show red.
-        // The fix: write ibmPalette[destSlot] for each
-        // house so the surface palette at destSlot has
-        // the right color.
-        if(uiGraphic[id][house] && uiGraphic[id][house]->format->palette) {
-            for(int k = 0; k < 8; k++) {
-                if(house == HOUSE_REBELS) {
-                    uiGraphic[id][house]->format->palette->colors[houseToPaletteIndex[house] + k] =
-                        customColorRamp[PALCOLOR_REBELS + k];
-                } else {
-                    uiGraphic[id][house]->format->palette->colors[houseToPaletteIndex[house] + k] =
-                        ibmPalette[houseToPaletteIndex[house] + k];
-                }
-            }
-        }
     }
 
     return uiGraphic[id][house].get();
