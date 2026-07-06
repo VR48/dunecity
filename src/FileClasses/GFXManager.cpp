@@ -743,6 +743,56 @@ GFXManager::GFXManager() {
     objPic[ObjPic_RocketTurret][HOUSE_HARKONNEN][0] = icon->getPictureArray(24);
     objPic[ObjPic_Wall][HOUSE_HARKONNEN][0] = icon->getPictureArray(6,25,3,1);
 
+    // DuneCity 1.0.413: per-house clone of the structure
+    // sprites (was deleted in v1.0.407). Each non-HARKONNEN
+    // house gets a clone of each structure sprite with pixel
+    // values remapped from PALCOLOR_HARKONNEN (144) to the
+    // house's own slot. The remap uses ibmPalette[] (vanilla)
+    // as source so the translucent mask effect doesn't
+    // happen. HOUSE_REBELS additionally gets the
+    // Custom_IBM.pal dark grey written to indices 192-199.
+    {
+        static const int structureSprites[] = {
+            ObjPic_ConstructionYard, ObjPic_Windtrap, ObjPic_Refinery,
+            ObjPic_Barracks, ObjPic_WOR, ObjPic_Radar, ObjPic_LightFactory,
+            ObjPic_Silo, ObjPic_HeavyFactory, ObjPic_HighTechFactory,
+            ObjPic_IX, ObjPic_Palace, ObjPic_RepairYard, ObjPic_Starport,
+            ObjPic_GunTurret, ObjPic_RocketTurret, ObjPic_Wall
+        };
+        for (int spec : structureSprites) {
+            if(!objPic[spec][HOUSE_HARKONNEN][0]) continue;
+            for (int h = 0; h < NUM_HOUSES; h++) {
+                if (h == HOUSE_HARKONNEN) continue;
+                objPic[spec][h][0] = sdl2::surface_ptr{
+                    SDL_ConvertSurface(objPic[spec][HOUSE_HARKONNEN][0].get(),
+                                       objPic[spec][HOUSE_HARKONNEN][0]->format, 0)
+                };
+                if (!objPic[spec][h][0] || !objPic[spec][h][0]->format->palette) continue;
+                int destSlot = houseToPaletteIndex[h];
+                objPic[spec][h][0] = mapSurfaceColorRange(
+                    objPic[spec][h][0].get(),
+                    PALCOLOR_HARKONNEN, destSlot);
+                // Apply house's vanilla color from ibmPalette
+                // to the surface palette at the destination slot
+                // (avoids the translucent mask effect that
+                // palette[] caused).
+                for (int k = 0; k < 8; k++) {
+                    objPic[spec][h][0]->format->palette->colors[destSlot + k] =
+                        ibmPalette[destSlot + k];
+                }
+                // HOUSE_REBELS additionally gets the
+                // Custom_IBM.pal dark grey.
+                if (h == HOUSE_REBELS) {
+                    for (int k = 0; k < 8; k++) {
+                        objPic[spec][h][0]->format->palette->colors[PALCOLOR_REBELS + k] =
+                            customColorRamp[PALCOLOR_REBELS + k];
+                    }
+                }
+            }
+        }
+        SDL_Log("DuneCity 1.0.413: per-house structure sprite remap restored (vanilla colors via ibmPalette, Custom_IBM.pal dark grey for HOUSE_REBELS)");
+    }
+
 
 
     // DuneCity zone sprites — load the full 3×3 Micropolis composites and
@@ -2216,42 +2266,6 @@ GFXManager::GFXManager() {
     objPic[ObjPic_SandwormShimmerTemp][HOUSE_HARKONNEN][0] = units1->getPicture(10);
     objPic[ObjPic_Terrain][HOUSE_HARKONNEN][0] = icon->getPictureRow(124,209,NUM_TERRAIN_TILES_X);
 
-    // DuneCity 1.0.412: per-house clone of the terrain atlas
-    // restored (was deleted in v1.0.407). Each non-HARKONNEN
-    // house gets a clone of the terrain atlas with pixel values
-    // remapped from PALCOLOR_HARKONNEN (144) to the house's own
-    // slot. The remap uses ibmPalette[] (vanilla) as source so
-    // the translucent mask effect doesn't happen. HOUSE_REBELS
-    // additionally gets the Custom_IBM.pal dark grey written to
-    // indices 192-199.
-    {
-        for(int h = 0; h < NUM_HOUSES; h++) {
-            if(h == HOUSE_HARKONNEN) continue;
-            if(!objPic[ObjPic_Terrain][HOUSE_HARKONNEN][0]) continue;
-            objPic[ObjPic_Terrain][h][0] = sdl2::surface_ptr{
-                SDL_ConvertSurface(objPic[ObjPic_Terrain][HOUSE_HARKONNEN][0].get(),
-                                   objPic[ObjPic_Terrain][HOUSE_HARKONNEN][0]->format, 0)
-            };
-            if(!objPic[ObjPic_Terrain][h][0]) continue;
-            int destSlot = houseToPaletteIndex[h];
-            objPic[ObjPic_Terrain][h][0] = mapSurfaceColorRange(
-                objPic[ObjPic_Terrain][h][0].get(),
-                PALCOLOR_HARKONNEN, destSlot);
-            if(objPic[ObjPic_Terrain][h][0]->format->palette) {
-                for(int k = 0; k < 8; k++) {
-                    objPic[ObjPic_Terrain][h][0]->format->palette->colors[destSlot + k] =
-                        ibmPalette[destSlot + k];
-                }
-            }
-            if(h == HOUSE_REBELS && objPic[ObjPic_Terrain][h][0]->format->palette) {
-                for(int k = 0; k < 8; k++) {
-                    objPic[ObjPic_Terrain][h][0]->format->palette->colors[PALCOLOR_REBELS + k] =
-                        customColorRamp[PALCOLOR_REBELS + k];
-                }
-            }
-        }
-        SDL_Log("DuneCity 1.0.412: per-house terrain atlas remap restored (vanilla colors via ibmPalette, Custom_IBM.pal dark grey for HOUSE_REBELS)");
-    }
 
 
     objPic[ObjPic_DestroyedStructure][HOUSE_HARKONNEN][0] = icon->getPictureRow2(14, 33, 125, 213, 214, 215, 223, 224, 225, 232, 233, 234, 240, 246, 247);
