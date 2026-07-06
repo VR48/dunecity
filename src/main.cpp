@@ -1067,21 +1067,17 @@ int main(int argc, char *argv[]) {
                 palette = LoadPalette_RW(pFileManager->openFile("IBM.PAL").get());
                 ibmPalette = palette;  // save vanilla IBM.PAL before any mod overrides
 
-                // Tornie mod: load Custom_IBM.pal to replace palette entries 192-199 with rebels grey
-                if (ModManager::instance().getActiveModName() == "Tornie" && pFileManager->exists("Custom_IBM.pal")) {
-                    auto palRw = pFileManager->openFile("Custom_IBM.pal");
-                    std::vector<Uint8> palData(768);
-                    SDL_RWread(palRw.get(), palData.data(), 1, 768);
-                    for (int i = 192; i < 200; ++i) {
-                        SDL_Color c;
-                        c.r = std::min(255, (int)palData[i*3+0] * 4);
-                        c.g = std::min(255, (int)palData[i*3+1] * 4);
-                        c.b = std::min(255, (int)palData[i*3+2] * 4);
-                        c.a = 255;
-                        palette[i] = c;
-                    }
-                    SDL_Log("Tornie Custom_IBM.pal applied (rebels grey range 192-199)");
+                // DuneCity 1.0.445: REBELS tint applies the picked
+                // IBM.PAL indices from Tornie's OOB:
+                // 28, 29, 30, 31, 122, 175, 12, 12 to runtime
+                // palette[30..37]. This makes REBELS show as dark
+                // grey in-game without needing Custom_IBM.pal at
+                // all. Custom_IBM.pal is reserved for the future
+                // color-swap-for-spectators feature.
+                for(int k = 0; k < 8; k++) {
+                    palette[30 + k] = ibmPalette[REBELS_TINT_INDICES[k]];
                 }
+                SDL_Log("GFX INIT: REBELS tint ramp set at palette[30..37] from IBM.PAL indices 28,29,30,31,122,175,12,12");
 
                 SDL_Log("Setting video mode...");
                 setVideoMode(currentDisplayIndex);
