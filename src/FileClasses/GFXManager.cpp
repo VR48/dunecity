@@ -3699,30 +3699,29 @@ SDL_Texture* GFXManager::getZoomedObjPic(unsigned int id, int house, unsigned in
         // house slot, so all surfaces stayed at HARKONNEN's
         // slot (144-151) and the engine read HARKONNEN red
         // for everything.
-        objPic[id][house][z] = mapSurfaceColorRange(objPic[id][HOUSE_HARKONNEN][z].get(), PALCOLOR_HARKONNEN, destSlot);
+        objPic[id][house][z] = mapSurfaceColorRange(objPic[id][HOUSE_HARKONNEN][z].get(), PALCOLOR_HARKONNEN, houseToPaletteIndex[house]);
 
-        // DuneCity 1.0.471: re-add the surface palette write
-        // for ALL houses. Tornie's OOB (v1.0.470 test): 'toutes
-        // les team bizarres sauf harkonnen' = all teams bizarre
-        // except Harkonnen. This is because the SDL2 hardware
-        // renderer uses the surface palette (not the runtime
-        // palette) when rendering the texture. The surface
-        // palette was HARKONNEN's at all slots (from the
-        // SDL_ConvertSurface copy), so all houses except
-        // HARKONNEN read HARKONNEN's red.
+        // DuneCity 1.0.473: REBELS surface palette write using the
+        // v1.0.393 algorithm pattern but with the new palette index.
+        // The v1.0.393 version wrote to PALCOLOR_FREMEN (192) which
+        // was the shared slot for FREMEN and REBELS. v1.0.460 changed
+        // houseToPaletteIndex[REBELS] from 192 to 52, so the surface
+        // palette write now targets the new REBELS slot (52).
+        // Without this fix, the surface palette write would target
+        // slot 192 which is now FREMEN's slot (sharing it would
+        // corrupt FREMEN's tint).
         //
-        // The v1.0.464 surface palette write was the correct
-        // approach but was removed in v1.0.470. v1.0.471
-        // re-adds it. The runtime palette has the right color
-        // at each house's slot (vanilla for 7 houses, Custom_
-        // IBM.PAL greyscale at 52-59 for REBELS). Writing
-        // palette[destSlot..+7] to the surface palette
-        // ensures the hardware renderer reads the right color.
-        if(objPic[id][house][z] && objPic[id][house][z]->format->palette) {
+        // Tornie's OOB (current): "i talk about 1.0.393" = the
+        // current tint algorithm doesn't match the v1.0.393 pattern.
+        // This v1.0.473 commit restores the v1.0.393 algorithm with
+        // the new REBELS slot (52).
+        if(house == HOUSE_REBELS && objPic[id][house][z] && objPic[id][house][z]->format->palette) {
+            SDL_Color rebelsOverride[8];
             for(int k = 0; k < 8; k++) {
-                objPic[id][house][z]->format->palette->colors[destSlot + k] =
-                    palette[destSlot + k];
+                rebelsOverride[k] = palette[houseToPaletteIndex[HOUSE_REBELS] + k];
             }
+            SDL_SetPaletteColors(objPic[id][house][z]->format->palette,
+                                  rebelsOverride, houseToPaletteIndex[HOUSE_REBELS], 8);
         }
 
 // DuneCity 1.0.383: removed the ibmPalette[PALCOLOR_FREMEN..+15]
