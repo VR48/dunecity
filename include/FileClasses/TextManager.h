@@ -23,7 +23,6 @@
 #include <memory>
 #include "FileClasses/IndexedTextFile.h"
 #include "FileClasses/MentatTextFile.h"
-#include <DataTypes.h>
 
 #include <vector>
 #include <map>
@@ -120,7 +119,7 @@ private:
     void addOrigDuneText(const std::string& filename, bool bDecode = false);
 
 
-    std::array<std::unique_ptr<MentatTextFile>,NUM_HOUSES> mentatStrings;   ///< The MENTAT?.<EXTENSION> mentat menu texts, indexed by house
+    std::array<std::unique_ptr<MentatTextFile>,3> mentatStrings;            ///< The MENTAT?.<EXTENSION> mentat menu texts
 
     std::map<std::string,std::unique_ptr<IndexedTextFile> > origDuneText;   ///< This map contains all the loaded original Dune II (indexed) text files
 

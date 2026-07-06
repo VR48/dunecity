@@ -245,13 +245,7 @@ CustomGamePlayers::CustomGamePlayers(const GameInitSettings& newGameInitSettings
             curHouseInfo.teamDropDown.setEnabled(false);
             curHouseInfo.teamDropDown.setOnClickEnabled(false);
         } else {
-            // DuneCity 1.0.375: list all NUM_HOUSES teams (was
-            // 'numHouses' in v1.0.354 and earlier). Showing only
-            // the active-house count left Team 7 + 8 (= HOUSE_REBELS
-            // + the 8th alliance slot) unselectable when fewer
-            // than 8 houses were active. With NUM_HOUSES teams the
-            // dropdown always covers the full faction range.
-            for(int team = 0 ; team<NUM_HOUSES ; team++) {
+            for(int team = 0 ; team<numHouses ; team++) {
                 curHouseInfo.teamDropDown.addEntry(_("Team") + " " + std::to_string(team+1), team+1);
             }
             curHouseInfo.teamDropDown.setSelectedItem(slotToTeam[i]);
@@ -260,23 +254,6 @@ CustomGamePlayers::CustomGamePlayers(const GameInitSettings& newGameInitSettings
         curHouseInfo.teamDropDown.setOnSelectionChange(std::bind(&CustomGamePlayers::onChangeTeamDropDownBoxes, this, std::placeholders::_1, i));
         curHouseInfo.houseHBox.addWidget(HSpacer::create(10));
         curHouseInfo.houseHBox.addWidget(&curHouseInfo.teamDropDown, 85);
-
-        // DuneCity 1.0.366: color-swap dropdown. Each player can
-        // pick a palette slot to render their house in. Default =
-        // own house color. Disabled when 8 active players exist.
-        curHouseInfo.colorLabel.setText(_("Color"));
-        curHouseInfo.houseHBox.addWidget(HSpacer::create(10));
-        curHouseInfo.houseHBox.addWidget(&curHouseInfo.colorLabel, 40);
-
-        // The dropdown lists existing house colors for selection.
-        // We populate it after the master houseInfo[] is filled
-        // in (post-loop) because the entries depend on all houses
-        // being known. Until then the dropdown is empty + disabled.
-        curHouseInfo.colorDropDown.setEnabled(false);
-        // DuneCity 1.0.367: wire onChange handler so a selection
-        // rewrites palette[] with the picked slot's RGB.
-        curHouseInfo.colorDropDown.setOnSelectionChange(std::bind(&CustomGamePlayers::onChangeColorDropDownBoxes, this, std::placeholders::_1, i));
-        curHouseInfo.houseHBox.addWidget(&curHouseInfo.colorDropDown, 95);
 
         curHouseInfo.houseInfoVBox.addWidget(&curHouseInfo.houseHBox);
 
@@ -429,63 +406,7 @@ CustomGamePlayers::CustomGamePlayers(const GameInitSettings& newGameInitSettings
         }
     }
 
-    // DuneCity 1.0.366: After the master for-loop ends and
-    // all houseInfo[i] are known, populate each colorDropDown
-    // with the available palette slots (= each existing house's
-    // color). Disabled when 8 active players exist (the slider
-    // is the 8-faction rolling feature from earlier Tornie
-    // work, so the dropdown is the only way to swap here), and
-    // DuneCity 1.0.386: relax the color-swap gate so the dropdown is
-    // visible for any numHouses count, not just == 1. The Teal
-    // option (Custom_Pal_Color at index 240) is always available so
-    // the spectator can pre-pick it even with 8 active players.
-    // Per-house foreign-color swaps remain gated by the team
-    // uniqueness check inside the onChangeColorDropDownBoxes handler.
-    const bool colorSwapEnabled = true;
-    for(int i=0; i<NUM_HOUSES; i++) {
-        HouseInfo& curHouseInfo = houseInfo[i];
-        // DropDownBox has no removeAllEntries — clear by
-        // removing from index 0 until empty.
-        while(curHouseInfo.colorDropDown.getNumEntries() > 0) {
-            curHouseInfo.colorDropDown.removeEntry(0);
-        }
-        curHouseInfo.colorDropDown.addEntry(_("Original"), i);
-
-        // Add a "Teal" entry for spec / extra color picked from the
-        // tornie-tornie-mod svan058/dunelegacy.com color stack at
-        // index 176 (custom pal color). Teal is opt-in below.
-        // DuneCity 1.0.371: Ordos skips Teal entirely (the user
-        // instruction: 'Normal Ordos don't need a color swapping
-        // for teal (only if chosen)' - the dropdown shouldn't even
-        // present Teal as an option for HOUSE_ORDOS).
-        if(i != HOUSE_ORDOS) {
-            bool tealUsedBySpectator = false;
-            for(int j=0; j<NUM_HOUSES; j++) {
-                if(houseInfo[j].colorDropDown.getSelectedEntryIntData() == -2) {
-                    tealUsedBySpectator = true;
-                    break;
-                }
-            }
-            if(!tealUsedBySpectator) {
-                curHouseInfo.colorDropDown.addEntry(_("Teal"), -2);
-            }
-        }
-
-        // For now, list each house's index as the available
-        // swap targets (the same palette slot each house
-        // originally used).
-        for(int j=0; j<NUM_HOUSES; j++) {
-            curHouseInfo.colorDropDown.addEntry(getHouseNameByNumber((HOUSETYPE) j), -100 - j);
-        }
-
-        // Default = Original (self)
-        curHouseInfo.colorDropDown.setSelectedItem(0);
-        curHouseInfo.colorDropDown.setEnabled(colorSwapEnabled);
-        curHouseInfo.colorDropDown.setVisible(colorSwapEnabled);
-        // The label sits next to the dropdown — hide it too so the
-        // row doesn't have empty space when the dropdown is gone.
-        curHouseInfo.colorLabel.setVisible(colorSwapEnabled);
-    }
+    onChangeHousesDropDownBoxes(false);
 
     checkPlayerBoxes();
 
@@ -1399,8 +1320,6 @@ void CustomGamePlayers::extractMapInfo(INIFile* pMap)
     if(pMap->hasSection("Fremen"))    boundHousesOnMap.push_back(HOUSE_FREMEN);
     if(pMap->hasSection("Sardaukar")) boundHousesOnMap.push_back(HOUSE_SARDAUKAR);
     if(pMap->hasSection("Mercenary")) boundHousesOnMap.push_back(HOUSE_MERCENARY);
-    if(pMap->hasSection("Neutral"))    boundHousesOnMap.push_back(HOUSE_NEUTRAL);
-    if(pMap->hasSection("Rebels"))     boundHousesOnMap.push_back(HOUSE_REBELS);
 
     numHouses = boundHousesOnMap.size();
     if(pMap->hasSection("Player1"))   numHouses++;
@@ -1409,8 +1328,6 @@ void CustomGamePlayers::extractMapInfo(INIFile* pMap)
     if(pMap->hasSection("Player4"))   numHouses++;
     if(pMap->hasSection("Player5"))   numHouses++;
     if(pMap->hasSection("Player6"))   numHouses++;
-    if(pMap->hasSection("Player7"))   numHouses++;  // DuneCity: 7-team support (Neutral as Team7)
-    if(pMap->hasSection("Player8"))   numHouses++;  // DuneCity: 8-team support (Rebels as Team8)
 
     mapPropertyPlayers.setText(std::to_string(numHouses));
 
@@ -1535,12 +1452,6 @@ void CustomGamePlayers::onChangeHousesDropDownBoxes(bool bInteractive, int house
         addToHouseDropDown(curHouseInfo.houseDropDown, HOUSE_INVALID);
 
         for(int h=0;h<NUM_HOUSES;h++) {
-            // DuneCity 1.0.344: drop the AI-only skip. HOUSE_REBELS is
-            // a fully playable 8th faction selectable in any custom
-            // game. Tornie's instruction: 'no longer AI-only or enemy
-            // from everyone'.
-            // if (h == HOUSE_REBELS) continue; // removed in 1.0.344
-
             bool bAddHouse;
 
             bool bCheck;
@@ -1606,80 +1517,6 @@ void CustomGamePlayers::onChangeTeamDropDownBoxes(bool bInteractive, int houseIn
         changeEventList.changeEventList.emplace_back(ChangeEventList::ChangeEvent::EventType::ChangeTeam, houseInfoNum, selectedTeam);
 
         pNetworkManager->sendChangeEventList(changeEventList);
-    }
-}
-
-void CustomGamePlayers::onChangeColorDropDownBoxes(bool bInteractive, int houseInfoNum) {
-    // DuneCity 1.0.367: apply the picked palette slot to the
-    // active house's slot in the runtime 'palette'. On entering
-    // a session, GFX init wrote the original Custom_IBM.pal
-    // ramp into indices 192-199 (= slot 7 = Rebels). When the
-    // user picks a different slot, we copy the 8 RGB triples
-    // from the picked slot into the active house's slot.
-    //
-    // The dropdown entries are keyed as:
-    //   Original       data = i (own slot)
-    //   Teal           data = -2
-    //   House_j        data = -100 - j (foreign house slot j)
-    //
-    // Picking a slot writes into houseInfo[i].colorIndex via
-    // the HouseInfo we already added in 1.0.365 (save format
-    // bump 9818->9820). The Map::isWithinBuildRange + getSDLColor
-    // paths read from this index for the duration of the game.
-    //
-    // We do not hand-write palette[] directly because the
-    // runtime palette is keyed off houseToPaletteIndex which
-    // does not carry user selection state - the cleanest fix
-    // is to store the slot in HouseInfo.colorIndex so existing
-    // read paths pick it up.
-    if(!bInteractive || houseInfoNum < 0) {
-        return;
-    }
-
-    const int selected = houseInfo[houseInfoNum].colorDropDown.getSelectedEntryIntData();
-    int pickedSlot = -1;
-
-    if(selected == houseInfoNum) {
-        // 'Original' - restore own slot
-        pickedSlot = houseInfoNum;
-    } else if(selected == -2) {
-        // Teal: pick the v1.0.373 Teal slot at 240-247 (was 176
-        // in v1.0.369 but that clobbered the OrdOs vanilla green
-        // ramp so picking Teal left Ordos tinted teal).
-        pickedSlot = 240;
-    } else if(selected <= -100 && selected > -100 - NUM_HOUSES) {
-        // Foreign house slot
-        pickedSlot = -100 - selected;
-    } else {
-        pickedSlot = houseInfoNum; // default = own
-    }
-
-    // Stash on HouseInfo for save-format persistence.
-    // We require the underlying GameInitSettings layer here:
-    // Map the i-th CustomGamePlayers slot to its HouseInfo.
-    // (The Map is rebuilt when onNext() fires. For now we
-    // copy back into gameInitSettings directly.)
-    if(houseInfoNum >= 0 && houseInfoNum < (int) gameInitSettings.getHouseInfoList().size()) {
-        gameInitSettings.getHouseInfoListMutable()[houseInfoNum].colorIndex = pickedSlot;
-    }
-
-    // DuneCity 1.0.367 (hot-patch): actually mutate the runtime
-    // 'palette' array so the screen reflects the user's pick.
-    // The runtime palette is the 8x16-cell array indexed by
-    // 'houseToPaletteIndex[houseID] + offset' (offset 0..7 for
-    // body/shadow/highlight). To swap, we copy the 8 RGB triples
-    // from the picked slot's range into the active house's
-    // range. Custom_Pal_Color slot 176 (= PALCOLOR_ORDOS) is
-    // required when 'Teal' is the picked value.
-    if(houseInfoNum >= 0 && houseInfoNum < NUM_HOUSES && pickedSlot >= 0) {
-        const int activeIdx = houseToPaletteIndex[houseInfoNum];
-        const int pickedIdx  = pickedSlot;
-        if(pickedIdx >= 0 && activeIdx + 8 <= 256 && pickedIdx + 8 <= 256) {
-            for(int k = 0; k < 8; k++) {
-                palette[activeIdx + k] = palette[pickedIdx + k];
-            }
-            SDL_Log("DuneCity 1.0.367: house %d swapped color slot to %d (8 cells copied)", houseInfoNum, pickedSlot);
-        }
     }
 }
 

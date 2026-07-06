@@ -58,7 +58,6 @@ House::House(int newHouse, int newCredits, int maxUnits, int maxHarvesters, Uint
 
     storedCredits = 0;
     startingCredits = newCredits;
-    cityCredits = 0;
     oldCredits = lround(storedCredits+startingCredits);
 
     this->maxUnits = maxUnits;
@@ -96,12 +95,7 @@ House::House(InputStream& stream) : choam(this) {
 
     storedCredits = stream.readFixPoint();
     startingCredits = stream.readFixPoint();
-    if (currentGame && currentGame->getLoadedSavegameVersion() >= 9817) {
-        cityCredits = stream.readFixPoint();
-    } else {
-        cityCredits = 0;
-    }
-    oldCredits = lround(storedCredits+startingCredits+cityCredits);
+    oldCredits = lround(storedCredits+startingCredits);
     maxUnits = stream.readSint32();
     maxHarvesters = stream.readSint32();
     quota = stream.readSint32();
@@ -188,7 +182,6 @@ void House::save(OutputStream& stream) const {
 
     stream.writeFixPoint(storedCredits);
     stream.writeFixPoint(startingCredits);
-    stream.writeFixPoint(cityCredits);
     stream.writeSint32(maxUnits);
     stream.writeSint32(maxHarvesters);
     stream.writeSint32(quota);
@@ -256,10 +249,6 @@ void House::addCredits(FixPoint newCredits, bool wasRefined) {
         }
 
         storedCredits += newCredits;
-        FixPoint total = storedCredits + startingCredits;
-        if(total > MAX_GAME_CREDITS) {
-            storedCredits -= (total - MAX_GAME_CREDITS);
-        }
         if(this == pLocalHouse) {
             if(((currentGame->winFlags & WINLOSEFLAGS_QUOTA) != 0) && (quota != 0)) {
                 if(storedCredits >= quota) {
@@ -273,22 +262,6 @@ void House::addCredits(FixPoint newCredits, bool wasRefined) {
 
 
 
-void House::addCityCredits(FixPoint amount) {
-    if(amount > 0) {
-        cityCredits += amount;
-        FixPoint total = storedCredits + startingCredits + cityCredits;
-        if(total > MAX_GAME_CREDITS) {
-            cityCredits -= (total - MAX_GAME_CREDITS);
-            if(cityCredits < 0) cityCredits = 0;
-        }
-    } else if(amount < 0) {
-        // Negative city credits (e.g. police costs exceeding revenue)
-        cityCredits += amount;
-        if(cityCredits < 0) cityCredits = 0;
-    }
-}
-
-
 void House::returnCredits(FixPoint newCredits) {
     if(newCredits > 0) {
         FixPoint leftCapacity = capacity - storedCredits;
@@ -297,10 +270,6 @@ void House::returnCredits(FixPoint newCredits) {
         } else {
             addCredits(leftCapacity, false);
             startingCredits += (newCredits - leftCapacity);
-            FixPoint total = storedCredits + startingCredits;
-            if(total > MAX_GAME_CREDITS) {
-                startingCredits -= (total - MAX_GAME_CREDITS);
-            }
         }
     }
 }
@@ -312,31 +281,16 @@ FixPoint House::takeCredits(FixPoint amount) {
     FixPoint taken = 0;
 
     if(getCredits() >= 1) {
-        // Drain cityCredits (liquid cash from taxes) first
-        if(cityCredits > 0) {
-            if(cityCredits >= amount) {
-                cityCredits -= amount;
-                return amount;
-            } else {
-                taken = cityCredits;
-                amount -= cityCredits;
-                cityCredits = 0;
-            }
-        }
-
-        // Then drain storedCredits (harvested spice)
-        if(storedCredits >= amount) {
-            taken += amount;
+        if(storedCredits > amount) {
+            taken = amount;
             storedCredits -= amount;
         } else {
-            taken += storedCredits;
-            amount -= storedCredits;
+            taken = storedCredits;
             storedCredits = 0;
 
-            // Finally drain startingCredits
-            if(startingCredits >= amount) {
-                startingCredits -= amount;
-                taken += amount;
+            if(startingCredits > (amount - taken)) {
+                startingCredits -= (amount - taken);
+                taken = amount;
             } else {
                 taken += startingCredits;
                 startingCredits = 0;
@@ -730,7 +684,6 @@ StructureBase* House::placeStructure(Uint32 builderID, int itemID, int xPos, int
         case (Structure_Slab1): {
             // Slabs are no normal buildings
             currentGameMap->getTile(xPos, yPos)->setType(Terrain_Slab);
-            currentGameMap->getTile(xPos, yPos)->setRoad(false);
             currentGameMap->getTile(xPos, yPos)->setOwner(getHouseID());
             currentGameMap->viewMap(getHouseID(), xPos, yPos, currentGame->objectData.data[Structure_Slab1][houseID].viewrange);
     //      currentGameMap->getTile(xPos, yPos)->clearTerrain();
@@ -787,7 +740,6 @@ StructureBase* House::placeStructure(Uint32 builderID, int itemID, int xPos, int
                         return;
 
                     t.setType(Terrain_Slab);
-                    t.setRoad(false);
                     t.setOwner(houseID);
                     currentGameMap->viewMap(getHouseID(), t.getLocation().x, t.getLocation().y, currentGame->objectData.data[Structure_Slab4][houseID].viewrange);
                     //pTile->clearTerrain();

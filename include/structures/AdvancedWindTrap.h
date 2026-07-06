@@ -18,9 +18,7 @@ public:
     virtual ~AdvancedWindTrap();
 
     bool update() override;
-    void blitToScreen() override;
     void setHealth(FixPoint newHealth) override;
-    ObjectInterface* getInterfaceContainer() override;
 
 protected:
     int getProducedPower() const;

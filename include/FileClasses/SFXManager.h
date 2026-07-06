@@ -54,7 +54,6 @@ typedef enum {
     HouseHarkonnen,
     HouseAtreides,
     HouseOrdos,
-    HouseNeutral,
     NUM_VOICE
 } Voice_enum;
 

@@ -90,8 +90,7 @@ int BriefingMenu::showMenu()
         {
             switch(house) {
                 case HOUSE_HARKONNEN:
-                case HOUSE_SARDAUKAR:
-                case HOUSE_REBELS: {
+                case HOUSE_SARDAUKAR: {
                     musicPlayer->changeMusic(MUSIC_WIN_H);
                 } break;
 
@@ -101,8 +100,7 @@ int BriefingMenu::showMenu()
                 } break;
 
                 case HOUSE_ORDOS:
-                case HOUSE_MERCENARY:
-                case HOUSE_NEUTRAL: {
+                case HOUSE_MERCENARY: {
                     musicPlayer->changeMusic(MUSIC_WIN_O);
                 } break;
             }
@@ -112,8 +110,7 @@ int BriefingMenu::showMenu()
         {
             switch(house) {
                 case HOUSE_HARKONNEN:
-                case HOUSE_SARDAUKAR:
-                case HOUSE_REBELS: {
+                case HOUSE_SARDAUKAR: {
                     musicPlayer->changeMusic(MUSIC_LOSE_H);
                 } break;
 
@@ -123,8 +120,7 @@ int BriefingMenu::showMenu()
                 } break;
 
                 case HOUSE_ORDOS:
-                case HOUSE_MERCENARY:
-                case HOUSE_NEUTRAL: {
+                case HOUSE_MERCENARY: {
                     musicPlayer->changeMusic(MUSIC_LOSE_O);
                 } break;
             }
@@ -134,15 +130,12 @@ int BriefingMenu::showMenu()
         {
             switch(house) {
                 case HOUSE_HARKONNEN:
-                case HOUSE_SARDAUKAR:
-                case HOUSE_REBELS: {
+                case HOUSE_SARDAUKAR: {
                     musicPlayer->changeMusic(MUSIC_BRIEFING_H);
                 } break;
 
                 case HOUSE_ATREIDES:
-                case HOUSE_FREMEN:
-                case HOUSE_NEUTRAL: {
-                    // DuneCity: Neutral mentat music = Atreides
+                case HOUSE_FREMEN: {
                     musicPlayer->changeMusic(MUSIC_BRIEFING_A);
                 } break;
 
@@ -153,9 +146,6 @@ int BriefingMenu::showMenu()
             }
         } break;
     }
-
-    // Re-enable cursor in case a cutscene or game teardown left it hidden
-    SDL_ShowCursor(SDL_ENABLE);
 
     return MentatMenu::showMenu();
 }

@@ -644,29 +644,10 @@ void CitySimulation::runZoneGrowth() {
         vi.hasAirport  = hs.hasAirport;
         vi.hasStarport = hs.hasStarport;
 
-        const int16_t prevResValve = vi.resValve;
-        const int16_t prevComValve = vi.comValve;
-        const int16_t prevIndValve = vi.indValve;
         const ValveOutputs vo = computeDemandValves(vi);
         hs.resValve = vo.resValve;
         hs.comValve = vo.comValve;
         hs.indValve = vo.indValve;
-
-        // Diagnostic: log per-tick valve deltas for the local player's house so
-        // future logs can confirm the fix (grep for "[CitySim] valve-debug").
-        if (h == localHouseID()) {
-            SDL_Log("[CitySim] valve-debug house=%d day=%d/%d "
-                    "pop(R/C/I)=%d/%d/%d prevPop(R/C/I)=%d/%d/%d "
-                    "deltaR=%+d deltaC=%+d deltaI=%+d "
-                    "valves=R%+d C%+d I%+d",
-                    h, cityYear_, cityDay_,
-                    curRes, curCom, curInd,
-                    vi.prevResPop, vi.prevComPop, vi.prevIndPop,
-                    static_cast<int>(vo.resValve) - prevResValve,
-                    static_cast<int>(vo.comValve) - prevComValve,
-                    static_cast<int>(vo.indValve) - prevIndValve,
-                    vo.resValve, vo.comValve, vo.indValve);
-        }
 
         hs.prevResPop = curRes;
         hs.prevComPop = curCom;
@@ -1128,9 +1109,9 @@ void CitySimulation::runDailyBudget() {
         const FixPoint net = tickRevenue - tickPaid;
 
         if (net > FixPoint(0)) {
-            house->addCityCredits(net);
+            house->returnCredits(net);
         } else if (net < FixPoint(0)) {
-            house->addCityCredits(net);
+            house->takeCredits(-net);
         }
 
         // Store per-house budget figures

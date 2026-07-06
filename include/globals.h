@@ -63,8 +63,7 @@ class Bullet;
 EXTERN SDL_Window*          window;                     ///< the window
 EXTERN SDL_Renderer*        renderer;                   ///< the renderer
 EXTERN SDL_Texture*         screenTexture;              ///< the texture
-EXTERN Palette              palette;                    ///< the palette for the screen (may include mod overrides)
-EXTERN Palette              ibmPalette;                 ///< vanilla IBM.PAL before any mod overrides (used for Fremen colours)
+EXTERN Palette              palette;                    ///< the palette for the screen
 EXTERN int                  drawnMouseX;                ///< the current mouse position (x coordinate)
 EXTERN int                  drawnMouseY;                ///< the current mouse position (y coordinate)
 EXTERN int                  currentZoomlevel;           ///< 0 = the smallest zoom level, 1 = medium zoom level, 2 = maximum zoom level
@@ -101,19 +100,7 @@ EXTERN bool debug;                                      ///< is set for debuggin
 
 
 // constants
-static const int houseToPaletteIndex[NUM_HOUSES] = { PALCOLOR_HARKONNEN, PALCOLOR_ATREIDES, PALCOLOR_ORDOS, PALCOLOR_FREMEN, PALCOLOR_SARDAUKAR, PALCOLOR_MERCENARY, PALCOLOR_NEUTRAL, PALCOLOR_REBELS };    ///< the base colors for the different houses
-static const char houseChar[] = { 'H', 'A', 'O', 'F', 'S', 'M', 'N', 'R' };   ///< character for each house
-
-/// Returns the SDL_Color for the given house at palette offset.
-/// Returns the SDL_Color for the given house at palette offset.
-/// Houses 1..7 use the vanilla ibmPalette so the editor shows the
-/// correct vanilla colour.  The 8th house (HOUSE_REBELS) reads from
-/// the runtime 'palette' which has been overridden by Custom_IBM.pal
-/// at indices 192-199 with a dark-grey/black ramp. Fremen keeps
-/// using ibmPalette so the orange vanilla colour shows through.
-inline SDL_Color getHouseSDLColor(int house, int offset = 3) {
-    const Palette& pal = (house == HOUSE_FREMEN) ? ibmPalette : palette;
-    return pal[houseToPaletteIndex[house] + offset];
-}
+static const int houseToPaletteIndex[NUM_HOUSES] = { PALCOLOR_HARKONNEN, PALCOLOR_ATREIDES, PALCOLOR_ORDOS, PALCOLOR_FREMEN, PALCOLOR_SARDAUKAR, PALCOLOR_MERCENARY };    ///< the base colors for the different houses
+static const char houseChar[] = { 'H', 'A', 'O', 'F', 'S', 'M' };   ///< character for each house
 
 #endif //GLOBALS_H

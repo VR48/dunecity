@@ -42,10 +42,7 @@
 
 Finale::Finale(int house) {
 
-    // Neutral uses Ordos cutscene animations but keeps its own planet colour
-    const int cutsceneHouse = (house == HOUSE_NEUTRAL) ? HOUSE_ORDOS : house;
-
-    switch(cutsceneHouse) {
+    switch(house) {
         case HOUSE_HARKONNEN: {
             pPalace1 = std::make_unique<Wsafile>(pFileManager->openFile("HFINALA.WSA").get());
             pPalace2 = std::make_unique<Wsafile>(pFileManager->openFile("HFINALB.WSA").get(), pFileManager->openFile("HFINALC.WSA").get());
@@ -66,7 +63,7 @@ Finale::Finale(int house) {
         } break;
     }
 
-    if(cutsceneHouse == HOUSE_HARKONNEN || cutsceneHouse == HOUSE_ATREIDES || cutsceneHouse == HOUSE_ORDOS) {
+    if(house == HOUSE_HARKONNEN || house == HOUSE_ATREIDES || house == HOUSE_ORDOS) {
         pImperator = std::make_unique<Wsafile>(pFileManager->openFile("EFINALA.WSA").get());
         pImperatorShocked = std::make_unique<Wsafile>(pFileManager->openFile("EFINALB.WSA").get());
     }
@@ -82,7 +79,7 @@ Finale::Finale(int house) {
     }
     pPlanetDuneInHouseColorSurface = mapSurfaceColorRange(pPlanetDuneInHouseColorSurface.get(), houseToPaletteIndex[HOUSE_HARKONNEN], houseToPaletteIndex[house]);
 
-    if(cutsceneHouse == HOUSE_HARKONNEN || cutsceneHouse == HOUSE_ATREIDES || cutsceneHouse == HOUSE_ORDOS) {
+    if(house == HOUSE_HARKONNEN || house == HOUSE_ATREIDES || house == HOUSE_ORDOS) {
         lizard = getChunkFromFile("LIZARD1.VOC");
         glass = getChunkFromFile("GLASS6.VOC");
         click = getChunkFromFile("CLICK.VOC");
@@ -92,10 +89,10 @@ Finale::Finale(int house) {
 
     const auto pIntroText = std::make_unique<IndexedTextFile>(pFileManager->openFile("INTRO." + _("LanguageFileExtension")).get());
 
-    const Uint32 color = SDL2RGB(palette[houseToPaletteIndex[cutsceneHouse]+1]);
+    const Uint32 color = SDL2RGB(palette[houseToPaletteIndex[house]+1]);
     const Uint32 sardaukarColor = SDL2RGB(palette[PALCOLOR_SARDAUKAR+1]);
 
-    switch(cutsceneHouse) {
+    switch(house) {
         case HOUSE_HARKONNEN: {
             startNewScene();
 

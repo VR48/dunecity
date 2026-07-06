@@ -40,30 +40,7 @@ void ObjectManager::load(InputStream& stream) {
     for(Uint32 i=0;i<numObjects;i++) {
         Uint32 objectID = stream.readUint32();
 
-        ObjectBase* pObject = nullptr;
-        // Defensive: Game::loadObject used to throw on nullptr, which escaped
-        // Game::loadSaveGame and crashed the process. It now logs and returns
-        // nullptr, so we wrap it in try/catch as a belt-and-braces guard and
-        // check the result before dereferencing.
-        try {
-            pObject = currentGame->loadObject(stream, objectID);
-        } catch(const std::exception& e) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                "ObjectManager::load(): exception loading objectID=%u: %s — skipping",
-                objectID, e.what());
-            continue;
-        }
-
-        if(pObject == nullptr) {
-            // Already logged by Game::loadObject. Skip and keep stream aligned
-            // enough to attempt the next object; the savegame will be in a
-            // degraded state but the process stays alive.
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                "ObjectManager::load(): objectID=%u skipped (loadObject returned nullptr)",
-                objectID);
-            continue;
-        }
-
+        ObjectBase* pObject = currentGame->loadObject(stream,objectID);
         if(objectID != pObject->getObjectID()) {
             SDL_Log("ObjectManager::load(): The loaded object has a different ID than expected (%d!=%d)!",objectID,pObject->getObjectID());
         }

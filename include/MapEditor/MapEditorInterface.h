@@ -166,7 +166,6 @@ private:
     HBox                editorModeTerrain_HBox1;
     HBox                editorModeTerrain_HBox2;
     HBox                editorModeTerrain_HBox3;
-    HBox                editorModeTerrain_HBox4;
 
     SymbolButton        editorModeTerrain_Sand;
     SymbolButton        editorModeTerrain_Dunes;
@@ -174,10 +173,6 @@ private:
     SymbolButton        editorModeTerrain_Spice;
     SymbolButton        editorModeTerrain_ThickSpice;
     SymbolButton        editorModeTerrain_SpiceBloom;
-    SymbolButton        editorModeTerrain_RedSpice;
-    SymbolButton        editorModeTerrain_GreenSpice;
-    SymbolButton        editorModeTerrain_RedSpiceBloom;
-    SymbolButton        editorModeTerrain_GreenSpiceBloom;
     SymbolButton        editorModeTerrain_Rock;
     SymbolButton        editorModeTerrain_Mountain;
 
@@ -229,8 +224,6 @@ private:
     HBox                editorModeStructs_HBox6;
     SymbolButton        editorModeStructs_Starport;
     SymbolButton        editorModeStructs_Palace;
-    HBox                editorModeStructs_HBox7;
-    SymbolButton        editorModeStructs_AdvancedWindTrap;
     // DuneCity: SimCity-style buildings, only added to the picker when the
     // dune city mod is active. Buttons are always declared so the shared
     // setHouse symbol-wiring and onStructButton toggle reset can address
@@ -263,11 +256,6 @@ private:
     SymbolButton        editorModeUnits_Trike;
     SymbolButton        editorModeUnits_Raider;
     SymbolButton        editorModeUnits_Quad;
-    HBox                editorModeUnits_HBoxRocketTrike;
-    SymbolButton        editorModeUnits_RocketTrike;
-    SymbolButton        editorModeUnits_EliteLauncher;
-    SymbolButton        editorModeUnits_EliteSiegeTank;
-    SymbolButton        editorModeUnits_FlameTank;
     HBox                editorModeUnits_HBox4;
     SymbolButton        editorModeUnits_Tank;
     SymbolButton        editorModeUnits_SiegeTank;

@@ -191,9 +191,9 @@ std::string GameInitSettings::getScenarioFilename(HOUSETYPE newHouse, int missio
         THROW(std::invalid_argument, "GameInitSettings::getScenarioFilename(): There is no mission number " + std::to_string(mission) + ".");
     }
 
-    // Neutral house now has its own campaign scenarios (SCENN0??.INI).
     std::string name = "SCEN?0??.INI";
     name[4] = houseChar[newHouse];
+
     name[6] = '0' + (mission / 10);
     name[7] = '0' + (mission % 10);
 

@@ -127,18 +127,6 @@ void Refinery::deployHarvester(Carryall* pCarryall) {
     firstRun = false;
 
     Harvester* pHarvester = static_cast<Harvester*>(harvester.getObjPointer());
-    if(pHarvester == nullptr) {
-        // The assigned harvester no longer exists (destroyed before this deploy
-        // ran). Nothing to hand off — leave the refinery in a clean, free state
-        // instead of dereferencing nullptr.
-        harvester.pointTo(NONE_ID);
-        if(bookings == 0) {
-            stopAnimate();
-        } else {
-            startAnimate();
-        }
-        return;
-    }
     if((pCarryall != nullptr) && pHarvester->getGuardPoint().isValid()) {
         pCarryall->giveCargo(pHarvester);
         pCarryall->setTarget(nullptr);
@@ -175,20 +163,6 @@ void Refinery::updateStructureSpecificStuff() {
     if(extractingSpice) {
         Harvester* pHarvester = static_cast<Harvester*>(harvester.getObjPointer());
 
-        if(pHarvester == nullptr) {
-            // The harvester we were extracting from has been destroyed. Drop the
-            // extracting state so we neither dereference nullptr nor stay stuck
-            // (and thus permanently "occupied") forever.
-            extractingSpice = false;
-            harvester.pointTo(NONE_ID);
-            if(bookings == 0) {
-                stopAnimate();
-            } else {
-                startAnimate();
-            }
-            return;
-        }
-
         if(pHarvester->getAmountOfSpice() > 0) {
             FixPoint extractionSpeed = MAXIMUMHARVESTEREXTRACTSPEED;
 
@@ -200,12 +174,7 @@ void Refinery::updateStructureSpecificStuff() {
             extractionSpeed = (extractionSpeed * scale) / 5;
 
 
-            FixPoint extracted = pHarvester->extractSpice(extractionSpeed);
-            // Tornie: red spice yields +25% credits
-            if (pHarvester->getSpiceColor() == Harvester::SpiceColor::Red) {
-                extracted = extracted * (1.25_fix);
-            }
-            owner->addCredits(extracted, true);
+            owner->addCredits(pHarvester->extractSpice(extractionSpeed), true);
         } else if((pHarvester->isAwaitingPickup() == false) && (pHarvester->getGuardPoint().isValid())) {
             // find carryall
             Carryall* pCarryall = nullptr;

@@ -35,7 +35,7 @@
 ReinforcementsWindow::ReinforcementsWindow(MapEditor* pMapEditor, HOUSETYPE currentHouse)
  : Window(0,0,0,0), pMapEditor(pMapEditor), house(currentHouse), reinforcements(pMapEditor->getReinforcements()) {
 
-    color = SDL2RGB(getHouseSDLColor(house));
+    color = SDL2RGB(palette[houseToPaletteIndex[house]+3]);
 
     // set up window
     SDL_Texture *pBackground = pGFXManager->getUIGraphic(UI_NewMapWindow);
@@ -128,13 +128,6 @@ ReinforcementsWindow::ReinforcementsWindow(MapEditor* pMapEditor, HOUSETYPE curr
     unitDropDownBox.setOnSelectionChange(std::bind(&ReinforcementsWindow::onEntryChange, this, std::placeholders::_1));
     for(int itemID = Unit_FirstID; itemID <= Unit_LastID; ++itemID) {
         if(itemID == Unit_Carryall || itemID == Unit_Ornithopter || itemID == Unit_Frigate) {
-            continue;
-        }
-        unitDropDownBox.addEntry(resolveItemName(itemID), itemID);
-    }
-    // DuneCity extended units (RocketTrike, EliteLauncher — skip ambient aircraft)
-    for(int itemID = Unit_AmbientAirplane; itemID <= Unit_ExtLastID; ++itemID) {
-        if(isAmbientUnit(itemID) || itemID == Structure_AdvancedWindTrap) {
             continue;
         }
         unitDropDownBox.addEntry(resolveItemName(itemID), itemID);

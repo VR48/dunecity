@@ -31,17 +31,15 @@
 static const ItemID_enum choamUnits[] = { Unit_Carryall,  Unit_Ornithopter,
                                            Unit_Harvester, Unit_MCV,
                                            Unit_Trike,     Unit_RaiderTrike,
-                                           Unit_RocketTrike, Unit_Quad,
-                                           Unit_Tank,
-                                           Unit_Launcher,  Unit_EliteLauncher,
-                                           Unit_SiegeTank, Unit_EliteSiegeTank, Unit_FlameTank,
+                                           Unit_Quad,      Unit_Tank,
+                                           Unit_Launcher,  Unit_SiegeTank,
                                            Unit_Devastator,Unit_Deviator,
                                            Unit_SonicTank, ItemID_Invalid
                                           };
 
 ChoamWindow::ChoamWindow(MapEditor* pMapEditor, HOUSETYPE currentHouse) : Window(0,0,0,0), pMapEditor(pMapEditor), house(currentHouse) {
 
-    color = SDL2RGB(getHouseSDLColor(house));
+    color = SDL2RGB(palette[houseToPaletteIndex[house]+3]);
 
     // set up window
     SDL_Texture *pBackground = pGFXManager->getUIGraphic(UI_NewMapWindow);

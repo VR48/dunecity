@@ -32,9 +32,6 @@
 #include <units/InfantryBase.h>
 #include <units/Trooper.h>
 #include <units/Saboteur.h>
-#include <units/Trike.h>
-#include <units/Quad.h>
-#include <units/SonicTank.h>
 
 #include <GUI/ObjectInterfaces/PalaceInterface.h>
 
@@ -122,18 +119,6 @@ void Palace::doSpecialWeapon() {
         case HOUSE_ORDOS:
         case HOUSE_MERCENARY: {
             if(spawnSaboteur()) {
-                specialWeaponTimer = getMaxSpecialWeaponTimer();
-            }
-        } break;
-
-        case HOUSE_NEUTRAL: {
-            if(spawnNeutralUnits()) {
-                specialWeaponTimer = getMaxSpecialWeaponTimer();
-            }
-        } break;
-
-        case HOUSE_REBELS: {
-            if(spawnRebelsUnits()) {
                 specialWeaponTimer = getMaxSpecialWeaponTimer();
             }
         } break;
@@ -287,49 +272,6 @@ bool Palace::spawnSaboteur() {
         SDL_Log("PALACE: Saboteur attack mode after setting: %d", saboteur->getAttackMode());
         currentGame->addToNewsTicker(_("@DUNE.ENG|79#Saboteur is approaching"));
         soundPlayer->playVoice(SaboteurApproaching, pLocalHouse->getHouseID());
-    }
-
-    return true;
-}
-
-bool Palace::spawnNeutralUnits() {
-    int numTrikes = 1 + (currentGame->randomGen.rand(0, 2));  // 1, 2, or 3
-    int numQuads  = 1 + (currentGame->randomGen.rand(0, 2));
-
-    for(int i = 0; i < numTrikes; i++) {
-        Trike* pTrike = static_cast<Trike*>(getOwner()->createUnit(Unit_Trike));
-        Coord spot = currentGameMap->findDeploySpot(pTrike, getLocation(), currentGame->randomGen, getDestination(), getStructureSize());
-        pTrike->deploy(spot);
-        pTrike->doSetAttackMode(HUNT);
-    }
-
-    for(int i = 0; i < numQuads; i++) {
-        Quad* pQuad = static_cast<Quad*>(getOwner()->createUnit(Unit_Quad));
-        Coord spot = currentGameMap->findDeploySpot(pQuad, getLocation(), currentGame->randomGen, getDestination(), getStructureSize());
-        pQuad->deploy(spot);
-        // DuneCity: spawned units start in Hunt mode (player can change)
-        pQuad->doSetAttackMode(HUNT);
-    }
-
-    if(getOwner() == pLocalHouse) {
-        currentGame->addToNewsTicker(_("Neutral raiders deployed"));
-    }
-
-    return true;
-}
-
-bool Palace::spawnRebelsUnits() {
-    int numSonic = 1 + (currentGame->randomGen.rand(0, 1));  // 1 or 2
-
-    for (int i = 0; i < numSonic; i++) {
-        SonicTank* pSonic = static_cast<SonicTank*>(getOwner()->createUnit(Unit_SonicTank));
-        Coord spot = currentGameMap->findDeploySpot(pSonic, getLocation(), currentGame->randomGen, getDestination(), getStructureSize());
-        pSonic->deploy(spot);
-        pSonic->doSetAttackMode(HUNT);
-    }
-
-    if(getOwner() == pLocalHouse) {
-        currentGame->addToNewsTicker(_("Rebels sonic tanks deployed"));
     }
 
     return true;

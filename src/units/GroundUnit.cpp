@@ -100,10 +100,6 @@ void GroundUnit::checkPos() {
                 setHealth(0);
                 setVisible(VIS_ALL, false);
             }
-        } else if(pTile->isRedSpiceBloom()) {
-            pTile->triggerRedSpiceBloom(getOwner());
-        } else if(pTile->isGreenSpiceBloom()) {
-            pTile->triggerGreenSpiceBloom(getOwner());
         } else if(pTile->isSpecialBloom()){
             pTile->triggerSpecialBloom(getOwner());
         }
@@ -154,7 +150,7 @@ void GroundUnit::checkPos() {
     }
 
     // If we are awaiting a pickup try book a carryall if we have one
-    if(!pickedUp && attackMode == CARRYALLREQUESTED && bookedCarrier == NONE_ID && carryallRequestCooldown <= 0) {
+    if(!pickedUp && attackMode == CARRYALLREQUESTED && bookedCarrier == NONE_ID) {
         if(getOwner()->hasCarryalls() && (target || (destination != location))) {
             requestCarryall();
         } else {
@@ -218,16 +214,6 @@ void GroundUnit::doMove2Object(const ObjectBase* pTargetObject) {
 }
 
 bool GroundUnit::requestCarryall() {
-    // Re-entry guard: carryall->setTarget() can trigger bookCarrier() on other units;
-    // any code path that reaches requestCarryall() again from within this call would
-    // cause unbounded recursion and a stack-overflow SIGSEGV.
-    static bool inRequestCarryall = false;
-    if (inRequestCarryall) {
-        return false;
-    }
-    struct Guard { ~Guard() { inRequestCarryall = false; } } guard;
-    inRequestCarryall = true;
-
     if (getOwner()->hasCarryalls() && !awaitingPickup)  {
         Carryall* carryall = nullptr;
 
@@ -247,15 +233,6 @@ bool GroundUnit::requestCarryall() {
                     return true;
                 }
             }
-        }
-
-        // No free carryall found — set a short retry cooldown to prevent per-cycle retry storms
-        // when multiple harvesters are stuck simultaneously and all carryalls are busy.
-        // Without this, every stuck harvester re-requests every frame via multiple code paths
-        // (GroundUnit::checkPos, Harvester::checkPos returnPathFailCounter, resolvePendingPathRequest),
-        // building a deep call chain that overflows the stack (~SIGSEGV at cycle ~12000).
-        if(carryallRequestCooldown <= 0) {
-            carryallRequestCooldown = MILLI2CYCLES(500);
         }
     }
 

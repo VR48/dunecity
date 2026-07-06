@@ -52,7 +52,7 @@
 MapEditorInterface::MapEditorInterface(MapEditor* pMapEditor)
  : Window(0,0,0,0), pMapEditor(pMapEditor), radarView(pMapEditor) {
     house = HOUSE_HARKONNEN;
-    color = SDL2RGB(getHouseSDLColor(house, 3));
+    color = SDL2RGB(palette[houseToPaletteIndex[house] + 3]);
 
     currentTerrainType = -1;
     currentTerrainPenSize = -1;
@@ -300,58 +300,14 @@ MapEditorInterface::MapEditorInterface(MapEditor* pMapEditor)
     editorModeTerrain_Mountain.setOnClick(std::bind(&MapEditorInterface::onTerrainButton, this, Terrain_Mountain));
     editorModeTerrain_HBox3.addWidget(&editorModeTerrain_Mountain);
 
-    editorModeTerrain_HBox3.addWidget(HSpacer::create(2));
-
     editorModeTerrain_HBox3.addWidget(Spacer::create());
-
-    // Tornie: red/green spice bloom buttons in their own row (hidden unless Tornie mod is active)
-    const bool isTornie = ModManager::instance().getActiveModName() == "Tornie";
-    editorModeTerrain_VBox.addWidget(VSpacer::create(2));
-    // DuneCity 1.0.389: removed the red/green spice field + bloom
-    // terrain buttons from the editor toolbar. Tornie's spec 'il y a
-    // des boutons en trop quand le mods Tornie est actif dans les
-    // brosses terrain de l'editeur. l'epice Verte et rouge je crois.
-    // serais-t-il possible de les enlever comme dans celui vanilla'.
-    // The vanilla editor has Sand/Dunes/SpecialBloom/Spice/
-    // ThickSpice/Rock/Mountain = 7 brushes. The Tornie mod added
-    // RedSpice/GreenSpice/RedSpiceBloom/GreenSpiceBloom = 4 extra
-    // buttons. They're now commented out (button declarations kept
-    // so the icons still load for the map-editor menu icon path,
-    // but they don't appear in the editor toolbar).
-    //
-    // editorModeTerrain_VBox.addWidget(&editorModeTerrain_HBox4);
-    // editorModeTerrain_HBox4.setVisible(false);
-    //
-    // editorModeTerrain_RedSpice.setToggleButton(true);
-    // editorModeTerrain_RedSpice.setOnClick(std::bind(&MapEditorInterface::onTerrainButton, this, Terrain_RedSpice));
-    // editorModeTerrain_HBox4.addWidget(&editorModeTerrain_RedSpice);
-    //
-    // editorModeTerrain_HBox4.addWidget(HSpacer::create(2));
-    //
-    // editorModeTerrain_GreenSpice.setToggleButton(true);
-    // editorModeTerrain_GreenSpice.setOnClick(std::bind(&MapEditorInterface::onTerrainButton, this, Terrain_GreenSpice));
-    // editorModeTerrain_HBox4.addWidget(&editorModeTerrain_GreenSpice);
-    //
-    // editorModeTerrain_HBox4.addWidget(HSpacer::create(4));
-    //
-    // editorModeTerrain_RedSpiceBloom.setToggleButton(true);
-    // editorModeTerrain_RedSpiceBloom.setOnClick(std::bind(&MapEditorInterface::onTerrainButton, this, Terrain_RedSpiceBloom));
-    // editorModeTerrain_HBox4.addWidget(&editorModeTerrain_RedSpiceBloom);
-    //
-    // editorModeTerrain_HBox4.addWidget(HSpacer::create(2));
-    //
-    // editorModeTerrain_GreenSpiceBloom.setToggleButton(true);
-    // editorModeTerrain_GreenSpiceBloom.setOnClick(std::bind(&MapEditorInterface::onTerrainButton, this, Terrain_GreenSpiceBloom));
-    // editorModeTerrain_HBox4.addWidget(&editorModeTerrain_GreenSpiceBloom);
-    //
-    // editorModeTerrain_HBox4.addWidget(Spacer::create());
 
 
     editorModeTerrainVBox.addWidget(VSpacer::create(10));
 
 
     // setup terrain pen size buttons
-    editorModeTerrainVBox.addWidget(&editorModeTerrain_PenHBox, 20);
+    editorModeTerrainVBox.addWidget(&editorModeTerrain_PenHBox, 40);
 
     editorModeTerrain_Pen1x1.setToggleButton(true);
     editorModeTerrain_Pen1x1.setOnClick(std::bind(&MapEditorInterface::onTerrainPenButton, this, 1));
@@ -532,16 +488,6 @@ MapEditorInterface::MapEditorInterface(MapEditor* pMapEditor)
     editorModeStructs_HBox6.addWidget(&editorModeStructs_Palace);
 
 
-    // AdvancedWindTrap gets its own row — three 3x3 buildings in one HBox
-    // overflows the sidebar width.
-    editorModeStructs_VBox.addWidget(&editorModeStructs_HBox7, 3*D2_TILESIZE + 4);
-
-    editorModeStructs_AdvancedWindTrap.setToggleButton(true);
-    editorModeStructs_AdvancedWindTrap.setTooltipText(resolveItemName(Structure_AdvancedWindTrap));
-    editorModeStructs_AdvancedWindTrap.setOnClick(std::bind(&MapEditorInterface::onStructButton, this, Structure_AdvancedWindTrap));
-    editorModeStructs_HBox7.addWidget(&editorModeStructs_AdvancedWindTrap);
-
-
     // DuneCity: expose SimCity-style buildings (R/C/I zones, Road, nuclear
     // plant) in the editor when the dune city mod is the active mod. Always
     // wire the click handlers + tooltips so the existing toggle/symbol code
@@ -658,38 +604,6 @@ MapEditorInterface::MapEditorInterface(MapEditor* pMapEditor)
     editorModeUnits_Quad.setTooltipText(resolveItemName(Unit_Quad));
     editorModeUnits_Quad.setOnClick(std::bind(&MapEditorInterface::onUnitButton, this, Unit_Quad));
     editorModeUnits_HBox3.addWidget(&editorModeUnits_Quad);
-
-    editorModeUnits_VBox.addWidget(VSpacer::create(2));
-
-    editorModeUnits_VBox.addWidget(&editorModeUnits_HBoxRocketTrike, 2*D2_TILESIZE);
-
-    editorModeUnits_RocketTrike.setToggleButton(true);
-    editorModeUnits_RocketTrike.setTooltipText(resolveItemName(Unit_RocketTrike));
-    editorModeUnits_RocketTrike.setOnClick(std::bind(&MapEditorInterface::onUnitButton, this, Unit_RocketTrike));
-    editorModeUnits_HBoxRocketTrike.addWidget(&editorModeUnits_RocketTrike);
-
-    editorModeUnits_HBoxRocketTrike.addWidget(HSpacer::create(2));
-
-    editorModeUnits_EliteLauncher.setToggleButton(true);
-    editorModeUnits_EliteLauncher.setTooltipText(resolveItemName(Unit_EliteLauncher));
-    editorModeUnits_EliteLauncher.setOnClick(std::bind(&MapEditorInterface::onUnitButton, this, Unit_EliteLauncher));
-    editorModeUnits_HBoxRocketTrike.addWidget(&editorModeUnits_EliteLauncher);
-
-    editorModeUnits_HBoxRocketTrike.addWidget(HSpacer::create(2));
-
-    editorModeUnits_EliteSiegeTank.setToggleButton(true);
-    editorModeUnits_EliteSiegeTank.setTooltipText(resolveItemName(Unit_EliteSiegeTank));
-    editorModeUnits_EliteSiegeTank.setOnClick(std::bind(&MapEditorInterface::onUnitButton, this, Unit_EliteSiegeTank));
-    editorModeUnits_HBoxRocketTrike.addWidget(&editorModeUnits_EliteSiegeTank);
-
-    editorModeUnits_HBoxRocketTrike.addWidget(HSpacer::create(2));
-
-    editorModeUnits_FlameTank.setToggleButton(true);
-    editorModeUnits_FlameTank.setTooltipText(resolveItemName(Unit_FlameTank));
-    editorModeUnits_FlameTank.setOnClick(std::bind(&MapEditorInterface::onUnitButton, this, Unit_FlameTank));
-    editorModeUnits_HBoxRocketTrike.addWidget(&editorModeUnits_FlameTank);
-
-    editorModeUnits_HBoxRocketTrike.addWidget(Spacer::create());
 
     editorModeUnits_VBox.addWidget(VSpacer::create(2));
 
@@ -1149,10 +1063,6 @@ void MapEditorInterface::onTerrainButton(int terrainType) {
     editorModeTerrain_Spice.setToggleState( (terrainType == Terrain_Spice) );
     editorModeTerrain_ThickSpice.setToggleState( (terrainType == Terrain_ThickSpice) );
     editorModeTerrain_SpiceBloom.setToggleState( (terrainType == Terrain_SpiceBloom) );
-    editorModeTerrain_RedSpice.setToggleState( (terrainType == Terrain_RedSpice) );
-    editorModeTerrain_GreenSpice.setToggleState( (terrainType == Terrain_GreenSpice) );
-    editorModeTerrain_RedSpiceBloom.setToggleState( (terrainType == Terrain_RedSpiceBloom) );
-    editorModeTerrain_GreenSpiceBloom.setToggleState( (terrainType == Terrain_GreenSpiceBloom) );
     editorModeTerrain_Rock.setToggleState( (terrainType == Terrain_Rock) );
     editorModeTerrain_Mountain.setToggleState( (terrainType == Terrain_Mountain) );
 
@@ -1201,7 +1111,6 @@ void MapEditorInterface::onStructButton(int structType) {
     editorModeStructs_RepairYard.setToggleState( (structType == Structure_RepairYard) );
     editorModeStructs_Starport.setToggleState( (structType == Structure_StarPort) );
     editorModeStructs_Palace.setToggleState( (structType == Structure_Palace) );
-    editorModeStructs_AdvancedWindTrap.setToggleState( (structType == Structure_AdvancedWindTrap) );
 
     editorModeStructs_ZoneResidential.setToggleState( (structType == Structure_ZoneResidential) );
     editorModeStructs_ZoneCommercial.setToggleState( (structType == Structure_ZoneCommercial) );
@@ -1224,10 +1133,6 @@ void MapEditorInterface::onUnitButton(int unitType) {
     editorModeUnits_MCV.setToggleState( (unitType == Unit_MCV) );
     editorModeUnits_Trike.setToggleState( (unitType == Unit_Trike) );
     editorModeUnits_Raider.setToggleState( (unitType == Unit_RaiderTrike) );
-    editorModeUnits_RocketTrike.setToggleState( (unitType == Unit_RocketTrike) );
-    editorModeUnits_EliteLauncher.setToggleState( (unitType == Unit_EliteLauncher) );
-    editorModeUnits_EliteSiegeTank.setToggleState( (unitType == Unit_EliteSiegeTank) );
-    editorModeUnits_FlameTank.setToggleState( (unitType == Unit_FlameTank) );
     editorModeUnits_Quad.setToggleState( (unitType == Unit_Quad) );
     editorModeUnits_Tank.setToggleState( (unitType == Unit_Tank) );
     editorModeUnits_SiegeTank.setToggleState( (unitType == Unit_SiegeTank) );
@@ -1395,55 +1300,9 @@ void MapEditorInterface::changeHouseDropDown(HOUSETYPE newHouse) {
     }
 }
 
-/// Draw a 7×7 cross/plus star at (ox, oy) on a 32-bit RGBA surface.
-static void drawCrossStar(SDL_Surface* surf, int ox, int oy, SDL_Color c) {
-    Uint32 col = SDL_MapRGBA(surf->format, c.r, c.g, c.b, 255);
-    for (int d = 0; d < 7; d++) {
-        // vertical bar: column 3 of the 7×7 block
-        int px = ox + 3, py = oy + d;
-        if (px >= 0 && py >= 0 && px < surf->w && py < surf->h)
-            ((Uint32*)((Uint8*)surf->pixels + py * surf->pitch))[px] = col;
-        // horizontal bar: row 3 of the 7×7 block
-        px = ox + d; py = oy + 3;
-        if (px >= 0 && py >= 0 && px < surf->w && py < surf->h)
-            ((Uint32*)((Uint8*)surf->pixels + py * surf->pitch))[px] = col;
-    }
-}
-
-/// Returns a copy of `base` with a house-color cross star at bottom-right.
-/// Used to mark Tornie mod units/structures in the map editor palette.
-static sdl2::surface_ptr makeStarredSymbol(SDL_Surface* base, SDL_Color starColor) {
-    if (!base) return {};
-
-    // Ensure we work on a 32-bit RGBA copy
-    sdl2::surface_ptr copy;
-    if (base->format->BytesPerPixel == 1) {
-        copy = sdl2::surface_ptr{ SDL_ConvertSurfaceFormat(base, SDL_PIXELFORMAT_RGBA32, 0) };
-    } else {
-        copy = sdl2::surface_ptr{ SDL_ConvertSurface(base, base->format, 0) };
-    }
-    if (!copy) return {};
-
-    int ox = copy->w - 8;
-    int oy = copy->h - 8;
-    SDL_LockSurface(copy.get());
-    drawCrossStar(copy.get(), ox, oy, starColor);
-    SDL_UnlockSurface(copy.get());
-
-    return copy;
-}
-
-/// Add a second cross star at top-left (1,1) on an already-starred surface.
-static void addTopLeftStar(SDL_Surface* surf, SDL_Color c) {
-    if (!surf) return;
-    SDL_LockSurface(surf);
-    drawCrossStar(surf, 1, 1, c);
-    SDL_UnlockSurface(surf);
-}
-
 void MapEditorInterface::changeInterfaceColor(HOUSETYPE newHouse) {
     house = newHouse;
-    color = SDL2RGB(getHouseSDLColor(newHouse, 3));
+    color = SDL2RGB(palette[houseToPaletteIndex[newHouse] + 3]);
 
     terrainButton.setTextColor(color);
     structuresButton.setTextColor(color);
@@ -1468,17 +1327,6 @@ void MapEditorInterface::changeInterfaceColor(HOUSETYPE newHouse) {
     editorModeTerrain_Spice.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Spice, newHouse));
     editorModeTerrain_ThickSpice.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_ThickSpice, newHouse));
     editorModeTerrain_SpiceBloom.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_SpiceBloom, newHouse));
-    // Tornie: red/green spice field icons from custom terrain strips
-    auto* redSpiceIcon = pGFXManager->getUIGraphicSurface(UI_MapEditor_RedSpice, newHouse);
-    editorModeTerrain_RedSpice.setSymbol(redSpiceIcon ? redSpiceIcon : pGFXManager->getUIGraphicSurface(UI_MapEditor_Spice, newHouse));
-    auto* greenSpiceIcon = pGFXManager->getUIGraphicSurface(UI_MapEditor_GreenSpice, newHouse);
-    editorModeTerrain_GreenSpice.setSymbol(greenSpiceIcon ? greenSpiceIcon : pGFXManager->getUIGraphicSurface(UI_MapEditor_Spice, newHouse));
-    // Bloom buttons use per-spice-variant Tornie icons (row 0 of the strip).
-    // Falls back to vanilla SpiceBloom if the Tornie icon isn't available.
-    auto* redBloomIcon = pGFXManager->getUIGraphicSurface(UI_MapEditor_RedSpiceBloom, newHouse);
-    editorModeTerrain_RedSpiceBloom.setSymbol(redBloomIcon ? redBloomIcon : pGFXManager->getUIGraphicSurface(UI_MapEditor_SpiceBloom, newHouse));
-    auto* greenBloomIcon = pGFXManager->getUIGraphicSurface(UI_MapEditor_GreenSpiceBloom, newHouse);
-    editorModeTerrain_GreenSpiceBloom.setSymbol(greenBloomIcon ? greenBloomIcon : pGFXManager->getUIGraphicSurface(UI_MapEditor_SpiceBloom, newHouse));
     editorModeTerrain_Rock.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Rock, newHouse));
     editorModeTerrain_Mountain.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Mountain, newHouse));
 
@@ -1509,12 +1357,6 @@ void MapEditorInterface::changeInterfaceColor(HOUSETYPE newHouse) {
     editorModeStructs_RepairYard.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_RepairYard, newHouse));
     editorModeStructs_Starport.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Starport, newHouse));
     editorModeStructs_Palace.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Palace, newHouse));
-    {
-        SDL_Color hc = getHouseSDLColor(newHouse, 3);
-        auto starred = makeStarredSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_AdvancedWindTrap, newHouse), hc);
-        if (starred) addTopLeftStar(starred.get(), hc);
-        editorModeStructs_AdvancedWindTrap.setSymbol(std::move(starred));
-    }
 
     editorModeStructs_ZoneResidential.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_ZoneResidential, newHouse));
     editorModeStructs_ZoneCommercial.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_ZoneCommercial, newHouse));
@@ -1530,31 +1372,13 @@ void MapEditorInterface::changeInterfaceColor(HOUSETYPE newHouse) {
     editorModeUnits_MCV.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_MCV, newHouse));
     editorModeUnits_Trike.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Trike, newHouse));
     editorModeUnits_Raider.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Raider, newHouse));
-    // No dedicated UI_MapEditor_RocketTrike graphic exists; reuse the plain Trike icon with house-color star.
-    {
-        SDL_Color hc = getHouseSDLColor(newHouse, 3);
-        editorModeUnits_RocketTrike.setSymbol(makeStarredSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Trike, newHouse), hc));
-    }
     editorModeUnits_Quad.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Quad, newHouse));
     editorModeUnits_Tank.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Tank, newHouse));
     editorModeUnits_SiegeTank.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_SiegeTank, newHouse));
     editorModeUnits_Launcher.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Launcher, newHouse));
-    // DuneCity: Elite Launcher uses the Launcher editor icon with house-color star
-    {
-        SDL_Color hc = getHouseSDLColor(newHouse, 3);
-        editorModeUnits_EliteLauncher.setSymbol(makeStarredSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Launcher, newHouse), hc));
-    }
-    // DuneCity: Elite Siege Tank uses the Siege Tank editor icon with house-color star
-    {
-        SDL_Color hc = getHouseSDLColor(newHouse, 3);
-        editorModeUnits_EliteSiegeTank.setSymbol(makeStarredSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_SiegeTank, newHouse), hc));
-    }
-    editorModeUnits_FlameTank.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_FlameTank, newHouse));
     editorModeUnits_Devastator.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Devastator, newHouse));
     editorModeUnits_SonicTank.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_SonicTank, newHouse));
     editorModeUnits_Deviator.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Deviator, newHouse));
-    // Rebels: Deviator is disallowed; it is still visible in the panel but Builder(R)=Invalid prevents placing
-    // (unit visibility in editor follows ObjectData Builder rules at placement time)
     editorModeUnits_Saboteur.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Saboteur, newHouse));
     editorModeUnits_Sandworm.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Sandworm, newHouse));
     editorModeUnits_SpecialUnit.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_SpecialUnit, newHouse));

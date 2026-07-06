@@ -214,19 +214,7 @@ public:
         TerrainTile_ThickSpiceFull      = TerrainTile_ThickSpice + 0x0F,
 
         TerrainTile_SpiceBloom          = 0x54,
-        TerrainTile_SpecialBloom        = 0x55,
-
-        // Tornie mod: red spice terrain tiles (0x56–0x66)
-        TerrainTile_RedSpice            = 0x56,
-        TerrainTile_RedSpiceIsland      = TerrainTile_RedSpice + 0x00,
-        TerrainTile_RedSpiceFull        = TerrainTile_RedSpice + 0x0F,
-        TerrainTile_RedSpiceBloom       = 0x66,
-
-        // Tornie mod: green spice terrain tiles (0x67–0x77)
-        TerrainTile_GreenSpice          = 0x67,
-        TerrainTile_GreenSpiceIsland    = TerrainTile_GreenSpice + 0x00,
-        TerrainTile_GreenSpiceFull      = TerrainTile_GreenSpice + 0x0F,
-        TerrainTile_GreenSpiceBloom     = 0x77
+        TerrainTile_SpecialBloom        = 0x55
     } TERRAINTILETYPE;
 
 
@@ -398,8 +386,6 @@ public:
         \param  pTrigger    the house that triggered the bloom
     */
     void triggerSpiceBloom(House* pTrigger);
-    void triggerRedSpiceBloom(House* pTrigger);
-    void triggerGreenSpiceBloom(House* pTrigger);
 
     /**
         This method is called when the spice bloom on this tile shall be triggered. If this tile has no spice bloom nothing happens.
@@ -444,12 +430,8 @@ public:
     bool isDunes() const noexcept { return (type == Terrain_Dunes); }
     bool isSpiceBloom() const noexcept { return (type == Terrain_SpiceBloom); }
     bool isSpecialBloom() const noexcept { return (type == Terrain_SpecialBloom); }
-    bool isSpice() const noexcept { return ((type == Terrain_Spice) || (type == Terrain_ThickSpice) || (type == Terrain_RedSpice) || (type == Terrain_GreenSpice)); }
+    bool isSpice() const noexcept { return ((type == Terrain_Spice) || (type == Terrain_ThickSpice)); }
     bool isThickSpice() const noexcept { return (type == Terrain_ThickSpice); }
-    bool isRedSpice() const noexcept { return (type == Terrain_RedSpice); }
-    bool isGreenSpice() const noexcept { return (type == Terrain_GreenSpice); }
-    bool isRedSpiceBloom() const noexcept { return (type == Terrain_RedSpiceBloom); }
-    bool isGreenSpiceBloom() const noexcept { return (type == Terrain_GreenSpiceBloom); }
 
     Uint32 getSandRegion() const noexcept { return sandRegion; }
     int getOwner() const noexcept { return owner; }
@@ -524,8 +506,8 @@ private:
     std::list<Uint32>   assignedUndergroundUnitList;              ///< all underground units on this tile
     std::list<Uint32>   assignedNonInfantryGroundObjectList;      ///< all structures/vehicles on this tile
 
-    Uint32      lastAccess[NUM_HOUSES];    ///< contains for every team when this tile was seen last by this house
-    bool        explored[NUM_HOUSES];      ///< contains for every team if this tile is explored
+    Uint32      lastAccess[NUM_TEAMS];    ///< contains for every team when this tile was seen last by this house
+    bool        explored[NUM_TEAMS];      ///< contains for every team if this tile is explored
 
     // --- DuneCity overlay fields ---
     DuneCity::ZoneType  cityZoneType_ = DuneCity::ZoneType::None;

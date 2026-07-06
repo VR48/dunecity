@@ -32,14 +32,13 @@
 #include <structures/StructureBase.h>
 #include <units/InfantryBase.h>
 #include <units/AirUnit.h>
-#include <mod/ModManager.h>
 
 #define FOGTIME MILLI2CYCLES(10 * 1000)
 
 Tile::Tile() {
     type = Terrain_Sand;
 
-    for (auto i = 0; i < NUM_HOUSES; i++) {
+    for (auto i = 0; i < NUM_TEAMS; i++) {
         explored[i] = currentGame->getGameInitSettings().getGameOptions().startWithExploredMap;
         lastAccess[i] = 0;
     }
@@ -69,23 +68,16 @@ Tile::~Tile() = default;
 void Tile::load(InputStream& stream) {
     type = stream.readUint32();
 
-    // DuneCity 1.0.360: savefile format stays at 7 entries for
-    // backward compatibility, but the in-memory array is sized
-    // NUM_HOUSES=8 so HOUSE_REBELS=7 doesn't write out-of-bounds.
-    // We read 7 entries from the stream and initialize the 8th
-    // (HOUSE_REBELS) to default (false / 0).
     stream.readBools(&explored[0], &explored[1], &explored[2], &explored[3], &explored[4], &explored[5], &explored[6]);
-    explored[7] = currentGame->getGameInitSettings().getGameOptions().startWithExploredMap;
 
-    bool bLastAccess[7];
+    bool bLastAccess[NUM_TEAMS];
     stream.readBools(&bLastAccess[0], &bLastAccess[1], &bLastAccess[2], &bLastAccess[3], &bLastAccess[4], &bLastAccess[5], &bLastAccess[6]);
 
-    for (int i = 0; i < 7; i++) {
+    for (int i = 0; i < NUM_TEAMS; i++) {
         if (bLastAccess[i] == true) {
             lastAccess[i] = stream.readUint32();
         }
     }
-    lastAccess[7] = 0;
 
     fogColor = stream.readUint32();
 
@@ -323,49 +315,7 @@ void Tile::blitGround(int xPos, int yPos) {
 
     //draw terrain
     if (destroyedStructureTile == DestroyedStructure_None || destroyedStructureTile == DestroyedStructure_Wall) {
-        // Tornie: red/green spice field tiles use a custom sprite strip;
-        // red/green bloom tiles fall through to the vanilla terrain atlas (SpiceBloom frame)
-        bool drewCustomSpice = false;
-        if (type == Terrain_RedSpice || type == Terrain_GreenSpice) {
-            int customObjPic = (type == Terrain_RedSpice)
-                ? ObjPic_TerrainRedSpice : ObjPic_TerrainGreenSpice;
-            SDL_Texture* customTex = pGFXManager->getZoomedObjPic(customObjPic, currentZoomlevel);
-            if (customTex) {
-                // Strip layout: 17 cols × 2 rows
-                // Row 0: thin spice (16 connectivity variants)
-                int base = (type == Terrain_RedSpice) ? TerrainTile_RedSpice : TerrainTile_GreenSpice;
-                int col = getTerrainTile() - base;
-                int row = 0;
-                SDL_Rect customSrc = { col * zoomed_tilesize, row * zoomed_tilesize, zoomed_tilesize, zoomed_tilesize };
-                // Draw sand base first, then overlay spice
-                SDL_Rect sandSrc = { TerrainTile_Sand * zoomed_tilesize, 0, zoomed_tilesize, zoomed_tilesize };
-                SDL_RenderCopy(renderer, sprite[currentZoomlevel], &sandSrc, &drawLocation);
-                SDL_RenderCopy(renderer, customTex, &customSrc, &drawLocation);
-                drewCustomSpice = true;
-            }
-        }
-        if (!drewCustomSpice) {
-            // Red/green bloom types: render from custom spice strip column 16 (bloom frame)
-            // over a sand base; fall back to vanilla SpiceBloom if custom texture unavailable.
-            if (type == Terrain_RedSpiceBloom || type == Terrain_GreenSpiceBloom) {
-                int customObjPic = (type == Terrain_RedSpiceBloom)
-                    ? ObjPic_TerrainRedSpice : ObjPic_TerrainGreenSpice;
-                SDL_Texture* customTex = pGFXManager->getZoomedObjPic(customObjPic, currentZoomlevel);
-                if (customTex) {
-                    // Bloom is at column 16, row 1 in the 17×2 strip (row 0 col 16 is empty).
-                    // The bloom tile is pre-composited on sand, so no separate sand base needed.
-                    SDL_Rect bloomSrc = { 16 * zoomed_tilesize, 1 * zoomed_tilesize, zoomed_tilesize, zoomed_tilesize };
-                    SDL_RenderCopy(renderer, customTex, &bloomSrc, &drawLocation);
-                } else {
-                    const auto bloomIndexX = TerrainTile_SpiceBloom % NUM_TERRAIN_TILES_X;
-                    const auto bloomIndexY = TerrainTile_SpiceBloom / NUM_TERRAIN_TILES_X;
-                    SDL_Rect bloomSrc = { bloomIndexX*zoomed_tilesize, bloomIndexY*zoomed_tilesize, zoomed_tilesize, zoomed_tilesize };
-                    SDL_RenderCopy(renderer, sprite[currentZoomlevel], &bloomSrc, &drawLocation);
-                }
-            } else {
-                SDL_RenderCopy(renderer, sprite[currentZoomlevel], &source, &drawLocation);
-            }
-        }
+        SDL_RenderCopy(renderer, sprite[currentZoomlevel], &source, &drawLocation);
     }
 
     // DuneCity: overlay an auto-tiled road sprite when the tile carries a
@@ -733,7 +683,7 @@ void Tile::setType(int newType) {
     type = newType;
     destroyedStructureTile = DestroyedStructure_None;
 
-    if (type == Terrain_Spice || type == Terrain_RedSpice || type == Terrain_GreenSpice) {
+    if (type == Terrain_Spice) {
         spice = currentGame->randomGen.rand(RANDOMSPICEMIN, RANDOMSPICEMAX);
     }
     else if (type == Terrain_ThickSpice) {
@@ -984,75 +934,6 @@ void Tile::triggerSpiceBloom(House* pTrigger) {
     }
 
     currentGame->getExplosionList().push_back(new Explosion(Explosion_SpiceBloom, realLocation, pTrigger->getHouseID()));
-
-    // Tornie: 5% chance one adjacent sand tile becomes red or green spice bloom
-    if (ModManager::instance().getActiveModName() == "Tornie") {
-        if (currentGame->randomGen.rand(0, 19) == 0) {
-            bool makeRed = (currentGame->randomGen.rand(0, 1) == 0);
-            const int dx[] = {0, 1, 0, -1};
-            const int dy[] = {-1, 0, 1, 0};
-            for (int attempt = 0; attempt < 4; attempt++) {
-                int nx = location.x + dx[attempt], ny = location.y + dy[attempt];
-                if (currentGameMap->tileExists(Coord(nx, ny))) {
-                    Tile* adj = currentGameMap->getTile(Coord(nx, ny));
-                    if (adj->getType() == Terrain_Sand) {
-                        adj->setType(makeRed ? Terrain_RedSpiceBloom : Terrain_GreenSpiceBloom);
-                        break;
-                    }
-                }
-            }
-        }
-    }
-}
-
-void Tile::triggerRedSpiceBloom(House* pTrigger) {
-    if (!isRedSpiceBloom()) return;
-
-    soundPlayer->playSoundAt(Sound_Bloom, getLocation());
-    screenborder->shakeScreen(18);
-    if (pTrigger == pLocalHouse) {
-        soundPlayer->playVoice(BloomLocated, pLocalHouse->getHouseID());
-    }
-
-    setType(Terrain_RedSpice);
-    currentGameMap->createRedSpiceField(location, 5);
-
-    const auto realLocation = location * TILESIZE + Coord(TILESIZE / 2, TILESIZE / 2);
-
-    if (damage.size() < DAMAGE_PER_TILE) {
-        DAMAGETYPE newDamage;
-        newDamage.tile = SandDamage1;
-        newDamage.damageType = Terrain_SandDamage;
-        newDamage.realPos = realLocation;
-        damage.push_back(newDamage);
-    }
-
-    currentGame->getExplosionList().push_back(new Explosion(Explosion_SpiceBloom, realLocation, pTrigger->getHouseID()));
-}
-
-void Tile::triggerGreenSpiceBloom(House* pTrigger) {
-    if (!isGreenSpiceBloom()) return;
-
-    soundPlayer->playSoundAt(Sound_Bloom, getLocation());
-    screenborder->shakeScreen(18);
-    if (pTrigger == pLocalHouse) {
-        soundPlayer->playVoice(BloomLocated, pLocalHouse->getHouseID());
-    }
-
-    setType(Terrain_GreenSpice);
-    currentGameMap->createGreenSpiceField(location, 5);
-
-    const auto realLocation = location * TILESIZE + Coord(TILESIZE / 2, TILESIZE / 2);
-
-    if (damage.size() < DAMAGE_PER_TILE) {
-        DAMAGETYPE newDamage;
-        newDamage.tile = SandDamage1;
-        newDamage.damageType = Terrain_SandDamage;
-        newDamage.realPos = realLocation;
-        damage.push_back(newDamage);
-    }
-
-    currentGame->getExplosionList().push_back(new Explosion(Explosion_SpiceBloom, realLocation, pTrigger->getHouseID()));
 }
 
 void Tile::triggerSpecialBloom(House* pTrigger) {
@@ -1231,8 +1112,6 @@ Uint32 Tile::getRadarColor(House* pHouse, bool radar) {
             case HOUSE_FREMEN:      color = SDL2RGB(palette[PALCOLOR_FREMEN]);     break;
             case HOUSE_SARDAUKAR:   color = SDL2RGB(palette[PALCOLOR_SARDAUKAR]);  break;
             case HOUSE_MERCENARY:   color = SDL2RGB(palette[PALCOLOR_MERCENARY]);  break;
-            case HOUSE_NEUTRAL:     color = SDL2RGB(palette[PALCOLOR_NEUTRAL]);   break;
-            case HOUSE_REBELS:      color = SDL2RGB(palette[PALCOLOR_REBELS]);    break;
             default:                color = COLOR_BLACK;                           break;
             }
         }
@@ -1341,30 +1220,6 @@ int Tile::getTerrainTile() const {
 
     case Terrain_SpecialBloom: {
         return TerrainTile_SpecialBloom;
-    } break;
-
-    case Terrain_RedSpice: {
-        bool up = (currentGameMap->tileExists(location.x, location.y - 1) == false) || (currentGameMap->getTile(location.x, location.y - 1)->isSpice() == true);
-        bool right = (currentGameMap->tileExists(location.x + 1, location.y) == false) || (currentGameMap->getTile(location.x + 1, location.y)->isSpice() == true);
-        bool down = (currentGameMap->tileExists(location.x, location.y + 1) == false) || (currentGameMap->getTile(location.x, location.y + 1)->isSpice() == true);
-        bool left = (currentGameMap->tileExists(location.x - 1, location.y) == false) || (currentGameMap->getTile(location.x - 1, location.y)->isSpice() == true);
-        return TerrainTile_RedSpice + (((int)up) | (right << 1) | (down << 2) | (left << 3));
-    } break;
-
-    case Terrain_GreenSpice: {
-        bool up = (currentGameMap->tileExists(location.x, location.y - 1) == false) || (currentGameMap->getTile(location.x, location.y - 1)->isSpice() == true);
-        bool right = (currentGameMap->tileExists(location.x + 1, location.y) == false) || (currentGameMap->getTile(location.x + 1, location.y)->isSpice() == true);
-        bool down = (currentGameMap->tileExists(location.x, location.y + 1) == false) || (currentGameMap->getTile(location.x, location.y + 1)->isSpice() == true);
-        bool left = (currentGameMap->tileExists(location.x - 1, location.y) == false) || (currentGameMap->getTile(location.x - 1, location.y)->isSpice() == true);
-        return TerrainTile_GreenSpice + (((int)up) | (right << 1) | (down << 2) | (left << 3));
-    } break;
-
-    case Terrain_RedSpiceBloom: {
-        return TerrainTile_RedSpiceBloom;
-    } break;
-
-    case Terrain_GreenSpiceBloom: {
-        return TerrainTile_GreenSpiceBloom;
     } break;
 
     default: {

@@ -215,9 +215,6 @@ MainMenu::~MainMenu() = default;
 
 int MainMenu::showMenu()
 {
-    // Re-enable cursor in case a game or cutscene left it hidden
-    SDL_ShowCursor(SDL_ENABLE);
-
     musicPlayer->changeMusic(MUSIC_MENU);
 
     // Start version check in background (only once)
@@ -315,20 +312,8 @@ void MainMenu::onMultiPlayer() const
 
 void MainMenu::onMapEditor() const
 {
-    // DuneCity 1.0.367: wrap the editor in try/catch. Earlier
-    // versions crashed silently when the user opened the
-    // editor without first configuring a map (e.g. 'new
-    // map' selected without a house chosen). The catch
-    // allows the game to recover gracefully instead of
-    // dying into a SEH handler.
-    try {
-        MapEditor mapEditor;
-        mapEditor.RunEditor();
-    } catch(const std::exception& e) {
-        SDL_Log("MapEditor crashed: %s", e.what());
-    } catch(...) {
-        SDL_Log("MapEditor crashed: unknown exception");
-    }
+    MapEditor mapEditor;
+    mapEditor.RunEditor();
 }
 
 void MainMenu::onMods() const

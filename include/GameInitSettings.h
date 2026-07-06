@@ -52,26 +52,13 @@ public:
 
     class HouseInfo {
     public:
-        // Default ctor: colorIndex defaults to houseID (no swap).
         HouseInfo(HOUSETYPE newHouseID, int newTeam)
-         : houseID(newHouseID), team(newTeam), colorIndex(newHouseID) {
+         : houseID(newHouseID), team(newTeam) {
         }
 
-        // Load ctor with explicit savegameVersion. If version is 0
-        // (= unknown / unset), we read the field anyway - the
-        // caller's responsibility to either pass the right version
-        // OR be a new-format reader. The ctor accepts an optional
-        // version so new callers can pass it; legacy callers
-        // continue to use the InputStream-only ctor that defaults
-        // colorIndex to houseID (no swap, matching old behavior).
-        explicit HouseInfo(InputStream& stream, Uint32 savegameVersion = 0) {
+        explicit HouseInfo(InputStream& stream) {
             houseID = (HOUSETYPE) stream.readSint32();
             team = stream.readSint32();
-
-            // colorIndex field exists only in saves version 9820+
-            if (savegameVersion == 0 || savegameVersion >= 9820) {
-                colorIndex = stream.readSint32();
-            }
 
             Uint32 numPlayerInfo = stream.readUint32();
             for(Uint32 i=0;i<numPlayerInfo;i++) {
@@ -79,15 +66,9 @@ public:
             }
         }
 
-        // Save with optional savegameVersion control. Saving
-        // always writes colorIndex for format-version >= 9820.
-        void save(OutputStream& stream, Uint32 savegameVersion = SAVEGAMEVERSION) const {
+        void save(OutputStream& stream) const {
             stream.writeSint32(houseID);
             stream.writeSint32(team);
-
-            if (savegameVersion >= 9820) {
-                stream.writeSint32(colorIndex);
-            }
 
             stream.writeUint32(playerInfoList.size());
             for(const PlayerInfo& playerInfo : playerInfoList) {
@@ -95,18 +76,17 @@ public:
             }
         }
 
-        HOUSETYPE   houseID = HOUSE_INVALID;     ///< the house this info belongs to
-        int         team = 0;                    ///< the team number (-1 if none)
-        int         colorIndex = HOUSE_INVALID;  ///< runtime house-color override slot index (>= 9820). HOUSE_INVALID = no swap, use own houseID color.
-
-        std::vector<PlayerInfo>  playerInfoList;
-
         inline void addPlayerInfo(const PlayerInfo& newPlayerInfo) { playerInfoList.push_back(newPlayerInfo); };
 
         typedef std::vector<PlayerInfo> PlayerInfoList;
+
+        HOUSETYPE       houseID;
+        int             team;
+        PlayerInfoList  playerInfoList;
     };
 
     typedef std::vector<HouseInfo> HouseInfoList;
+
 
     /**
         Default constructor.
@@ -116,66 +96,66 @@ public:
 
     /**
         Constructor for specifying the start of a campaign
-        *\param  newHouseID          the house to play the campaign with
-        *\param  gameOptions         the options for this game
+        \param  newHouseID          the house to play the campaign with
+        \param  gameOptions         the options for this game
     */
     GameInitSettings(HOUSETYPE newHouseID, const SettingsClass::GameOptionsClass& gameOptions);
 
     /**
         Constructor for continuing a campaign at the specified mission
-        *\param  prevGameInitInfoClass       the init settings of the previous mission in the campaign
-        *\param  nextMission                 the number of the mission to continue the campaign
-        *\param  alreadyPlayedRegions        a bit set describing which regions were already played (used to forbid playing these again)
-        *\param  alreadyShownTutorialHints   contains flags for each tutorial hint (see enum HumanPlayer::TutorialHint)
+        \param  prevGameInitInfoClass       the init settings of the previous mission in the campaign
+        \param  nextMission                 the number of the mission to continue the campaign
+        \param  alreadyPlayedRegions        a bit set describing which regions were already played (used to forbid playing these again)
+        \param  alreadyShownTutorialHints   contains flags for each tutorial hint (see enum HumanPlayer::TutorialHint)
     */
     GameInitSettings(const GameInitSettings& prevGameInitInfoClass, int nextMission, Uint32 alreadyPlayedRegions, Uint32 alreadyShownTutorialHints);
 
     /**
         Constructor for specifying the start of a skirmish mission in the campaign
-        *\param  newHouseID          the house specifying from which campaign the mission is from
-        *\param  newMission          the number of the mission (1 - 22)
-        *\param  gameOptions         the options for this game
+        \param  newHouseID          the house specifying from which campaign the mission is from
+        \param  newMission          the number of the mission (1 - 22)
+        \param  gameOptions         the options for this game
     */
     GameInitSettings(HOUSETYPE newHouseID, int newMission, const SettingsClass::GameOptionsClass& gameOptions);
 
     /**
         Constructor for specifying the start of a custom map
-        *\param  mapfile             the name of the map (without extension)
-        *\param  filedata            the data of the map file
-        *\param  multiplePlayersPerHouse     allow multiple players per house
-        *\param  gameOptions         the options for this game
+        \param  mapfile             the name of the map (without extension)
+        \param  filedata            the data of the map file
+        \param  multiplePlayersPerHouse     allow multiple players per house
+        \param  gameOptions         the options for this game
     */
     GameInitSettings(const std::string& mapfile, const std::string& filedata, bool multiplePlayersPerHouse, const SettingsClass::GameOptionsClass& gameOptions);
 
     /**
         Constructor for specifying the start of a multiplayer custom map
-        *\param  mapfile             the name of the map (without extension)
-        *\param  filedata            the data of the map file
-        *\param  serverName          the name of the game server
-        *\param  multiplePlayersPerHouse     allow multiple players per house
-        *\param  gameOptions         the options for this game
+        \param  mapfile             the name of the map (without extension)
+        \param  filedata            the data of the map file
+        \param  serverName          the name of the game server
+        \param  multiplePlayersPerHouse     allow multiple players per house
+        \param  gameOptions         the options for this game
     */
     GameInitSettings(const std::string& mapfile, const std::string& filedata, const std::string& serverName, bool multiplePlayersPerHouse, const SettingsClass::GameOptionsClass& gameOptions);
 
     /**
         Constructor for specifying the loading of a savegame. If the given filename contains no valid savegame
         an exception is thrown.
-        *\param  savegame    the name of the savegame
+        \param  savegame    the name of the savegame
     */
     explicit GameInitSettings(const std::string& savegame);
 
     /**
         Constructor for specifying the loading of a network savegame. If the given filename contains no valid savegame
         an exception is thrown.
-        *\param  savegame    the name of the savegame
-        *\param  filedata    the data of the savegame file
-        *\param  serverName  the name of the game server
+        \param  savegame    the name of the savegame
+        \param  filedata    the data of the savegame file
+        \param  serverName  the name of the game server
     */
     GameInitSettings(const std::string& savegame, const std::string& filedata, const std::string& serverName);
 
     /**
         Load the game init info from a stream
-        *\param  stream  the stream to load from
+        \param  stream  the stream to load from
     */
     explicit GameInitSettings(InputStream& stream);
 
@@ -208,9 +188,6 @@ public:
     inline void addHouseInfo(const HouseInfo& newHouseInfo) { houseInfoList.push_back(newHouseInfo); };
     inline void clearHouseInfo() { houseInfoList.clear(); };
     inline const HouseInfoList& getHouseInfoList() const { return houseInfoList; };
-    // DuneCity 1.0.367: non-const accessor for CustomGamePlayers
-    // color-dropdown onChange to mutate colorIndex directly.
-    inline HouseInfoList& getHouseInfoListMutable() { return houseInfoList; };
 
     inline void setHouseID(HOUSETYPE houseID) { this->houseID = houseID; };
 
@@ -219,14 +196,14 @@ private:
 
     /**
         This method checks if it is possible to load a savegame and if the magic number is correct. If there is an error an exception is thrown.
-        *\param savegame the name of the file to check
+        \param savegame the name of the file to check
     */
     static void checkSaveGame(const std::string& savegame);
 
 
     /**
         This method checks if it is possible to load a savegame and if the magic number is correct. If there is an error an exception is thrown.
-        *\param stream the strean to read the data from
+        \param stream the strean to read the data from
     */
     static void checkSaveGame(InputStream& stream);
 

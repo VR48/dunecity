@@ -59,12 +59,9 @@ public:
 
     FixPoint extractSpice(FixPoint extractionSpeed);
 
-    enum class SpiceColor { Vanilla, Red, Green };
-
     inline FixPoint getAmountOfSpice() const { return spice; }
     inline bool isReturning() const { return returningToRefinery; }
     bool isHarvesting() const;
-    SpiceColor getSpiceColor() const { return currentSpiceColor; }
 
 private:
 
@@ -74,7 +71,6 @@ private:
     bool     harvestingMode;         ///< currently harvesting
     bool     returningToRefinery;    ///< currently on the way back to the refinery
     FixPoint spice;                  ///< loaded spice
-    SpiceColor currentSpiceColor = SpiceColor::Vanilla;  ///< Tornie: color of spice being harvested
     Uint32   spiceCheckCounter;      ///< Check for available spice on map to harvest
     Uint8    pathFailCounter;        ///< Track failed path attempts to same destination (harvest mode)
     Uint8    returnPathFailCounter;  ///< Track failed path attempts to refinery (return mode)

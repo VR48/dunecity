@@ -120,13 +120,6 @@ public:
      * Falls back to vanilla if mod doesn't have this file.
      */
     std::string getActiveGameOptionsPath() const;
-
-    /**
-     * Get the campaign override directory for the active mod.
-     * Checks both user-config and install-data mod paths.
-     * \return Path to campaign directory, or "" if none exists.
-     */
-    std::string getActiveCampaignDir() const;
     
     /**
      * Load game options from active mod's GameOptions.ini.
@@ -203,7 +196,6 @@ public:
      * Same config files as vanilla, but mod.ini sets `Enables City Mode = true`.
      */
     void seedDunecityFromDefaults();
-    void seedTornieFromDefaults();
 
     /**
      * \return true if the dunecity mod is missing required files or has

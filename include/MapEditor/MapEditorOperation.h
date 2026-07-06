@@ -141,38 +141,6 @@ public:
     int y;
 };
 
-class MapEditorTerrainAddRedBloomOperation : public MapEditorOperation {
-public:
-    MapEditorTerrainAddRedBloomOperation(int x, int y) : MapEditorOperation(), x(x), y(y) {}
-    virtual ~MapEditorTerrainAddRedBloomOperation() = default;
-    std::unique_ptr<MapEditorOperation> perform(MapEditor *pMapEditor) override;
-    int x; int y;
-};
-
-class MapEditorTerrainRemoveRedBloomOperation : public MapEditorOperation {
-public:
-    MapEditorTerrainRemoveRedBloomOperation(int x, int y) : MapEditorOperation(), x(x), y(y) {}
-    virtual ~MapEditorTerrainRemoveRedBloomOperation() = default;
-    std::unique_ptr<MapEditorOperation> perform(MapEditor *pMapEditor) override;
-    int x; int y;
-};
-
-class MapEditorTerrainAddGreenBloomOperation : public MapEditorOperation {
-public:
-    MapEditorTerrainAddGreenBloomOperation(int x, int y) : MapEditorOperation(), x(x), y(y) {}
-    virtual ~MapEditorTerrainAddGreenBloomOperation() = default;
-    std::unique_ptr<MapEditorOperation> perform(MapEditor *pMapEditor) override;
-    int x; int y;
-};
-
-class MapEditorTerrainRemoveGreenBloomOperation : public MapEditorOperation {
-public:
-    MapEditorTerrainRemoveGreenBloomOperation(int x, int y) : MapEditorOperation(), x(x), y(y) {}
-    virtual ~MapEditorTerrainRemoveGreenBloomOperation() = default;
-    std::unique_ptr<MapEditorOperation> perform(MapEditor *pMapEditor) override;
-    int x; int y;
-};
-
 class MapEditorTerrainAddSpiceFieldOperation : public MapEditorOperation {
 public:
 

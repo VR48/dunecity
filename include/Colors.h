@@ -79,17 +79,6 @@
 #define PALCOLOR_FREMEN 192
 #define PALCOLOR_SARDAUKAR 208
 #define PALCOLOR_MERCENARY 224
-#define PALCOLOR_NEUTRAL 128
-// DuneCity 1.0.389: PALCOLOR_REBELS back to 192 (= PALCOLOR_FREMEN).
-// Tornie's correction to v1.0.388: 'les indices de palette pour
-// rebelles Doivent commencer a 192 pas 200'. The Custom_IBM.pal
-// override at indices 192-199 only writes the dark grey ramp
-// when the active house is HOUSE_REBELS (or when the picker's
-// colorIndex selects Rebels) - the vanilla Fremen orange stays
-// intact for HOUSE_FREMEN by gating on houseID before writing.
-// Both houses share the palette slot but get their colors
-// through different code paths.
-#define PALCOLOR_REBELS 192
 
 // Colors
 #define COLOR_INVALID COLOR_RGBA(0xDE, 0xAD, 0xBE, 0xEF)

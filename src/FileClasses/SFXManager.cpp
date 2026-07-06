@@ -116,31 +116,6 @@ void SFXManager::loadEnglishVoice() {
                 HouseString = "O";
                 HouseNameChunk = getChunkFromFile(HouseString + "MERC.VOC");
                 break;
-            case HOUSE_NEUTRAL:
-                HouseString = "A";
-                HouseNameChunk = getChunkFromFile("NNEU.VOC", "ANEU.VOC");
-                break; // Neutral house name call - NNEU.VOC is the dedicated Neutral sound
-            case HOUSE_REBELS:
-                // DuneCity 1.0.392: use Harkonnen's "H" HouseString
-                // prefix for non-house-name voice calls (HARVEST,
-                // UNIT, DEPLOY, etc.). Tornie's spec: 'Le jeu cherche
-                // les sons de la faction Rebelle a l'ouverture (il
-                // ne les trouvent pas)' - the R-prefixed VOC files
-                // (RHARVEST.VOC, RUNIT.VOC, etc.) don't ship with
-                // the mod, so the game fails to find them at GFX
-                // init. Using "H" prefix reuses the Harkonnen voice
-                // files (HHARVEST.VOC, etc.) which DO ship in
-                // DUNE.PAK. The HOUSE_NAME voice (RREBELS.VOC)
-                // stays as the dedicated Rebels sample from
-                // v1.0.388.
-                HouseString = "H";
-                HouseNameChunk = getChunkFromFile("RREBELS.VOC");
-                if(!HouseNameChunk) {
-                    // Fall back to Harkonnen voice if RREBELS.VOC
-                    // is missing.
-                    HouseNameChunk = getChunkFromFile("HARK.VOC");
-                }
-                break;
             default:
                 break;
         }
@@ -245,82 +220,6 @@ void SFXManager::loadEnglishVoice() {
 
         // "House Ordos"
         lngVoice[HouseOrdos*NUM_HOUSES+VoiceNum] = getChunkFromFile("MORDOS.VOC");
-
-        // "House Neutral" — use house-specific voice if available
-        if (VoiceNum == HOUSE_HARKONNEN || VoiceNum == HOUSE_SARDAUKAR) {
-            lngVoice[HouseNeutral*NUM_HOUSES+VoiceNum] = getChunkFromFile("HNEU.VOC", "MNEU.VOC", "MATRE.VOC");
-        } else if (VoiceNum == HOUSE_ORDOS || VoiceNum == HOUSE_MERCENARY) {
-            lngVoice[HouseNeutral*NUM_HOUSES+VoiceNum] = getChunkFromFile("ONEU.VOC", "MNEU.VOC", "MATRE.VOC");
-        } else {
-            lngVoice[HouseNeutral*NUM_HOUSES+VoiceNum] = getChunkFromFile("ANEU.VOC", "MNEU.VOC", "MATRE.VOC");
-        }
-    }
-
-    // Override Neutral action voices with M-prefix (mentat/neutral) where available,
-    // falling back to the Atreides prefix already loaded above.  This ensures that
-    // Neutral-owned units play neutral-sounding voice lines rather than Atreides lines
-    // when built, deployed, or triggered.
-    {
-        const int n = HOUSE_NEUTRAL;
-        auto neuName = getChunkFromFile("MNEU.VOC", "ANEU.VOC", "AATRE.VOC");
-
-        { // HarvesterDeployed / UnitDeployed / UnitLaunched
-            auto Harvester = getChunkFromFile("MHARVEST.VOC", "AHARVEST.VOC");
-            auto Unit      = getChunkFromFile("MUNIT.VOC",    "AUNIT.VOC");
-            auto Deployed  = getChunkFromFile("MDEPLOY.VOC",  "ADEPLOY.VOC");
-            auto Launched  = getChunkFromFile("MLAUNCH.VOC",  "ALAUNCH.VOC");
-            lngVoice[HarvesterDeployed*NUM_HOUSES + n] = concat3Chunks(neuName.get(), Harvester.get(), Deployed.get());
-            lngVoice[UnitDeployed*NUM_HOUSES      + n] = concat3Chunks(neuName.get(), Unit.get(),      Deployed.get());
-            lngVoice[UnitLaunched*NUM_HOUSES      + n] = concat3Chunks(neuName.get(), Unit.get(),      Launched.get());
-        }
-
-        // DuneCity: Neutral construction complete uses Atreides voice (ACONST.VOC)
-        lngVoice[ConstructionComplete*NUM_HOUSES + n] = getChunkFromFile("ACONST.VOC", "MCONST.VOC");
-
-        { // VehicleRepaired
-            auto Vehicle  = getChunkFromFile("MVEHICLE.VOC", "AVEHICLE.VOC");
-            auto Repaired = getChunkFromFile("MREPAIR.VOC",  "AREPAIR.VOC");
-            lngVoice[VehicleRepaired*NUM_HOUSES + n] = concat2Chunks(Vehicle.get(), Repaired.get());
-        }
-
-        { // FrigateHasArrived
-            auto Frigate    = getChunkFromFile("MFRIGATE.VOC", "AFRIGATE.VOC");
-            auto HasArrived = getChunkFromFile("MARRIVE.VOC",  "AARRIVE.VOC");
-            lngVoice[FrigateHasArrived*NUM_HOUSES + n] = concat2Chunks(Frigate.get(), HasArrived.get());
-        }
-
-        lngVoice[YourMissionIsComplete*NUM_HOUSES    + n] = getChunkFromFile("MWIN.VOC",  "AWIN.VOC");
-        lngVoice[YouHaveFailedYourMission*NUM_HOUSES + n] = getChunkFromFile("MLOSE.VOC", "ALOSE.VOC");
-
-        { // RadarActivated / RadarDeactivated
-            auto Radar    = getChunkFromFile("MRADAR.VOC", "ARADAR.VOC");
-            auto RadarOn  = getChunkFromFile("MON.VOC",    "AON.VOC");
-            auto RadarOff = getChunkFromFile("MOFF.VOC",   "AOFF.VOC");
-            lngVoice[RadarActivated*NUM_HOUSES   + n] = concat2Chunks(Radar.get(), RadarOn.get());
-            lngVoice[RadarDeactivated*NUM_HOUSES + n] = concat2Chunks(Radar.get(), RadarOff.get());
-        }
-
-        { // BloomLocated
-            auto Bloom   = getChunkFromFile("MBLOOM.VOC",   "ABLOOM.VOC");
-            auto Located = getChunkFromFile("MLOCATED.VOC", "ALOCATED.VOC");
-            lngVoice[BloomLocated*NUM_HOUSES + n] = concat2Chunks(Bloom.get(), Located.get());
-        }
-
-        { // WarningWormSign
-            auto Warning  = getChunkFromFile("MWARNING.VOC", "AWARNING.VOC");
-            auto WormSign = getChunkFromFile("MWORMY.VOC",   "AWORMY.VOC");
-            lngVoice[WarningWormSign*NUM_HOUSES + n] = concat2Chunks(Warning.get(), WormSign.get());
-        }
-
-        lngVoice[BaseIsUnderAttack*NUM_HOUSES + n] = getChunkFromFile("MATTACK.VOC", "AATTACK.VOC");
-
-        { // SaboteurApproaching / MissileApproaching
-            auto Sabot       = getChunkFromFile("MSABOT.VOC",   "ASABOT.VOC");
-            auto Missile     = getChunkFromFile("MMISSILE.VOC", "AMISSILE.VOC");
-            auto Approaching = getChunkFromFile("MAPPRCH.VOC",  "AAPPRCH.VOC");
-            lngVoice[SaboteurApproaching*NUM_HOUSES + n] = concat2Chunks(Sabot.get(),   Approaching.get());
-            lngVoice[MissileApproaching*NUM_HOUSES  + n] = concat2Chunks(Missile.get(), Approaching.get());
-        }
     }
 
     const auto bad_voice = std::find(lngVoice.cbegin(), lngVoice.cend(), nullptr);
@@ -421,9 +320,6 @@ void SFXManager::loadNonEnglishVoice(const std::string& languagePrefix) {
 
     // "House Harkonnen"
     lngVoice[HouseHarkonnen] = getChunkFromFile(languagePrefix + "HARK.VOC");
-
-    // "House Neutral"
-    lngVoice[HouseNeutral] = getChunkFromFile("MNEU.VOC", "MATRE.VOC");
 
     const auto bad_voice = std::find(lngVoice.cbegin(), lngVoice.cend(), nullptr);
 

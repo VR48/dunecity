@@ -483,11 +483,6 @@ public:
         Draw the active city placement hint.
     */
     void drawCityPlacementHint();
-
-    /**
-        Draw animated decorative flags at the four map corner tiles.
-    */
-    void drawCornerFlags();
 private:
 
     /**

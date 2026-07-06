@@ -63,25 +63,6 @@ sdl2::surface_ptr Scaler::doubleSurfaceNN(SDL_Surface* src) {
         return nullptr;
     }
 
-    // For non-paletted surfaces (e.g. 32-bit RGBA PNGs from Tornie.PAK),
-    // use a format-preserving scale via SDL_BlitScaled rather than the
-    // 8-bit palette path which dereferences src->format->palette (null for
-    // 32-bit surfaces) and crashes on Windows.
-    if (src->format->BytesPerPixel != 1) {
-        auto returnPic = sdl2::surface_ptr{
-            SDL_CreateRGBSurface(0, src->w * 2, src->h * 2,
-                src->format->BitsPerPixel,
-                src->format->Rmask, src->format->Gmask,
-                src->format->Bmask, src->format->Amask) };
-        if (returnPic == nullptr) {
-            return nullptr;
-        }
-        SDL_SetSurfaceBlendMode(src, SDL_BLENDMODE_NONE);
-        SDL_BlitScaled(src, nullptr, returnPic.get(), nullptr);
-        return returnPic;
-    }
-
-    // Original 8-bit paletted path below (unchanged)
     // create new picture surface
     auto returnPic = sdl2::surface_ptr{ SDL_CreateRGBSurface(0, src->w * 2, src->h * 2, 8, 0, 0, 0, 0) };
     if (returnPic == nullptr) {
@@ -136,19 +117,6 @@ sdl2::surface_ptr Scaler::doubleTiledSurfaceNN(SDL_Surface* src, int tilesX, int
 sdl2::surface_ptr Scaler::tripleSurfaceNN(SDL_Surface* src) {
     if(src == nullptr) {
         return nullptr;
-    }
-
-    // For non-paletted (RGBA) surfaces, use SDL_BlitScaled to avoid palette dereference
-    if (src->format->BytesPerPixel != 1) {
-        auto returnPic = sdl2::surface_ptr{
-            SDL_CreateRGBSurface(0, src->w * 3, src->h * 3,
-                src->format->BitsPerPixel,
-                src->format->Rmask, src->format->Gmask,
-                src->format->Bmask, src->format->Amask) };
-        if (returnPic == nullptr) return nullptr;
-        SDL_SetSurfaceBlendMode(src, SDL_BLENDMODE_NONE);
-        SDL_BlitScaled(src, nullptr, returnPic.get(), nullptr);
-        return returnPic;
     }
 
     // create new picture surface
@@ -225,12 +193,6 @@ sdl2::surface_ptr Scaler::doubleSurfaceScale2x(SDL_Surface* src) {
 sdl2::surface_ptr Scaler::doubleTiledSurfaceScale2x(SDL_Surface* src, int tilesX, int tilesY) {
     if (src == nullptr) {
         return nullptr;
-    }
-
-    // Guard against 32-bit (non-paletted) surfaces — the Scale2x algorithm
-    // accesses src->format->palette which is null for RGBA surfaces.
-    if (src->format->BytesPerPixel != 1) {
-        return doubleSurfaceNN(src);
     }
 
     int srcWidth = src->w;
@@ -337,11 +299,6 @@ sdl2::surface_ptr Scaler::tripleSurfaceScale3x(SDL_Surface* src) {
 sdl2::surface_ptr Scaler::tripleTiledSurfaceScale3x(SDL_Surface* src, int tilesX, int tilesY) {
     if (src == nullptr) {
         return nullptr;
-    }
-
-    // Guard against non-paletted surfaces — fall back to NN scaling
-    if (src->format->BytesPerPixel != 1) {
-        return tripleSurfaceNN(src);
     }
 
     int srcWidth = src->w;

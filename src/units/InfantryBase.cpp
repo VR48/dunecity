@@ -186,10 +186,6 @@ void InfantryBase::checkPos() {
             if(!isImmortal) {
                 setHealth(0);
             }
-        } else if(currentGameMap->getTile(location)->isRedSpiceBloom()) {
-            currentGameMap->getTile(location)->triggerRedSpiceBloom(getOwner());
-        } else if(currentGameMap->getTile(location)->isGreenSpiceBloom()) {
-            currentGameMap->getTile(location)->triggerGreenSpiceBloom(getOwner());
         } else if(currentGameMap->getTile(location)->isSpecialBloom()){
             currentGameMap->getTile(location)->triggerSpecialBloom(getOwner());
         }

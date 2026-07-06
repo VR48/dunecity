@@ -94,8 +94,8 @@ constexpr int kSandLandValueBonus       = 8;   // Per-tile direct stampFalloff
 /// Dune-sized maps don't tolerate as much smoothing dilution.
 constexpr int kSandTerrainRawBonus      = 40;
 constexpr int kPoliceCoverageFull       = 100; // Barracks / WOR
-constexpr int kPoliceCoverageGunTurret  =  25; // Gun Turret (same as Rocket Turret after tuning)
-constexpr int kPoliceCoverageRocketTurret = 25; // Rocket Turret (matches gun turrets after tuning)
+constexpr int kPoliceCoverageGunTurret  =  25; // Gun Turret (1/4 strength)
+constexpr int kPoliceCoverageRocketTurret = 10; // Rocket Turret (less than guns)
 
 constexpr int kMaxLandValue = 250;
 constexpr int kMaxCrime     = 250;
@@ -266,9 +266,9 @@ inline int getPoliceCoverage(int itemID) {
 /// per city year; if the city has under-funded police, coverage scales
 /// down proportionally (handled at scan time, not here).
 ///
-/// PoliceStation upkeep — designer-tuned to 100 (down from SimCity Classic's
-/// TOOL_POLICESTATION cost of 500, tool.cpp gCostOf[4]).
-constexpr int kPoliceCostPoliceStation = 100;
+/// PoliceStation upkeep equals its build price (500), matching SimCity
+/// Classic's TOOL_POLICESTATION (tool.cpp gCostOf[4] = 500).
+constexpr int kPoliceCostPoliceStation = 500;
 // Gun and Rocket turrets contribute fractional police coverage as a
 // "garrison adjacency" effect, but no longer cost anything to operate.
 // They're defensive structures first — the police effect is a bonus,
@@ -765,16 +765,8 @@ inline ValveOutputs computeDemandValves(const ValveInputs& in) {
     const double projectedResPop = normResPop + migration + births;
 
     // Labour base uses previous-tick values (SC: resHist[1] / (comHist[1]+indHist[1]))
-    // Guard: only compute the real ratio when BOTH previous residential AND previous
-    // jobs are nonzero. SC Classic initialises resHist[1]=1 and comHist[1]+indHist[1]=1
-    // so laborBase always starts at 1.0. DuneCity zero-initialises prevXxxPop, so on
-    // any map with pre-placed industrial but no residential (e.g. Map 2 campaign start)
-    // prevJobs>0 but prevResPop==0 → laborBase=0 → projectedComPop and projectedIndPop
-    // both collapse to 0 → comDelta and indDelta hit -600/tick → C/I valves floor in
-    // 2-3 ticks, blocking all zone growth. Fix: fall back to equilibrium (1.0) whenever
-    // there is no established residential history from the previous tick.
     double laborBase;
-    if (prevJobs > 0.0 && in.prevResPop > 0) {
+    if (prevJobs > 0.0) {
         laborBase = static_cast<double>(in.prevResPop) / prevJobs;
     } else {
         laborBase = 1.0;
@@ -791,26 +783,6 @@ inline ValveOutputs computeDemandValves(const ValveInputs& in) {
         static_cast<double>(in.indPop)) * laborBase * extMarketParam;
 
     // Growth ratios (SC defaults resRatio to 1.3 when resPop is 0)
-    //
-    // CATCH-22 fix (regression introduced by v1.0.244+ R/C/I valve work):
-    // SC's classic code used raw projected population as the ratio when the
-    // denominator was 0, e.g. `comRatio = projectedComPop` when comPop == 0.
-    // DuneCity's port fed that raw value into the same `(ratio - 1.0) * 600`
-    // formula used for the populated case, so `comDelta` collapsed to
-    // `(projectedComPop - 1.0) * 600` — almost always negative for the first
-    // few scan ticks. The C valve drained to its floor (-1500) in 3 ticks and
-    // stayed there until the player had positive comPop, which by definition
-    // they could never get because the valve is what gates zone growth.
-    // Symptom: any C-zone the player placed sat at level 0 forever, never
-    // upgrading past the flat "C" tile. Reported on Ordos campaign Map 1
-    // (1.0.247) — R and I zones grew normally, C zones were dead.
-    //
-    // Fix: when comPop == 0 (or indPop == 0, same class of bug), use a
-    // neutral 1.0 ratio. The valve carries forward unchanged from the
-    // previous tick instead of being drained. R-pop growth still drives
-    // projectedComPop upward via the internalMarket term, so once the player
-    // places a first C-zone (comPop > 0) the normal ratio path takes over
-    // and the valve responds correctly.
     double resRatio, comRatio, indRatio;
     if (normResPop > 0) {
         resRatio = projectedResPop / normResPop;
@@ -820,12 +792,12 @@ inline ValveOutputs computeDemandValves(const ValveInputs& in) {
     if (in.comPop > 0) {
         comRatio = projectedComPop / in.comPop;
     } else {
-        comRatio = 1.0;  // see CATCH-22 comment above
+        comRatio = projectedComPop;  // SC uses raw projected when 0
     }
     if (in.indPop > 0) {
         indRatio = projectedIndPop / in.indPop;
     } else {
-        indRatio = 1.0;  // same fix as C: no I zones yet, don't drain the valve
+        indRatio = projectedIndPop;  // SC uses raw projected when 0
     }
     if (resRatio > resRatioMax) resRatio = resRatioMax;
     if (comRatio > comRatioMax) comRatio = comRatioMax;

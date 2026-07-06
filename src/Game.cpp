@@ -295,6 +295,30 @@ void Game::logPerformance(const char* format, ...) {
 void Game::initGame(const GameInitSettings& newGameInitSettings) {
     gameInitSettings = newGameInitSettings;
 
+    // DuneCity 1.0.487: re-apply runtime palette[52..59]
+    // (REBELS dark grey ramp from Custom_IBM.PAL) at every
+    // game init. Source: Custom_IBM.PAL sat0/dark75 dark grey.
+    if(pFileManager->exists("Custom_IBM.pal")) {
+        auto palRw = pFileManager->openFile("Custom_IBM.pal");
+        std::vector<Uint8> palData(768);
+        SDL_RWread(palRw.get(), palData.data(), 1, 768);
+        for(int k = 0; k < 8; k++) {
+            SDL_Color c;
+            c.r = palData[(52 + k) * 3 + 0];
+            c.g = palData[(52 + k) * 3 + 1];
+            c.b = palData[(52 + k) * 3 + 2];
+            c.a = 255;
+            palette[52 + k] = c;
+        }
+        SDL_Log("DuneCity 1.0.487: REBELS dark grey ramp re-applied to runtime palette[52..59] at game init");
+    }
+
+    // DuneCity 1.0.487: invalidate sprite texture cache to fix
+    // the first-launch invisibility bug. Preserves uiGraphic.
+    if(pGFXManager) {
+        pGFXManager->invalidateAllSpriteTextures();
+    }
+
     // The host's mod choice is the source of truth for whether the
     // city-sim feature flag is on — not whatever mod the local player
     // happens to have active in their main menu. This matters most for
@@ -369,26 +393,7 @@ void Game::initGame(const GameInitSettings& newGameInitSettings) {
                 techLevel = ((gameInitSettings.getMission() + 1)/3) + 1 ;
             }
 
-            // Defensive: scenario/INI loading can throw std::runtime_error
-            // for malformed scenario data (e.g. an unplaceable unit position
-            // on a save-game load). Without this guard, an uncaught throw
-            // becomes 0xE06D7363 / heap corruption (0xC0000374) on Windows
-            // and kills the process. Log and continue with an empty map
-            // rather than abort.
-            try {
-                INIMapLoader(this, gameInitSettings.getFilename(), gameInitSettings.getFiledata());
-            } catch(const std::exception& e) {
-                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                    "Game::init: scenario load failed (gameType=%d, mission=%d): %s",
-                    (int)gameInitSettings.getGameType(),
-                    gameInitSettings.getMission(), e.what());
-            }
-
-            // Reset city simulation for the new map so lastProcessedDay_ and
-            // other per-map state don't carry over from a previous mission.
-            if (citySimEnabled_ && currentGameMap != nullptr) {
-                citySimulation_.reset();
-            }
+            INIMapLoader(this, gameInitSettings.getFilename(), gameInitSettings.getFiledata());
 
             if(bReplay == false && gameInitSettings.getGameType() != GameType::CustomGame && gameInitSettings.getGameType() != GameType::CustomMultiplayer) {
                 /* do briefing */
@@ -1415,9 +1420,6 @@ void Game::drawScreen()
                 screenborder->world2screenY(t.getLocation().y*TILESIZE));
         });
 
-    /* draw corner flags */
-    // drawCornerFlags();
-
     /* draw underground units */
     currentGameMap->for_each(x1, y1, x2, y2,
         [](Tile& t) {
@@ -1565,29 +1567,8 @@ void Game::drawScreen()
                         }
                     }
 
-                    // DuneCity 1.0.349: green grid removed. Tornie asked
-                    // for 'a normal vision from game not glitched like
-                    // now' - the green/red placement overlay kept
-                    // rendering in zones the player did not own,
-                    // looking like a glitched field-of-view effect.
-                    // We compute withinRange above for compatibility
-                    // with the placement path but no longer draw the
-                    // per-tile texture. Players still see the standard
-                    // vanilla cursor and click-to-place semantics.
-                    (void)withinRange;
-
                     SDL_Texture* validPlace = nullptr;
                     SDL_Texture* invalidPlace = nullptr;
-
-                    // DuneCity 1.0.357: revert cursor render to vanilla behavior.
-// Tornie's report: 'l'algorithme de placement reste rouge meme si
-// on peut place un batiment'. The 1.0.350 ownership gate (skip
-// tiles not owned by the placing house) and the 1.0.351 Rebels
-// override (UI_GreyPlace) made the grid render red everywhere.
-// Restore the standard vanilla predicate: pTile->isRock() &&
-// !pTile->isMountain() && !pTile->hasAGroundObject() && ... for
-// all houses. No special-casing. The 8th house gets the same
-// green/red treatment as houses 1..7.
 
                     switch(currentZoomlevel) {
                         case 0: {
@@ -1608,13 +1589,10 @@ void Game::drawScreen()
 
                     }
 
-                    // Vanilla per-tile grid render: no ownership gate,
-                    // no house-specific override. Same predicate for
-                    // every house. See Game.cpp vanilla prior to
-                    // v1.0.347/350/351 patches.
                     for(int i = xPos; i < (xPos + structuresize.x); i++) {
                         for(int j = yPos; j < (yPos + structuresize.y); j++) {
                             SDL_Texture* image;
+
                             bool tileValid = false;
                             if(withinRange && currentGameMap->tileExists(i,j)) {
                                 Tile* pTile = currentGameMap->getTile(i,j);
@@ -1626,6 +1604,7 @@ void Game::drawScreen()
                                 }
                             }
                             image = tileValid ? validPlace : invalidPlace;
+
                             SDL_Rect drawLocation = calcDrawingRect(image, screenborder->world2screenX(i*TILESIZE), screenborder->world2screenY(j*TILESIZE));
                             SDL_RenderCopy(renderer, image, nullptr, &drawLocation);
                         }
@@ -2633,29 +2612,14 @@ void Game::updateGameState() {
 
     // DuneCity: advance one phase of the city simulation
     if (citySimEnabled_ && citySimulation_) {
-        try {
-            const Uint64 citySimStart = SDL_GetPerformanceCounter();
-            citySimulation_->advancePhase(gameCycleCount);
-            const Uint64 citySimEnd = SDL_GetPerformanceCounter();
-            const double citySimMs = getElapsedMs(citySimStart, citySimEnd);
-            frameTiming.citySimMsThisFrame += citySimMs;
-            if(citySimMs > 10.0) {
-                logPerformance("[CITYSIM SPIKE] Cycle %u advancePhase=%.1fms",
-                    gameCycleCount, citySimMs);
-            }
-        } catch(const std::exception& e) {
-            // City-sim math can throw on loaded games where prevResPop /
-            // computed-resPop diverge (R/C/I 0 bug, save-load migration, etc).
-            // Without this guard an uncaught throw becomes 0xE06D7363 on
-            // Windows and kills the process. Log and continue — the rest of
-            // the game (RTS, units, structures) is unaffected.
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                "Game::updateGameState: citySim advancePhase threw (%s) at cycle=%u",
-                e.what(), gameCycleCount);
-        } catch(...) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                "Game::updateGameState: citySim advancePhase threw unknown exception at cycle=%u",
-                gameCycleCount);
+        const Uint64 citySimStart = SDL_GetPerformanceCounter();
+        citySimulation_->advancePhase(gameCycleCount);
+        const Uint64 citySimEnd = SDL_GetPerformanceCounter();
+        const double citySimMs = getElapsedMs(citySimStart, citySimEnd);
+        frameTiming.citySimMsThisFrame += citySimMs;
+        if(citySimMs > 10.0) {
+            logPerformance("[CITYSIM SPIKE] Cycle %u advancePhase=%.1fms",
+                gameCycleCount, citySimMs);
         }
 
         // Power shortage warning: notify player when zones lose power
@@ -3289,12 +3253,7 @@ bool Game::loadSaveGame(InputStream& stream) {
     // read the actual house setup choosen at the beginning of the game
     Uint32 numHouseInfo = stream.readUint32();
     for(Uint32 i=0;i<numHouseInfo;i++) {
-        // DuneCity 1.0.365: pass loadedSavegameVersion so HouseInfo
-        // can conditionally read the colorIndex field (format 9820+).
-        // Old saves pre-9820 don't have the field - the ctor falls
-        // through to default colorIndex = houseID (no swap), so
-        // behavior is unchanged for old saves.
-        houseInfoListSetup.push_back(GameInitSettings::HouseInfo(stream, loadedSavegameVersion));
+        houseInfoListSetup.push_back(GameInitSettings::HouseInfo(stream));
     }
 
     //read map size
@@ -3573,14 +3532,7 @@ ObjectBase* Game::loadObject(InputStream& stream, Uint32 objectID)
 
     ObjectBase* newObject = ObjectBase::loadObject(stream, itemID, objectID);
     if(newObject == nullptr) {
-        // Was: THROW(std::runtime_error, "Error while loading an object!");
-        // Defensive: log and return nullptr instead of throwing. The caller
-        // (ObjectManager::load) now checks for nullptr and skips. Without
-        // this, an uncaught std::runtime_error escapes Game::loadSaveGame and
-        // becomes 0xE06D7363 / heap corruption (0xC0000374) on Windows.
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-            "Game::loadObject(): failed to load objectID=%u itemID=%u (corrupt or unknown object in savegame)",
-            objectID, itemID);
+        THROW(std::runtime_error, "Error while loading an object!");
     }
 
     return newObject;
@@ -4818,36 +4770,6 @@ void Game::drawCityPlacementHint() {
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
 }
 
-
-void Game::drawCornerFlags() {
-    if (!currentGameMap) return;
-
-    SDL_Texture* flagTex = pGFXManager->getZoomedObjPic(ObjPic_CornerFlag, currentZoomlevel);
-    if (!flagTex) return;
-
-    const int zoomedTileSize = world2zoomedWorld(TILESIZE);
-    // Advance through 2 animation frames at ~8 game cycles each.
-    const int frame = (gameCycleCount / 8) % 2;
-
-    const int mapW = currentGameMap->getSizeX();
-    const int mapH = currentGameMap->getSizeY();
-
-    const int corners[4][2] = {
-        {0,        0       },
-        {mapW - 1, 0       },
-        {0,        mapH - 1},
-        {mapW - 1, mapH - 1}
-    };
-
-    for (const auto& c : corners) {
-        const int screenX = screenborder->world2screenX(c[0] * TILESIZE);
-        const int screenY = screenborder->world2screenY(c[1] * TILESIZE);
-        const int flagPx = 7 * (currentZoomlevel + 1);
-        SDL_Rect src = { frame * flagPx, 0, flagPx, flagPx };
-        SDL_Rect dst = { screenX, screenY, flagPx, flagPx };
-        SDL_RenderCopy(renderer, flagTex, &src, &dst);
-    }
-}
 
 void Game::takeScreenshot() const {
     std::string screenshotFilename;

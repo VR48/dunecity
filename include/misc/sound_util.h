@@ -30,6 +30,5 @@ sdl2::mix_chunk_ptr createEmptyChunk();
 sdl2::mix_chunk_ptr createSilenceChunk(int length);
 sdl2::mix_chunk_ptr getChunkFromFile(const std::string& filename);
 sdl2::mix_chunk_ptr getChunkFromFile(const std::string& filename, const std::string& alternativeFilename);
-sdl2::mix_chunk_ptr getChunkFromFile(const std::string& filename, const std::string& alt1, const std::string& alt2);
 
 #endif // SOUND_UTIL_H

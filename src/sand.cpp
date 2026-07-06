@@ -56,7 +56,7 @@ SDL_Texture* resolveItemPicture(int itemID, HOUSETYPE house) {
         case Structure_HighTechFactory:     newPicID = Picture_HighTechFactory;     break;
         case Structure_IX:                  newPicID = Picture_IX;                  break;
         case Structure_LightFactory:        newPicID = Picture_LightFactory;        break;
-        case Structure_Palace:              newPicID = Picture_Palace;             break;
+        case Structure_Palace:              newPicID = Picture_Palace;              break;
         case Structure_Radar:               newPicID = Picture_Radar;               break;
         case Structure_Refinery:            newPicID = Picture_Refinery;            break;
         case Structure_RepairYard:          newPicID = Picture_RepairYard;          break;
@@ -72,7 +72,7 @@ SDL_Texture* resolveItemPicture(int itemID, HOUSETYPE house) {
         case Structure_PoliceStation:       newPicID = Picture_PoliceStation;       break;
         case Structure_Stadium:            newPicID = Picture_Stadium;             break;
         case Structure_Airport:            newPicID = Picture_Airport;             break;
-        case Structure_AdvancedWindTrap:   newPicID = Picture_AdvancedWindTrap;    break;
+        case Structure_AdvancedWindTrap:   newPicID = Picture_WindTrap;            break;
         case Structure_ZoneResidential:    newPicID = Picture_ZoneResidential;    break;
         case Structure_ZoneCommercial:     newPicID = Picture_ZoneCommercial;     break;
         case Structure_ZoneIndustrial:     newPicID = Picture_ZoneIndustrial;     break;
@@ -84,18 +84,7 @@ SDL_Texture* resolveItemPicture(int itemID, HOUSETYPE house) {
         case Unit_Deviator:                 newPicID = Picture_Deviator;            break;
         case Unit_Frigate:                  newPicID = Picture_Frigate;             break;
         case Unit_Harvester:                newPicID = Picture_Harvester;           break;
-        case Unit_Launcher:
-            newPicID = Picture_Launcher;
-            break;
-        case Unit_EliteLauncher:
-            newPicID = Picture_LauncherNeutral;  // DuneCity: Elite Launcher uses the Neutral Launcher icon
-            break;
-        case Unit_EliteSiegeTank:
-            newPicID = Picture_EliteSiegeTank;
-            break;
-        case Unit_FlameTank:
-            newPicID = Picture_FlameTank;
-            break;
+        case Unit_Launcher:                 newPicID = Picture_Launcher;            break;
         case Unit_MCV:                      newPicID = Picture_MCV;                 break;
         case Unit_Ornithopter:              newPicID = Picture_Ornithopter;         break;
         case Unit_Quad:                     newPicID = Picture_Quad;                break;
@@ -108,7 +97,6 @@ SDL_Texture* resolveItemPicture(int itemID, HOUSETYPE house) {
         case Unit_Sandworm:                 newPicID = Picture_Sandworm;            break;
         case Unit_AmbientAirplane:          newPicID = Picture_Carryall;            break;
         case Unit_AmbientHelicopter:        newPicID = Picture_Ornithopter;         break;
-        case Unit_RocketTrike:              newPicID = Picture_RocketTrike;         break;
         case Unit_Soldier:                  newPicID = Picture_Soldier;             break;
         case Unit_Trooper: {
             switch(house) {
@@ -298,10 +286,6 @@ Uint32  getItemIDByName(const std::string& name) {
     else if(lowerName == "troopers")                                            return Unit_Troopers;
     else if((lowerName == "ambient airplane") || (lowerName == "city airplane")) return Unit_AmbientAirplane;
     else if((lowerName == "ambient helicopter") || (lowerName == "city helicopter")) return Unit_AmbientHelicopter;
-    else if((lowerName == "rocket trike") || (lowerName == "rockettrike"))      return Unit_RocketTrike;
-    else if((lowerName == "elite launcher") || (lowerName == "elitelauncher"))   return Unit_EliteLauncher;
-    else if((lowerName == "elite siege tank") || (lowerName == "elitesiegetank"))   return Unit_EliteSiegeTank;
-    else if((lowerName == "flame tank") || (lowerName == "flametank"))          return Unit_FlameTank;
     else                                                                        return ItemID_Invalid;
 }
 
@@ -366,10 +350,6 @@ std::string getItemNameByID(Uint32 itemID) {
         case Unit_Troopers:                 return "Troopers";          break;
         case Unit_AmbientAirplane:          return "Ambient Airplane";  break;
         case Unit_AmbientHelicopter:        return "Ambient Helicopter";break;
-        case Unit_RocketTrike:              return "Rocket Trike";      break;
-        case Unit_EliteLauncher:            return "Elite Launcher";    break;
-        case Unit_EliteSiegeTank:           return "Elite Siege Tank";  break;
-        case Unit_FlameTank:               return "Flame Tank";        break;
 
         default:
             THROW(std::invalid_argument, "getItemNameByID(): Invalid item ID!");
@@ -433,15 +413,11 @@ std::string resolveItemName(int itemID) {
         case Unit_Sandworm:                 return _("@DUNE.ENG|231#Sandworm");            break;
         case Unit_Soldier:                  return _("@DUNE.ENG|203#Soldier");             break;
         case Unit_Trooper:                  return _("@DUNE.ENG|205#Trooper");             break;
-        case Unit_Special:                  return _("Devia./Launcher");              break;
+        case Unit_Special:                  return _("Sonic/Devast./Devia.");              break;
         case Unit_Infantry:                 return _("@DUNE.ENG|199#Infantry");            break;
         case Unit_Troopers:                 return _("@DUNE.ENG|201#Troopers");            break;
         case Unit_AmbientAirplane:          return _("City Airplane");                     break;
         case Unit_AmbientHelicopter:        return _("City Helicopter");                   break;
-        case Unit_RocketTrike:              return _("Rocket Trike");                      break;
-        case Unit_EliteLauncher:            return _("Elite Launcher");                    break;
-        case Unit_EliteSiegeTank:           return _("Elite Siege Tank");                  break;
-        case Unit_FlameTank:               return _("Flame Tank");                         break;
 
         default:
             THROW(std::invalid_argument, "resolveItemName(): Invalid item ID!");
@@ -465,8 +441,6 @@ HOUSETYPE getHouseByName(const std::string& name) {
     else if(lowerName == "fremen")       return HOUSE_FREMEN;
     else if(lowerName == "sardaukar")    return HOUSE_SARDAUKAR;
     else if(lowerName == "mercenary")    return HOUSE_MERCENARY;
-    else if(lowerName == "neutral")      return HOUSE_NEUTRAL;
-    else if(lowerName == "rebels")       return HOUSE_REBELS;
     else                                return HOUSE_INVALID;
 }
 
@@ -482,9 +456,7 @@ std::string getHouseNameByNumber(HOUSETYPE house) {
                                                             "Ordos",
                                                             "Fremen",
                                                             "Sardaukar",
-                                                            "Mercenary",
-                                                            "Neutral",
-                                                            "Rebels"
+                                                            "Mercenary"
                                                    };
         return houseName[house];
     } else {
@@ -537,10 +509,6 @@ Uint32 getColorByTerrainType(int terrainType) {
         case Terrain_SpiceBloom:    color = COLOR_BLOOM;       break;
         case Terrain_SpecialBloom:  color = COLOR_BLOOM;       break;
         case Terrain_Slab:          color = COLOR_ROCK;        break;
-        case Terrain_RedSpice:      color = COLOR_RGB(139,0,0);   break;  // dark red
-        case Terrain_GreenSpice:    color = COLOR_RGB(0,100,0);   break;  // dark green
-        case Terrain_RedSpiceBloom: color = COLOR_BLOOM;       break;
-        case Terrain_GreenSpiceBloom: color = COLOR_BLOOM;     break;
         default:                    color = COLOR_ROCK;        break;
     }
 
@@ -693,8 +661,6 @@ FixPoint getDeviateWeakness(HOUSETYPE house) {
             case HOUSE_FREMEN:      return 0.08_fix;
             case HOUSE_SARDAUKAR:   return 0.04_fix;
             case HOUSE_MERCENARY:   return 0.50_fix;
-            case HOUSE_NEUTRAL:     return 0.50_fix;
-            case HOUSE_REBELS:      return 0.50_fix;
             default:                return 0.00_fix;
         }
     }
@@ -770,11 +736,11 @@ void startSinglePlayerGame(const GameInitSettings& init)
                         if(currentGameInitInfo.getGameType() == GameType::Campaign) {
                             const int level = missionNumberToLevelNumber(currentGameInitInfo.getMission());
 
-                            if(level == 4 && (houseID == HOUSE_HARKONNEN || houseID == HOUSE_ATREIDES || houseID == HOUSE_ORDOS || houseID == HOUSE_NEUTRAL)) {
+                            if(level == 4 && (houseID == HOUSE_HARKONNEN || houseID == HOUSE_ATREIDES || houseID == HOUSE_ORDOS)) {
                                 SDL_Log("Playing meanwhile...");
                                 Meanwhile meanwhile(houseID,true);
                                 meanwhile.run();
-                            } else if(level == 8 && (houseID == HOUSE_HARKONNEN || houseID == HOUSE_ATREIDES || houseID == HOUSE_ORDOS || houseID == HOUSE_NEUTRAL)) {
+                            } else if(level == 8 && (houseID == HOUSE_HARKONNEN || houseID == HOUSE_ATREIDES || houseID == HOUSE_ORDOS)) {
                                 SDL_Log("Playing meanwhile...");
                                 Meanwhile meanwhile(houseID,false);
                                 meanwhile.run();

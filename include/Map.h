@@ -66,8 +66,6 @@ public:
     Coord findDeploySpot(UnitBase* pUnit, const Coord& origin, Random& randomGen, const Coord& gatherPoint = Coord::Invalid(), const Coord& buildingSize = Coord(0, 0)) const; //building size is num squares
 
     void createSpiceField(Coord location, int radius, bool centerIsThickSpice = false) const;
-    void createRedSpiceField(Coord location, int radius) const;
-    void createGreenSpiceField(Coord location, int radius) const;
 
     Uint32 getPathingRevision() const noexcept {
         return pathingRevision;

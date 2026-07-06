@@ -48,9 +48,6 @@ typedef enum {
     ObjPic_Launcher_Gun,
     ObjPic_Quad,
     ObjPic_Trike,
-    ObjPic_RocketTrike,
-    ObjPic_LauncherRed_Base,  ///< DuneCity: red-tinted tank body for the Neutral Launcher
-    ObjPic_LauncherRed_Gun,   ///< DuneCity: red-tinted rocket turret for the Neutral Launcher
     ObjPic_Harvester,
     ObjPic_Harvester_Sand,
     ObjPic_MCV,
@@ -126,18 +123,11 @@ typedef enum {
     ObjPic_Airport,        ///< DuneCity: Micropolis airport sprite (3x3 footprint)
     ObjPic_Hospital,       ///< DuneCity: Micropolis hospital sprite (2x2, auto-placed on residential)
     ObjPic_Church,         ///< DuneCity: Micropolis church sprite (2x2, auto-placed on residential)
-    ObjPic_AdvancedWindTrap,  ///< DuneCity: custom super power plant sprite
-    ObjPic_CornerFlag,        ///< DuneCity: animated decorative flag at map corners
-    ObjPic_FlameTank,         ///< DuneCity: Flame Tank sprite (Tornie mod, 8-dir palette-indexed strip from Tornie.PAK)
-    ObjPic_DeviatorCustom,       ///< DuneCity: Tornie Deviator sprite (8-bit indexed strip from Tornie.PAK)
-    ObjPic_EliteSiegeTankCustom, ///< DuneCity: Tornie Elite Siege Tank sprite (8-bit indexed strip from Tornie.PAK)
-    ObjPic_TerrainRedSpice,     ///< Tornie: 17×2 palette-indexed tile strip for red spice terrain
-    ObjPic_TerrainGreenSpice,   ///< Tornie: 17×2 palette-indexed tile strip for green spice terrain
     NUM_OBJPICS
 } ObjPic_enum;
 
 static const std::array<std::string, NUM_OBJPICS> ObjPicNames =  { { "Tank_Base", "Tank_Gun", "Siegetank_Base", "Siegetank_Gun", "Devastator_Base",
-    "Devastator_Gun", "Sonictank_Gun", "Launcher_Gun", "Quad", "Trike", "RocketTrike", "LauncherRed_Base", "LauncherRed_Gun", "Harvester", "Harvester_Sand", "MCV", "Carryall", "CarryallShadow",
+    "Devastator_Gun", "Sonictank_Gun", "Launcher_Gun", "Quad", "Trike", "Harvester", "Harvester_Sand", "MCV", "Carryall", "CarryallShadow",
     "Frigate", "FrigateShadow", "Ornithopter", "OrnithopterShadow", "Trooper", "Troopers", "Soldier", "Infantry", "Saboteur", "Sandworm",
     "ConstructionYard", "Windtrap", "Refinery", "Barracks", "WOR", "Radar", "LightFactory", "Silo", "HeavyFactory", "HighTechFactory",
     "IX", "Palace", "RepairYard", "Starport", "GunTurret", "RocketTurret", "Wall",
@@ -147,7 +137,7 @@ static const std::array<std::string, NUM_OBJPICS> ObjPicNames =  { { "Tank_Base"
     "DeadInfantry", "DeadAirUnit", "Smoke", "SandwormShimmerMask", "SandwormShimmerTemp", "Terrain", "DestroyedStructure", "RockDamage",
     "SandDamage", "Terrain_Hidden", "Terrain_HiddenFog", "Terrain_Tracks", "Star",
     "ZoneResidential", "ZoneCommercial", "ZoneIndustrial", "CityRoad", "NuclearPlant", "PoliceStation",
-    "Stadium", "Airport", "Hospital", "Church", "AdvancedWindTrap", "CornerFlag", "FlameTank", "DeviatorCustom", "EliteSiegeTankCustom", "TerrainRedSpice", "TerrainGreenSpice" } };
+    "Stadium", "Airport", "Hospital", "Church" } };
 
 #define GROUNDUNIT_ROW(i) (i+2)|TILE_NORMAL,(i+1)|TILE_NORMAL,i|TILE_NORMAL,(i+1)|TILE_FLIPV,(i+2)|TILE_FLIPV,(i+3)|TILE_FLIPV, (i+4)|TILE_NORMAL,(i+3)|TILE_NORMAL
 #define AIRUNIT_ROW(i) (i+2)|TILE_NORMAL,(i+1)|TILE_NORMAL,i|TILE_NORMAL,(i+1)|TILE_FLIPV,(i+2)|TILE_FLIPV,(i+1)|TILE_ROTATE, i|TILE_FLIPH,(i+1)|TILE_FLIPH
@@ -211,12 +201,6 @@ typedef enum {
     Picture_PoliceStation,
     Picture_Stadium,
     Picture_Airport,
-    Picture_AdvancedWindTrap,
-    Picture_RocketTrike,
-    Picture_LauncherNeutral,    ///< DuneCity: light red-tinted Launcher build-menu icon for HOUSE_NEUTRAL
-    Picture_EliteSiegeTank,     ///< DuneCity: Elite Siege Tank build-menu icon (loaded from EliteSiegeTankIcon.png or falls back to HTANK.WSA)
-    Picture_PalaceNeutral,      ///< DuneCity: Neutral Palace ability icon (Trike & Quad spawn)
-    Picture_FlameTank,          ///< DuneCity: Flame Tank build-menu icon (loaded from FlameTankIcon.png or falls back to STANK.WSA)
     NUM_SMALLDETAILPICS
 } SmallDetailPics_Enum;
 
@@ -412,10 +396,6 @@ typedef enum {
     UI_MapEditor_Spice,
     UI_MapEditor_ThickSpice,
     UI_MapEditor_SpiceBloom,
-    UI_MapEditor_RedSpice,
-    UI_MapEditor_GreenSpice,
-    UI_MapEditor_RedSpiceBloom,
-    UI_MapEditor_GreenSpiceBloom,
     UI_MapEditor_Slab,
     UI_MapEditor_Rock,
     UI_MapEditor_Mountain,
@@ -451,7 +431,6 @@ typedef enum {
     UI_MapEditor_Launcher,
     UI_MapEditor_Devastator,
     UI_MapEditor_SonicTank,
-    UI_MapEditor_FlameTank,
     UI_MapEditor_Deviator,
     UI_MapEditor_Saboteur,
     UI_MapEditor_Sandworm,
@@ -466,7 +445,6 @@ typedef enum {
     UI_MapEditor_ZoneIndustrial,    ///< DuneCity: map-editor icon for I zone
     UI_MapEditor_NuclearPlant,      ///< DuneCity: map-editor icon for nuclear plant
     UI_MapEditor_Road,              ///< DuneCity: map-editor icon for road tile
-    UI_MapEditor_AdvancedWindTrap,  ///< DuneCity: map-editor icon for advanced windtrap
     NUM_UIGRAPHICS
 } UIGraphics_Enum;
 
@@ -494,10 +472,6 @@ typedef enum {
     Anim_MercenaryMouth,
     Anim_MercenaryShoulder,
     Anim_MercenaryRing,
-    Anim_NeutralEyes,
-    Anim_NeutralMouth,
-    Anim_NeutralShoulder,
-    Anim_NeutralRing,
     Anim_BeneEyes,
     Anim_BeneMouth,
     Anim_HarkonnenPlanet,
@@ -506,7 +480,6 @@ typedef enum {
     Anim_FremenPlanet,
     Anim_SardaukarPlanet,
     Anim_MercenaryPlanet,
-    Anim_NeutralPlanet,
     Anim_Win1,
     Anim_Win2,
     Anim_Lose1,
@@ -551,8 +524,6 @@ typedef enum {
     Anim_Sardaukar,
     Anim_Frigate,
     Anim_Slab4,
-    Anim_PaulEyes,
-    Anim_PaulMouth,
     NUM_ANIMATION
 } Animation_enum;
 
@@ -564,12 +535,17 @@ public:
 
     GFXManager(const GFXManager &) = delete;
     GFXManager(GFXManager &&) = default;
-    GFXManager& operator=(const GFXManager &) = delete;
+    GFXManager& operator=(const GFXManager &) = default;
     GFXManager& operator=(GFXManager &&) = default;
 
     SDL_Texture*     getZoomedObjPic(unsigned int id, int house, unsigned int z);
     SDL_Texture*     getZoomedObjPic(unsigned int id, unsigned int z) { return getZoomedObjPic(id, HOUSE_HARKONNEN, z); };
     zoomable_texture getObjPic(unsigned int id, int house=HOUSE_HARKONNEN);
+
+    // DuneCity 1.0.487: invalidate sprite texture cache
+    // (objPicTex + objPic, NOT uiGraphic). Re-applied per
+    // Tornie's OOB 'ajouter ces fonctions aussi'.
+    void invalidateAllSpriteTextures();
 
     SDL_Texture*     getSmallDetailPic(unsigned int id);
     SDL_Texture*     getTinyPicture(unsigned int id);
@@ -586,13 +562,12 @@ public:
 private:
     std::unique_ptr<Animation>  loadAnimationFromWsa(const std::string& filename) const;
     sdl2::surface_ptr           generateWindtrapAnimationFrames(SDL_Surface* windtrapPic) const;
-    sdl2::surface_ptr           generateAdvancedWindtrapAnimationFrames(SDL_Surface* basePic) const;
     sdl2::surface_ptr           generateMapChoiceArrowFrames(SDL_Surface* arrowPic, int house=HOUSE_HARKONNEN) const;
 
     std::unique_ptr<Shpfile>  loadShpfile(const std::string& filename) const;
     std::unique_ptr<Wsafile>  loadWsafile(const std::string& filename) const;
 
-    sdl2::texture_ptr   extractSmallDetailPic(const std::string& filename, bool tintRed = false) const;
+    sdl2::texture_ptr   extractSmallDetailPic(const std::string& filename) const;
 
 
     sdl2::surface_ptr   generateDoubledObjPic(unsigned int id, int h) const;

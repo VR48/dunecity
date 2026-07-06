@@ -34,7 +34,7 @@
 
 PlayerSettingsWindow::PlayerSettingsWindow(MapEditor* pMapEditor, HOUSETYPE currentHouse) : Window(0,0,0,0), pMapEditor(pMapEditor), house(currentHouse) {
 
-    color = SDL2RGB(getHouseSDLColor(house));
+    color = SDL2RGB(palette[houseToPaletteIndex[house]+3]);
 
     // set up window
     SDL_Texture *pBackground = pGFXManager->getUIGraphic(UI_NewMapWindow);
@@ -61,7 +61,7 @@ PlayerSettingsWindow::PlayerSettingsWindow(MapEditor* pMapEditor, HOUSETYPE curr
 
         MapEditor::Player& playerInfo = pMapEditor->getPlayers()[i];
 
-        Uint32 currentColor = SDL2RGB(getHouseSDLColor(playerInfo.colorOfHouse, 3));
+        Uint32 currentColor = SDL2RGB(palette[houseToPaletteIndex[playerInfo.colorOfHouse] + 3]);
 
         centralVBox.addWidget(VSpacer::create(15));
 

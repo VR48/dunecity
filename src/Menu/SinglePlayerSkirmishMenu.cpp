@@ -27,7 +27,7 @@
 #include <GameInitSettings.h>
 #include <sand.h>
 
-static const int houseOrder[] = { HOUSE_ATREIDES, HOUSE_ORDOS, HOUSE_HARKONNEN, HOUSE_MERCENARY, HOUSE_FREMEN, HOUSE_SARDAUKAR, HOUSE_NEUTRAL, HOUSE_REBELS, HOUSE_REBELS };
+static const int houseOrder[] = { HOUSE_ATREIDES, HOUSE_ORDOS, HOUSE_HARKONNEN, HOUSE_MERCENARY, HOUSE_FREMEN, HOUSE_SARDAUKAR };
 
 namespace {
 const char* const kSupportPlayerClasses[] = {
@@ -311,14 +311,14 @@ void SinglePlayerSkirmishMenu::onHouseLeft()
 
 void SinglePlayerSkirmishMenu::onHouseRight()
 {
-    if(currentHouseChoiceScrollPos < 4) {
+    if(currentHouseChoiceScrollPos < 3) {
         currentHouseChoiceScrollPos++;
         selectedButton--;
         onSelectHouseButton(selectedButton);
         updateHouseChoice();
 
         houseLeftButton.setVisible(true);
-        houseRightButton.setVisible( (currentHouseChoiceScrollPos < 4) );
+        houseRightButton.setVisible( (currentHouseChoiceScrollPos < 3) );
     }
 }
 

@@ -30,13 +30,7 @@
 #define DEFAULT_METASERVER  "https://dunelegacy.com/metaserver/metaserver.php"
 
 #define SAVEMAGIC           8675309
-// 9820: HouseInfo gained a colorIndex field (runtime house color override,
-// default = houseID). Older saves do not write this field, so we read it
-// only when savegameVersion >= 9820. Old saves load with colorIndex == houseID
-// (the existing default) so behavior is identical for unreplaced houses.
-#define SAVEGAMEVERSION     9820
-// 9817: Added House::cityCredits (tax income separate from spice quota)
-// 9812: Added Structure_AdvancedWindTrap (ID 52), Num_ItemID now 53.
+#define SAVEGAMEVERSION     9812  // 9812: Added Structure_AdvancedWindTrap (ID 52), Num_ItemID now 53.
 
 // v1.0.0–v1.0.7 shipped SAVEGAMEVERSION 9810 with Num_ItemID=48.
 // v1.0.8–v1.0.10 also used 9810 but with Num_ItemID=52 (4 items added

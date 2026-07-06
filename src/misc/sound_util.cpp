@@ -158,11 +158,3 @@ sdl2::mix_chunk_ptr getChunkFromFile(const std::string& filename, const std::str
     }
     return nullptr;
 }
-
-sdl2::mix_chunk_ptr getChunkFromFile(const std::string& filename, const std::string& alt1, const std::string& alt2) {
-    if(pFileManager->exists(filename)) {
-        return getChunkFromFile(filename);
-    } else {
-        return getChunkFromFile(alt1, alt2);
-    }
-}

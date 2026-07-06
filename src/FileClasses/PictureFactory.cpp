@@ -29,7 +29,6 @@
 #include <FileClasses/Wsafile.h>
 
 #include <misc/draw_util.h>
-#include <Colors.h>
 #include <misc/Scaler.h>
 #include <misc/exceptions.h>
 
@@ -536,11 +535,6 @@ sdl2::surface_ptr PictureFactory::createGameStatsBackground(int House) const {
             pLogo = copySurface(ordosLogo.get());
         } break;
 
-        case HOUSE_NEUTRAL:
-        case HOUSE_REBELS: {
-            pLogo = copySurface(harkonnenLogo.get());
-        } break;
-
         default:
             THROW(std::invalid_argument, "PictureFactory::createGameStatsBackground(): Unknown house %d!", House);
     }
@@ -626,10 +620,6 @@ sdl2::surface_ptr PictureFactory::createHouseSelect(SDL_Surface* HouseChoice) co
 
 
 sdl2::surface_ptr PictureFactory::createGreyHouseChoice(SDL_Surface* HouseChoice) const {
-    if (!HouseChoice) {
-        return nullptr;
-    }
-
     static const unsigned char index2greyindex[] = {
         0, 0, 0, 13, 233, 127, 0, 131, 0, 0, 0, 0, 0, 13, 14, 15,
         15, 127, 127, 14, 14, 14, 14, 130, 24, 131, 131, 13, 13, 29, 30, 31,
@@ -687,15 +677,9 @@ sdl2::surface_ptr PictureFactory::createMapChoiceScreen(int House) const {
         } break;
 
         case HOUSE_ORDOS:
-        case HOUSE_MERCENARY:
-        case HOUSE_NEUTRAL: {
+        case HOUSE_MERCENARY: {
             SDL_BlitSurface(ordosLogo.get(),nullptr,pMapChoiceScreen.get(),&LeftLogo);
             SDL_BlitSurface(ordosLogo.get(),nullptr,pMapChoiceScreen.get(),&RightLogo);
-        } break;
-
-        case HOUSE_REBELS: {
-            SDL_BlitSurface(harkonnenLogo.get(),nullptr,pMapChoiceScreen.get(),&LeftLogo);
-            SDL_BlitSurface(harkonnenLogo.get(),nullptr,pMapChoiceScreen.get(),&RightLogo);
         } break;
 
         default: {
@@ -750,28 +734,7 @@ sdl2::surface_ptr PictureFactory::createMentatHouseChoiceQuestion(int House, Pal
         case HOUSE_FREMEN:      pQuestionPart2 = Scaler::defaultDoubleSurface(LoadPNG_RW(pFileManager->openFile("Fremen.png").get()).get());      break;
         case HOUSE_SARDAUKAR:   pQuestionPart2 = Scaler::defaultDoubleSurface(LoadPNG_RW(pFileManager->openFile("Sardaukar.png").get()).get());   break;
         case HOUSE_MERCENARY:   pQuestionPart2 = Scaler::defaultDoubleSurface(LoadPNG_RW(pFileManager->openFile("Mercenary.png").get()).get());   break;
-        case HOUSE_NEUTRAL: {
-            // Neutral reuses the Ordos banner slot but remaps its green palette entries
-            // to the neutral grey palette range. This gives a visually consistent banner
-            // without requiring a separate Neutral.png asset.
-            auto pOrdosPart = getSubPicture(mentatHouseChoiceQuestionSurface.get(), 0, 144, 208, 48);
-            pQuestionPart2 = mapSurfaceColorRange(pOrdosPart.get(), PALCOLOR_ORDOS, PALCOLOR_NEUTRAL);
-        } break;
-        case HOUSE_REBELS: {
-            // Use Harkonnen banner slice remapped to rebels palette (grey via Custom_IBM.pal)
-            auto pHarkPart = getSubPicture(mentatHouseChoiceQuestionSurface.get(), 0, 48, 208, 48);
-            pQuestionPart2 = mapSurfaceColorRange(pHarkPart.get(), PALCOLOR_HARKONNEN, PALCOLOR_REBELS);
-        } break;
         default:    break;
-    }
-
-    if(pQuestionPart2 == nullptr) {
-        // Fallback: use an empty transparent strip rather than crashing on null dereference
-        pQuestionPart2 = sdl2::surface_ptr{ SDL_CreateRGBSurface(0, 208, 48, 8, 0, 0, 0, 0) };
-        if(pQuestionPart2 != nullptr) {
-            benePalette.applyToSurface(pQuestionPart2.get());
-            SDL_FillRect(pQuestionPart2.get(), nullptr, 0);
-        }
     }
 
     SDL_SetColorKey(pQuestionPart2.get(), SDL_TRUE, 0);
@@ -862,75 +825,6 @@ sdl2::surface_ptr PictureFactory::createHeraldMerc(SDL_Surface* heraldAtre, SDL_
     SDL_BlitSurface(pFrameAndCurtain.get(), nullptr, pSoldier.get(), nullptr);
 
     return pSoldier;
-}
-
-sdl2::surface_ptr PictureFactory::createHeraldNeu(SDL_Surface* heraldOrdos, SDL_Surface* /*launcherIcon*/) const {
-    // If the user has supplied a custom HeraldNeu.png, load and use it directly.
-    if(pFileManager->exists("HeraldNeu.png")) {
-        auto pCustom = LoadPNG_RW(pFileManager->openFile("HeraldNeu.png").get());
-        if(pCustom) {
-            return pCustom;
-        }
-        SDL_Log("createHeraldNeu(): HeraldNeu.png found but LoadPNG_RW failed — falling back to generated banner");
-    }
-
-    constexpr int BANNER_W = 83;
-    constexpr int BANNER_H = 91;
-    constexpr int BORDER_SIZE = 7;
-    constexpr int INTERIOR_W = BANNER_W - 2 * BORDER_SIZE;  // 69
-    constexpr int INTERIOR_H = BANNER_H - 2 * BORDER_SIZE;  // 77
-    constexpr int TEXT_AREA_H = 15;
-    constexpr int IMAGE_AREA_H = INTERIOR_H - TEXT_AREA_H;  // 62
-
-    // Use the Ordos herald as the border frame base, remapping its colours to neutral grey
-    auto pFrame = mapSurfaceColorRange(heraldOrdos, PALCOLOR_ORDOS, PALCOLOR_NEUTRAL);
-
-    // Fill the interior with solid neutral grey (preserves the border frame)
-    SDL_Rect interiorRect{ BORDER_SIZE, BORDER_SIZE, INTERIOR_W, INTERIOR_H };
-    SDL_FillRect(pFrame.get(), &interiorRect, PALCOLOR_NEUTRAL);
-
-    // Launcher graphic from RTANK.WSA frame 0, scaled to fit within the image area
-    if (pFileManager->exists("RTANK.WSA")) {
-        auto launcherFrame = Wsafile(pFileManager->openFile("RTANK.WSA").get()).getPicture(0);
-        if (launcherFrame && launcherFrame->w > 0 && launcherFrame->h > 0) {
-            double ratioW = static_cast<double>(INTERIOR_W - 4) / launcherFrame->w;
-            double ratioH = static_cast<double>(IMAGE_AREA_H - 4) / launcherFrame->h;
-            double ratio = (ratioW < ratioH) ? ratioW : ratioH;
-            auto launcherScaled = scaleSurface(launcherFrame.get(), ratio);
-            if (launcherScaled) {
-                int destX = BORDER_SIZE + (INTERIOR_W - launcherScaled->w) / 2;
-                int destY = BORDER_SIZE + (IMAGE_AREA_H - launcherScaled->h) / 2;
-                SDL_Rect destRect{ destX, destY, launcherScaled->w, launcherScaled->h };
-                SDL_BlitSurface(launcherScaled.get(), nullptr, pFrame.get(), &destRect);
-            }
-        }
-    }
-
-    // "Neutral" text at bottom of interior: "N" in red, "eutral" in white
-    constexpr unsigned int kFontSize = 10;
-    auto pN      = pFontManager->createSurfaceWithText("N",      COLOR_RED,   kFontSize);
-    auto pEutral = pFontManager->createSurfaceWithText("eutral", COLOR_WHITE, kFontSize);
-    if (pN && pEutral) {
-        int totalTextW = pN->w + pEutral->w;
-        int textX = (BANNER_W - totalTextW) / 2;
-        int textY = BANNER_H - BORDER_SIZE - pN->h - 2;
-        if (textX < 0) textX = 0;
-        SDL_Rect destN{ textX, textY, pN->w, pN->h };
-        SDL_BlitSurface(pN.get(), nullptr, pFrame.get(), &destN);
-        SDL_Rect destE{ textX + pN->w, textY, pEutral->w, pEutral->h };
-        SDL_BlitSurface(pEutral.get(), nullptr, pFrame.get(), &destE);
-    }
-
-    // Apply custom mask if present (draws decorative overlay, same pattern as Fre/Sard/Merc)
-    if (pFileManager->exists("HeraldNeuMask.png")) {
-        auto pMask = LoadPNG_RW(pFileManager->openFile("HeraldNeuMask.png").get());
-        if (pMask) {
-            SDL_SetColorKey(pMask.get(), SDL_TRUE, 0);
-            SDL_BlitSurface(pMask.get(), nullptr, pFrame.get(), nullptr);
-        }
-    }
-
-    return pFrame;
 }
 
 std::unique_ptr<Animation> PictureFactory::createFremenPlanet(SDL_Surface* heraldFre) {
@@ -1036,54 +930,6 @@ std::unique_ptr<Animation> PictureFactory::createMercenaryPlanet(Animation* atre
     return newAnimation;
 }
 
-std::unique_ptr<Animation> PictureFactory::createNeutralPlanet(Animation* harkonnenPlanetAnimation, SDL_Surface* heraldNeutral) {
-
-    sdl2::surface_ptr maskSurface{ Scaler::defaultDoubleSurface(LoadPNG_RW(pFileManager->openFile("PlanetMask.png").get()).get()) };
-    SDL_SetColorKey(maskSurface.get(), SDL_TRUE, 0);
-
-    auto newAnimation = std::make_unique<Animation>();
-
-    Uint8 colorMap[256];
-    for(int i = 0; i < 256; i++) {
-        colorMap[i] = i;
-    }
-
-    // Remap Harkonnen red/crimson tones → white/light-grey (Neutral house)
-    // Darker reds → mid grey; mid reds → light grey; bright reds → near-white
-    colorMap[154] = 13;   // dark red  → dark grey
-    colorMap[155] = 22;   // "
-    colorMap[156] = 24;   // "
-    colorMap[157] = 29;   // mid red   → mid grey
-    colorMap[158] = 30;   // "
-    colorMap[159] = 31;   // "
-    colorMap[160] = PALCOLOR_LIGHTGREY;  // lighter red → light grey
-    colorMap[161] = PALCOLOR_LIGHTGREY;
-    colorMap[162] = PALCOLOR_LIGHTGREY;
-    colorMap[163] = PALCOLOR_WHITE;      // bright red → near-white
-    colorMap[164] = PALCOLOR_WHITE;
-    colorMap[165] = PALCOLOR_WHITE;
-    colorMap[15]  = PALCOLOR_WHITE;
-
-    for(const sdl2::surface_ptr& pSurface : harkonnenPlanetAnimation->getFrames()) {
-        sdl2::surface_ptr newFrame = copySurface(pSurface.get());
-
-        mapColor(newFrame.get(), colorMap);
-
-        sdl2::surface_ptr newFrameWithoutPlanet = copySurface(pSurface.get());
-        SDL_BlitSurface(maskSurface.get(), nullptr, newFrameWithoutPlanet.get(), nullptr);
-        SDL_SetColorKey(newFrameWithoutPlanet.get(), SDL_TRUE, 223);
-        SDL_BlitSurface(newFrameWithoutPlanet.get(), nullptr, newFrame.get(), nullptr);
-
-        SDL_Rect src =  {0, 0, getWidth(heraldNeutral), 126};
-        SDL_Rect dest = calcDrawingRect(heraldNeutral, 12, 66);
-        SDL_BlitSurface(heraldNeutral, &src, newFrame.get(), &dest);
-
-        newAnimation->addFrame(std::move(newFrame));
-    }
-
-    return newAnimation;
-}
-
 sdl2::surface_ptr PictureFactory::mapMentatSurfaceToMercenary(SDL_Surface* ordosMentat) {
     auto mappedSurface = mapSurfaceColorRange(ordosMentat, PALCOLOR_ORDOS, PALCOLOR_MERCENARY);
 
@@ -1102,7 +948,6 @@ sdl2::surface_ptr PictureFactory::mapMentatSurfaceToMercenary(SDL_Surface* ordos
 
 std::unique_ptr<Animation> PictureFactory::mapMentatAnimationToFremen(Animation* fremenAnimation) {
     auto newAnimation = std::make_unique<Animation>();
-    if (!fremenAnimation) return newAnimation;
 
     for(const sdl2::surface_ptr& pSurface : fremenAnimation->getFrames()) {
         newAnimation->addFrame(mapMentatSurfaceToFremen(pSurface.get()));
@@ -1139,7 +984,6 @@ sdl2::surface_ptr PictureFactory::mapMentatSurfaceToSardaukar(SDL_Surface* harko
 
 std::unique_ptr<Animation> PictureFactory::mapMentatAnimationToSardaukar(Animation* harkonnenAnimation) {
     auto newAnimation = std::make_unique<Animation>();
-    if (!harkonnenAnimation) return newAnimation;
 
     for(const sdl2::surface_ptr& pSurface : harkonnenAnimation->getFrames()) {
         newAnimation->addFrame(mapMentatSurfaceToSardaukar(pSurface.get()));
@@ -1153,7 +997,6 @@ std::unique_ptr<Animation> PictureFactory::mapMentatAnimationToSardaukar(Animati
 
 std::unique_ptr<Animation> PictureFactory::mapMentatAnimationToMercenary(Animation* ordosAnimation) {
     auto newAnimation = std::make_unique<Animation>();
-    if (!ordosAnimation) return newAnimation;
 
     for(const sdl2::surface_ptr& pSurface : ordosAnimation->getFrames()) {
         newAnimation->addFrame(mapMentatSurfaceToMercenary(pSurface.get()));
@@ -1161,89 +1004,6 @@ std::unique_ptr<Animation> PictureFactory::mapMentatAnimationToMercenary(Animati
 
     newAnimation->setFrameDurationTime(ordosAnimation->getFrameDurationTime());
     newAnimation->setNumLoops(ordosAnimation->getLoopsLeft());
-
-    return newAnimation;
-}
-
-sdl2::surface_ptr PictureFactory::mapMentatSurfaceToNeutral(SDL_Surface* pSurface) {
-    // Neutral mentat is based on the Ordos (girl) mentat with green robes.
-    // Remap the Ordos house-colour range (176-182, green) to the Neutral grey
-    // range (128-134). Indices 179-182 are already covered by mapSurfaceColorRange.
-    auto mappedSurface = mapSurfaceColorRange(pSurface, PALCOLOR_ORDOS, PALCOLOR_NEUTRAL);
-
-    Uint8 colorMap[256];
-    for(int i = 0; i < 256; i++) {
-        colorMap[i] = i;
-    }
-
-    // Best-effort remap of brownish/reddish hair tones (Dune 2 palette ~224-231)
-    // to neutral grey so the girl's hair reads as grey rather than warm brown.
-    for(int i = 224; i <= 231; i++) {
-        colorMap[i] = PALCOLOR_NEUTRAL + 4;
-    }
-
-    mapColor(mappedSurface.get(), colorMap);
-
-    return mappedSurface;
-}
-
-std::unique_ptr<Animation> PictureFactory::mapMentatAnimationToNeutral(Animation* pAnimation) {
-    auto newAnimation = std::make_unique<Animation>();
-    if (!pAnimation) return newAnimation;
-
-    for(const sdl2::surface_ptr& pSurface : pAnimation->getFrames()) {
-        newAnimation->addFrame(mapMentatSurfaceToNeutral(pSurface.get()));
-    }
-
-    newAnimation->setFrameDurationTime(pAnimation->getFrameDurationTime());
-    newAnimation->setNumLoops(pAnimation->getLoopsLeft());
-
-    return newAnimation;
-}
-
-sdl2::surface_ptr PictureFactory::mapMentatSurfaceToRebels(SDL_Surface* harkonnenMentat) {
-    // Rebels mentat is the Harkonnen portrait (the bearded man) recoloured
-    // to the Rebels grey palette (PALCOLOR_REBELS = 192). The user wanted
-    // the same face as the vanilla Harkonnen briefing, just in the Rebels
-    // faction colours. We use the same remap as Sardaukar (also Harkonnen
-    // -> grey) but with the Rebels grey range so it matches Custom_IBM.pal
-    // entries 192-199.
-    auto mappedSurface = mapSurfaceColorRange(harkonnenMentat, PALCOLOR_HARKONNEN, PALCOLOR_REBELS);
-
-    Uint8 colorMap[256];
-    for(int i = 0; i < 256; i++) {
-        colorMap[i] = i;
-    }
-
-    // Best-effort remap of skin/flesh tones (Dune 2 palette ~54, 56-58, 199-202)
-    // to the Rebels grey range so the face doesn't read as warm Harkonnen
-    // skin against a grey robe. The grey we pick is slightly lighter than
-    // the base PALCOLOR_REBELS so the face stays visible.
-    colorMap[54] = PALCOLOR_REBELS + 4;
-    colorMap[56] = PALCOLOR_REBELS + 4;
-    colorMap[57] = PALCOLOR_REBELS + 5;
-    colorMap[58] = PALCOLOR_REBELS + 5;
-    colorMap[121] = PALCOLOR_REBELS + 3;
-    colorMap[199] = PALCOLOR_REBELS + 2;
-    colorMap[200] = PALCOLOR_REBELS + 3;
-    colorMap[201] = PALCOLOR_REBELS + 3;
-    colorMap[202] = PALCOLOR_REBELS + 5;
-
-    mapColor(mappedSurface.get(), colorMap);
-
-    return mappedSurface;
-}
-
-std::unique_ptr<Animation> PictureFactory::mapMentatAnimationToRebels(Animation* harkonnenAnimation) {
-    auto newAnimation = std::make_unique<Animation>();
-    if (!harkonnenAnimation) return newAnimation;
-
-    for(const sdl2::surface_ptr& pSurface : harkonnenAnimation->getFrames()) {
-        newAnimation->addFrame(mapMentatSurfaceToRebels(pSurface.get()));
-    }
-
-    newAnimation->setFrameDurationTime(harkonnenAnimation->getFrameDurationTime());
-    newAnimation->setNumLoops(harkonnenAnimation->getLoopsLeft());
 
     return newAnimation;
 }

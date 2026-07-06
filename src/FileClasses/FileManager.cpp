@@ -59,20 +59,6 @@ FileManager::FileManager() {
 
     }
 
-    // DuneCity: load Tornie.PAK (optional mod pack with Neutral-house art)
-    for(const auto& sp : search_path) {
-        auto tornie_path = sp + "/Tornie.PAK";
-        if(getCaseInsensitiveFilename(tornie_path)) {
-            try {
-                SDL_Log("%s  %s", md5FromFilename(tornie_path).c_str(), tornie_path.c_str());
-                pakFiles.push_back(std::make_unique<Pakfile>(tornie_path));
-            } catch (std::exception &e) {
-                SDL_Log("Warning: could not open Tornie.PAK: %s", e.what());
-            }
-            break;
-        }
-    }
-
     SDL_Log("%s", "");
 }
 

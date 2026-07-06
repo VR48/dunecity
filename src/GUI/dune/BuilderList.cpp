@@ -229,7 +229,7 @@ void BuilderList::draw(Point position) {
         for(const BuildItem& buildItem : pBuilder->getBuildList()) {
 
             if((i >= currentListPos) && (i < currentListPos+getNumButtons(getSize().y) )) {
-                SDL_Texture* pTexture = resolveItemPicture(buildItem.itemID, static_cast<HOUSETYPE>(pBuilder->getOwner()->getHouseID()));
+                SDL_Texture* pTexture = resolveItemPicture(buildItem.itemID);
 
                 const SDL_Rect dest = calcDrawingRect(pTexture, position.x + getButtonPosition(i - currentListPos).x, position.y + getButtonPosition(i - currentListPos).y);
 
