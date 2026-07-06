@@ -3679,6 +3679,32 @@ SDL_Texture* GFXManager::getZoomedObjPic(unsigned int id, int house, unsigned in
         // slot instead of the house's own slot.
         objPic[id][house][z] = mapSurfaceColorRange(objPic[id][HOUSE_HARKONNEN][z].get(), PALCOLOR_HARKONNEN, destSlot);
 
+        // DuneCity 1.0.426: HOUSE_REBELS needs the Custom_IBM.pal
+        // dark grey written to the SURFACE palette at
+        // PALCOLOR_REBELS..+7 (192-199) so the engine reads the
+        // dark grey color instead of the source's vanilla
+        // Fremen orange. Without this, the surface palette at
+        // 192-199 stays as vanilla Fremen orange (copied from
+        // the source via SDL_ConvertSurface), and the remapped
+        // pixels at 192-199 render as orange instead of dark
+        // grey. The runtime palette[] has the dark grey at
+        // 192-199 (set by v1.0.410), but the engine reads from
+        // the SURFACE palette, not the runtime palette.
+        //
+        // Tornie's screenshot v1.0.425 showed the 8th house
+        // (HOUSE_REBELS) Construction Yard rendered as ORANGE
+        // instead of dark grey - the visible bug.
+        // The fix writes the Custom_IBM.pal dark grey
+        // (customColorRamp[192..199]) to the surface palette at
+        // PALCOLOR_REBELS..+7 so the engine reads the correct
+        // color.
+        if(house == HOUSE_REBELS && objPic[id][house][z] && objPic[id][house][z]->format->palette) {
+            for(int k = 0; k < 8; k++) {
+                objPic[id][house][z]->format->palette->colors[PALCOLOR_REBELS + k] =
+                    customColorRamp[PALCOLOR_REBELS + k];
+            }
+        }
+
         // DuneCity 1.0.383: removed the ibmPalette[PALCOLOR_FREMEN..+15]
         // restore for HOUSE_FREMEN. The previous code overrode the
         // objPic palette with vanilla IBM.PAL colors at 192-207, which
