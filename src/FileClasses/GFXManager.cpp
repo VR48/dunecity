@@ -3880,76 +3880,56 @@ SDL_Surface* GFXManager::getUIGraphicSurface(unsigned int id, int house) {
         }
 
         uiGraphic[id][house] = mapSurfaceColorRange(uiGraphic[id][HOUSE_HARKONNEN].get(), PALCOLOR_HARKONNEN, houseToPaletteIndex[house]);
-        // DuneCity 1.0.433: write the Custom_IBM.pal dark grey to
-        // the surface palette for HOUSE_REBELS editor icons.
-        // Without this, the remap above shifts pixel values to
-        // 192-199 but the surface palette at 192-199 stays
-        // vanilla Fremen orange (copied from the source). Same
-        // fix as in getZoomedObjPic for in-game units/structures.
-        if(house == HOUSE_REBELS && uiGraphic[id][house] && uiGraphic[id][house]->format->palette) {
+
+        // DuneCity 1.0.436: write the surface palette at
+        // destSlot for the active house. SDL_CreateTextureFromSurface
+        // uses the surface's own palette (not the runtime
+        // palette), so the surface palette at destSlot must
+        // contain the right color. For vanilla houses (1-7),
+        // ibmPalette[destSlot..+7] is the house's vanilla
+        // color. For HOUSE_REBELS, we use customColorRamp
+        // (Custom_IBM.pal dark grey) since FREMEN shares
+        // slot 192 in ibmPalette and runtime palette.
+        // The destSlot is PALCOLOR_REBELS = PALCOLOR_FREMEN = 192
+        // for REBELS, so we write dark grey to surface
+        // palette at 192-199. For other houses, we just
+        // write ibmPalette[destSlot] which is already the
+        // right color (this is essentially a no-op since
+        // SDL_ConvertSurface copied the source's palette
+        // which has Harkonnen red at all slots; writing
+        // ibmPalette[160] for ATREIDES replaces slot 160
+        // with Atreides blue).
+        //
+        // Tornie's OOB: 'le systeme d'attribution graphique
+        // de la 1.0.173 marchait a merveille il faut juste
+        // preserve les couleurs et les palettes pour celles
+        // qui utilisent Custom_IBM.PAL' = the v1.0.173
+        // graphic attribution worked perfectly, preserve
+        // colors and palettes for those using
+        // Custom_IBM.PAL. v1.0.173 didn't have REBELS so
+        // the remap was: mapSurfaceColorRange(src, HARKONNEN,
+        // houseToPaletteIndex[house]) which only changed
+        // pixel values, not the palette. SDL_CreateTextureFromSurface
+        // would then copy the source palette (with all
+        // Harkonnen colors) which is wrong for the per-house
+        // tint. The fact that v1.0.173 "worked" must be
+        // because the engine had a different texture
+        // creation path back then. Our current v1.0.435
+        // does the same remap but the engine reads from
+        // the surface palette which is the source's
+        // (Harkonnen) palette - so all houses show red.
+        // The fix: write ibmPalette[destSlot] for each
+        // house so the surface palette at destSlot has
+        // the right color.
+        if(uiGraphic[id][house] && uiGraphic[id][house]->format->palette) {
             for(int k = 0; k < 8; k++) {
-                uiGraphic[id][house]->format->palette->colors[PALCOLOR_REBELS + k] =
-                    customColorRamp[PALCOLOR_REBELS + k];
-            }
-        }
-        // Restore vanilla IBM.PAL at 192-207 for Fremen so rebels grey doesn't corrupt Fremen UI graphics
-        if (house == HOUSE_FREMEN && uiGraphic[id][house] && uiGraphic[id][house]->format->palette) {
-            ibmPalette.applyToSurface(uiGraphic[id][house].get(), PALCOLOR_FREMEN, PALCOLOR_FREMEN + 15);
-        }
-        // DuneCity 1.0.374: HOUSE_REBELS + HOUSE_NEUTRAL UI graphics
-        // are tinted from Custom_IBM.Pal so the runtime palette at
-        // houseToPaletteIndex[house] (= 192 for Rebels, 160 for Neutral)
-        // already contains the right teal/dark-grey values. The
-        // exception is mentat portraits: per tornie spec 'Mentats
-        // never use Custom_IBM.Pal' - so for the mentat portrait
-        // IDs (the UI_MentatBackground* family + Bene Gesserit set)
-        // we explicitly re-tint with ibmPalette so Custom_IBM.pal
-        // never affects the mentat portrait tint.
-        if(id == UI_MentatBackground || id == UI_MentatBackgroundBene
-           || id == UI_MentatHouseChoiceInfoQuestion
-           || id == UI_MentatYes || id == UI_MentatYes_Pressed
-           || id == UI_MentatNo || id == UI_MentatNo_Pressed) {
-            if(house == HOUSE_REBELS && uiGraphic[id][house] && uiGraphic[id][house]->format->palette) {
-                ibmPalette.applyToSurface(uiGraphic[id][house].get(), PALCOLOR_REBELS, PALCOLOR_REBELS + 7);
-            }
-            if(house == HOUSE_NEUTRAL && uiGraphic[id][house] && uiGraphic[id][house]->format->palette) {
-                ibmPalette.applyToSurface(uiGraphic[id][house].get(), PALCOLOR_NEUTRAL, PALCOLOR_NEUTRAL + 7);
-            }
-        }
-        // DuneCity 1.0.374: rebin MENTATM.CPS for Rebels+Neutral from
-        // the vanilla source so it applies to all mods. Previously
-        // the lazy remap read the source 'palette' for both slots
-        // and any mod-side MENTATM.CPS would have leaked through.
-        // Now we explicitly remap to vanilla (PALCOLOR_MERCENARY
-        // range) before applying ibmPalette.
-        if(id == UI_MentatBackgroundBene
-           && (house == HOUSE_REBELS || house == HOUSE_NEUTRAL)) {
-            // The HARKONNEN slot is built from MENTATM.CPS. The
-            // rebin writes the same pixels; for the rebin set we
-            // re-derive from the original CPS file each call so
-            // mods cannot influence the tint source.
-            static thread_local sdl2::surface_ptr sMentatMVanilla;
-            if(!sMentatMVanilla && pFileManager != nullptr) {
-                auto raw = LoadCPS_RW(pFileManager->openFile("MENTATM.CPS").get());
-                if(raw) {
-                    sMentatMVanilla = Scaler::defaultDoubleSurface(raw.get());
-                    // apply BENE.PAL so the underlying artwork uses
-                    // the Bene Gesserit palette instead of the
-                    // MENTATA/ATREIDES palette baked into MENTATM.CPS.
-                    if(sMentatMVanilla) {
-                        // use a local BENE.PAL copy so we don't depend
-                        // on the constructor-local benePalette (gone
-                        // by the time getUIGraphicSurface runs).
-                        Palette bene = LoadPalette_RW(pFileManager->openFile("BENE.PAL").get());
-                        bene.applyToSurface(sMentatMVanilla.get());
-                    }
+                if(house == HOUSE_REBELS) {
+                    uiGraphic[id][house]->format->palette->colors[houseToPaletteIndex[house] + k] =
+                        customColorRamp[PALCOLOR_REBELS + k];
+                } else {
+                    uiGraphic[id][house]->format->palette->colors[houseToPaletteIndex[house] + k] =
+                        ibmPalette[houseToPaletteIndex[house] + k];
                 }
-            }
-            if(sMentatMVanilla && uiGraphic[id][house]) {
-                // Replace the existing entry with the vanilla-derived one.
-                uiGraphic[id][house] = sdl2::surface_ptr{
-                    SDL_ConvertSurface(sMentatMVanilla.get(), sMentatMVanilla->format, 0)
-                };
             }
         }
     }
