@@ -3695,6 +3695,28 @@ SDL_Texture* GFXManager::getZoomedObjPic(unsigned int id, int house, unsigned in
         // remapped to the active house slot, so the engine
         // reads the runtime palette at the active slot.
 
+        // DuneCity 1.0.462: actual mapSurfaceColorRange call.
+        // The v1.0.443 patch above was missing the actual
+        // remap call (only comments remained). This was the
+        // root cause of the units + structures invisibility
+        // bug: pixel values were never remapped to the active
+        // house slot, so all surfaces stayed at HARKONNEN's
+        // slot (144-151) and the engine read HARKONNEN red
+        // for everything.
+        objPic[id][house][z] = mapSurfaceColorRange(objPic[id][HOUSE_HARKONNEN][z].get(), PALCOLOR_HARKONNEN, destSlot);
+
+        // DuneCity 1.0.462: for HOUSE_REBELS, also write
+        // Custom_IBM.PAL[52..59] dark grey ramp to the
+        // surface palette at destSlot..+7. This ensures
+        // the surface palette read path also shows dark grey
+        // for REBELS (not just the runtime palette read path).
+        if(house == HOUSE_REBELS && objPic[id][house][z] && objPic[id][house][z]->format->palette) {
+            for(int k = 0; k < 8; k++) {
+                objPic[id][house][z]->format->palette->colors[destSlot + k] =
+                    palette[52 + k];
+            }
+        }
+
 // DuneCity 1.0.383: removed the ibmPalette[PALCOLOR_FREMEN..+15]
         // restore for HOUSE_FREMEN. The previous code overrode the
         // objPic palette with vanilla IBM.PAL colors at 192-207, which
