@@ -17,6 +17,7 @@
 
 #include <FileClasses/GFXManager.h>
 
+#include <set>
 #include <globals.h>
 
 #include <FileClasses/FileManager.h>
@@ -3852,19 +3853,16 @@ SDL_Surface* GFXManager::getUIGraphicSurface(unsigned int id, int house) {
     if(uiGraphic[id][house] == nullptr) {
         // remap to this color
         if(uiGraphic[id][HOUSE_HARKONNEN] == nullptr) {
-            // DuneCity 1.0.373: instead of throwing, log a warning
-            // and return a 1x1 black surface placeholder. The
-            // editor can stay open with the missing icon rendered
-            // as a flat colour; v1.0.367-1.0.369 wrapped this in
-            // a try/catch that silently swallowed the throw, so the
-            // editor never opened. v1.0.372 added a null-coalescing
-            // guard for the Sonic Tank build which fixed that one
-            // call but left other unguarded editor icons (FlameTank,
-            // Deviator, Devastator, Launcher) that fail silently.
-            // Until those are individually guarded, this catch-all
-            // is the simplest fix: the editor can open with a
-            // placeholder for any missing icon.
-            SDL_Log("GFXManager::getUIGraphicSurface(): UI Graphic with ID %u is not loaded! Editor will show placeholder.", id);
+            // DuneCity 1.0.424: log the warning ONCE per ID
+            // instead of every frame. The editor sidebar
+            // requests the icon every frame which floods the
+            // log with hundreds of warnings. Track which IDs
+            // we've already logged and skip the log for those.
+            static std::set<unsigned int> sLoggedMissing;
+            if(sLoggedMissing.find(id) == sLoggedMissing.end()) {
+                SDL_Log("GFXManager::getUIGraphicSurface(): UI Graphic with ID %u is not loaded! Editor will show placeholder (suppressing further logs for this ID).", id);
+                sLoggedMissing.insert(id);
+            }
             static sdl2::surface_ptr sPlaceholder;
             if(!sPlaceholder) {
                 sPlaceholder = sdl2::surface_ptr{ SDL_CreateRGBSurface(0, 1, 1, 32,
