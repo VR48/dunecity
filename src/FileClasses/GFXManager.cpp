@@ -843,6 +843,63 @@ GFXManager::GFXManager() {
         }
         SDL_Log("DuneCity 1.0.420: HARKONNEN source palette normalized (all house slots = vanilla Harkonnen red)");
     }
+    // DuneCity 1.0.421: per-house clone of UI_MapEditor_*
+    // icons. The vanilla code only creates uiGraphic at
+    // HOUSE_HARKONNEN. The editor sidebar requests the
+    // icon for the active house via
+    // getUIGraphicSurface(UI_MapEditor_Tank, newHouse)
+    // (see MapEditorInterface.cpp:1539), which returns
+    // null for non-HARKONNEN houses. The fix clones
+    // each UI_MapEditor_* graphic for all 8 houses
+    // using the per-house lazy remap path (mapSurfaceColorRange
+    // + surface palette write). For REBELS, the Custom_IBM.pal
+    // dark grey is applied.
+    {
+        static const int editorUnitIcons[] = {
+            UI_MapEditor_Harvester,
+            UI_MapEditor_Trike,
+            UI_MapEditor_Quad,
+            UI_MapEditor_Tank,
+            UI_MapEditor_SiegeTank,
+            UI_MapEditor_Devastator,
+        };
+        for (int ui : editorUnitIcons) {
+            if(!uiGraphic[ui][HOUSE_HARKONNEN]) continue;
+            for (int h = 1; h < NUM_HOUSES; h++) {
+                if (uiGraphic[ui][h]) continue;
+                SDL_Surface* src = uiGraphic[ui][HOUSE_HARKONNEN].get();
+                if (!src) continue;
+                sdl2::surface_ptr clone{ SDL_ConvertSurface(src, src->format, 0) };
+                if (!clone) continue;
+                // Apply the per-house pixel remap.
+                int destSlot = houseToPaletteIndex[h];
+                clone = mapSurfaceColorRange(clone.get(),
+                                             PALCOLOR_HARKONNEN, destSlot);
+                if (clone && clone->format->palette) {
+                    SDL_Color activeColor;
+                    for (int k = 0; k < 8; k++) {
+                        if (h == HOUSE_REBELS) {
+                            activeColor = customColorRamp[PALCOLOR_REBELS + k];
+                        } else {
+                            activeColor = ibmPalette[houseToPaletteIndex[h] + k];
+                        }
+                        // Write all 7 house slots to the active color
+                        // (same as v1.0.419 to avoid multi-color ghost).
+                        clone->format->palette->colors[PALCOLOR_NEUTRAL + k]   = activeColor;
+                        clone->format->palette->colors[PALCOLOR_HARKONNEN + k] = activeColor;
+                        clone->format->palette->colors[PALCOLOR_ATREIDES + k]  = activeColor;
+                        clone->format->palette->colors[PALCOLOR_ORDOS + k]     = activeColor;
+                        clone->format->palette->colors[PALCOLOR_FREMEN + k]    = activeColor;
+                        clone->format->palette->colors[PALCOLOR_SARDAUKAR + k] = activeColor;
+                        clone->format->palette->colors[PALCOLOR_MERCENARY + k] = activeColor;
+                    }
+                }
+                uiGraphic[ui][h] = std::move(clone);
+            }
+        }
+        SDL_Log("DuneCity 1.0.421: per-house UI_MapEditor_* icon clones created (UI_MapEditor_Tank/Quad/Siege/Devastator/Harvester/Trike per house)");
+    }
+
 
 
 
