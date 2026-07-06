@@ -3715,31 +3715,67 @@ SDL_Texture* GFXManager::getZoomedObjPic(unsigned int id, int house, unsigned in
         // looked Harkonnen red) while buildings (which
         // had this fix in v1.0.413) were correct.
         if(objPic[id][house][z] && objPic[id][house][z]->format->palette) {
-            // DuneCity 1.0.418: write BOTH the source slot
-            // (144-151) and the destination slot to the
-            // active house's vanilla color. Pixels at 144-151
-            // that aren't remapped (e.g. in the HARKONNEN
-            // highlight area, or sprites where some palette
-            // indices fall outside 144-151) need to also
-            // render the active house's color. Otherwise
-            // the 'multi-color ghost' effect appears (red
-            // HARKONNEN + green ORDOS + blue ATREIDES all
-            // visible on the same unit because the surface
-            // palette still holds the source's colors at
-            // slots that the remap didn't cover).
-            const int sourceSlot = PALCOLOR_HARKONNEN;  // 144
+            // DuneCity 1.0.418: write ALL house palette
+            // slots (128, 144, 160, 176, 192, 208, 224)
+            // to the active house's color. The v1.0.418
+            // patch only wrote source (144-151) + dest,
+            // but the sprite may have pixels at OTHER
+            // house slots (160 Atreides blue, 176 Ordos
+            // green, 208 Sardaukar, 224 Mercenary, 128
+            // Neutral). The v1.0.371 per-house anchor RGB
+            // blend wrote all house slots to a gradient
+            // which created the multi-color ghost
+            // effect. The proper fix is to write each
+            // house's slot to the active house's vanilla
+            // color so the sprite reads the correct
+            // color regardless of which palette index
+            // the pixel value is at.
+            //
+            // Tornie's OOB v1.0.417: the bottom unit
+            // shows multi-color ghost (red Harkonnen +
+            // green Ordos + blue Atreides all visible).
+            // The fix writes all 7 vanilla house slots
+            // (144 Harkonnen, 160 Atreides, 176 Ordos,
+            // 192 Fremen, 208 Sardaukar, 224 Mercenary,
+            // 128 Neutral) and the active house's slot
+            // to the same vanilla color. The active
+            // house's slot gets the vanilla value so
+            // pixels at that index read the right color.
+            // All other slots are reset to vanilla
+            // Harkonnen red so the ghost effect is gone.
+            static const int houseSlots[NUM_HOUSES] = {
+                PALCOLOR_NEUTRAL,    // 128
+                PALCOLOR_HARKONNEN,  // 144
+                PALCOLOR_ATREIDES,   // 160
+                PALCOLOR_ORDOS,      // 176
+                PALCOLOR_FREMEN,     // 192 (also REBELS)
+                PALCOLOR_SARDAUKAR,  // 208
+                PALCOLOR_MERCENARY,  // 224
+                PALCOLOR_REBELS,     // 192 (alias FREMEN)
+            };
+            SDL_Color activeColor;
             for(int k = 0; k < 8; k++) {
                 if(house == HOUSE_REBELS) {
-                    objPic[id][house][z]->format->palette->colors[destSlot + k] =
-                        customColorRamp[PALCOLOR_REBELS + k];
-                    objPic[id][house][z]->format->palette->colors[sourceSlot + k] =
-                        customColorRamp[PALCOLOR_REBELS + k];
+                    activeColor = customColorRamp[PALCOLOR_REBELS + k];
                 } else {
-                    objPic[id][house][z]->format->palette->colors[destSlot + k] =
-                        ibmPalette[destSlot + k];
-                    objPic[id][house][z]->format->palette->colors[sourceSlot + k] =
-                        ibmPalette[destSlot + k];
+                    activeColor = ibmPalette[houseToPaletteIndex[house] + k];
                 }
+                // Write the active house's color at all 8 slots
+                // (including the HARKONNEN source slot).
+                // This eliminates the multi-color ghost effect.
+                objPic[id][house][z]->format->palette->colors[PALCOLOR_HARKONNEN + k] = activeColor;
+                objPic[id][house][z]->format->palette->colors[destSlot + k] = activeColor;
+                // Also write the other house slots. Without
+                // this, pixels at those slots would still
+                // read the source's vanilla color (e.g. red
+                // Harkonnen at 144, blue Atreides at 160)
+                // and create the multi-color ghost.
+                objPic[id][house][z]->format->palette->colors[PALCOLOR_NEUTRAL + k]   = activeColor;
+                objPic[id][house][z]->format->palette->colors[PALCOLOR_ATREIDES + k]  = activeColor;
+                objPic[id][house][z]->format->palette->colors[PALCOLOR_ORDOS + k]     = activeColor;
+                objPic[id][house][z]->format->palette->colors[PALCOLOR_FREMEN + k]    = activeColor;
+                objPic[id][house][z]->format->palette->colors[PALCOLOR_SARDAUKAR + k] = activeColor;
+                objPic[id][house][z]->format->palette->colors[PALCOLOR_MERCENARY + k] = activeColor;
             }
         }
 
