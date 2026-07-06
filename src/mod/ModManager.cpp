@@ -917,8 +917,37 @@ bool ModManager::dunecityNeedsReseed() const {
 }
 
 bool ModManager::tornieNeedsReseed() const {
-    // DuneCity 1.0.492: for now, only seed once (modExists
-    // check handles it)
+    // DuneCity 1.0.494: re-seed on version mismatch (same
+    // pattern as dunecityNeedsReseed). Without this, the
+    // Tornie mod files seeded by an older version (e.g.
+    // v1.0.492 which had the wrong install path) would
+    // persist in the user mods dir even after a new version
+    // is installed.
+    std::string torniePath = getModPath(TORNIE_MOD_NAME);
+
+    std::string modIniPath = torniePath + "/" + MOD_INI_FILE;
+    std::string objectDataPath = torniePath + "/" + OBJECT_DATA_FILE;
+    std::string gameOptionsPath = torniePath + "/" + GAME_OPTIONS_FILE;
+
+    if (!existsFile(modIniPath)) {
+        SDL_Log("ModManager: Tornie missing %s, needs reseed", MOD_INI_FILE);
+        return true;
+    }
+    if (!existsFile(objectDataPath)) {
+        SDL_Log("ModManager: Tornie missing %s, needs reseed", OBJECT_DATA_FILE);
+        return true;
+    }
+    if (!existsFile(gameOptionsPath)) {
+        SDL_Log("ModManager: Tornie missing %s, needs reseed", GAME_OPTIONS_FILE);
+        return true;
+    }
+
+    // Check if installed Tornie ObjectData.ini differs from defaults
+    if (installedObjectDataDiffersFromDefaults(TORNIE_MOD_NAME)) {
+        SDL_Log("ModManager: Tornie %s drifted from defaults, needs reseed", OBJECT_DATA_FILE);
+        return true;
+    }
+
     return false;
 }
 
