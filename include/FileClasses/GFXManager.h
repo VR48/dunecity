@@ -117,6 +117,8 @@ typedef enum {
     ObjPic_Terrain_Tracks,
     ObjPic_Star,
     ObjPic_RebelHarvester,        ///< Tornie: dedicated sprite for Rebel-only Harvester
+    ObjPic_Worfinery,             ///< Tornie: WOR + Refinery combo (48x64 = 2 vertical frames at 3x2)
+    ObjPic_TechCenter,            ///< Tornie: Tech Center (Palace-equivalent, 48x64 = 2 vertical frames at 3x2)
     ObjPic_ZoneResidential,
     ObjPic_ZoneCommercial,
     ObjPic_ZoneIndustrial,
@@ -415,11 +417,13 @@ typedef enum {
     UI_MapEditor_ConstructionYard,
     UI_MapEditor_Windtrap,
     UI_MapEditor_AdvancedWindTrap,   ///< Tornie: 3x3 high-output power building
+    UI_MapEditor_AdvancedWindTrapMK2, ///< Tornie: variant of Adv Windtrap (no Rebels)
     UI_MapEditor_Radar,
     UI_MapEditor_Silo,
     UI_MapEditor_IX,
     UI_MapEditor_Barracks,
     UI_MapEditor_WOR,
+    UI_MapEditor_Worfinery,            ///< Tornie: WOR + Refinery combo
     UI_MapEditor_LightFactory,
     UI_MapEditor_Refinery,
     UI_MapEditor_HighTechFactory,
@@ -427,6 +431,7 @@ typedef enum {
     UI_MapEditor_RepairYard,
     UI_MapEditor_Starport,
     UI_MapEditor_Palace,
+    UI_MapEditor_TechCenter,               ///< Tornie: Palace-equivalent that spawns vehicles
     UI_MapEditor_Soldier,
     UI_MapEditor_Trooper,
     UI_MapEditor_Harvester,

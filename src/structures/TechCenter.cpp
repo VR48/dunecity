@@ -52,11 +52,15 @@ void TechCenter::init() {
     itemID = Structure_TechCenter;
     owner->incrementStructures(itemID);
 
-    graphicID = ObjPic_Palace;   // base sprite = Palace; animation overlay applied later
+    graphicID = ObjPic_TechCenter;
     graphic = pGFXManager->getObjPic(graphicID, getOwner()->getHouseID());
 
+    // 2 vertical frames at 3x2 tiles per frame. Animation ticks at
+    // ConstructionYard speed.
     numImagesX = 1;
-    numImagesY = 1;
+    numImagesY = 2;
+    firstAnimFrame = 0;
+    lastAnimFrame = 1;
 }
 
 TechCenter::~TechCenter() = default;

@@ -41,11 +41,16 @@ void Worfinery::init() {
     itemID = Structure_Worfinery;
     owner->incrementStructures(itemID);
 
-    graphicID = ObjPic_WOR;     // base sprite = WOR; animation overlay applied later
+    graphicID = ObjPic_Worfinery;
     graphic = pGFXManager->getObjPic(graphicID, getOwner()->getHouseID());
 
+    // 2 vertical frames at 3x2 tiles per frame. Animation ticks frame
+    // index 0..1 at ConstructionYard speed (the base StructureBase
+    // animation uses an internal counter that matches CY's cadence).
     numImagesX = 1;
-    numImagesY = 1;
+    numImagesY = 2;
+    firstAnimFrame = 0;
+    lastAnimFrame = 1;
 }
 
 Worfinery::~Worfinery() = default;

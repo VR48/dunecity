@@ -84,6 +84,8 @@ static const Coord objPicTiles[] {
     { 8, 1 },   // ObjPic_HighTechFactory
     { 4, 1 },   // ObjPic_IX
     { 4, 1 },   // ObjPic_Palace
+    { 1, 2 },   // ObjPic_Worfinery (Tornie — 2 vertical frames at 3x2 tiles, animated at ConstructionYard speed)
+    { 1, 2 },   // ObjPic_TechCenter (Tornie — 2 vertical frames at 3x2 tiles, animated at ConstructionYard speed)
     { 10, 1 },  // ObjPic_RepairYard
     { 10, 1 },  // ObjPic_Starport
     { 10, 1 },  // ObjPic_GunTurret
@@ -1230,6 +1232,25 @@ GFXManager::GFXManager() {
     objPic[ObjPic_Star][HOUSE_HARKONNEN][1] = LoadPNG_RW(pFileManager->openFile("Star7x7.png").get());
     objPic[ObjPic_Star][HOUSE_HARKONNEN][2] = LoadPNG_RW(pFileManager->openFile("Star11x11.png").get());
 
+    // Load ibmPalette early so the Tornie RocketTrikeMask (and any later
+    // 8-bit palette-indexed sprite) can be remapped at construction time.
+    // Custom_IBM.PAL is the Tornie replacement of vanilla IBM.PAL; if
+    // neither is found, fall back to an empty 256-color palette
+    // (applyToSurface becomes a no-op).
+    Palette ibmPalette(256);
+    try {
+        if(pFileManager->exists("Custom_IBM.PAL")) {
+            ibmPalette = LoadPalette_RW(pFileManager->openFile("Custom_IBM.PAL").get());
+        } else if(pFileManager->exists("IBM.PAL")) {
+            ibmPalette = LoadPalette_RW(pFileManager->openFile("IBM.PAL").get());
+        }
+        SDL_Log("GFXManager: ibmPalette loaded (%d colors, source=%s)",
+                ibmPalette.getNumColors(),
+                pFileManager->exists("Custom_IBM.PAL") ? "Custom_IBM.PAL" : "IBM.PAL");
+    } catch(const std::exception& e) {
+        SDL_Log("GFXManager: ibmPalette load failed (%s) — Tornie sprite tinting disabled", e.what());
+    }
+
     // DuneCity 1.0.503: Rocket Trike uses its own dedicated sprite (8-frame,
     // 1-tile-tall strip, 128x16) with a separate RocketTrikeMask.png that holds
     // the per-house colour tint via the benePalette remap path. Restored from
@@ -1247,7 +1268,13 @@ GFXManager::GFXManager() {
             if(pFileManager->exists("RocketTrikeMask.png")) {
                 auto rtMask = LoadPNG_RW(pFileManager->openFile("RocketTrikeMask.png").get());
                 if(rtMask && rtMask->format->BitsPerPixel == 8 && rtMask->format->palette) {
-                    benePalette.applyToSurface(rtMask.get());
+                    // v1.0.509 (Tornie OOB): switch from benePalette to ibmPalette so
+                    // the RocketTrike participates in the per-house color remap that
+                    // mapSurfaceColorRange drives from PALCOLOR_HARKONNEN. benePalette
+                    // was the original v1.0.250 fix but gave the RocketTrike a fixed
+                    // red tint that didn't shift with the owning house — that was a
+                    // mistake per the user.
+                    ibmPalette.applyToSurface(rtMask.get());
                     objPic[ObjPic_RocketTrike][HOUSE_HARKONNEN][0] = std::move(rtMask);
                     usedPaletteIndexed = true;
                     SDL_Log("GFXManager: Loaded RocketTrikeMask.png (palette-indexed, per-house remap)");
@@ -1288,23 +1315,6 @@ GFXManager::GFXManager() {
         } catch(const std::exception& e) {
             SDL_Log("GFXManager: RocketTrike sprite load failed (%s) — falling back to vanilla Trike", e.what());
         }
-    }
-
-    // Load ibmPalette for Tornie 8-bit palette-indexed sprites. Custom_IBM.PAL
-    // is the Tornie replacement of vanilla IBM.PAL; if neither is found, fall
-    // back to an empty 256-color palette (applyToSurface becomes a no-op).
-    Palette ibmPalette(256);
-    try {
-        if(pFileManager->exists("Custom_IBM.PAL")) {
-            ibmPalette = LoadPalette_RW(pFileManager->openFile("Custom_IBM.PAL").get());
-        } else if(pFileManager->exists("IBM.PAL")) {
-            ibmPalette = LoadPalette_RW(pFileManager->openFile("IBM.PAL").get());
-        }
-        SDL_Log("GFXManager: ibmPalette loaded (%d colors, source=%s)",
-                ibmPalette.getNumColors(),
-                pFileManager->exists("Custom_IBM.PAL") ? "Custom_IBM.PAL" : "IBM.PAL");
-    } catch(const std::exception& e) {
-        SDL_Log("GFXManager: ibmPalette load failed (%s) — Tornie sprite tinting disabled", e.what());
     }
 
     SDL_Log("GFXManager: Loading FlameTank.png...");
@@ -1370,6 +1380,44 @@ GFXManager::GFXManager() {
     } catch(std::exception& e) {
         SDL_Log("GFXManager: %s — EliteSiegeTank sprite missing, units will fall back to placeholder", e.what());
     }
+
+    // DuneCity 1.0.509: Tornie Worfinery + Tech Center dedicated sprites.
+    // 48x64 PNG, 8-bit palette-indexed, 2 vertical frames (3 tiles wide × 2 tiles tall
+    // per frame). Animation runs at ConstructionYard speed (handled by the
+    // structure itself via frame index based on game cycle).
+    auto loadTornieStructureSprite = [&](unsigned int objPicEnum,
+                                          const char* pngName,
+                                          const char* label) {
+        try {
+            if(!pFileManager->exists(pngName)) {
+                SDL_Log("GFXManager: %s sprite '%s' missing — using vanilla fallback", label, pngName);
+                return;
+            }
+            auto raw = LoadPNG_RW(pFileManager->openFile(pngName).get());
+            if(!raw) {
+                SDL_Log("GFXManager: %s sprite '%s' failed to decode — using vanilla fallback", label, pngName);
+                return;
+            }
+            if(raw->format->BitsPerPixel == 8 && raw->format->palette) {
+                ibmPalette.applyToSurface(raw.get());
+            }
+            objPic[objPicEnum][HOUSE_HARKONNEN][0] = std::move(raw);
+            // Generate zoom levels 1 and 2
+            if(objPic[objPicEnum][HOUSE_HARKONNEN][0]) {
+                objPic[objPicEnum][HOUSE_HARKONNEN][1] =
+                    Scaler::defaultDoubleSurface(objPic[objPicEnum][HOUSE_HARKONNEN][0].get());
+                if(objPic[objPicEnum][HOUSE_HARKONNEN][1]) {
+                    objPic[objPicEnum][HOUSE_HARKONNEN][2] =
+                        Scaler::defaultDoubleSurface(objPic[objPicEnum][HOUSE_HARKONNEN][1].get());
+                }
+            }
+            SDL_Log("GFXManager: %s sprite '%s' loaded (all zoom levels)", label, pngName);
+        } catch(std::exception& e) {
+            SDL_Log("GFXManager: %s — %s sprite load failed, using vanilla fallback", e.what(), label);
+        }
+    };
+    loadTornieStructureSprite(ObjPic_Worfinery,  "Worfinery.png",  "Worfinery");
+    loadTornieStructureSprite(ObjPic_TechCenter, "TechCenter.png", "TechCenter");
 
     SDL_Color fogTransparent = { 0, 0, 0, 96};
     SDL_SetPaletteColors(objPic[ObjPic_Terrain_HiddenFog][HOUSE_HARKONNEN][0]->format->palette, &fogTransparent, PALCOLOR_BLACK, 1);
@@ -2041,11 +2089,21 @@ GFXManager::GFXManager() {
     SDL_Color windtrapColor = { 70, 70, 70, 255};
     SDL_SetPaletteColors(uiGraphic[UI_MapEditor_Windtrap][HOUSE_HARKONNEN]->format->palette, &windtrapColor, PALCOLOR_WINDTRAP_COLORCYCLE, 1);
     uiGraphic[UI_MapEditor_AdvancedWindTrap][HOUSE_HARKONNEN] = getSubPicture(objPic[ObjPic_Windtrap][HOUSE_HARKONNEN][0].get(),3*3*D2_TILESIZE,0,3*D2_TILESIZE,3*D2_TILESIZE);
+    // Tornie: Adv Windtrap MK2 variant — same sprite as vanilla Adv Windtrap
+    uiGraphic[UI_MapEditor_AdvancedWindTrapMK2][HOUSE_HARKONNEN] = getSubPicture(objPic[ObjPic_Windtrap][HOUSE_HARKONNEN][0].get(),3*3*D2_TILESIZE,0,3*D2_TILESIZE,3*D2_TILESIZE);
     uiGraphic[UI_MapEditor_Radar][HOUSE_HARKONNEN] = getSubPicture(objPic[ObjPic_Radar][HOUSE_HARKONNEN][0].get(),2*2*D2_TILESIZE,0,2*D2_TILESIZE,2*D2_TILESIZE);
     uiGraphic[UI_MapEditor_Silo][HOUSE_HARKONNEN] = getSubPicture(objPic[ObjPic_Silo][HOUSE_HARKONNEN][0].get(),2*2*D2_TILESIZE,0,2*D2_TILESIZE,2*D2_TILESIZE);
     uiGraphic[UI_MapEditor_IX][HOUSE_HARKONNEN] = getSubPicture(objPic[ObjPic_IX][HOUSE_HARKONNEN][0].get(),2*2*D2_TILESIZE,0,2*D2_TILESIZE,2*D2_TILESIZE);
     uiGraphic[UI_MapEditor_Barracks][HOUSE_HARKONNEN] = getSubPicture(objPic[ObjPic_Barracks][HOUSE_HARKONNEN][0].get(),2*2*D2_TILESIZE,0,2*D2_TILESIZE,2*D2_TILESIZE);
     uiGraphic[UI_MapEditor_WOR][HOUSE_HARKONNEN] = getSubPicture(objPic[ObjPic_WOR][HOUSE_HARKONNEN][0].get(),2*2*D2_TILESIZE,0,2*D2_TILESIZE,2*D2_TILESIZE);
+    // Tornie: Worfinery = 48x64 PNG, take top 2-tile-tall frame (first of 2 vertical frames).
+    if(objPic[ObjPic_Worfinery][HOUSE_HARKONNEN][0]) {
+        uiGraphic[UI_MapEditor_Worfinery][HOUSE_HARKONNEN] = getSubPicture(
+            objPic[ObjPic_Worfinery][HOUSE_HARKONNEN][0].get(), 0, 0, 3*D2_TILESIZE, 2*D2_TILESIZE);
+    } else {
+        // Fallback to vanilla WOR sprite if Tornie Worfinery.png missing
+        uiGraphic[UI_MapEditor_Worfinery][HOUSE_HARKONNEN] = getSubPicture(objPic[ObjPic_WOR][HOUSE_HARKONNEN][0].get(),2*2*D2_TILESIZE,0,2*D2_TILESIZE,2*D2_TILESIZE);
+    }
     uiGraphic[UI_MapEditor_LightFactory][HOUSE_HARKONNEN] = getSubPicture(objPic[ObjPic_LightFactory][HOUSE_HARKONNEN][0].get(),2*2*D2_TILESIZE,0,2*D2_TILESIZE,2*D2_TILESIZE);
     uiGraphic[UI_MapEditor_Refinery][HOUSE_HARKONNEN] = getSubPicture(objPic[ObjPic_Refinery][HOUSE_HARKONNEN][0].get(),2*3*D2_TILESIZE,0,3*D2_TILESIZE,2*D2_TILESIZE);
     uiGraphic[UI_MapEditor_HighTechFactory][HOUSE_HARKONNEN] = getSubPicture(objPic[ObjPic_HighTechFactory][HOUSE_HARKONNEN][0].get(),2*3*D2_TILESIZE,0,3*D2_TILESIZE,2*D2_TILESIZE);
@@ -2053,6 +2111,14 @@ GFXManager::GFXManager() {
     uiGraphic[UI_MapEditor_RepairYard][HOUSE_HARKONNEN] = getSubPicture(objPic[ObjPic_RepairYard][HOUSE_HARKONNEN][0].get(),2*3*D2_TILESIZE,0,3*D2_TILESIZE,2*D2_TILESIZE);
     uiGraphic[UI_MapEditor_Starport][HOUSE_HARKONNEN] = getSubPicture(objPic[ObjPic_Starport][HOUSE_HARKONNEN][0].get(),2*3*D2_TILESIZE,0,3*D2_TILESIZE,3*D2_TILESIZE);
     uiGraphic[UI_MapEditor_Palace][HOUSE_HARKONNEN] = getSubPicture(objPic[ObjPic_Palace][HOUSE_HARKONNEN][0].get(),2*3*D2_TILESIZE,0,3*D2_TILESIZE,3*D2_TILESIZE);
+    // Tornie: Tech Center = 48x64 PNG, take top 2-tile-tall frame (first of 2 vertical frames).
+    if(objPic[ObjPic_TechCenter][HOUSE_HARKONNEN][0]) {
+        uiGraphic[UI_MapEditor_TechCenter][HOUSE_HARKONNEN] = getSubPicture(
+            objPic[ObjPic_TechCenter][HOUSE_HARKONNEN][0].get(), 0, 0, 3*D2_TILESIZE, 2*D2_TILESIZE);
+    } else {
+        // Fallback to vanilla Palace sprite if Tornie TechCenter.png missing
+        uiGraphic[UI_MapEditor_TechCenter][HOUSE_HARKONNEN] = getSubPicture(objPic[ObjPic_Palace][HOUSE_HARKONNEN][0].get(),2*3*D2_TILESIZE,0,3*D2_TILESIZE,3*D2_TILESIZE);
+    }
 
     uiGraphic[UI_MapEditor_Soldier][HOUSE_HARKONNEN] = getSubFrame(objPic[ObjPic_Soldier][HOUSE_HARKONNEN][0].get(),0,0,4,3);
     uiGraphic[UI_MapEditor_Trooper][HOUSE_HARKONNEN] = getSubFrame(objPic[ObjPic_Trooper][HOUSE_HARKONNEN][0].get(),0,0,4,3);
@@ -2285,7 +2351,9 @@ SDL_Texture* GFXManager::getZoomedObjPic(unsigned int id, int house, unsigned in
             // (e.g. partial install without the mod bundle).
             static const unsigned int tornieModSpriteIds[] = {
                 ObjPic_RocketTrike, ObjPic_FlameTank, ObjPic_EliteSiegeTankCustom,
-                ObjPic_RebelHarvester  // falls back to vanilla Harvester + Siege Tank gun overlay
+                ObjPic_RebelHarvester,  // falls back to vanilla Harvester + Siege Tank gun overlay
+                ObjPic_Worfinery,      // falls back to vanilla WOR
+                ObjPic_TechCenter      // falls back to vanilla Palace
             };
             bool isDuneCityCivic = false;
             for(auto cid : duneCityCivicIds) {
