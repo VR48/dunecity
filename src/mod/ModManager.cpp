@@ -192,6 +192,12 @@ ModInfo ModManager::getModInfo(const std::string& name) const {
         info.gameVersion = "";
     }
     
+    // Ensure string fields are never null (defensive)
+    if(info.displayName.empty()) info.displayName = name;
+    if(info.author.empty()) info.author = "Unknown";
+    if(info.description.empty()) info.description = "";
+    if(info.gameVersion.empty()) info.gameVersion = "";
+    
     return info;
 }
 
@@ -811,11 +817,19 @@ void ModManager::seedTornieFromDefaults() {
     SDL_Log("ModManager: Seeding Tornie mod from install defaults...");
 
     std::string torniePath = getModPath(TORNIE_MOD_NAME);
-    // Source: the mods directory itself (where the mod lives
-    // in the install). The TORNIE_MOD_NAME folder is already
-    // there at install time. For Windows + Linux the path is
-    // just <data_dir>/mods/Tornie/
+    // Source: the mods directory itself. Try multiple paths:
+    // 1. <data_dir>/mods/Tornie/ (newer install layout)
+    // 2. <data_dir>/../mods/Tornie/ (older install layout)
+    // The Tornie.PAK is also extracted into both locations
+    // by the CMake install step.
     std::string installModsPath = getDuneLegacyDataDir() + "/mods/" + TORNIE_MOD_NAME;
+    if (!existsDir(installModsPath)) {
+        installModsPath = getDuneLegacyDataDir() + "/../mods/" + TORNIE_MOD_NAME;
+    }
+    if (!existsDir(installModsPath)) {
+        // Try one more - the install root's mods dir
+        installModsPath = getDuneLegacyDataDir() + "/../../../mods/" + TORNIE_MOD_NAME;
+    }
 
     createDir(torniePath);
 
@@ -861,7 +875,7 @@ void ModManager::seedTornieFromDefaults() {
     info.name = TORNIE_MOD_NAME;
     info.displayName = "Tornie";
     info.author = "Tornie_Panther";
-    info.description = "8-house campaign system, custom units (Deviator/Flame Tank/Sonic Tank/Elite Siege Tank), custom buildings (Advanced Windtrap), and tinted palette for REBELS + NEUTRAL.";
+    info.description = "Tornie Mod: New units, new building, 2 additional campaigns with two custom factions, extra features in the editor. Special vehicles reviewed for sub-factions and the two new houses.";
     info.gameVersion = VERSION;
     info.enablesCityMode = false;
     writeModInfo(torniePath, info);
@@ -999,6 +1013,9 @@ std::string ModManager::getModsBasePath() const {
 }
 
 std::string ModManager::getModPath(const std::string& name) const {
+    if(name.empty()) {
+        return modsBasePath;  // Safety: avoid trailing slash + empty name
+    }
     return modsBasePath + "/" + name;
 }
 
