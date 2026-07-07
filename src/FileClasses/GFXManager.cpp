@@ -1864,6 +1864,7 @@ GFXManager::GFXManager() {
     uiGraphic[UI_MapEditor_Windtrap][HOUSE_HARKONNEN] = getSubPicture(objPic[ObjPic_Windtrap][HOUSE_HARKONNEN][0].get(),2*2*D2_TILESIZE,0,2*D2_TILESIZE,2*D2_TILESIZE);
     SDL_Color windtrapColor = { 70, 70, 70, 255};
     SDL_SetPaletteColors(uiGraphic[UI_MapEditor_Windtrap][HOUSE_HARKONNEN]->format->palette, &windtrapColor, PALCOLOR_WINDTRAP_COLORCYCLE, 1);
+    uiGraphic[UI_MapEditor_AdvancedWindTrap][HOUSE_HARKONNEN] = getSubPicture(objPic[ObjPic_Windtrap][HOUSE_HARKONNEN][0].get(),3*3*D2_TILESIZE,0,3*D2_TILESIZE,3*D2_TILESIZE);
     uiGraphic[UI_MapEditor_Radar][HOUSE_HARKONNEN] = getSubPicture(objPic[ObjPic_Radar][HOUSE_HARKONNEN][0].get(),2*2*D2_TILESIZE,0,2*D2_TILESIZE,2*D2_TILESIZE);
     uiGraphic[UI_MapEditor_Silo][HOUSE_HARKONNEN] = getSubPicture(objPic[ObjPic_Silo][HOUSE_HARKONNEN][0].get(),2*2*D2_TILESIZE,0,2*D2_TILESIZE,2*D2_TILESIZE);
     uiGraphic[UI_MapEditor_IX][HOUSE_HARKONNEN] = getSubPicture(objPic[ObjPic_IX][HOUSE_HARKONNEN][0].get(),2*2*D2_TILESIZE,0,2*D2_TILESIZE,2*D2_TILESIZE);

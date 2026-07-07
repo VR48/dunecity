@@ -398,6 +398,13 @@ MapEditorInterface::MapEditorInterface(MapEditor* pMapEditor)
     editorModeStructs_Windtrap.setOnClick(std::bind(&MapEditorInterface::onStructButton, this, Structure_WindTrap));
     editorModeStructs_HBox1.addWidget(&editorModeStructs_Windtrap);
 
+    editorModeStructs_HBox1.addWidget(HSpacer::create(2));
+
+    editorModeStructs_AdvancedWindTrap.setToggleButton(true);
+    editorModeStructs_AdvancedWindTrap.setTooltipText(resolveItemName(Structure_AdvancedWindTrap));
+    editorModeStructs_AdvancedWindTrap.setOnClick(std::bind(&MapEditorInterface::onStructButton, this, Structure_AdvancedWindTrap));
+    editorModeStructs_HBox1.addWidget(&editorModeStructs_AdvancedWindTrap);
+
 
     editorModeStructs_VBox.addWidget(&editorModeStructs_HBox2, 2*D2_TILESIZE + 4);
 
@@ -1099,6 +1106,7 @@ void MapEditorInterface::onStructButton(int structType) {
     editorModeStructs_RocketTurret.setToggleState( (structType == Structure_RocketTurret) );
     editorModeStructs_ConstructionYard.setToggleState( (structType == Structure_ConstructionYard) );
     editorModeStructs_Windtrap.setToggleState( (structType == Structure_WindTrap) );
+    editorModeStructs_AdvancedWindTrap.setToggleState( (structType == Structure_AdvancedWindTrap) );
     editorModeStructs_Radar.setToggleState( (structType == Structure_Radar) );
     editorModeStructs_Silo.setToggleState( (structType == Structure_Silo) );
     editorModeStructs_IX.setToggleState( (structType == Structure_IX) );
@@ -1345,6 +1353,7 @@ void MapEditorInterface::changeInterfaceColor(HOUSETYPE newHouse) {
     editorModeStructs_RocketTurret.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_RocketTurret, newHouse));
     editorModeStructs_ConstructionYard.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_ConstructionYard, newHouse));
     editorModeStructs_Windtrap.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Windtrap, newHouse));
+    editorModeStructs_AdvancedWindTrap.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_AdvancedWindTrap, newHouse));
     editorModeStructs_Radar.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Radar, newHouse));
     editorModeStructs_Silo.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_Silo, newHouse));
     editorModeStructs_IX.setSymbol(pGFXManager->getUIGraphicSurface(UI_MapEditor_IX, newHouse));

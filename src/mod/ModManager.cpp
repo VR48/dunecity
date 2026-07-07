@@ -25,6 +25,7 @@
 
 #include <SDL.h>
 
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <cstdint>
@@ -823,10 +824,10 @@ void ModManager::seedTornieFromDefaults() {
     // The Tornie.PAK is also extracted into both locations
     // by the CMake install step.
     std::string installModsPath = getDuneLegacyDataDir() + "/mods/" + TORNIE_MOD_NAME;
-    if (!existsDir(installModsPath)) {
+    if (!std::filesystem::is_directory(installModsPath)) {
         installModsPath = getDuneLegacyDataDir() + "/../mods/" + TORNIE_MOD_NAME;
     }
-    if (!existsDir(installModsPath)) {
+    if (!std::filesystem::is_directory(installModsPath)) {
         // Try one more - the install root's mods dir
         installModsPath = getDuneLegacyDataDir() + "/../../../mods/" + TORNIE_MOD_NAME;
     }

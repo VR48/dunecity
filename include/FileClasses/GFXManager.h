@@ -405,6 +405,7 @@ typedef enum {
     UI_MapEditor_RocketTurret,
     UI_MapEditor_ConstructionYard,
     UI_MapEditor_Windtrap,
+    UI_MapEditor_AdvancedWindTrap,   ///< Tornie: 3x3 high-output power building
     UI_MapEditor_Radar,
     UI_MapEditor_Silo,
     UI_MapEditor_IX,

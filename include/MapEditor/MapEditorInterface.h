@@ -207,6 +207,7 @@ private:
     HBox                editorModeStructs_HBox1;
     SymbolButton        editorModeStructs_ConstructionYard;
     SymbolButton        editorModeStructs_Windtrap;
+    SymbolButton        editorModeStructs_AdvancedWindTrap;   ///< Tornie: 3x3 high-output power building
     HBox                editorModeStructs_HBox2;
     SymbolButton        editorModeStructs_Radar;
     SymbolButton        editorModeStructs_Silo;
