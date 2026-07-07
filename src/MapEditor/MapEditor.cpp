@@ -1739,6 +1739,10 @@ void MapEditor::drawMap(ScreenBorder* pScreenborder, bool bCompleteMap) {
             case Unit_Special:          objectPicBase = ObjPic_Devastator_Base; objectPicGun = ObjPic_Devastator_Gun;   gunOffset = devastatorTurretOffset;     break;
             case Unit_Infantry:         objectPicBase = ObjPic_Infantry;         framesX = 4;    framesY = 4;                                                   break;
             case Unit_Troopers:         objectPicBase = ObjPic_Troopers;         framesX = 4;    framesY = 4;                                                   break;
+            case Unit_RocketTrike:      objectPicBase = ObjPic_RocketTrike;                                                                                       break;
+            case Unit_FlameTank:        objectPicBase = ObjPic_FlameTank;                                                                                         break;
+            case Unit_EliteLauncher:    objectPicBase = ObjPic_Tank_Base;       objectPicGun = ObjPic_Launcher_Gun;     gunOffset = launcherTurretOffset;       break;
+            case Unit_EliteSiegeTank:   objectPicBase = ObjPic_EliteSiegeTankCustom; objectPicGun = ObjPic_Siegetank_Gun; gunOffset = siegeTankTurretOffset;       break;
         }
 
         SDL_Texture* pObjectSprite = pGFXManager->getZoomedObjPic(objectPicBase, unit.house, currentZoomlevel);

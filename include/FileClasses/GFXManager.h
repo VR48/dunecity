@@ -46,6 +46,9 @@ typedef enum {
     ObjPic_Devastator_Gun,
     ObjPic_Sonictank_Gun,
     ObjPic_Launcher_Gun,
+    ObjPic_RocketTrike,             ///< Tornie: dedicated sprite (data/RocketTrike.png)
+    ObjPic_FlameTank,               ///< Tornie: dedicated sprite (data/FlameTank.png)
+    ObjPic_EliteSiegeTankCustom,    ///< Tornie: dedicated sprite (data/EliteSiegeTank.png)
     ObjPic_Quad,
     ObjPic_Trike,
     ObjPic_Harvester,
@@ -433,6 +436,10 @@ typedef enum {
     UI_MapEditor_Devastator,
     UI_MapEditor_SonicTank,
     UI_MapEditor_Deviator,
+    UI_MapEditor_RocketTrike,           ///< Tornie: upgraded Trike
+    UI_MapEditor_FlameTank,             ///< Tornie: sonic-line flame weapon
+    UI_MapEditor_EliteLauncher,         ///< Tornie: upgraded Launcher
+    UI_MapEditor_EliteSiegeTank,        ///< Tornie: upgraded Siege Tank
     UI_MapEditor_Saboteur,
     UI_MapEditor_Sandworm,
     UI_MapEditor_SpecialUnit,

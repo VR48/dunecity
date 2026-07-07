@@ -77,6 +77,10 @@
 #include <units/Trooper.h>
 #include <units/AmbientAirplane.h>
 #include <units/AmbientHelicopter.h>
+#include <units/RocketTrike.h>
+#include <units/FlameTank.h>
+#include <units/EliteLauncher.h>
+#include <units/EliteSiegeTank.h>
 
 #include <array>
 #include <vector>
@@ -851,6 +855,10 @@ ObjectBase* ObjectBase::createObject(int itemID, House* Owner, bool byScenario) 
         case Unit_Trooper:                  newObject = new Trooper(Owner); break;
         case Unit_AmbientAirplane:          newObject = new AmbientAirplane(Owner); break;
         case Unit_AmbientHelicopter:        newObject = new AmbientHelicopter(Owner); break;
+        case Unit_RocketTrike:              newObject = new RocketTrike(Owner); break;
+        case Unit_FlameTank:                newObject = new FlameTank(Owner); break;
+        case Unit_EliteLauncher:            newObject = new EliteLauncher(Owner); break;
+        case Unit_EliteSiegeTank:           newObject = new EliteSiegeTank(Owner); break;
         case Unit_Special: {
             switch(Owner->getHouseID()) {
                 case HOUSE_HARKONNEN:       newObject = new Devastator(Owner); break;

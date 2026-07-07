@@ -262,6 +262,17 @@ void Bullet::init()
             THROW(std::domain_error, "Cannot init 'Bullet_Sandworm': Not allowed!");
         } break;
 
+        case Bullet_Flame: {
+            // Tornie: line-propagation flame. Same propagation semantics as Sonic
+            // (visual+damage travels along a line from shooter to target); render
+            // reuses the Sonic bullet sprite so we don't need a new ObjPic.
+            damageRadius = (TILESIZE*3)/4;
+            speed = 6;
+            numFrames = 1;
+            detonationTimer = 45;
+            graphic = pGFXManager->getObjPic(ObjPic_Bullet_Sonic, HOUSE_HARKONNEN);
+        } break;
+
         default: {
             THROW(std::domain_error, "Unknown Bullet type %d!", bulletID);
         } break;

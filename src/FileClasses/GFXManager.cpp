@@ -52,6 +52,9 @@ static const Coord objPicTiles[] {
     { 8, 1 },   // ObjPic_Devastator_Gun
     { 8, 1 },   // ObjPic_Sonictank_Gun
     { 8, 1 },   // ObjPic_Launcher_Gun
+    { 8, 1 },   // ObjPic_RocketTrike (Tornie — derived from RocketTrike.png sprite sheet)
+    { 8, 1 },   // ObjPic_FlameTank (Tornie — derived from FlameTank.png sprite sheet)
+    { 8, 1 },   // ObjPic_EliteSiegeTankCustom (Tornie — derived from EliteSiegeTank.png sprite sheet)
     { 8, 1 },   // ObjPic_Quad
     { 8, 1 },   // ObjPic_Trike
     { 8, 1 },   // ObjPic_Harvester
@@ -1226,6 +1229,9 @@ GFXManager::GFXManager() {
     objPic[ObjPic_Star][HOUSE_HARKONNEN][0] = LoadPNG_RW(pFileManager->openFile("Star5x5.png").get());
     objPic[ObjPic_Star][HOUSE_HARKONNEN][1] = LoadPNG_RW(pFileManager->openFile("Star7x7.png").get());
     objPic[ObjPic_Star][HOUSE_HARKONNEN][2] = LoadPNG_RW(pFileManager->openFile("Star11x11.png").get());
+    objPic[ObjPic_RocketTrike][HOUSE_HARKONNEN][0] = LoadPNG_RW(pFileManager->openFile("RocketTrike.png").get());
+    objPic[ObjPic_FlameTank][HOUSE_HARKONNEN][0] = LoadPNG_RW(pFileManager->openFile("FlameTank.png").get());
+    objPic[ObjPic_EliteSiegeTankCustom][HOUSE_HARKONNEN][0] = LoadPNG_RW(pFileManager->openFile("EliteSiegeTank.png").get());
 
     SDL_Color fogTransparent = { 0, 0, 0, 96};
     SDL_SetPaletteColors(objPic[ObjPic_Terrain_HiddenFog][HOUSE_HARKONNEN][0]->format->palette, &fogTransparent, PALCOLOR_BLACK, 1);
@@ -1899,6 +1905,15 @@ GFXManager::GFXManager() {
     uiGraphic[UI_MapEditor_Deviator][HOUSE_HARKONNEN] = combinePictures(uiGraphic[UI_MapEditor_Deviator][HOUSE_HARKONNEN].get(), objPic[ObjPic_Star][HOUSE_HARKONNEN][1].get(),
                                                                   uiGraphic[UI_MapEditor_Deviator][HOUSE_HARKONNEN]->w - objPic[ObjPic_Star][HOUSE_HARKONNEN][1]->w,
                                                                   uiGraphic[UI_MapEditor_Deviator][HOUSE_HARKONNEN]->h - objPic[ObjPic_Star][HOUSE_HARKONNEN][1]->h);
+    // Tornie: dedicated sprites for the 3 mod units with their own .png sheets.
+    uiGraphic[UI_MapEditor_RocketTrike][HOUSE_HARKONNEN] = getSubFrame(objPic[ObjPic_RocketTrike][HOUSE_HARKONNEN][0].get(),0,0,8,1);
+    uiGraphic[UI_MapEditor_FlameTank][HOUSE_HARKONNEN] = getSubFrame(objPic[ObjPic_FlameTank][HOUSE_HARKONNEN][0].get(),0,0,8,1);
+    // EliteLauncher has no dedicated sprite — compose Tank_Base + Launcher_Gun + Star (same recipe as Deviator).
+    uiGraphic[UI_MapEditor_EliteLauncher][HOUSE_HARKONNEN] = combinePictures(getSubFrame(objPic[ObjPic_Tank_Base][HOUSE_HARKONNEN][0].get(),0,0,8,1).get(), getSubFrame(objPic[ObjPic_Launcher_Gun][HOUSE_HARKONNEN][0].get(),0,0,8,1).get(), 3, 0);
+    uiGraphic[UI_MapEditor_EliteLauncher][HOUSE_HARKONNEN] = combinePictures(uiGraphic[UI_MapEditor_EliteLauncher][HOUSE_HARKONNEN].get(), objPic[ObjPic_Star][HOUSE_HARKONNEN][1].get(),
+                                                                     uiGraphic[UI_MapEditor_EliteLauncher][HOUSE_HARKONNEN]->w - objPic[ObjPic_Star][HOUSE_HARKONNEN][1]->w,
+                                                                     uiGraphic[UI_MapEditor_EliteLauncher][HOUSE_HARKONNEN]->h - objPic[ObjPic_Star][HOUSE_HARKONNEN][1]->h);
+    uiGraphic[UI_MapEditor_EliteSiegeTank][HOUSE_HARKONNEN] = getSubFrame(objPic[ObjPic_EliteSiegeTankCustom][HOUSE_HARKONNEN][0].get(),0,0,8,1);
     uiGraphic[UI_MapEditor_Saboteur][HOUSE_HARKONNEN] = getSubFrame(objPic[ObjPic_Saboteur][HOUSE_HARKONNEN][0].get(),0,0,4,3);
     uiGraphic[UI_MapEditor_Sandworm][HOUSE_HARKONNEN] = getSubFrame(objPic[ObjPic_Sandworm][HOUSE_HARKONNEN][0].get(),0,5,1,9);
     uiGraphic[UI_MapEditor_SpecialUnit][HOUSE_HARKONNEN] = combinePictures(getSubFrame(objPic[ObjPic_Devastator_Base][HOUSE_HARKONNEN][0].get(),0,0,8,1).get(), getSubFrame(objPic[ObjPic_Devastator_Gun][HOUSE_HARKONNEN][0].get(),0,0,8,1).get(), 2, -4);

@@ -30,7 +30,8 @@ typedef enum {
     Bullet_ShellTurret = 7,
     Bullet_SmallRocket = 8,
     Bullet_Sonic = 9,
-    Bullet_Sandworm = 10
+    Bullet_Sandworm = 10,
+    Bullet_Flame = 11             ///< Tornie: sonic-line flame (visual propagation along unit line, instant-kill light infantry)
 } BulletID_enum;
 
 typedef enum {
@@ -115,12 +116,18 @@ typedef enum {
     // save-compat for all pre-existing IDs.  isUnit() handles the gap.
     Unit_AmbientAirplane = 50,        ///< DuneCity: Ambient city airplane (non-combat, spawned by Airport)
     Unit_AmbientHelicopter = 51,      ///< DuneCity: Ambient city helicopter (non-combat, spawned by Airport)
-    Unit_ExtLastID = 51,
+
+    // Tornie mod units — extended IDs after Ambient units to preserve save-compat.
+    Unit_RocketTrike = 52,            ///< Tornie: upgraded Trike (rocket weapon, Light Factory, T9 U4)
+    Unit_FlameTank = 53,              ///< Tornie: sonic-line flame weapon, Heavy Factory, T9 U4
+    Unit_EliteLauncher = 54,          ///< Tornie: upgraded Launcher, Heavy Factory, T9 U4
+    Unit_EliteSiegeTank = 55,         ///< Tornie: upgraded Siege Tank, Heavy Factory, T9 U4
+    Unit_ExtLastID = 55,
 
     // Additional extended structures after units (isStructure handles non-contiguous range)
-    Structure_AdvancedWindTrap = 52,  ///< DuneCity: Advanced Windtrap (500 credits, -300 power, 3x3)
+    Structure_AdvancedWindTrap = 56,  ///< DuneCity: Advanced Windtrap (500 credits, -300 power, 3x3)
 
-    ItemID_LastID = 52,
+    ItemID_LastID = 56,
 
     Num_ItemID
 } ItemID_enum;

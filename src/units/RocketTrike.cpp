@@ -65,5 +65,5 @@ void RocketTrike::destroy() {
 }
 
 void RocketTrike::playAttackSound() {
-    soundPlayer->playSoundAt(Sound_Rocket,location);
+    soundPlayer->playSoundAt(Sound_RocketSmall,location);
 }

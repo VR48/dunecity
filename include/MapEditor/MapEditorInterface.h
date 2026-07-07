@@ -257,6 +257,12 @@ private:
     SymbolButton        editorModeUnits_Trike;
     SymbolButton        editorModeUnits_Raider;
     SymbolButton        editorModeUnits_Quad;
+    HBox                editorModeUnits_HBoxTornie;            ///< Tornie: RocketTrike / FlameTank row
+    SymbolButton        editorModeUnits_RocketTrike;
+    SymbolButton        editorModeUnits_FlameTank;
+    HBox                editorModeUnits_HBoxTornieElite;       ///< Tornie: EliteLauncher / EliteSiegeTank row
+    SymbolButton        editorModeUnits_EliteLauncher;
+    SymbolButton        editorModeUnits_EliteSiegeTank;
     HBox                editorModeUnits_HBox4;
     SymbolButton        editorModeUnits_Tank;
     SymbolButton        editorModeUnits_SiegeTank;
