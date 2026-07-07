@@ -69,6 +69,7 @@
 //#include <sys/types.h>
 //#include <sys/stat.h>
 #include <fcntl.h>
+#include <signal.h>
 
 
 #ifdef _WIN32
@@ -698,6 +699,74 @@ int main(int argc, char *argv[]) {
     // actually contains the v1.0.5xx fixes. If this line is missing from
     // the run log, the .exe is stale.
     SDL_Log("DuneCity v%s — build stamp active", std::string(VERSION).c_str());
+
+    // v1.0.514: install SIGSEGV/SIGABRT/SIGFPE handler so a fatal native
+    // crash (nullptr deref, divide by zero, etc.) writes a diagnostic to
+    // dunecity-crash.log before the process dies, instead of dying silently
+    // with no visible feedback. The handler then re-raises the signal with
+    // the default handler so a debugger can attach if running under one.
+    // This is the Tornie fix for the silent SIGSEGV that Stefan reported:
+    // a previous binary (v1.0.499 etc.) crashed at the main menu after
+    // Discord connected and there was no log entry to diagnose why. With
+    // this handler, the crash dump is written before exit so the cause
+    // can be inspected post-mortem.
+    {
+        struct sigaction sa {};
+        sa.sa_sigaction = [](int sig, siginfo_t* info, void* /*ucontext*/) {
+            // Async-signal-safe: only write(), no malloc, no SDL_Log, no fprintf
+            // to a FILE* (those can deadlock). Use raw write() to fd 2 (stderr)
+            // and a fixed file descriptor for the crash log.
+            const char* sigName = "UNKNOWN";
+            switch(sig) {
+                case SIGSEGV: sigName = "SIGSEGV"; break;
+                case SIGABRT: sigName = "SIGABRT"; break;
+                case SIGFPE:  sigName = "SIGFPE";  break;
+                default: break;
+            }
+            char buf[512];
+            int n = snprintf(buf, sizeof(buf),
+                "\n=== DuneCity fatal crash ===\n"
+                "  Signal:  %d (%s)\n"
+                "  Reason:  %d (si_code)\n"
+                "  Address: %p (si_addr)\n"
+                "  Version: %s\n"
+                "  Stack trace not available (would require libunwind).\n"
+                "  Check Dune City.log for the last SDL_Log lines before the\n"
+                "  crash — that is where the actionable diagnostic lives.\n"
+                "=============================\n",
+                sig, sigName, info->si_code, info->si_addr, VERSION);
+            if(n > 0) {
+                // stderr
+                (void)!write(2, buf, n);
+                // crash log file (best-effort, opened each invocation)
+                int fd = open("dunecity-crash.log",
+#ifdef O_APPEND
+                    O_WRONLY | O_CREAT | O_APPEND
+#else
+                    O_WRONLY | O_CREAT
+#endif
+                    , 0644);
+                if(fd >= 0) {
+                    (void)!write(fd, buf, n);
+                    close(fd);
+                }
+            }
+            // Re-raise with the default handler so a debugger can catch
+            // the signal and the process exits with the conventional code.
+            struct sigaction dfl {};
+            dfl.sa_handler = SIG_DFL;
+            sigemptyset(&dfl.sa_mask);
+            dfl.sa_flags = 0;
+            sigaction(sig, &dfl, nullptr);
+            raise(sig);
+        };
+        sa.sa_flags = SA_SIGINFO | SA_RESETHAND;
+        sigemptyset(&sa.sa_mask);
+        sigaction(SIGSEGV, &sa, nullptr);
+        sigaction(SIGABRT, &sa, nullptr);
+        sigaction(SIGFPE,  &sa, nullptr);
+        SDL_Log("DuneCity: SIGSEGV/SIGABRT/SIGFPE handler installed");
+    }
 
     // global try/catch around everything
     try {
