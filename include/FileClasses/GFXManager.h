@@ -204,6 +204,11 @@ typedef enum {
     Picture_PoliceStation,
     Picture_Stadium,
     Picture_Airport,
+    Picture_AdvancedWindTrap,
+    Picture_RocketTrike,           ///< Tornie: portrait from RocketTrikeIcon.png (91x55)
+    Picture_FlameTank,             ///< Tornie: portrait from FlameTankIcon.png (91x55)
+    Picture_EliteLauncher,         ///< Tornie: portrait from EliteLauncherIcon.png (91x55)
+    Picture_EliteSiegeTank,        ///< Tornie: portrait from EliteSiegeTankIcon.png (91x55)
     NUM_SMALLDETAILPICS
 } SmallDetailPics_Enum;
 

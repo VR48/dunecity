@@ -1599,6 +1599,38 @@ GFXManager::GFXManager() {
         else        smallDetailPicTex[Picture_Airport] = extractSmallDetailPic("STARPORT.WSA");
     }
 
+    // DuneCity 1.0.506: Tornie unit portraits. The mod ships 91x55 PNG icons
+    // (RocketTrikeIcon.png, FlameTankIcon.png, EliteLauncherIcon.png,
+    // EliteSiegeTankIcon.png) as WSA replacements — simpler than authoring
+    // 4 new WSA animations. Load via LoadPNG_RW; if missing, fall back to a
+    // related vanilla portrait so the build/sidebar still has an icon.
+    {
+        auto loadIcon = [&](int pictureIndex, const std::string& pngName,
+                            const char* fallbackWsa) {
+            try {
+                if(pFileManager->exists(pngName)) {
+                    auto raw = LoadPNG_RW(pFileManager->openFile(pngName).get());
+                    if(raw) {
+                        sdl2::texture_ptr tex{ SDL_CreateTextureFromSurface(renderer, raw.get()) };
+                        if(tex) {
+                            smallDetailPicTex[pictureIndex] = std::move(tex);
+                            return;
+                        }
+                    }
+                }
+                smallDetailPicTex[pictureIndex] = extractSmallDetailPic(fallbackWsa);
+            } catch(const std::exception& e) {
+                SDL_Log("GFXManager: portrait %s load failed (%s) — falling back to %s",
+                        pngName.c_str(), e.what(), fallbackWsa);
+                smallDetailPicTex[pictureIndex] = extractSmallDetailPic(fallbackWsa);
+            }
+        };
+        loadIcon(Picture_RocketTrike,    "RocketTrikeIcon.png",    "TRIKE.WSA");
+        loadIcon(Picture_FlameTank,      "FlameTankIcon.png",      "HTANK.WSA");
+        loadIcon(Picture_EliteLauncher,  "EliteLauncherIcon.png",  "HTANK.WSA");
+        loadIcon(Picture_EliteSiegeTank, "EliteSiegeTankIcon.png", "HTANK.WSA");
+    }
+
     // unused: FARTR.WSA, FHARK.WSA, FORDOS.WSA
 
 
