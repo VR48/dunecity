@@ -1905,27 +1905,6 @@ void Game::doInput()
             SDL_MouseMotionEvent* mouse = &event.motion;
             drawnMouseX = std::max(0, std::min(mouse->x, settings.video.width-1));
             drawnMouseY = std::max(0, std::min(mouse->y, settings.video.height-1));
-
-            static Uint32 lastCursorLog = 0;
-            // Cursor debug logging disabled
-            /*const Uint32 now = SDL_GetTicks();
-            if(now - lastCursorLog >= 500) {
-                bool insideMap = (screenborder != nullptr) && screenborder->isScreenCoordInsideMap(drawnMouseX, drawnMouseY);
-                int mapX = insideMap ? screenborder->screen2MapX(drawnMouseX) : -1;
-                int mapY = insideMap ? screenborder->screen2MapY(drawnMouseY) : -1;
-                SDL_LogVerbose(SDL_LOG_CATEGORY_APPLICATION,
-                               "CursorDebug: raw=(%d,%d) drawn=(%d,%d) mapInside=%s map=(%d,%d) cursorMode=%d hardware=%s",
-                               mouse->x,
-                               mouse->y,
-                               drawnMouseX,
-                               drawnMouseY,
-                               insideMap ? "yes" : "no",
-                               mapX,
-                               mapY,
-                               static_cast<int>(currentCursorMode),
-                               cursorManager.isInitialized() ? "yes" : "no");
-                lastCursorLog = now;
-            }*/
         }
 
         if(pInGameMenu != nullptr) {

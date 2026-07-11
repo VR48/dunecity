@@ -28,32 +28,39 @@
 
 namespace {
 
-// Scale an SDL_Surface up by an integer factor. Returns a new surface the
-// caller must SDL_FreeSurface() after use, or nullptr on failure.
+// Scale an SDL_Surface up by an integer factor, returning a new ARGB8888
+// surface the caller must SDL_FreeSurface() after use (nullptr for scale <= 1
+// or on failure).
+//
+// We convert to ARGB8888 BEFORE scaling. SDL_BlitScaled does not reliably
+// scale 8-bit paletted, color-keyed surfaces — the scaled result comes back
+// as all-color-key (fully transparent), which produces a valid-but-invisible
+// hardware cursor. This only bites when scale > 1 (i.e. on HiDPI/Retina
+// displays), so the menu's plain system cursor looks fine while the in-game
+// cursor vanishes. Scaling in straight ARGB space (color key already resolved
+// to alpha) sidesteps the trap entirely.
 SDL_Surface* scaleSurface(SDL_Surface* src, int scale) {
     if (!src || scale <= 1) {
         return nullptr;
     }
-    SDL_Surface* dst = SDL_CreateRGBSurfaceWithFormat(
-        0, src->w * scale, src->h * scale, src->format->BitsPerPixel, src->format->format);
-    if (!dst) {
+    // Resolve palette + color key to real alpha first.
+    SDL_Surface* srcArgb = SDL_ConvertSurfaceFormat(src, SDL_PIXELFORMAT_ARGB8888, 0);
+    if (!srcArgb) {
         return nullptr;
     }
-    // Copy palette from src so indexed (8-bit) pixels map correctly on dst.
-    if (src->format->palette) {
-        SDL_SetPixelFormatPalette(dst->format, src->format->palette);
+    SDL_Surface* dst = SDL_CreateRGBSurfaceWithFormat(
+        0, srcArgb->w * scale, srcArgb->h * scale, 32, SDL_PIXELFORMAT_ARGB8888);
+    if (!dst) {
+        SDL_FreeSurface(srcArgb);
+        return nullptr;
     }
-    // Preserve color key on the scaled surface.
-    Uint32 colorKey = 0;
-    if (SDL_GetColorKey(src, &colorKey) == 0) {
-        SDL_SetColorKey(dst, SDL_TRUE, colorKey);
-    }
-    // Disable blending on src so the blitter treats color-keyed pixels as
-    // opaque indices, not as alpha values (SDL2 trap with paletted surfaces).
-    SDL_SetSurfaceBlendMode(src, SDL_BLENDMODE_NONE);
-    SDL_Rect srcRect = { 0, 0, src->w, src->h };
-    SDL_Rect dstRect = { 0, 0, src->w * scale, src->h * scale };
-    SDL_BlitScaled(src, &srcRect, dst, &dstRect);
+    // Copy (not alpha-blend) so the source's alpha channel is preserved
+    // verbatim rather than composited against dst.
+    SDL_SetSurfaceBlendMode(srcArgb, SDL_BLENDMODE_NONE);
+    SDL_Rect srcRect = { 0, 0, srcArgb->w, srcArgb->h };
+    SDL_Rect dstRect = { 0, 0, srcArgb->w * scale, srcArgb->h * scale };
+    SDL_BlitScaled(srcArgb, &srcRect, dst, &dstRect);
+    SDL_FreeSurface(srcArgb);
     return dst;
 }
 
