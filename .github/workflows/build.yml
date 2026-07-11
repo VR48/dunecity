@@ -101,19 +101,16 @@ jobs:
           path: build/*.zip
 
   build-macos:
-    # GitHub-hosted Apple-silicon runner (was the self-hosted Mac mini, which
-    # went offline and hung this job for 24h). macos-14 is arm64 with Homebrew
-    # at /opt/homebrew; the DMG is ad-hoc signed so no signing certs are needed.
-    runs-on: macos-14
+    # Self-hosted on Stefan's MacBook (8-core arm64) with a warm vcpkg binary
+    # cache. GitHub's free hosted macos-14 runner is a 3-core box that took
+    # ~70 min per cold build (and its 60-min cap killed a run); this machine
+    # builds in ~10 min. The DMG is ad-hoc signed, so no signing certs needed.
+    runs-on: [self-hosted, macOS, ARM64]
     needs: [verify-version]
     if: always() && (needs.verify-version.result == 'success' || needs.verify-version.result == 'skipped')
-    # Fail fast instead of dragging to the 6h default if the build wedges.
     timeout-minutes: 60
     env:
-      # macos-14 is a 3-core runner. `cmake --build --parallel` (no count) does
-      # not reliably parallelize here, so pin the job count explicitly — without
-      # this the source build ran ~serially (~55 min).
-      CMAKE_BUILD_PARALLEL_LEVEL: "3"
+      CMAKE_BUILD_PARALLEL_LEVEL: "8"
     steps:
       - uses: actions/checkout@v4
 
@@ -121,39 +118,25 @@ jobs:
         run: rm -rf build
 
       # vcpkg builds SDL2 + its audio codecs, curl, miniupnpc and discord-rpc
-      # from source; several are autotools ports needing the GNU build toolchain
-      # (autoconf/automake/libtool) plus nasm for some codecs.
+      # from source; ensure the autotools toolchain + nasm are present
+      # (idempotent — already installed on the runner).
       - name: Install build deps
-        run: brew install autoconf autoconf-archive automake libtool pkg-config nasm
-
-      - name: Setup ccache
-        uses: hendrikmuhs/ccache-action@v1
-        with:
-          key: macos-${{ hashFiles('vcpkg.json') }}
-
-      - name: Cache vcpkg binary packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/vcpkg/archives
-          key: vcpkg-macos-arm64-${{ hashFiles('vcpkg.json') }}
-          restore-keys: |
-            vcpkg-macos-arm64-
+        run: brew install autoconf autoconf-archive automake libtool pkg-config nasm || true
 
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
         with:
           vcpkgJsonGlob: 'vcpkg.json'
 
-      # run-vcpkg sets VCPKG_BINARY_SOURCES to 'clear;x-gha,readwrite' but the
-      # x-gha backend was removed from vcpkg. Override to files-based caching
-      # backed by the actions/cache step above.
+      # Use the machine-local vcpkg binary cache (already warm) so deps restore
+      # instead of rebuilding from source.
       - name: Fix vcpkg binary caching
         run: |
           mkdir -p "$HOME/.cache/vcpkg/archives"
           echo "VCPKG_BINARY_SOURCES=clear;files,$HOME/.cache/vcpkg/archives,readwrite" >> "$GITHUB_ENV"
 
       - name: Configure CMake
-        run: cmake -B build -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+        run: cmake -B build -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
 
       - name: Build
         run: cmake --build build --config Release --parallel
