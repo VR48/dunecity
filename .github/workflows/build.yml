@@ -121,7 +121,7 @@ jobs:
       # from source; ensure the autotools toolchain + nasm are present
       # (idempotent — already installed on the runner).
       - name: Install build deps
-        run: brew install autoconf autoconf-archive automake libtool pkg-config nasm || true
+        run: brew install autoconf autoconf-archive automake libtool pkg-config nasm ninja || true
 
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
