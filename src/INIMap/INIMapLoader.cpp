@@ -24,10 +24,62 @@
 #include <misc/format.h>
 #include <misc/exceptions.h>
 
+#include <mod/ModManager.h>
+
 #include <sand.h>
 #include <globals.h>
 
 #include <algorithm>
+#include <vector>
+
+namespace {
+
+std::vector<int> getSpecialVehiclePool(int house) {
+    switch(house) {
+        case HOUSE_HARKONNEN:
+            return { Unit_Devastator, Unit_EliteSiegeTank };
+        case HOUSE_ATREIDES:
+            return { Unit_SonicTank, Unit_EliteSiegeTank };
+        case HOUSE_ORDOS:
+            return { Unit_Deviator, Unit_EliteSiegeTank };
+        case HOUSE_FREMEN:
+            return { Unit_Deviator, Unit_Devastator };
+        case HOUSE_SARDAUKAR:
+            return { Unit_Devastator, Unit_SonicTank };
+        case HOUSE_MERCENARY:
+            return { Unit_Deviator, Unit_SonicTank };
+        case HOUSE_NEUTRAL:
+            return { Unit_Deviator, Unit_EliteLauncher };
+        case HOUSE_REBELS:
+            return { Unit_FlameTank, Unit_SonicTank };
+        default:
+            return {};
+    }
+}
+
+int chooseSpecialVehicle(Game* pGame, int houseID, int& nextIndex) {
+    if(pGame == nullptr || houseID < 0 || houseID >= NUM_HOUSES) {
+        return ItemID_Invalid;
+    }
+
+    const auto pool = getSpecialVehiclePool(houseID);
+    if(pool.empty()) {
+        return ItemID_Invalid;
+    }
+
+    for(size_t i = 0; i < pool.size(); i++) {
+        const int poolIndex = (nextIndex + static_cast<int>(i)) % static_cast<int>(pool.size());
+        const int candidate = pool[poolIndex];
+        if(isUnit(candidate) && pGame->objectData.data[candidate][houseID].enabled) {
+            nextIndex = (poolIndex + 1) % static_cast<int>(pool.size());
+            return candidate;
+        }
+    }
+
+    return ItemID_Invalid;
+}
+
+} // namespace
 
 INIMapLoader::INIMapLoader(Game* pGame, const std::string& mapname, const std::string& mapdata)
  : INIMap(pGame->gameType, mapname, mapdata), pGame(pGame)
@@ -65,7 +117,9 @@ void INIMapLoader::loadMap() {
     pGame->loseFlags = inifile->getIntValue("BASIC","LoseFlags",1);
 
     if(pGame->techLevel == 0) {
-        pGame->techLevel = inifile->getIntValue("BASIC","TechLevel",8);
+        const int defaultTechLevel = (ModManager::instance().isInitialized()
+                                      && ModManager::instance().getActiveModName() == "Tornie") ? 9 : 8;
+        pGame->techLevel = inifile->getIntValue("BASIC","TechLevel", defaultTechLevel);
     }
 
     int timeout = inifile->getIntValue("BASIC","TIMEOUT",0);
@@ -300,6 +354,36 @@ void INIMapLoader::loadMap() {
                         type = Terrain_ThickSpice;
                     } break;
 
+                    case 'g': {
+                        // Tornie green spice
+                        type = Terrain_GreenSpice;
+                    } break;
+
+                    case 'G': {
+                        // Tornie thick green spice
+                        type = Terrain_ThickGreenSpice;
+                    } break;
+
+                    case 'b': {
+                        // Tornie green spice bloom
+                        type = Terrain_GreenSpiceBloom;
+                    } break;
+
+                    case 'r': {
+                        // Tornie red spice
+                        type = Terrain_RedSpice;
+                    } break;
+
+                    case 'R': {
+                        // Tornie thick red spice
+                        type = Terrain_ThickRedSpice;
+                    } break;
+
+                    case 'B': {
+                        // Tornie red spice bloom
+                        type = Terrain_RedSpiceBloom;
+                    } break;
+
                     case '%': {
                         // Rock
                         type = Terrain_Rock;
@@ -386,6 +470,7 @@ void INIMapLoader::loadHouses()
     }
 
     // now set up all the houses
+    resetHouseVisualHouseMapping();
     for(const GameInitSettings::HouseInfo& houseInfo : houseInfoList) {
         HOUSETYPE houseID;
 
@@ -405,6 +490,13 @@ void INIMapLoader::loadHouses()
         } else {
             houseID = houseInfo.houseID;
         }
+
+        int colorOfHouse = houseInfo.colorOfHouse;
+        if(!isValidHouseColorSlot(colorOfHouse)) {
+            colorOfHouse = houseID;
+        }
+        pGame->houseInfoListSetup.back().colorOfHouse = colorOfHouse;
+        setHouseVisualHouse(houseID, colorOfHouse);
 
         std::string houseName = getHouseNameByNumber(houseID);
         convertToLower(houseName);
@@ -536,9 +628,9 @@ void INIMapLoader::loadUnits()
         return;
     }
 
-    bool nextSpecialUnitIsSonicTank[NUM_HOUSES];
+    int nextSpecialUnitIndex[NUM_HOUSES];
     for(int i=0;i<NUM_HOUSES;i++) {
-        nextSpecialUnitIsSonicTank[i] = true;
+        nextSpecialUnitIndex[i] = 0;
     }
 
     for(const INIFile::Key& key : inifile->getSection("UNITS")) {
@@ -586,35 +678,9 @@ void INIMapLoader::loadUnits()
                 itemID = Unit_Trooper;
                 Num2Place = 3;
             } else if(itemID == Unit_Special) {
-                switch(houseID) {
-
-                    case HOUSE_HARKONNEN: {
-                        itemID = Unit_Devastator;
-                    } break;
-                    case HOUSE_ATREIDES: {
-                        itemID = Unit_SonicTank;
-                    } break;
-
-                    case HOUSE_ORDOS: {
-                        itemID = Unit_Deviator;
-                    } break;
-
-                    case HOUSE_FREMEN:
-                    case HOUSE_SARDAUKAR:
-                    case HOUSE_MERCENARY: {
-                        if(nextSpecialUnitIsSonicTank[houseID] == true && pGame->objectData.data[Unit_SonicTank][houseID].enabled) {
-                            itemID = Unit_SonicTank;
-                            nextSpecialUnitIsSonicTank[houseID] = !pGame->objectData.data[Unit_Devastator][houseID].enabled;
-                        } else {
-                            itemID = Unit_Devastator;
-                            nextSpecialUnitIsSonicTank[houseID] = true;
-                        }
-                    } break;
-
-                    default: {
-                        // should never be reached
-                        continue;
-                    } break;
+                itemID = chooseSpecialVehicle(pGame, houseID, nextSpecialUnitIndex[houseID]);
+                if(itemID == ItemID_Invalid) {
+                    continue;
                 }
             }
 

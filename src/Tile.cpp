@@ -33,7 +33,87 @@
 #include <units/InfantryBase.h>
 #include <units/AirUnit.h>
 
+#include <utility>
+
 #define FOGTIME MILLI2CYCLES(10 * 1000)
+
+namespace {
+
+bool isThinSpiceTerrain(int terrainType) noexcept {
+    return terrainType == Terrain_Spice
+        || terrainType == Terrain_GreenSpice
+        || terrainType == Terrain_RedSpice;
+}
+
+bool isThickSpiceTerrain(int terrainType) noexcept {
+    return terrainType == Terrain_ThickSpice
+        || terrainType == Terrain_ThickGreenSpice
+        || terrainType == Terrain_ThickRedSpice;
+}
+
+bool isSpiceTerrain(int terrainType) noexcept {
+    return isThinSpiceTerrain(terrainType) || isThickSpiceTerrain(terrainType);
+}
+
+int getThinSpiceTerrain(int terrainType) noexcept {
+    switch(terrainType) {
+        case Terrain_GreenSpice:
+        case Terrain_ThickGreenSpice:
+        case Terrain_GreenSpiceBloom: return Terrain_GreenSpice;
+        case Terrain_RedSpice:
+        case Terrain_ThickRedSpice:
+        case Terrain_RedSpiceBloom: return Terrain_RedSpice;
+        default: return Terrain_Spice;
+    }
+}
+
+int getThickSpiceTerrain(int terrainType) noexcept {
+    switch(terrainType) {
+        case Terrain_GreenSpice:
+        case Terrain_ThickGreenSpice:
+        case Terrain_GreenSpiceBloom: return Terrain_ThickGreenSpice;
+        case Terrain_RedSpice:
+        case Terrain_ThickRedSpice:
+        case Terrain_RedSpiceBloom: return Terrain_ThickRedSpice;
+        default: return Terrain_ThickSpice;
+    }
+}
+
+bool isSameSpiceFamily(int terrainType, int familyType) noexcept {
+    return isSpiceTerrain(terrainType) && getThinSpiceTerrain(terrainType) == getThinSpiceTerrain(familyType);
+}
+
+unsigned int getTerrainObjPic(int terrainType) noexcept {
+    switch(terrainType) {
+        case Terrain_GreenSpice:
+        case Terrain_ThickGreenSpice:
+        case Terrain_GreenSpiceBloom:
+            return ObjPic_Terrain_GreenSpice;
+        case Terrain_RedSpice:
+        case Terrain_ThickRedSpice:
+        case Terrain_RedSpiceBloom:
+            return ObjPic_Terrain_RedSpice;
+        default:
+            return ObjPic_Terrain;
+    }
+}
+
+bool shouldDrawTerrainBelowStructure(int itemID) noexcept {
+    switch(itemID) {
+        case Structure_AdvancedWindTrap:
+        case Structure_AdvancedWindTrapMK2:
+        case Structure_AdvancedWindTrapMK3:
+        case Structure_Worfinery:
+        case Structure_TechCenter:
+        case Structure_Scoutpost:
+            return true;
+
+        default:
+            return false;
+    }
+}
+
+} // namespace
 
 Tile::Tile() {
     type = Terrain_Sand;
@@ -68,10 +148,10 @@ Tile::~Tile() = default;
 void Tile::load(InputStream& stream) {
     type = stream.readUint32();
 
-    stream.readBools(&explored[0], &explored[1], &explored[2], &explored[3], &explored[4], &explored[5], &explored[6]);
+    stream.readBools(&explored[0], &explored[1], &explored[2], &explored[3], &explored[4], &explored[5], &explored[6], &explored[7]);
 
     bool bLastAccess[NUM_TEAMS];
-    stream.readBools(&bLastAccess[0], &bLastAccess[1], &bLastAccess[2], &bLastAccess[3], &bLastAccess[4], &bLastAccess[5], &bLastAccess[6]);
+    stream.readBools(&bLastAccess[0], &bLastAccess[1], &bLastAccess[2], &bLastAccess[3], &bLastAccess[4], &bLastAccess[5], &bLastAccess[6], &bLastAccess[7]);
 
     for (int i = 0; i < NUM_TEAMS; i++) {
         if (bLastAccess[i] == true) {
@@ -159,9 +239,9 @@ void Tile::load(InputStream& stream) {
 void Tile::save(OutputStream& stream) const {
     stream.writeUint32(type);
 
-    stream.writeBools(explored[0], explored[1], explored[2], explored[3], explored[4], explored[5], explored[6]);
+    stream.writeBools(explored[0], explored[1], explored[2], explored[3], explored[4], explored[5], explored[6], explored[7]);
 
-    stream.writeBools((lastAccess[0] != 0), (lastAccess[1] != 0), (lastAccess[2] != 0), (lastAccess[3] != 0), (lastAccess[4] != 0), (lastAccess[5] != 0), (lastAccess[6] != 0));
+    stream.writeBools((lastAccess[0] != 0), (lastAccess[1] != 0), (lastAccess[2] != 0), (lastAccess[3] != 0), (lastAccess[4] != 0), (lastAccess[5] != 0), (lastAccess[6] != 0), (lastAccess[7] != 0));
     for (auto lastAccessFromTeam : lastAccess) {
         if (lastAccessFromTeam != 0) {
             stream.writeUint32(lastAccessFromTeam);
@@ -298,8 +378,13 @@ void Tile::blitGround(int xPos, int yPos) {
     // transparent so the player sees the Micropolis-style empty plot
     // (colored zone tint + dotted border) underneath. Without this
     // exception, fresh-zoned tiles render as solid black.
-    if (hasANonInfantryGroundObject() && getNonInfantryGroundObject()->isAStructure()) {
-        if (!hasCityZone()) return;
+    if (hasANonInfantryGroundObject()) {
+        const ObjectBase* groundObject = getNonInfantryGroundObject();
+        if (groundObject != nullptr && groundObject->isAStructure()
+            && !hasCityZone()
+            && !shouldDrawTerrainBelowStructure(groundObject->getItemID())) {
+            return;
+        }
     }
 
     const auto zoomed_tilesize = world2zoomedWorld(TILESIZE);
@@ -313,9 +398,17 @@ void Tile::blitGround(int xPos, int yPos) {
         source = { indexX*zoomed_tilesize, indexY*zoomed_tilesize, zoomed_tilesize, zoomed_tilesize };
     }
 
-    //draw terrain
-    if (destroyedStructureTile == DestroyedStructure_None || destroyedStructureTile == DestroyedStructure_Wall) {
-        SDL_RenderCopy(renderer, sprite[currentZoomlevel], &source, &drawLocation);
+    // Draw terrain under destroyed-structure overlays as well. Some custom
+    // rubble/prebuild tiles intentionally use transparency around debris; if
+    // the terrain is skipped those transparent pixels reveal the renderer's
+    // black clear color as solid rectangles.
+    {
+        SDL_Texture* terrainSprite = sprite[currentZoomlevel];
+        const unsigned int terrainObjPic = getTerrainObjPic(type);
+        if(terrainObjPic != ObjPic_Terrain) {
+            terrainSprite = pGFXManager->getZoomedObjPic(terrainObjPic, currentZoomlevel);
+        }
+        SDL_RenderCopy(renderer, terrainSprite, &source, &drawLocation);
     }
 
     // DuneCity: overlay an auto-tiled road sprite when the tile carries a
@@ -631,7 +724,7 @@ void Tile::clearTerrain() {
 }
 
 void Tile::setTrack(Uint8 direction) {
-    if (type == Terrain_Sand || type == Terrain_Dunes || type == Terrain_Spice || type == Terrain_ThickSpice) {
+    if (type == Terrain_Sand || type == Terrain_Dunes || isSpice()) {
         tracksCreationTime[direction] = currentGame->getGameCycleCount();
     }
 }
@@ -683,10 +776,10 @@ void Tile::setType(int newType) {
     type = newType;
     destroyedStructureTile = DestroyedStructure_None;
 
-    if (type == Terrain_Spice) {
+    if (isThinSpiceTerrain(type)) {
         spice = currentGame->randomGen.rand(RANDOMSPICEMIN, RANDOMSPICEMAX);
     }
-    else if (type == Terrain_ThickSpice) {
+    else if (isThickSpiceTerrain(type)) {
         spice = currentGame->randomGen.rand(RANDOMTHICKSPICEMIN, RANDOMTHICKSPICEMAX);
     }
     else if (type == Terrain_Dunes) {
@@ -769,7 +862,7 @@ FixPoint Tile::harvestSpice() {
     }
 
     if (oldSpice >= RANDOMTHICKSPICEMIN && spice < RANDOMTHICKSPICEMIN) {
-        setType(Terrain_Spice);
+        setType(getThinSpiceTerrain(type));
     }
 
     if (oldSpice > 0 && spice == 0) {
@@ -785,10 +878,10 @@ void Tile::setSpice(FixPoint newSpice) {
         type = Terrain_Sand;
     }
     else if (newSpice >= RANDOMTHICKSPICEMIN) {
-        type = Terrain_ThickSpice;
+        type = getThickSpiceTerrain(type);
     }
     else {
-        type = Terrain_Spice;
+        type = getThinSpiceTerrain(type);
     }
     spice = newSpice;
 }
@@ -912,6 +1005,16 @@ ObjectBase* Tile::getObjectWithID(Uint32 objectID) const {
 void Tile::triggerSpiceBloom(House* pTrigger) {
     if (!isSpiceBloom()) return;
 
+    const int bloomType = type;
+    std::pair<int, int> generatedSpiceTerrain;
+    if(bloomType == Terrain_GreenSpiceBloom) {
+        generatedSpiceTerrain = std::make_pair(Terrain_GreenSpice, Terrain_ThickGreenSpice);
+    } else if(bloomType == Terrain_RedSpiceBloom) {
+        generatedSpiceTerrain = std::make_pair(Terrain_RedSpice, Terrain_ThickRedSpice);
+    } else {
+        generatedSpiceTerrain = currentGameMap->chooseGeneratedSpiceTerrain();
+    }
+
     //a spice bloom
     soundPlayer->playSoundAt(Sound_Bloom, getLocation());
     screenborder->shakeScreen(18);
@@ -919,8 +1022,8 @@ void Tile::triggerSpiceBloom(House* pTrigger) {
         soundPlayer->playVoice(BloomLocated, pLocalHouse->getHouseID());
     }
 
-    setType(Terrain_Spice); // Set this tile to spice first
-    currentGameMap->createSpiceField(location, 5);
+    setType(generatedSpiceTerrain.first); // Set this tile to spice first
+    currentGameMap->createSpiceField(location, 5, false, generatedSpiceTerrain.first, generatedSpiceTerrain.second);
 
     const auto realLocation = location * TILESIZE + Coord(TILESIZE / 2, TILESIZE / 2);
 
@@ -1105,14 +1208,11 @@ Uint32 Tile::getRadarColor(House* pHouse, bool radar) {
             color = COLOR_WHITE;
         }
         else {
-            switch (pObject->getOwner()->getHouseID()) {
-            case HOUSE_HARKONNEN:   color = SDL2RGB(palette[PALCOLOR_HARKONNEN]);  break;
-            case HOUSE_ATREIDES:    color = SDL2RGB(palette[PALCOLOR_ATREIDES]);   break;
-            case HOUSE_ORDOS:       color = SDL2RGB(palette[PALCOLOR_ORDOS]);      break;
-            case HOUSE_FREMEN:      color = SDL2RGB(palette[PALCOLOR_FREMEN]);     break;
-            case HOUSE_SARDAUKAR:   color = SDL2RGB(palette[PALCOLOR_SARDAUKAR]);  break;
-            case HOUSE_MERCENARY:   color = SDL2RGB(palette[PALCOLOR_MERCENARY]);  break;
-            default:                color = COLOR_BLACK;                           break;
+            const int ownerHouseID = pObject->getOwner()->getHouseID();
+            if(ownerHouseID >= 0 && ownerHouseID < NUM_HOUSES) {
+                color = getHouseRadarColor(static_cast<HOUSETYPE>(ownerHouseID));
+            } else {
+                color = COLOR_BLACK;
             }
         }
 
@@ -1141,17 +1241,17 @@ Uint32 Tile::getRadarColor(House* pHouse, bool radar) {
 }
 
 int Tile::getTerrainTile() const {
-    auto terrainType = type;
-    if (terrainType == Terrain_ThickSpice) {
+    int terrainType = static_cast<int>(type);
+    if (isThickSpiceTerrain(terrainType)) {
         // check if we are surrounded by spice/thick spice
-        bool up = (currentGameMap->tileExists(location.x, location.y - 1) == false) || (currentGameMap->getTile(location.x, location.y - 1)->isSpice() == true);
-        bool right = (currentGameMap->tileExists(location.x + 1, location.y) == false) || (currentGameMap->getTile(location.x + 1, location.y)->isSpice() == true);
-        bool down = (currentGameMap->tileExists(location.x, location.y + 1) == false) || (currentGameMap->getTile(location.x, location.y + 1)->isSpice() == true);
-        bool left = (currentGameMap->tileExists(location.x - 1, location.y) == false) || (currentGameMap->getTile(location.x - 1, location.y)->isSpice() == true);
+        bool up = (currentGameMap->tileExists(location.x, location.y - 1) == false) || isSameSpiceFamily(currentGameMap->getTile(location.x, location.y - 1)->getType(), terrainType);
+        bool right = (currentGameMap->tileExists(location.x + 1, location.y) == false) || isSameSpiceFamily(currentGameMap->getTile(location.x + 1, location.y)->getType(), terrainType);
+        bool down = (currentGameMap->tileExists(location.x, location.y + 1) == false) || isSameSpiceFamily(currentGameMap->getTile(location.x, location.y + 1)->getType(), terrainType);
+        bool left = (currentGameMap->tileExists(location.x - 1, location.y) == false) || isSameSpiceFamily(currentGameMap->getTile(location.x - 1, location.y)->getType(), terrainType);
 
         if (!up || !right || !down || !left) {
             // to avoid graphical glitches (there is no tile for thick spice next to a non-spice tile) we draw this tile as normal spice
-            terrainType = Terrain_Spice;
+            terrainType = getThinSpiceTerrain(terrainType);
         }
     }
 
@@ -1194,27 +1294,33 @@ int Tile::getTerrainTile() const {
         return TerrainTile_Mountain + (((int)up) | (right << 1) | (down << 2) | (left << 3));
     } break;
 
-    case Terrain_Spice: {
+    case Terrain_Spice:
+    case Terrain_GreenSpice:
+    case Terrain_RedSpice: {
         // determine which surrounding tiles are spice
-        bool up = (currentGameMap->tileExists(location.x, location.y - 1) == false) || (currentGameMap->getTile(location.x, location.y - 1)->isSpice() == true);
-        bool right = (currentGameMap->tileExists(location.x + 1, location.y) == false) || (currentGameMap->getTile(location.x + 1, location.y)->isSpice() == true);
-        bool down = (currentGameMap->tileExists(location.x, location.y + 1) == false) || (currentGameMap->getTile(location.x, location.y + 1)->isSpice() == true);
-        bool left = (currentGameMap->tileExists(location.x - 1, location.y) == false) || (currentGameMap->getTile(location.x - 1, location.y)->isSpice() == true);
+        bool up = (currentGameMap->tileExists(location.x, location.y - 1) == false) || isSameSpiceFamily(currentGameMap->getTile(location.x, location.y - 1)->getType(), terrainType);
+        bool right = (currentGameMap->tileExists(location.x + 1, location.y) == false) || isSameSpiceFamily(currentGameMap->getTile(location.x + 1, location.y)->getType(), terrainType);
+        bool down = (currentGameMap->tileExists(location.x, location.y + 1) == false) || isSameSpiceFamily(currentGameMap->getTile(location.x, location.y + 1)->getType(), terrainType);
+        bool left = (currentGameMap->tileExists(location.x - 1, location.y) == false) || isSameSpiceFamily(currentGameMap->getTile(location.x - 1, location.y)->getType(), terrainType);
 
         return TerrainTile_Spice + (((int)up) | (right << 1) | (down << 2) | (left << 3));
     } break;
 
-    case Terrain_ThickSpice: {
+    case Terrain_ThickSpice:
+    case Terrain_ThickGreenSpice:
+    case Terrain_ThickRedSpice: {
         // determine which surrounding tiles are thick spice
-        bool up = (currentGameMap->tileExists(location.x, location.y - 1) == false) || (currentGameMap->getTile(location.x, location.y - 1)->getType() == Terrain_ThickSpice);
-        bool right = (currentGameMap->tileExists(location.x + 1, location.y) == false) || (currentGameMap->getTile(location.x + 1, location.y)->getType() == Terrain_ThickSpice);
-        bool down = (currentGameMap->tileExists(location.x, location.y + 1) == false) || (currentGameMap->getTile(location.x, location.y + 1)->getType() == Terrain_ThickSpice);
-        bool left = (currentGameMap->tileExists(location.x - 1, location.y) == false) || (currentGameMap->getTile(location.x - 1, location.y)->getType() == Terrain_ThickSpice);
+        bool up = (currentGameMap->tileExists(location.x, location.y - 1) == false) || (currentGameMap->getTile(location.x, location.y - 1)->getType() == terrainType);
+        bool right = (currentGameMap->tileExists(location.x + 1, location.y) == false) || (currentGameMap->getTile(location.x + 1, location.y)->getType() == terrainType);
+        bool down = (currentGameMap->tileExists(location.x, location.y + 1) == false) || (currentGameMap->getTile(location.x, location.y + 1)->getType() == terrainType);
+        bool left = (currentGameMap->tileExists(location.x - 1, location.y) == false) || (currentGameMap->getTile(location.x - 1, location.y)->getType() == terrainType);
 
         return TerrainTile_ThickSpice + (((int)up) | (right << 1) | (down << 2) | (left << 3));
     } break;
 
-    case Terrain_SpiceBloom: {
+    case Terrain_SpiceBloom:
+    case Terrain_GreenSpiceBloom:
+    case Terrain_RedSpiceBloom: {
         return TerrainTile_SpiceBloom;
     } break;
 

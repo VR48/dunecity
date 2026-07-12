@@ -236,6 +236,36 @@ void INIMapEditorLoader::loadMap() {
                         type = Terrain_ThickSpice;
                     } break;
 
+                    case 'g': {
+                        // Tornie green spice
+                        type = Terrain_GreenSpice;
+                    } break;
+
+                    case 'G': {
+                        // Tornie thick green spice
+                        type = Terrain_ThickGreenSpice;
+                    } break;
+
+                    case 'b': {
+                        // Tornie green spice bloom
+                        type = Terrain_GreenSpiceBloom;
+                    } break;
+
+                    case 'r': {
+                        // Tornie red spice
+                        type = Terrain_RedSpice;
+                    } break;
+
+                    case 'R': {
+                        // Tornie thick red spice
+                        type = Terrain_ThickRedSpice;
+                    } break;
+
+                    case 'B': {
+                        // Tornie red spice bloom
+                        type = Terrain_RedSpiceBloom;
+                    } break;
+
                     case '%': {
                         // Rock
                         type = Terrain_Rock;

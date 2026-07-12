@@ -65,6 +65,7 @@ public:
     void setTarget(const ObjectBase* newTarget) override;
 
     bool canAttack(const ObjectBase* object) const override;
+    void playAttackSound() override;
 
     FixPoint extractSpice(FixPoint extractionSpeed);
 
@@ -75,6 +76,9 @@ public:
 private:
 
     void setSpeeds() override;
+
+    zoomable_texture turretGraphic{};   ///< Reserved for the Harvestank cannon overlay
+    int              gunGraphicID;      ///< Reserved cannon sprite id
 
     // harvester state
     bool     harvestingMode;         ///< currently harvesting

@@ -26,12 +26,30 @@
 #define SPICEFILLER 2       //for spice
 #define DUNESFILLER 1
 
+static bool isGeneratorThinSpice(TERRAINTYPE type) {
+    return type == Terrain_Spice || type == Terrain_GreenSpice || type == Terrain_RedSpice;
+}
+
+static bool isGeneratorSpice(TERRAINTYPE type) {
+    return type == Terrain_Spice || type == Terrain_ThickSpice
+        || type == Terrain_GreenSpice || type == Terrain_ThickGreenSpice
+        || type == Terrain_RedSpice || type == Terrain_ThickRedSpice;
+}
+
+static TERRAINTYPE getGeneratorThickSpice(TERRAINTYPE type) {
+    switch(type) {
+        case Terrain_GreenSpice: return Terrain_ThickGreenSpice;
+        case Terrain_RedSpice:   return Terrain_ThickRedSpice;
+        default:                 return Terrain_ThickSpice;
+    }
+}
+
 class MapGenerator {
 
 public:
 
-    MapGenerator(int sizeX, int sizeY, int randSeed, int rockfields = ROCKFIELDS, int spicefields = SPICEFIELDS, MirrorMode mirrorMode = MirrorModeNone)
-     : map(sizeX, sizeY), randGen(randSeed), rockfields(rockfields), spicefields(spicefields) {
+    MapGenerator(int sizeX, int sizeY, int randSeed, int rockfields = ROCKFIELDS, int spicefields = SPICEFIELDS, MirrorMode mirrorMode = MirrorModeNone, int greenSpicefields = 0, int redSpicefields = 0)
+     : map(sizeX, sizeY), randGen(randSeed), rockfields(rockfields), spicefields(spicefields), greenSpicefields(greenSpicefields), redSpicefields(redSpicefields) {
          mapMirror = MapMirror::createMapMirror(mirrorMode, sizeX, sizeY);
     }
 
@@ -69,7 +87,17 @@ public:
         }
 
         for(int i = 0; i < SPICEFILLER; i++) {
-            thickThickSpiceSpots();
+            thickThickSpiceSpots(Terrain_Spice, Terrain_ThickSpice);
+        }
+
+        addSpiceFields(Terrain_GreenSpice, greenSpicefields);
+        addSpiceFields(Terrain_RedSpice, redSpicefields);
+
+        if(greenSpicefields > 0) {
+            addSpiceBlooms(randGen.rand(0, greenSpicefields), Terrain_GreenSpiceBloom);
+        }
+        if(redSpicefields > 0) {
+            addSpiceBlooms(randGen.rand(0, redSpicefields), Terrain_RedSpiceBloom);
         }
 
         // Spice fields
@@ -85,7 +113,7 @@ public:
         }
 
         addRockBits(randGen.rand(0,9));
-        addSpiceBlooms(randGen.rand(0,9));
+        addSpiceBlooms(randGen.rand(0,9), Terrain_SpiceBloom);
 
 
     }
@@ -227,29 +255,29 @@ private:
     /**
         Removes holes in thick spice
     */
-    void thickThickSpiceSpots() {
+    void thickThickSpiceSpots(TERRAINTYPE thinSpiceType, TERRAINTYPE thickSpiceType) {
         for(int i = 0; i < map.getSizeX(); i++) {
             for(int j = 0; j < map.getSizeY(); j++) {
 
-                int numSpiceTiles = side4(i,j,Terrain_Spice)+side4(i,j,Terrain_ThickSpice);
+                int numSpiceTiles = side4(i,j,thinSpiceType)+side4(i,j,thickSpiceType);
 
-                if(map(i,j) != Terrain_ThickSpice && (numSpiceTiles>=4)) {
+                if(map(i,j) != thickSpiceType && (numSpiceTiles>=4)) {
                     // Found something else than what thickining
 
-                    if(side4(i, j, Terrain_ThickSpice) >= 3) {
+                    if(side4(i, j, thickSpiceType) >= 3) {
                         // Seems enough of ThickSpice around it so make this also ThickSpice
                         for(int m=0; m < mapMirror->getSize(); m++) {
                             Coord position = mapMirror->getCoord(Coord(i, j), m);
-                            map(position.x,position.y) = Terrain_ThickSpice;
+                            map(position.x,position.y) = thickSpiceType;
                         }
                     }
 
-                    if(side4(i, j, Terrain_ThickSpice) == 2) {
+                    if(side4(i, j, thickSpiceType) == 2) {
                         // Gamble, fifty fifty... set this to ThickSpice or not?
                         if(randGen.rand(0,1) == 1) {
                             for(int m=0; m < mapMirror->getSize(); m++) {
                                 Coord position = mapMirror->getCoord(Coord(i, j), m);
-                                map(position.x,position.y) = Terrain_ThickSpice;
+                                map(position.x,position.y) = thickSpiceType;
                             }
                         }
                     }
@@ -280,16 +308,19 @@ private:
 
             TERRAINTYPE type2Place = type;
 
-            if(type == Terrain_Spice) {
+            if(isGeneratorThinSpice(type)) {
+                const TERRAINTYPE thickSpiceType = getGeneratorThickSpice(type);
                 if(map(x,y) == Terrain_Rock) {
                     // Do not place the spice spot, priority is ROCK!
                     continue;
-                } else if((map(x,y) == Terrain_Spice) && ((side4(x,y,Terrain_Spice)+side4(x,y,Terrain_ThickSpice)) >= 4)) {
+                } else if(isGeneratorSpice(map(x,y)) && map(x,y) != type && map(x,y) != thickSpiceType) {
+                    continue;
+                } else if((map(x,y) == type) && ((side4(x,y,type)+side4(x,y,thickSpiceType)) >= 4)) {
                     // "upgrade" spice to thick spice
-                    type2Place = Terrain_ThickSpice;
-                } else if(map(x,y) == Terrain_ThickSpice) {
+                    type2Place = thickSpiceType;
+                } else if(map(x,y) == thickSpiceType) {
                     // do not "downgrade" thick spice to spice
-                    type2Place = Terrain_ThickSpice;
+                    type2Place = thickSpiceType;
                 }
             } else if(type == Terrain_Dunes) {
                 if(map(x,y) != Terrain_Sand) {
@@ -304,6 +335,23 @@ private:
                 Coord position = mapMirror->getCoord(Coord(x, y), m);
                 map(position.x,position.y) = type2Place;
             }
+        }
+    }
+
+    void addSpiceFields(TERRAINTYPE spiceType, int amount) {
+        for(int i = 0; i < amount; i++) {
+            int spotX = randGen.rand(0, map.getSizeX()-1);
+            int spotY = randGen.rand(0, map.getSizeY()-1);
+
+            makeSpot(spotX, spotY, spiceType);
+        }
+
+        for(int i = 0; i < SPICEFILLER; i++) {
+            thickSpots(spiceType);
+        }
+
+        for(int i = 0; i < SPICEFILLER; i++) {
+            thickThickSpiceSpots(spiceType, getGeneratorThickSpice(spiceType));
         }
     }
 
@@ -332,7 +380,7 @@ private:
         Adds amount number of spice blooms to the map
         \param amount the number of spice blooms to add
     */
-    void addSpiceBlooms(int amount) {
+    void addSpiceBlooms(int amount, TERRAINTYPE bloomType) {
         int done = 0;
         for(int j = 0; (done < amount) && (j < 1000) ; j++) {
             int spotX = randGen.rand(0, map.getSizeX()-1);
@@ -341,7 +389,7 @@ private:
             if(map(spotX, spotY) == Terrain_Sand) {
                 for(int m=0; m < mapMirror->getSize(); m++) {
                     Coord position = mapMirror->getCoord(Coord(spotX, spotY), m);
-                    map(position.x,position.y) = Terrain_SpiceBloom;
+                    map(position.x,position.y) = bloomType;
                 }
                 done++;
             }
@@ -355,6 +403,8 @@ private:
 
     int rockfields;
     int spicefields;
+    int greenSpicefields;
+    int redSpicefields;
 
     std::unique_ptr<MapMirror>      mapMirror;
 };
@@ -368,8 +418,8 @@ private:
     \param spicefields  num spice fields to add
     \return the generated map
 */
-MapData generateRandomMap(int sizeX, int sizeY, int randSeed, int rockfields, int spicefields, MirrorMode mirrorMode) {
-    MapGenerator mapGenerator(sizeX, sizeY, randSeed, rockfields, spicefields, mirrorMode);
+MapData generateRandomMap(int sizeX, int sizeY, int randSeed, int rockfields, int spicefields, MirrorMode mirrorMode, int greenSpicefields, int redSpicefields) {
+    MapGenerator mapGenerator(sizeX, sizeY, randSeed, rockfields, spicefields, mirrorMode, greenSpicefields, redSpicefields);
 
     mapGenerator.generateMap();
 

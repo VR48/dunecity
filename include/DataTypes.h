@@ -312,6 +312,15 @@ typedef enum
     NUM_HOUSES
 } HOUSETYPE;
 
+constexpr int HOUSECOLOR_CUSTOM_DARK_VIOLET   = NUM_HOUSES;
+constexpr int HOUSECOLOR_CUSTOM_FUCHSIA       = NUM_HOUSES + 1;
+constexpr int HOUSECOLOR_CUSTOM_TEAL          = NUM_HOUSES + 2;
+constexpr int HOUSECOLOR_CUSTOM_BRIGHT_YELLOW = NUM_HOUSES + 3;
+constexpr int HOUSECOLOR_CUSTOM_APPLE_GREEN   = NUM_HOUSES + 4;
+constexpr int HOUSECOLOR_CUSTOM_LIGHT_PINK    = NUM_HOUSES + 5;
+constexpr int NUM_CUSTOM_HOUSE_COLORS         = 6;
+constexpr int NUM_HOUSE_COLOR_SLOTS           = NUM_HOUSES + NUM_CUSTOM_HOUSE_COLORS;
+
 typedef enum {
     RIGHT,
     RIGHTUP,

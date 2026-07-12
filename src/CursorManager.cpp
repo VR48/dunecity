@@ -24,6 +24,8 @@
 #include <structures/StructureBase.h>
 #include <structures/Palace.h>
 
+#include <algorithm>
+
 namespace {
 
 // Scale an SDL_Surface up by an integer factor. Returns a new surface the
@@ -167,6 +169,42 @@ SDL_Point findTopLeftOpaquePixel(SDL_Surface* surface) {
 
     return hotspot;
 }
+
+SDL_Cursor* createColorCursorSafe(SDL_Surface* source, int hotspotX, int hotspotY, int scale, SDL_SystemCursor fallback) {
+#if defined(_WIN32)
+    (void) source;
+    (void) hotspotX;
+    (void) hotspotY;
+    (void) scale;
+    return SDL_CreateSystemCursor(fallback);
+#else
+    if(source == nullptr) {
+        return SDL_CreateSystemCursor(fallback);
+    }
+
+    SDL_Surface* scaled = scaleSurface(source, scale);
+    SDL_Surface* cursorSource = scaled != nullptr ? scaled : source;
+    sdl2::surface_ptr converted{ SDL_ConvertSurfaceFormat(cursorSource, SDL_PIXELFORMAT_ARGB8888, 0) };
+    if(scaled != nullptr) {
+        SDL_FreeSurface(scaled);
+    }
+
+    if(converted == nullptr) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "CursorManager: failed to convert cursor surface: %s", SDL_GetError());
+        return SDL_CreateSystemCursor(fallback);
+    }
+
+    const int clampedX = std::clamp(hotspotX * scale, 0, converted->w - 1);
+    const int clampedY = std::clamp(hotspotY * scale, 0, converted->h - 1);
+    SDL_Cursor* cursor = SDL_CreateColorCursor(converted.get(), clampedX, clampedY);
+    if(cursor == nullptr) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "CursorManager: failed to create color cursor: %s", SDL_GetError());
+        return SDL_CreateSystemCursor(fallback);
+    }
+
+    return cursor;
+#endif
+}
 }
 
 CursorManager::CursorManager() : 
@@ -201,51 +239,20 @@ void CursorManager::initialize() {
         SDL_Surface* carryallDropSurface = pGFXManager->getUIGraphicSurface(UI_CursorCarryallDrop_Zoomlevel0);
 
         if (normalSurface) {
-            // Find hotspot on the original surface, then scale coordinates.
             SDL_Point hotspot = findTopLeftOpaquePixel(normalSurface);
-            SDL_Surface* scaled = scaleSurface(normalSurface, scale);
-            if (scaled) {
-                cache.normal = SDL_CreateColorCursor(scaled, hotspot.x * scale, hotspot.y * scale);
-                SDL_FreeSurface(scaled);
-            } else {
-                cache.normal = SDL_CreateColorCursor(normalSurface, hotspot.x, hotspot.y);
-            }
+            cache.normal = createColorCursorSafe(normalSurface, hotspot.x, hotspot.y, scale, SDL_SYSTEM_CURSOR_ARROW);
         }
         if (moveSurface) {
-            SDL_Surface* scaled = scaleSurface(moveSurface, scale);
-            if (scaled) {
-                cache.move = SDL_CreateColorCursor(scaled, scaled->w / 2, scaled->h / 2);
-                SDL_FreeSurface(scaled);
-            } else {
-                cache.move = SDL_CreateColorCursor(moveSurface, moveSurface->w / 2, moveSurface->h / 2);
-            }
+            cache.move = createColorCursorSafe(moveSurface, moveSurface->w / 2, moveSurface->h / 2, scale, SDL_SYSTEM_CURSOR_SIZEALL);
         }
         if (attackSurface) {
-            SDL_Surface* scaled = scaleSurface(attackSurface, scale);
-            if (scaled) {
-                cache.attack = SDL_CreateColorCursor(scaled, scaled->w / 2, scaled->h / 2);
-                SDL_FreeSurface(scaled);
-            } else {
-                cache.attack = SDL_CreateColorCursor(attackSurface, attackSurface->w / 2, attackSurface->h / 2);
-            }
+            cache.attack = createColorCursorSafe(attackSurface, attackSurface->w / 2, attackSurface->h / 2, scale, SDL_SYSTEM_CURSOR_CROSSHAIR);
         }
         if (captureSurface) {
-            SDL_Surface* scaled = scaleSurface(captureSurface, scale);
-            if (scaled) {
-                cache.capture = SDL_CreateColorCursor(scaled, scaled->w / 2, scaled->h / 2);
-                SDL_FreeSurface(scaled);
-            } else {
-                cache.capture = SDL_CreateColorCursor(captureSurface, captureSurface->w / 2, captureSurface->h / 2);
-            }
+            cache.capture = createColorCursorSafe(captureSurface, captureSurface->w / 2, captureSurface->h / 2, scale, SDL_SYSTEM_CURSOR_HAND);
         }
         if (carryallDropSurface) {
-            SDL_Surface* scaled = scaleSurface(carryallDropSurface, scale);
-            if (scaled) {
-                cache.carryallDrop = SDL_CreateColorCursor(scaled, scaled->w / 2, scaled->h / 2);
-                SDL_FreeSurface(scaled);
-            } else {
-                cache.carryallDrop = SDL_CreateColorCursor(carryallDropSurface, carryallDropSurface->w / 2, carryallDropSurface->h / 2);
-            }
+            cache.carryallDrop = createColorCursorSafe(carryallDropSurface, carryallDropSurface->w / 2, carryallDropSurface->h / 2, scale, SDL_SYSTEM_CURSOR_SIZEALL);
         }
     }
 

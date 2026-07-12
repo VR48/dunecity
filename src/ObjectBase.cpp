@@ -51,6 +51,7 @@
 #include <structures/AdvancedWindTrap.h>
 #include <structures/Worfinery.h>
 #include <structures/TechCenter.h>
+#include <structures/Scoutpost.h>
 #include <structures/NuclearPlant.h>
 #include <structures/PoliceStation.h>
 #include <structures/Stadium.h>
@@ -160,9 +161,9 @@ ObjectBase::ObjectBase(InputStream& stream) {
     targetFriendly = stream.readBool();
     attackMode = static_cast<ATTACKMODE>(stream.readUint32());
 
-    std::array<bool, 7> b{false, false, false, false, false, false, false};
+    std::array<bool, NUM_TEAMS> b{};
 
-    stream.readBools(&b[0], &b[1], &b[2], &b[3], &b[4], &b[5], &b[6]);
+    stream.readBools(&b[0], &b[1], &b[2], &b[3], &b[4], &b[5], &b[6], &b[7]);
 
     for (decltype(visible.size()) i = 0; i < visible.size(); ++i)
         visible[i] = b[i];
@@ -229,7 +230,7 @@ void ObjectBase::save(OutputStream& stream) const {
     stream.writeBool(targetFriendly);
     stream.writeUint32(attackMode);
 
-    stream.writeBools(visible[0], visible[1], visible[2], visible[3], visible[4], visible[5], visible[6]);
+    stream.writeBools(visible[0], visible[1], visible[2], visible[3], visible[4], visible[5], visible[6], visible[7]);
 }
 
 
@@ -829,9 +830,11 @@ ObjectBase* ObjectBase::createObject(int itemID, House* Owner, bool byScenario) 
         case Structure_Wall:                newObject = new Wall(Owner); break;
         case Structure_WindTrap:            newObject = new WindTrap(Owner); break;
         case Structure_AdvancedWindTrap:    newObject = new AdvancedWindTrap(Owner); break;
-        case Structure_AdvancedWindTrapMK2: newObject = new AdvancedWindTrap(Owner); break;  // same class, different ItemID
-        case Structure_Worfinery:          newObject = new Worfinery(Owner); break;
-        case Structure_TechCenter:        newObject = new TechCenter(Owner); break;
+        case Structure_AdvancedWindTrapMK2: newObject = new AdvancedWindTrap(Owner, Structure_AdvancedWindTrapMK2); break;
+        case Structure_AdvancedWindTrapMK3: newObject = new AdvancedWindTrap(Owner, Structure_AdvancedWindTrapMK3); break;
+        case Structure_Worfinery:           newObject = new Worfinery(Owner); break;
+        case Structure_TechCenter:          newObject = new TechCenter(Owner); break;
+        case Structure_Scoutpost:           newObject = new Scoutpost(Owner); break;
         case Structure_WOR:                 newObject = new WOR(Owner); break;
         case Structure_NuclearPlant:        newObject = new NuclearPlant(Owner); break;
         case Structure_PoliceStation:       newObject = new PoliceStation(Owner); break;
@@ -921,6 +924,11 @@ ObjectBase* ObjectBase::loadObject(InputStream& stream, int itemID, Uint32 objec
         case Structure_Wall:                newObject = new Wall(stream); break;
         case Structure_WindTrap:            newObject = new WindTrap(stream); break;
         case Structure_AdvancedWindTrap:    newObject = new AdvancedWindTrap(stream); break;
+        case Structure_AdvancedWindTrapMK2: newObject = new AdvancedWindTrap(stream, Structure_AdvancedWindTrapMK2); break;
+        case Structure_AdvancedWindTrapMK3: newObject = new AdvancedWindTrap(stream, Structure_AdvancedWindTrapMK3); break;
+        case Structure_Worfinery:           newObject = new Worfinery(stream); break;
+        case Structure_TechCenter:          newObject = new TechCenter(stream); break;
+        case Structure_Scoutpost:           newObject = new Scoutpost(stream); break;
         case Structure_WOR:                 newObject = new WOR(stream); break;
         case Structure_NuclearPlant:        newObject = new NuclearPlant(stream); break;
         case Structure_PoliceStation:       newObject = new PoliceStation(stream); break;
@@ -935,6 +943,7 @@ ObjectBase* ObjectBase::loadObject(InputStream& stream, int itemID, Uint32 objec
         case Unit_Deviator:                 newObject = new Deviator(stream); break;
         case Unit_Frigate:                  newObject = new Frigate(stream); break;
         case Unit_Harvester:                newObject = new Harvester(stream); break;
+        case Unit_RebelHarvester:           newObject = new RebelHarvester(stream); break;
         case Unit_Soldier:                  newObject = new Soldier(stream); break;
         case Unit_Launcher:                 newObject = new Launcher(stream); break;
         case Unit_MCV:                      newObject = new MCV(stream); break;
@@ -950,6 +959,10 @@ ObjectBase* ObjectBase::loadObject(InputStream& stream, int itemID, Uint32 objec
         case Unit_Trooper:                  newObject = new Trooper(stream); break;
         case Unit_AmbientAirplane:          newObject = new AmbientAirplane(stream); break;
         case Unit_AmbientHelicopter:        newObject = new AmbientHelicopter(stream); break;
+        case Unit_RocketTrike:              newObject = new RocketTrike(stream); break;
+        case Unit_FlameTank:                newObject = new FlameTank(stream); break;
+        case Unit_EliteLauncher:            newObject = new EliteLauncher(stream); break;
+        case Unit_EliteSiegeTank:           newObject = new EliteSiegeTank(stream); break;
 
         default:                            newObject = nullptr;
                                             SDL_Log("ObjectBase::loadObject(): %d is no valid ItemID!",itemID);

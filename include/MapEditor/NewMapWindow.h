@@ -26,6 +26,7 @@
 #include <GUI/Label.h>
 #include <GUI/DropDownBox.h>
 #include <GUI/RadioButton.h>
+#include <GUI/Checkbox.h>
 #include <GUI/TextButton.h>
 #include <GUI/PictureLabel.h>
 #include <GUI/dune/DigitsTextBox.h>
@@ -113,6 +114,12 @@ private:
 
     Label               spiceLabel;
     DigitsTextBox       spiceDigitsTextBox;
+
+    HBox                tornieSpiceHBox;
+    Checkbox            greenSpiceCheckbox;
+    DigitsTextBox       greenSpiceDigitsTextBox;
+    Checkbox            redSpiceCheckbox;
+    DigitsTextBox       redSpiceDigitsTextBox;
 
     PictureLabel        minimap;
 

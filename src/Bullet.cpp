@@ -56,7 +56,7 @@ Bullet::Bullet(Uint32 shooterID, Coord* newRealLocation, Coord* newRealDestinati
         } else {
             detonationTimer = 60;
         }
-    } else if((bulletID == Bullet_Rocket || bulletID == Bullet_DRocket || bulletID == Bullet_SmallRocket)
+    } else if((bulletID == Bullet_Rocket || bulletID == Bullet_DRocket || bulletID == Bullet_SmallRocket || bulletID == Bullet_Flame)
               && detonationTimer > 0) {
         const ObjectBase* pInitialTarget = target.getObjPointer();
         if(pInitialTarget && pInitialTarget->isAFlyingUnit()) {
@@ -83,7 +83,7 @@ Bullet::Bullet(Uint32 shooterID, Coord* newRealLocation, Coord* newRealDestinati
         FixPoint ratio = (weaponrange*TILESIZE)/square_root;
         destination.x = newRealLocation->x + floor(diffX*ratio);
         destination.y = newRealLocation->y + floor(diffY*ratio);
-    } else if(bulletID == Bullet_Rocket || bulletID == Bullet_DRocket) {
+    } else if(bulletID == Bullet_Rocket || bulletID == Bullet_DRocket || bulletID == Bullet_Flame) {
         // Dynasty scatter algorithm - applies to both ground AND air targets
         FixPoint distance = distanceFrom(*newRealLocation, *newRealDestination);
         const int distanceInTiles = std::max(0, lround(distance / TILESIZE));
@@ -263,14 +263,11 @@ void Bullet::init()
         } break;
 
         case Bullet_Flame: {
-            // Tornie: line-propagation flame. Same propagation semantics as Sonic
-            // (visual+damage travels along a line from shooter to target); render
-            // reuses the Sonic bullet sprite so we don't need a new ObjPic.
-            damageRadius = (TILESIZE*3)/4;
-            speed = 6;
-            numFrames = 1;
-            detonationTimer = 45;
-            graphic = pGFXManager->getObjPic(ObjPic_Bullet_Sonic, HOUSE_HARKONNEN);
+            damageRadius = TILESIZE;
+            speed = 19.2_fix;
+            numFrames = 16;
+            detonationTimer = 22;
+            graphic = pGFXManager->getObjPic(ObjPic_Bullet_MediumRocket, HOUSE_HARKONNEN);
         } break;
 
         default: {
@@ -355,15 +352,22 @@ void Bullet::blitToScreen() const
         SDL_SetTextureBlendMode(shimmerTex, SDL_BLENDMODE_BLEND);
         SDL_RenderCopy(renderer, shimmerTex, nullptr, &dest);
     } else {
-        SDL_Rect source = calcSpriteSourceRect(graphic[currentZoomlevel], (numFrames > 1) ? drawnAngle: 0, numFrames);
-        SDL_RenderCopy(renderer, graphic[currentZoomlevel], &source, &dest);
+        SDL_Texture* pBulletGraphic = graphic[currentZoomlevel];
+        SDL_Rect source = calcSpriteSourceRect(pBulletGraphic, (numFrames > 1) ? drawnAngle: 0, numFrames);
+        if(bulletID == Bullet_Flame) {
+            SDL_SetTextureColorMod(pBulletGraphic, 255, 125, 35);
+            SDL_RenderCopy(renderer, pBulletGraphic, &source, &dest);
+            SDL_SetTextureColorMod(pBulletGraphic, 255, 255, 255);
+        } else {
+            SDL_RenderCopy(renderer, pBulletGraphic, &source, &dest);
+        }
     }
 }
 
 
 void Bullet::update()
 {
-    if(bulletID == Bullet_Rocket || bulletID == Bullet_DRocket) {
+    if(bulletID == Bullet_Rocket || bulletID == Bullet_DRocket || bulletID == Bullet_Flame) {
 
         // Dynasty: Launcher/Deviator rockets track ornithopters (small, fast targets)
         // Carryalls are NOT tracked - they use static scattered destination
@@ -512,7 +516,7 @@ void Bullet::update()
 
         if(oldDistanceToDestination < newDistanceToDestination || newDistanceToDestination < 4)  {
 
-            if(bulletID == Bullet_Rocket || bulletID == Bullet_DRocket) {
+            if(bulletID == Bullet_Rocket || bulletID == Bullet_DRocket || bulletID == Bullet_Flame) {
                 // Check if targeting a flying unit
                 ObjectBase* pTarget = target.getObjPointer();
                 bool isAirTarget = (pTarget != nullptr && pTarget->isAFlyingUnit());
@@ -593,6 +597,19 @@ void Bullet::destroy()
         case Bullet_SmallRocket: {
             currentGameMap->damage(shooterID, owner, position, bulletID, damage, damageRadius, airAttack);
             currentGame->getExplosionList().push_back(new Explosion(Explosion_Small,position,houseID));
+        } break;
+
+        case Bullet_Flame: {
+            currentGameMap->damage(shooterID, owner, position, bulletID, damage, damageRadius, false);
+            soundPlayer->playSoundAt(Sound_ExplosionSmall, position);
+            currentGame->getExplosionList().push_back(new Explosion(Explosion_Flames, position, houseID));
+
+            for(int i = 0; i < 2; i++) {
+                Coord flamePos = position;
+                flamePos.x += currentGame->randomGen.rand(-TILESIZE/3, TILESIZE/3);
+                flamePos.y += currentGame->randomGen.rand(-TILESIZE/3, TILESIZE/3);
+                currentGame->getExplosionList().push_back(new Explosion(Explosion_Flames, flamePos, houseID));
+            }
         } break;
 
         case Bullet_ShellSmall: {

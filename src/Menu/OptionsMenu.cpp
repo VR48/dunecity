@@ -46,6 +46,9 @@ OptionsMenu::OptionsMenu() : MenuBase()
     determineAvailableScreenResolutions();
 
     std::list<std::string> languagesList = getFileNamesList(getDuneLegacyDataDir() + "/locale", "po", true, FileListOrder_Name_Asc);
+    if(languagesList.empty()) {
+        languagesList = getFileNamesList(getDuneLegacyDataDir() + "/data/locale", "po", true, FileListOrder_Name_Asc);
+    }
     availLanguages = std::vector<std::string>(languagesList.begin(), languagesList.end());
 
     currentGameOptions = effectiveGameOptions;  // Use mod-aware effective options

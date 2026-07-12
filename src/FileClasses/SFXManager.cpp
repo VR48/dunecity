@@ -29,6 +29,7 @@
 #include <audio/sounds.h>
 #include <misc/sound_util.h>
 #include <misc/exceptions.h>
+#include <mod/ModManager.h>
 
 // Not used:
 // - EXCANNON.VOC (same as EXSMALL.VOC)
@@ -85,6 +86,9 @@ void SFXManager::loadEnglishVoice() {
     lngVoice.clear();
     lngVoice.resize(NUM_VOICE*NUM_HOUSES);
 
+    const bool tornieVoiceFx = ModManager::instance().isInitialized()
+        && (ModManager::instance().getActiveModName() == "Tornie");
+
     // now we can load
     for(auto house = 0; house < NUM_HOUSES; house++) {
         sdl2::mix_chunk_ptr HouseNameChunk;
@@ -94,35 +98,35 @@ void SFXManager::loadEnglishVoice() {
         switch(house) {
             case HOUSE_HARKONNEN:
                 HouseString = "H";
-                HouseNameChunk = getChunkFromFile("HARK.VOC");
+                HouseNameChunk = getChunkFromFile("HHARK.VOC", "HARK.VOC");
                 break;
             case HOUSE_ATREIDES:
                 HouseString = "A";
-                HouseNameChunk = getChunkFromFile("ATRE.VOC");
+                HouseNameChunk = getChunkFromFile("AATRE.VOC", "MATRE.VOC");
                 break;
             case HOUSE_ORDOS:
                 HouseString = "O";
-                HouseNameChunk = getChunkFromFile("ORDOS.VOC");
+                HouseNameChunk = getChunkFromFile("OORDOS.VOC", "MORDOS.VOC");
                 break;
             case HOUSE_FREMEN:
                 HouseString = "A";
-                HouseNameChunk = getChunkFromFile("FREMEN.VOC");
+                HouseNameChunk = getChunkFromFile("AFREMEN.VOC", "AATRE.VOC");
                 break;
             case HOUSE_SARDAUKAR:
                 HouseString = "H";
-                HouseNameChunk = getChunkFromFile("SARD.VOC");
+                HouseNameChunk = getChunkFromFile("HSARD.VOC", "HHARK.VOC");
                 break;
             case HOUSE_MERCENARY:
                 HouseString = "O";
-                HouseNameChunk = getChunkFromFile("MERC.VOC");
+                HouseNameChunk = getChunkFromFile("OMERC.VOC", "OORDOS.VOC");
                 break;
             case HOUSE_NEUTRAL:
-                HouseString = "N";
-                HouseNameChunk = getChunkFromFile("NEUTRAL.VOC");
+                HouseString = "A";
+                HouseNameChunk = getChunkFromFile("ANEU.VOC", "AATRE.VOC");
                 break;
             case HOUSE_REBELS:
-                HouseString = "R";
-                HouseNameChunk = getChunkFromFile("RREBELS.VOC");
+                HouseString = "H";
+                HouseNameChunk = getChunkFromFile("RREBELS.VOC", "HHARK.VOC");
                 break;
             default:
                 break;
@@ -228,6 +232,37 @@ void SFXManager::loadEnglishVoice() {
 
         // "House Ordos"
         lngVoice[HouseOrdos*NUM_HOUSES+VoiceNum] = getChunkFromFile("MORDOS.VOC");
+
+        switch(house) {
+            case HOUSE_FREMEN:
+                lngVoice[HouseAtreides*NUM_HOUSES+VoiceNum] = getChunkFromFile("AFREMEN.VOC", "MATRE.VOC");
+                break;
+            case HOUSE_SARDAUKAR:
+                lngVoice[HouseHarkonnen*NUM_HOUSES+VoiceNum] = getChunkFromFile("HSARD.VOC", "MHARK.VOC");
+                break;
+            case HOUSE_MERCENARY:
+                lngVoice[HouseOrdos*NUM_HOUSES+VoiceNum] = getChunkFromFile("OMERC.VOC", "MORDOS.VOC");
+                break;
+            case HOUSE_NEUTRAL:
+                lngVoice[HouseAtreides*NUM_HOUSES+VoiceNum] = getChunkFromFile("ANEU.VOC", "MATRE.VOC");
+                break;
+            case HOUSE_REBELS:
+                lngVoice[HouseHarkonnen*NUM_HOUSES+VoiceNum] = getChunkFromFile("RREBELS.VOC", "MHARK.VOC");
+                break;
+            default:
+                break;
+        }
+
+        if(tornieVoiceFx && (house == HOUSE_SARDAUKAR || house == HOUSE_REBELS || house == HOUSE_NEUTRAL)) {
+            const double playbackRate = (house == HOUSE_SARDAUKAR) ? 0.86 : (house == HOUSE_REBELS ? 0.90 : 1.07);
+            const double gain = (house == HOUSE_SARDAUKAR) ? 1.08 : (house == HOUSE_REBELS ? 1.05 : 0.98);
+            for(auto voice = 0; voice < NUM_VOICE; ++voice) {
+                const int voiceIndex = voice*NUM_HOUSES + VoiceNum;
+                if(lngVoice[voiceIndex] != nullptr) {
+                    lngVoice[voiceIndex] = pitchShiftChunk(lngVoice[voiceIndex].get(), playbackRate, gain);
+                }
+            }
+        }
     }
 
     const auto bad_voice = std::find(lngVoice.cbegin(), lngVoice.cend(), nullptr);
@@ -240,10 +275,14 @@ void SFXManager::loadEnglishVoice() {
 
 
 Mix_Chunk* SFXManager::getEnglishVoice(Voice_enum id, int house) const {
-    if(static_cast<size_t>(id) >= lngVoice.size())
+    if(id < 0 || id >= NUM_VOICE || house < 0 || house >= NUM_HOUSES)
         return nullptr;
 
-    return lngVoice[id*NUM_HOUSES + house].get();
+    const size_t voiceIndex = static_cast<size_t>(id) * NUM_HOUSES + house;
+    if(voiceIndex >= lngVoice.size())
+        return nullptr;
+
+    return lngVoice[voiceIndex].get();
 }
 
 void SFXManager::loadNonEnglishVoice(const std::string& languagePrefix) {
@@ -375,7 +414,7 @@ void SFXManager::loadSoundEffects() {
 }
 
 Mix_Chunk* SFXManager::getNonEnglishVoice(Voice_enum id, int house) const {
-    if(static_cast<size_t>(id) >= lngVoice.size())
+    if(id < 0 || id >= NUM_VOICE)
         return nullptr;
 
     return lngVoice[id].get();

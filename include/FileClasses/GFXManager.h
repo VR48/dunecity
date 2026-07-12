@@ -46,6 +46,7 @@ typedef enum {
     ObjPic_Devastator_Gun,
     ObjPic_Sonictank_Gun,
     ObjPic_Launcher_Gun,
+    ObjPic_DeviatorFull,           ///< Tornie: complete Deviator sprite, base and turret already combined
     ObjPic_RocketTrike,             ///< Tornie: dedicated sprite (data/RocketTrike.png)
     ObjPic_FlameTank,               ///< Tornie: dedicated sprite (data/FlameTank.png)
     ObjPic_EliteSiegeTankCustom,    ///< Tornie: dedicated sprite (data/EliteSiegeTank.png)
@@ -68,6 +69,9 @@ typedef enum {
     ObjPic_Sandworm,
     ObjPic_ConstructionYard,
     ObjPic_Windtrap,
+    ObjPic_AdvancedWindTrap,       ///< Tornie: 3x3 Advanced Windtrap with vanilla Windtrap color-cycle animation
+    ObjPic_AdvancedWindTrap2x3,    ///< Tornie: 2x3 Advanced Windtrap with vanilla Windtrap color-cycle animation
+    ObjPic_AdvancedWindTrap3x2,    ///< Tornie: 3x2 Advanced Windtrap with vanilla Windtrap color-cycle animation
     ObjPic_Refinery,
     ObjPic_Barracks,
     ObjPic_WOR,
@@ -109,6 +113,8 @@ typedef enum {
     ObjPic_SandwormShimmerMask,
     ObjPic_SandwormShimmerTemp,
     ObjPic_Terrain,
+    ObjPic_Terrain_GreenSpice,
+    ObjPic_Terrain_RedSpice,
     ObjPic_DestroyedStructure,
     ObjPic_RockDamage,
     ObjPic_SandDamage,
@@ -119,6 +125,7 @@ typedef enum {
     ObjPic_RebelHarvester,        ///< Tornie: dedicated sprite for Rebel-only Harvester
     ObjPic_Worfinery,             ///< Tornie: WOR + Refinery combo (48x64 = 2 vertical frames at 3x2)
     ObjPic_TechCenter,            ///< Tornie: Tech Center (Palace-equivalent, 48x64 = 2 vertical frames at 3x2)
+    ObjPic_Scoutpost,             ///< Tornie: Scoutpost (16x32 = 2 vertical frames at 1x1)
     ObjPic_ZoneResidential,
     ObjPic_ZoneCommercial,
     ObjPic_ZoneIndustrial,
@@ -133,15 +140,16 @@ typedef enum {
 } ObjPic_enum;
 
 static const std::array<std::string, NUM_OBJPICS> ObjPicNames =  { { "Tank_Base", "Tank_Gun", "Siegetank_Base", "Siegetank_Gun", "Devastator_Base",
-    "Devastator_Gun", "Sonictank_Gun", "Launcher_Gun", "Quad", "Trike", "Harvester", "Harvester_Sand", "MCV", "Carryall", "CarryallShadow",
+    "Devastator_Gun", "Sonictank_Gun", "Launcher_Gun", "Deviator", "RocketTrike", "FlameTank", "EliteSiegeTankCustom",
+    "Quad", "Trike", "Harvester", "Harvester_Sand", "MCV", "Carryall", "CarryallShadow",
     "Frigate", "FrigateShadow", "Ornithopter", "OrnithopterShadow", "Trooper", "Troopers", "Soldier", "Infantry", "Saboteur", "Sandworm",
-    "ConstructionYard", "Windtrap", "Refinery", "Barracks", "WOR", "Radar", "LightFactory", "Silo", "HeavyFactory", "HighTechFactory",
+    "ConstructionYard", "Windtrap", "AdvancedWindTrap", "AdvancedWindTrap2x3", "AdvancedWindTrap3x2", "Refinery", "Barracks", "WOR", "Radar", "LightFactory", "Silo", "HeavyFactory", "HighTechFactory",
     "IX", "Palace", "RepairYard", "Starport", "GunTurret", "RocketTurret", "Wall",
     "Bullet_SmallRocket", "Bullet_MediumRocket", "Bullet_LargeRocket", "Bullet_Small", "Bullet_Medium", "Bullet_Large", "Bullet_Sonic",
     "Bullet_SonicTemp", "Hit_Gas", "Hit_ShellSmall", "Hit_ShellMedium", "Hit_ShellLarge", "ExplosionSmall", "ExplosionMedium1",
     "ExplosionMedium2", "ExplosionLarge1", "ExplosionLarge2", "ExplosionSmallUnit", "ExplosionFlames", "ExplosionSpiceBloom",
-    "DeadInfantry", "DeadAirUnit", "Smoke", "SandwormShimmerMask", "SandwormShimmerTemp", "Terrain", "DestroyedStructure", "RockDamage",
-    "SandDamage", "Terrain_Hidden", "Terrain_HiddenFog", "Terrain_Tracks", "Star",
+    "DeadInfantry", "DeadAirUnit", "Smoke", "SandwormShimmerMask", "SandwormShimmerTemp", "Terrain", "Terrain_GreenSpice", "Terrain_RedSpice", "DestroyedStructure", "RockDamage",
+    "SandDamage", "Terrain_Hidden", "Terrain_HiddenFog", "Terrain_Tracks", "Star", "RebelHarvester", "Worfinery", "TechCenter", "Scoutpost",
     "ZoneResidential", "ZoneCommercial", "ZoneIndustrial", "CityRoad", "NuclearPlant", "PoliceStation",
     "Stadium", "Airport", "Hospital", "Church" } };
 
@@ -212,6 +220,10 @@ typedef enum {
     Picture_FlameTank,             ///< Tornie: portrait from FlameTankIcon.png (91x55)
     Picture_EliteLauncher,         ///< Tornie: portrait from EliteLauncherIcon.png (91x55)
     Picture_EliteSiegeTank,        ///< Tornie: portrait from EliteSiegeTankIcon.png (91x55)
+    Picture_Worfinery,             ///< Tornie: portrait from WorfineryIcon.png (91x55)
+    Picture_TechCenter,            ///< Tornie: portrait from TechCenterIcon.png (91x55)
+    Picture_Scoutpost,             ///< Tornie: portrait from ScoutpostIcon.png
+    Picture_PalaceLightVehicles,   ///< Tornie: Neutral/Rebels Palace Trike/Quad call icon
     NUM_SMALLDETAILPICS
 } SmallDetailPics_Enum;
 
@@ -406,6 +418,12 @@ typedef enum {
     UI_MapEditor_SpecialBloom,
     UI_MapEditor_Spice,
     UI_MapEditor_ThickSpice,
+    UI_MapEditor_GreenSpice,
+    UI_MapEditor_ThickGreenSpice,
+    UI_MapEditor_GreenSpiceBloom,
+    UI_MapEditor_RedSpice,
+    UI_MapEditor_ThickRedSpice,
+    UI_MapEditor_RedSpiceBloom,
     UI_MapEditor_SpiceBloom,
     UI_MapEditor_Slab,
     UI_MapEditor_Rock,
@@ -417,7 +435,8 @@ typedef enum {
     UI_MapEditor_ConstructionYard,
     UI_MapEditor_Windtrap,
     UI_MapEditor_AdvancedWindTrap,   ///< Tornie: 3x3 high-output power building
-    UI_MapEditor_AdvancedWindTrapMK2, ///< Tornie: variant of Adv Windtrap (no Rebels)
+    UI_MapEditor_AdvancedWindTrapMK2, ///< Tornie: 2x3 high-output power building
+    UI_MapEditor_AdvancedWindTrapMK3, ///< Tornie: 3x2 high-output power building
     UI_MapEditor_Radar,
     UI_MapEditor_Silo,
     UI_MapEditor_IX,
@@ -432,6 +451,7 @@ typedef enum {
     UI_MapEditor_Starport,
     UI_MapEditor_Palace,
     UI_MapEditor_TechCenter,               ///< Tornie: Palace-equivalent that spawns vehicles
+    UI_MapEditor_Scoutpost,                ///< Tornie: power/defense/recon post
     UI_MapEditor_Soldier,
     UI_MapEditor_Trooper,
     UI_MapEditor_Harvester,
@@ -477,6 +497,8 @@ typedef enum {
     Anim_AtreidesMouth,
     Anim_AtreidesShoulder,
     Anim_AtreidesBook,
+    Anim_PaulAtreidesEyes,
+    Anim_PaulAtreidesMouth,
     Anim_OrdosEyes,
     Anim_OrdosMouth,
     Anim_OrdosShoulder,
@@ -492,6 +514,8 @@ typedef enum {
     Anim_MercenaryMouth,
     Anim_MercenaryShoulder,
     Anim_MercenaryRing,
+    Anim_ChaniEyes,
+    Anim_ChaniMouth,
     Anim_BeneEyes,
     Anim_BeneMouth,
     Anim_HarkonnenPlanet,
@@ -500,6 +524,8 @@ typedef enum {
     Anim_FremenPlanet,
     Anim_SardaukarPlanet,
     Anim_MercenaryPlanet,
+    Anim_NeutralPlanet,
+    Anim_RebelsPlanet,
     Anim_Win1,
     Anim_Win2,
     Anim_Lose1,
@@ -561,6 +587,7 @@ public:
     SDL_Texture*     getZoomedObjPic(unsigned int id, int house, unsigned int z);
     SDL_Texture*     getZoomedObjPic(unsigned int id, unsigned int z) { return getZoomedObjPic(id, HOUSE_HARKONNEN, z); };
     zoomable_texture getObjPic(unsigned int id, int house=HOUSE_HARKONNEN);
+    bool             hasObjPic(unsigned int id, int house=HOUSE_HARKONNEN, unsigned int z=0) const;
 
     // DuneCity 1.0.487: invalidate sprite texture cache
     // (objPicTex + objPic, NOT uiGraphic). Re-applied per
@@ -594,20 +621,20 @@ private:
     sdl2::surface_ptr   generateTripledObjPic(unsigned int id, int h) const;
 
     // 8-bit surfaces kept in main memory for processing as needed, e.g. color remapping
-    std::array<std::array<std::array<sdl2::surface_ptr, NUM_ZOOMLEVEL>, NUM_HOUSES>, NUM_OBJPICS> objPic;
-    std::array<std::array<sdl2::surface_ptr, NUM_HOUSES>, NUM_UIGRAPHICS> uiGraphic;
-    std::array<std::array<sdl2::surface_ptr, NUM_HOUSES>, NUM_MAPCHOICEPIECES> mapChoicePieces;
+    std::array<std::array<std::array<sdl2::surface_ptr, NUM_ZOOMLEVEL>, NUM_HOUSE_COLOR_SLOTS>, NUM_OBJPICS> objPic;
+    std::array<std::array<sdl2::surface_ptr, NUM_HOUSE_COLOR_SLOTS>, NUM_UIGRAPHICS> uiGraphic;
+    std::array<std::array<sdl2::surface_ptr, NUM_HOUSE_COLOR_SLOTS>, NUM_MAPCHOICEPIECES> mapChoicePieces;
     std::array<std::unique_ptr<Animation>, NUM_ANIMATION> animation{};
 
     // 32-bit surfaces
     sdl2::surface_ptr    pBackgroundSurface;
 
     // Textures
-    std::array<std::array<std::array<sdl2::texture_ptr, NUM_ZOOMLEVEL>, NUM_HOUSES>, NUM_OBJPICS> objPicTex;
+    std::array<std::array<std::array<sdl2::texture_ptr, NUM_ZOOMLEVEL>, NUM_HOUSE_COLOR_SLOTS>, NUM_OBJPICS> objPicTex;
     std::array<sdl2::texture_ptr, NUM_SMALLDETAILPICS> smallDetailPicTex;
     std::array<sdl2::texture_ptr, NUM_TINYPICTURE> tinyPictureTex;
-    std::array<std::array<sdl2::texture_ptr, NUM_HOUSES>, NUM_UIGRAPHICS> uiGraphicTex;
-    std::array<std::array<sdl2::texture_ptr, NUM_HOUSES>, NUM_MAPCHOICEPIECES> mapChoicePiecesTex;
+    std::array<std::array<sdl2::texture_ptr, NUM_HOUSE_COLOR_SLOTS>, NUM_UIGRAPHICS> uiGraphicTex;
+    std::array<std::array<sdl2::texture_ptr, NUM_HOUSE_COLOR_SLOTS>, NUM_MAPCHOICEPIECES> mapChoicePiecesTex;
 };
 
 #endif // GFXMANAGER_H

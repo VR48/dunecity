@@ -428,10 +428,16 @@ public:
 
     bool isSand() const noexcept { return (type == Terrain_Sand); }
     bool isDunes() const noexcept { return (type == Terrain_Dunes); }
-    bool isSpiceBloom() const noexcept { return (type == Terrain_SpiceBloom); }
+    bool isSpiceBloom() const noexcept { return ((type == Terrain_SpiceBloom) || (type == Terrain_GreenSpiceBloom) || (type == Terrain_RedSpiceBloom)); }
     bool isSpecialBloom() const noexcept { return (type == Terrain_SpecialBloom); }
-    bool isSpice() const noexcept { return ((type == Terrain_Spice) || (type == Terrain_ThickSpice)); }
-    bool isThickSpice() const noexcept { return (type == Terrain_ThickSpice); }
+    bool isGreenSpice() const noexcept { return ((type == Terrain_GreenSpice) || (type == Terrain_ThickGreenSpice) || (type == Terrain_GreenSpiceBloom)); }
+    bool isRedSpice() const noexcept { return ((type == Terrain_RedSpice) || (type == Terrain_ThickRedSpice) || (type == Terrain_RedSpiceBloom)); }
+    bool isSpice() const noexcept { return ((type == Terrain_Spice) || (type == Terrain_ThickSpice)
+                                         || (type == Terrain_GreenSpice) || (type == Terrain_ThickGreenSpice)
+                                         || (type == Terrain_RedSpice) || (type == Terrain_ThickRedSpice)); }
+    bool isThickSpice() const noexcept { return ((type == Terrain_ThickSpice)
+                                              || (type == Terrain_ThickGreenSpice)
+                                              || (type == Terrain_ThickRedSpice)); }
 
     Uint32 getSandRegion() const noexcept { return sandRegion; }
     int getOwner() const noexcept { return owner; }

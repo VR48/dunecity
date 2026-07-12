@@ -26,14 +26,17 @@
 #include <SoundPlayer.h>
 #include <ScreenBorder.h>
 
+#include <units/TrackedUnit.h>
+#include <units/HarvesterHelpers.h>
 
-Worfinery::Worfinery(House* newOwner) : StructureBase(newOwner) {
+
+Worfinery::Worfinery(House* newOwner) : BuilderBase(newOwner) {
     Worfinery::init();
 
     setHealth(getMaxHealth());
 }
 
-Worfinery::Worfinery(InputStream& stream) : StructureBase(stream) {
+Worfinery::Worfinery(InputStream& stream) : BuilderBase(stream) {
     Worfinery::init();
 }
 
@@ -41,29 +44,46 @@ void Worfinery::init() {
     itemID = Structure_Worfinery;
     owner->incrementStructures(itemID);
 
+    structureSize.x = 3;
+    structureSize.y = 2;
+
     graphicID = ObjPic_Worfinery;
     graphic = pGFXManager->getObjPic(graphicID, getOwner()->getHouseID());
 
-    // 2 vertical frames at 3x2 tiles per frame. Animation ticks frame
-    // index 0..1 at ConstructionYard speed (the base StructureBase
-    // animation uses an internal counter that matches CY's cadence).
-    numImagesX = 1;
-    numImagesY = 2;
-    firstAnimFrame = 0;
-    lastAnimFrame = 1;
+    numImagesX = 4;
+    numImagesY = 1;
+    firstAnimFrame = 2;
+    lastAnimFrame = 3;
+    curAnimFrame = 2;
+    lastVisibleFrame = 2;
 }
 
 Worfinery::~Worfinery() = default;
 
+bool Worfinery::receiveHarvester(TrackedUnit* unit) {
+    if(unit == nullptr || !isHarvesterLikeUnit(unit->getItemID())) {
+        return false;
+    }
+
+    const FixPoint storedSpice = harvesterGetAmountOfSpice(unit);
+    if(storedSpice > 0) {
+        getOwner()->addCredits(harvesterExtractSpice(unit, storedSpice), true);
+    }
+
+    // The Worfinery is a fast drop-off: the harvester is not stored, so
+    // existing save games do not need a new serialized contained-unit state.
+    return false;
+}
+
 void Worfinery::save(OutputStream& stream) const {
-    StructureBase::save(stream);
+    BuilderBase::save(stream);
 }
 
 ObjectInterface* Worfinery::getInterfaceContainer() {
     // Reuse the Refinery interface — same layout (storage list + production
     // button) makes sense for a building that produces Troopers instead
     // of Harvesters.
-    return StructureBase::getInterfaceContainer();
+    return BuilderBase::getInterfaceContainer();
 }
 
 void Worfinery::updateStructureSpecificStuff() {

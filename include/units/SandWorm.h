@@ -70,7 +70,13 @@ public:
             case Terrain_Mountain:      return 1.0_fix;
             case Terrain_Spice:         return 1.25_fix;
             case Terrain_ThickSpice:    return 1.25_fix;
+            case Terrain_GreenSpice:    return 1.25_fix;
+            case Terrain_ThickGreenSpice: return 1.25_fix;
+            case Terrain_RedSpice:      return 1.25_fix;
+            case Terrain_ThickRedSpice: return 1.25_fix;
             case Terrain_SpiceBloom:    return 1.25_fix;
+            case Terrain_GreenSpiceBloom: return 1.25_fix;
+            case Terrain_RedSpiceBloom: return 1.25_fix;
             case Terrain_SpecialBloom:  return 1.25_fix;
             default:                    return 1.0_fix;
         }

@@ -147,6 +147,13 @@ static sdl2::sdl_ptr<Uint8[]> LoadVOC_RW(SDL_RWops* rwop, Uint32 &decsize, Uint3
 
         switch (code) {
             case VOC_CODE_DATA: {
+                if(len == 0) {
+                    break;
+                }
+                if(len < 2) {
+                    THROW(std::runtime_error, "LoadVOC_RW(): Invalid data block length!");
+                }
+
                 Uint8 time_constant;
                 if(SDL_RWread(rwop,&time_constant,sizeof(Uint8),1) != 1) {
                     THROW(std::runtime_error, "LoadVOC_RW(): Cannot read time constant!");
@@ -290,6 +297,17 @@ sdl2::mix_chunk_ptr LoadVOC_RW(SDL_RWops* rwop) {
     Uint32 RawData_Samples;
     sdl2::sdl_ptr<Uint8[]> RawDataUint8 = LoadVOC_RW(rwop, RawData_Samples, RawData_Frequency);
     if(RawDataUint8 == nullptr) {
+        if(RawData_Samples == 0) {
+            sdl2::mix_chunk_ptr emptyChunk{ static_cast<Mix_Chunk*>(SDL_malloc(sizeof(Mix_Chunk))) };
+            if(emptyChunk == nullptr) {
+                return nullptr;
+            }
+            emptyChunk->allocated = 1;
+            emptyChunk->volume = 0;
+            emptyChunk->alen = 0;
+            emptyChunk->abuf = nullptr;
+            return emptyChunk;
+        }
         THROW(std::runtime_error, "LoadVOC_RW(): Cannot read raw data!");
     }
 

@@ -27,6 +27,7 @@
 #include <units/Carryall.h>
 #include <units/GroundUnit.h>
 #include <units/Harvester.h>
+#include <units/HarvesterHelpers.h>
 
 #include <GUI/ObjectInterfaces/RepairYardInterface.h>
 
@@ -100,7 +101,7 @@ void RepairYard::deployRepairUnit(Carryall* pCarryall) {
         Coord deployPos = currentGameMap->findDeploySpot(pRepairUnit, location, currentGame->randomGen, destination, structureSize);
 
         pRepairUnit->setForced(false);
-        pRepairUnit->doSetAttackMode((pRepairUnit->getItemID() == Unit_Harvester) ? HARVEST : GUARD);
+        pRepairUnit->doSetAttackMode(isHarvesterLikeUnit(pRepairUnit->getItemID()) ? HARVEST : GUARD);
         pRepairUnit->deploy(deployPos);
         pRepairUnit->setTarget(nullptr);
         pRepairUnit->setDestination(pRepairUnit->getLocation());

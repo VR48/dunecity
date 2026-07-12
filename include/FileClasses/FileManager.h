@@ -57,8 +57,11 @@ public:
 
     */
     sdl2::RWops_ptr openFile(const std::string& filename);
+    sdl2::RWops_ptr openCampaignFile(const std::string& filename);
+    sdl2::RWops_ptr openFileFromPak(const std::string& filename);
 
     bool exists(const std::string& filename) const;
+    bool existsInPak(const std::string& filename) const;
 private:
     std::string md5FromFilename(const std::string& filename) const;
 

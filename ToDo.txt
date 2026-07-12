@@ -55,6 +55,21 @@ Modding:
 
 Allow for modifications to be created and used
 
+Tornie - prochaine session:
+---------------------------
+
+- Integrer les feuilles d'unites personnalisees envoyees par Tornie:
+  - C:/Users/canti/OneDrive/Images/Dune 2/Pixelart/units_sp.png
+  - C:/Users/canti/OneDrive/Images/Dune 2/Pixelart/units2_sp.png
+- Utiliser ces feuilles pour customiser Deviator Tornie, Harvestank, Elite Siege Tank et Rocket Trike.
+- Verifier si les masques blancs sont necessaires: les masques par defaut peuvent etre noirs et masquer les sprites.
+- Verifier un possible bug quand une unite Rebels ou Neutral se fait ecraser.
+- Revoir Rebels 1 et toute la campagne pour confirmer qu'elle suit le plan Tornie.
+- Garder Rebels 1 different des autres cartes, avec un defi d'intro.
+- S'assurer que Rocket Trike, Flame Tank et Elite Launcher sont presents dans la campagne Rebels et quand l'adversaire joue Rebels.
+- Dans la campagne Fremen Tornie, verifier que les sandworms ont un adversaire Neutral pour eviter le partage de vision.
+- Continuer le diagnostic des batiments custom invisibles: verifier structure PAK, frames placement/destruction/active/animation, masques et conversion texture.
+
 Ideas:
 ------
 

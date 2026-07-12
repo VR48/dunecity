@@ -51,6 +51,9 @@ public:
         return spawnTimer * 100 / getMaxSpawnTimer();
     }
     inline bool isSpawnReady() const { return spawnTimer == 0; }
+    bool canSpawnVehicles() const;
+    void handleSpawnClick();
+    void doSpawnVehicles();
     inline int getSpawnTimer() const { return spawnTimer; }
     inline int getMaxSpawnTimer() const {
         // Same cadence as Palace special weapon: 10 min for Harkonnen/Sardaukar,

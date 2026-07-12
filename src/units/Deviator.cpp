@@ -44,6 +44,7 @@ void Deviator::init()
     itemID = Unit_Deviator;
     owner->incrementUnits(itemID);
 
+    usesFullSprite = false;
     graphicID = ObjPic_Tank_Base;
     gunGraphicID = ObjPic_Launcher_Gun;
     graphic = pGFXManager->getObjPic(graphicID,getOwner()->getHouseID());
@@ -68,6 +69,13 @@ void Deviator::blitToScreen()
     SDL_Rect dest1 = calcSpriteDrawingRect( pUnitGraphic, x1, y1, numImagesX, 1, HAlign::Center, VAlign::Center);
 
     SDL_RenderCopy(renderer, pUnitGraphic, &source1, &dest1);
+
+    if(usesFullSprite) {
+        if(isBadlyDamaged()) {
+            drawSmoke(x1, y1);
+        }
+        return;
+    }
 
     const Coord deviatorTurretOffset[] =    {   Coord(0, -12),
                                                 Coord(0, -8),

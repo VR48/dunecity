@@ -27,25 +27,41 @@
 #include <misc/FileSystem.h>
 #include <misc/exceptions.h>
 
+#include <vector>
+
 #ifdef _
 #undef _
 #endif
 #define _(msgid) getLocalized(msgid)
 
 TextManager::TextManager() {
-    std::list<std::string> languagesList = getFileNamesList(getDuneLegacyDataDir() + "/locale", settings.general.language + ".po", true, FileListOrder_Name_Asc);
+    const std::vector<std::string> localeDirectories = {
+        getDuneLegacyDataDir() + "/locale",
+        getDuneLegacyDataDir() + "/data/locale"
+    };
 
-    if(languagesList.empty()) {
-        std::string filepath = getDuneLegacyDataDir() + "/locale/English.en.po";
-        SDL_Log("Loading localization from '%s'...", filepath.c_str());
-        auto rwops = sdl2::RWops_ptr{ SDL_RWFromFile(filepath.c_str(), "r") };
-        localizedString = loadPOFile(rwops.get(), "English.en.po");
-    } else {
-        std::string filepath = getDuneLegacyDataDir() + "/locale/" + languagesList.front();
-        SDL_Log("Loading localization from '%s'...", filepath.c_str());
-        auto rwops = sdl2::RWops_ptr{ SDL_RWFromFile(filepath.c_str(), "r") };
-        localizedString = loadPOFile(rwops.get(), languagesList.front());
+    for(const auto& localeDirectory : localeDirectories) {
+        std::list<std::string> languagesList = getFileNamesList(localeDirectory, settings.general.language + ".po", true, FileListOrder_Name_Asc);
+        if(!languagesList.empty()) {
+            std::string filepath = localeDirectory + "/" + languagesList.front();
+            SDL_Log("Loading localization from '%s'...", filepath.c_str());
+            auto rwops = sdl2::RWops_ptr{ SDL_RWFromFile(filepath.c_str(), "r") };
+            localizedString = loadPOFile(rwops.get(), languagesList.front());
+            return;
+        }
     }
+
+    for(const auto& localeDirectory : localeDirectories) {
+        std::string filepath = localeDirectory + "/English.en.po";
+        if(getCaseInsensitiveFilename(filepath)) {
+            SDL_Log("Loading localization from '%s'...", filepath.c_str());
+            auto rwops = sdl2::RWops_ptr{ SDL_RWFromFile(filepath.c_str(), "r") };
+            localizedString = loadPOFile(rwops.get(), "English.en.po");
+            return;
+        }
+    }
+
+    THROW(io_error, "Cannot find localization file for language '%s'!", settings.general.language.c_str());
 }
 
 TextManager::~TextManager() = default;
@@ -406,6 +422,36 @@ std::string TextManager::getBriefingText(unsigned int mission, unsigned int text
 
                 default: {
                     return "";
+                } break;
+            }
+        } break;
+
+        case HOUSE_NEUTRAL: {
+            switch(texttype) {
+                case MISSION_DESCRIPTION: {
+                    switch(mission) {
+                        case 0: return _("House Neutral\nThe Neutral forces operate between the great powers of Arrakis, holding ground through caution, trade, and opportunism."); break;
+                        default: return getBriefingText(mission, texttype, HOUSE_MERCENARY); break;
+                    }
+                } break;
+
+                default: {
+                    return getBriefingText(mission, texttype, HOUSE_MERCENARY);
+                } break;
+            }
+        } break;
+
+        case HOUSE_REBELS: {
+            switch(texttype) {
+                case MISSION_DESCRIPTION: {
+                    switch(mission) {
+                        case 0: return _("House Rebels\nThe Rebels fight from hidden strongholds and stolen supply lines, striking the old powers wherever Arrakis gives them an opening."); break;
+                        default: return getBriefingText(mission, texttype, HOUSE_FREMEN); break;
+                    }
+                } break;
+
+                default: {
+                    return getBriefingText(mission, texttype, HOUSE_FREMEN);
                 } break;
             }
         } break;

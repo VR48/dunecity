@@ -256,6 +256,7 @@ target_sources(dunecity
         structures/AdvancedWindTrap.cpp
         structures/Worfinery.cpp
         structures/TechCenter.cpp
+        structures/Scoutpost.cpp
         structures/WOR.cpp
         structures/NuclearPlant.cpp
         structures/PoliceStation.cpp
@@ -453,6 +454,7 @@ if(WIN32)
             winmm
             imm32
             version
+            dbghelp
     )
 endif()
 
@@ -475,6 +477,31 @@ target_compile_options(dunecity
 
 # Data directory handling
 set(DATA_DIR "${CMAKE_SOURCE_DIR}/data")
+set(TORNIE_MOD_DIR "${CMAKE_SOURCE_DIR}/mods/Tornie")
+set(TORNIE_MOD_REFERENCE_FILES
+    "${TORNIE_MOD_DIR}/mod.ini"
+    "${TORNIE_MOD_DIR}/ObjectData.ini"
+    "${TORNIE_MOD_DIR}/QuantBot Config.ini"
+    "${TORNIE_MOD_DIR}/GameOptions.ini"
+)
+
+function(add_copy_tornie_mod_reference DEST_DIR)
+    if(EXISTS "${TORNIE_MOD_DIR}")
+        add_custom_command(
+            TARGET dunecity
+            POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                "${DEST_DIR}/mods/Tornie"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${TORNIE_MOD_REFERENCE_FILES}
+                "${DEST_DIR}/mods/Tornie/"
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${TORNIE_MOD_DIR}/campaign"
+                "${DEST_DIR}/mods/Tornie/campaign"
+            COMMENT "Copying Tornie mod reference files"
+        )
+    endif()
+endfunction()
 
 if(APPLE)
     # For macOS bundle, copy data files directly to Resources/ (not Resources/data/)
@@ -499,6 +526,8 @@ if(APPLE)
             "${BUNDLE_RESOURCES_DIR}/config/"
         COMMENT "Copying data and config files into app bundle Resources"
     )
+
+    add_copy_tornie_mod_reference("${BUNDLE_RESOURCES_DIR}")
 
     # Copy imported Micropolis-derived zone sprites into the bundle so they
     # are found by getDuneLegacyDataDir() + "imported_sprites/..." at runtime.
@@ -550,6 +579,8 @@ else()
             "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/config/"
         COMMENT "Copying config template files to build output"
     )
+
+    add_copy_tornie_mod_reference("${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
 
     # Copy imported zone sprites next to the binary for non-bundle builds
     set(IMPORTED_SPRITES_SRC "${CMAKE_SOURCE_DIR}/imported_sprites")
@@ -627,6 +658,25 @@ if(EXISTS "${IMPORTED_SPRITES_SRC}")
         install(
             DIRECTORY "${IMPORTED_SPRITES_SRC}/"
             DESTINATION ${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/imported_sprites
+        )
+    endif()
+endif()
+
+if(EXISTS "${TORNIE_MOD_DIR}")
+    if(WIN32)
+        set(TORNIE_INSTALL_BASE ".")
+    elseif(NOT APPLE)
+        set(TORNIE_INSTALL_BASE "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}")
+    endif()
+
+    if(WIN32 OR NOT APPLE)
+        install(
+            FILES ${TORNIE_MOD_REFERENCE_FILES}
+            DESTINATION "${TORNIE_INSTALL_BASE}/mods/Tornie"
+        )
+        install(
+            DIRECTORY "${TORNIE_MOD_DIR}/campaign/"
+            DESTINATION "${TORNIE_INSTALL_BASE}/mods/Tornie/campaign"
         )
     endif()
 endif()

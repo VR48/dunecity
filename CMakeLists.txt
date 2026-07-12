@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.15)
 
 # Project name and version
-project(DuneCity VERSION 1.0.516 LANGUAGES C CXX)
+project(DuneCity VERSION 1.0.517 LANGUAGES C CXX)
 
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
@@ -117,7 +117,7 @@ if(WIN32)
     file(GLOB PAK_FILES "${CMAKE_SOURCE_DIR}/data/*.PAK")
     foreach(PAK_FILE ${PAK_FILES})
         get_filename_component(PAK_FILENAME ${PAK_FILE} NAME)
-        file(COPY "${PAK_FILE}" DESTINATION "${CMAKE_BINARY_DIR}/bin/")
+        file(COPY "${PAK_FILE}" DESTINATION "${CMAKE_BINARY_DIR}/bin/data/")
     endforeach()
 endif()
 
@@ -134,8 +134,8 @@ if(NOT APPLE)
     add_custom_target(copy_data ALL
         COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_SOURCE_DIR}/data/"
-        "${CMAKE_BINARY_DIR}/bin/"
-        COMMENT "Copying data files directly to bin directory"
+        "${CMAKE_BINARY_DIR}/bin/data/"
+        COMMENT "Copying data files to bin/data directory"
     )
     
     # Add dependency to ensure data files are copied after main target is built

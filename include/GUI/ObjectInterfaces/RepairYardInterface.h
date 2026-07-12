@@ -40,7 +40,7 @@ protected:
     explicit RepairYardInterface(int objectID) : DefaultStructureInterface(objectID) {
         // Left half: city-sim stats column (only relevant in city mode but
         // harmless otherwise — labels just show em-dashes).
-        Uint32 color = SDL2RGB(palette[houseToPaletteIndex[pLocalHouse->getHouseID()]+3]);
+        Uint32 color = getHouseColorRGB(getHouseVisualHouse(pLocalHouse->getHouseID()), 3);
         mainHBox.addWidget(&textVBox);
         cityStats_.attachTo(textVBox, color);
         textVBox.addWidget(Spacer::create(), 0.99);

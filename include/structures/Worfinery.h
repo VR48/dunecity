@@ -18,7 +18,9 @@
 #ifndef WORFINERY_H
 #define WORFINERY_H
 
-#include <structures/StructureBase.h>
+#include <structures/BuilderBase.h>
+
+class TrackedUnit;
 
 /// Worfinery (Tornie mod) — WOR + Refinery combo that produces Troopers
 /// instead of (or in addition to) Harvesters. Spawns infantry via the
@@ -27,7 +29,7 @@
 /// Per Tornie spec: this is a single building that combines the visual
 /// identity of a WOR with the production role of a Refinery. The 2-frame
 /// vertical animation runs at ConstructionYard speed (per Tornie OOB).
-class Worfinery final : public StructureBase
+class Worfinery final : public BuilderBase
 {
 public:
     explicit Worfinery(House* newOwner);
@@ -38,6 +40,14 @@ public:
     void save(OutputStream& stream) const override;
 
     ObjectInterface* getInterfaceContainer() override;
+
+    bool acceptsHarvesterDropoff() const override { return true; }
+    bool isHarvesterDropoffFree() const override { return true; }
+    int getHarvesterDropoffBookings() const override { return 0; }
+    void bookHarvesterDropoff() override { }
+    void unbookHarvesterDropoff() override { }
+    void startHarvesterDropoffAnimation() override { }
+    bool receiveHarvester(TrackedUnit* unit) override;
 
 protected:
     void updateStructureSpecificStuff() override;

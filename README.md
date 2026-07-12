@@ -58,7 +58,7 @@ git checkout main
 
 # Commit with a descriptive message
 git add -A
-git commit -m "fix(color): Custom_IBM.pal dark grey for HOUSE_REBELS"
+git commit -m "fix(color): Custom_IBM.PAL dark grey for HOUSE_REBELS"
 
 # Bump version + tag
 sed -i 's/DuneCity VERSION 1.0.426/DuneCity VERSION 1.0.427/' CMakeLists.txt

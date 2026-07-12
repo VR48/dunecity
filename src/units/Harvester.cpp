@@ -31,6 +31,7 @@
 #include <players/QuantBot.h>
 
 #include <structures/Refinery.h>
+#include <structures/HarvesterDropoff.h>
 
 #include <misc/draw_util.h>
 
@@ -186,8 +187,8 @@ void Harvester::checkPos()
 
     if(active)  {
         if (returningToRefinery) {
-            if (target && (target.getObjPointer() != nullptr) && (target.getObjPointer()->getItemID() == Structure_Refinery)) {
-                Refinery* pRefinery = static_cast<Refinery*>(target.getObjPointer());
+            if (target && getHarvesterDropoff(target.getObjPointer()) != nullptr) {
+                StructureBase* pRefinery = getHarvesterDropoff(target.getObjPointer());
                 Tile* pTile = currentGameMap->getTile(location);
                 ObjectBase *pObject = pTile->getGroundObject();
 
@@ -195,7 +196,7 @@ void Harvester::checkPos()
                     && (pObject != nullptr)
                     && (pObject->getObjectID() == target.getObjectID()) )
                 {
-                    if(pRefinery->isFree()) {
+                    if(pRefinery->isHarvesterDropoffFree()) {
                         awaitingPickup = false;
                         setReturned();
                     } else {
@@ -204,7 +205,7 @@ void Harvester::checkPos()
                         doMove2Pos(newDestination, true);
                         requestCarryall();
                     }
-                } else if(!awaitingPickup && owner->hasCarryalls() && pRefinery->isFree() && blockDistance(location, pRefinery->getClosestPoint(location)) >= MIN_CARRYALL_LIFT_DISTANCE) {
+                } else if(!awaitingPickup && owner->hasCarryalls() && pRefinery->isHarvesterDropoffFree() && blockDistance(location, pRefinery->getClosestPoint(location)) >= MIN_CARRYALL_LIFT_DISTANCE) {
                     requestCarryall();
                 }
                 
@@ -213,20 +214,20 @@ void Harvester::checkPos()
                     // Not moving, no path, but has a destination - path is likely blocked
                     returnPathFailCounter++;
                     if(returnPathFailCounter >= 3) {
-                        if(pRefinery->isFree() && owner->hasCarryalls()) {
+                        if(pRefinery->isHarvesterDropoffFree() && owner->hasCarryalls()) {
                             // Refinery is free but path is blocked - request carryall
                             SDL_Log("HARVESTER %d: Path to refinery blocked, requesting carryall pickup", getObjectID());
                             requestCarryall();
                             returnPathFailCounter = 0;
-                        } else if(!pRefinery->isFree()) {
+                        } else if(!pRefinery->isHarvesterDropoffFree()) {
                             // Refinery is occupied - try to find another free refinery
-                            Refinery* pAlternateRefinery = nullptr;
+                            StructureBase* pAlternateRefinery = nullptr;
                             FixPoint closestDistance = FixPt32_MAX;
                             
                             for(StructureBase* pStructure : structureList) {
-                                if((pStructure->getItemID() == Structure_Refinery) && (pStructure->getOwner() == owner)) {
-                                    Refinery* pOtherRefinery = static_cast<Refinery*>(pStructure);
-                                    if(pOtherRefinery != pRefinery && pOtherRefinery->isFree()) {
+                                if(pStructure->acceptsHarvesterDropoff() && (pStructure->getOwner() == owner)) {
+                                    StructureBase* pOtherRefinery = pStructure;
+                                    if(pOtherRefinery != pRefinery && pOtherRefinery->isHarvesterDropoffFree()) {
                                         FixPoint dist = blockDistance(location, pOtherRefinery->getClosestPoint(location));
                                         if(dist < closestDistance) {
                                             closestDistance = dist;
@@ -240,7 +241,7 @@ void Harvester::checkPos()
                                 // Found an alternate free refinery - switch to it
                                 SDL_Log("HARVESTER %d: Current refinery occupied, switching to alternate", getObjectID());
                                 doMove2Object(pAlternateRefinery);
-                                pAlternateRefinery->startAnimate();
+                                pAlternateRefinery->startHarvesterDropoffAnimation();
                             }
                             // If no alternate found, just wait for current refinery
                             returnPathFailCounter = 0;
@@ -255,19 +256,19 @@ void Harvester::checkPos()
             } else {
                 int leastNumBookings = std::numeric_limits<int>::max(); //huge amount so refinery couldn't possibly compete with any refinery num bookings
                 FixPoint closestLeastBookedRefineryDistance = FixPt32_MAX;
-                Refinery* pBestRefinery = nullptr;
+                StructureBase* pBestRefinery = nullptr;
 
                 for(StructureBase* pStructure : structureList) {
-                    if((pStructure->getItemID() == Structure_Refinery) && (pStructure->getOwner() == owner)) {
-                        Refinery* pRefinery = static_cast<Refinery*>(pStructure);
+                    if(pStructure->acceptsHarvesterDropoff() && (pStructure->getOwner() == owner)) {
+                        StructureBase* pRefinery = pStructure;
                         Coord closestPoint = pRefinery->getClosestPoint(location);
                         FixPoint refineryDistance = blockDistance(location, closestPoint);
 
-                        if (pRefinery->getNumBookings() < leastNumBookings) {
-                            leastNumBookings = pRefinery->getNumBookings();
+                        if (pRefinery->getHarvesterDropoffBookings() < leastNumBookings) {
+                            leastNumBookings = pRefinery->getHarvesterDropoffBookings();
                             closestLeastBookedRefineryDistance = refineryDistance;
                             pBestRefinery = pRefinery;
-                        } else if (pRefinery->getNumBookings() == leastNumBookings) {
+                        } else if (pRefinery->getHarvesterDropoffBookings() == leastNumBookings) {
                             if (refineryDistance < closestLeastBookedRefineryDistance) {
                                 closestLeastBookedRefineryDistance = refineryDistance;
                                 pBestRefinery = pRefinery;
@@ -278,7 +279,7 @@ void Harvester::checkPos()
 
                 if (pBestRefinery) {
                     doMove2Object(pBestRefinery);
-                    pBestRefinery->startAnimate();
+                    pBestRefinery->startHarvesterDropoffAnimation();
                 } else {
                     setDestination(location);
                 }
@@ -360,6 +361,7 @@ void Harvester::destroy()
 
         if(currentGameMap->tileExists(xpos,ypos)) {
             const auto spiceSpreaded = spice * 0.75_fix;
+            const auto generatedSpiceTerrain = currentGameMap->chooseGeneratedSpiceTerrain();
             int availableSandPos = 0;
 
             int circleRadius = lround(spice / 210);
@@ -386,7 +388,13 @@ void Harvester::destroy()
                     {
                         Tile *pTile = currentGameMap->getTile(xpos + i, ypos + j);
                         if((pTile != nullptr) & ((pTile->isSand()) || (pTile->isSpice()) )) {
-                            pTile->setSpice(pTile->getSpice() + spiceSpreaded / availableSandPos);
+                            const auto oldTileSpice = pTile->getSpice();
+                            if(pTile->isSand()
+                               || pTile->getType() == Terrain_Spice
+                               || pTile->getType() == Terrain_ThickSpice) {
+                                pTile->setType(generatedSpiceTerrain.first);
+                            }
+                            pTile->setSpice(oldTileSpice + spiceSpreaded / availableSandPos);
                         }
                     }
                 }
@@ -476,40 +484,63 @@ void Harvester::setDestination(int newX, int newY)
 
 void Harvester::setTarget(const ObjectBase* newTarget)
 {
-    if(returningToRefinery && target && (target.getObjPointer()!= nullptr)
-        && (target.getObjPointer()->getItemID() == Structure_Refinery))
+    if(returningToRefinery && target)
     {
-        static_cast<Refinery*>(target.getObjPointer())->unBook();
+        if(StructureBase* dropoff = getHarvesterDropoff(target.getObjPointer())) {
+            dropoff->unbookHarvesterDropoff();
+        }
         returningToRefinery = false;
     }
 
     TrackedUnit::setTarget(newTarget);
 
     if(target && (target.getObjPointer() != nullptr)
-        && (target.getObjPointer()->getOwner() == getOwner())
-        && (target.getObjPointer()->getItemID() == Structure_Refinery))
+        && (target.getObjPointer()->getOwner() == getOwner()))
     {
-        static_cast<Refinery*>(target.getObjPointer())->book();
-        returningToRefinery = true;
+        if(StructureBase* dropoff = getHarvesterDropoff(target.getObjPointer())) {
+            dropoff->bookHarvesterDropoff();
+            returningToRefinery = true;
+        }
     }
 
 }
 
 void Harvester::setReturned()
 {
+    StructureBase* dropoff = getHarvesterDropoff(target.getObjPointer());
+    if(dropoff == nullptr) {
+        returningToRefinery = false;
+        return;
+    }
+
+    const bool storedInside = dropoff->receiveHarvester(this);
+    returningToRefinery = false;
+    moving = false;
+    awaitingPickup = false;
+
+    if(!storedInside) {
+        // Worfinery unloads instantly, but the harvester must leave the
+        // occupied structure tiles before resuming its harvesting cycle.
+        Coord deployPos = currentGameMap->findDeploySpot(
+            this, dropoff->getLocation(), currentGame->randomGen,
+            getGuardPoint(), dropoff->getStructureSize());
+        currentGameMap->removeObjectFromMap(getObjectID());
+        TrackedUnit::setTarget(nullptr);
+        deploy(deployPos);
+        respondable = true;
+        setVisible(VIS_ALL, true);
+        setDestination(deployPos);
+        doSetAttackMode(HARVEST);
+        return;
+    }
+
     if(selected) {
         removeFromSelectionLists();
     }
 
     currentGameMap->removeObjectFromMap(getObjectID());
-
-    static_cast<Refinery*>(target.getObjPointer())->assignHarvester(this);
-
-    returningToRefinery = false;
-    moving = false;
     respondable = false;
     setActive(false);
-
     setLocation(INVALID_POS, INVALID_POS);
     setVisible(VIS_ALL, false);
 }

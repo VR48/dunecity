@@ -33,8 +33,9 @@
 
 InGameSettingsMenu::InGameSettingsMenu() : Window(0,0,0,0) {
     int houseID = pLocalHouse->getHouseID();
-    Uint32 color1 = SDL2RGB(palette[houseToPaletteIndex[houseID]+2]);
-    Uint32 color2 = SDL2RGB(palette[houseToPaletteIndex[houseID]+3]);
+    const int visualHouseID = getHouseVisualHouse(houseID);
+    Uint32 color1 = getHouseColorRGB(visualHouseID, 2);
+    Uint32 color2 = getHouseColorRGB(visualHouseID, 3);
 
     // set up window
     SDL_Texture *pBackground = pGFXManager->getUIGraphic(UI_OptionsMenu, houseID);

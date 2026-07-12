@@ -28,6 +28,7 @@
 
 #include <structures/RepairYard.h>
 #include <units/Carryall.h>
+#include <units/HarvesterHelpers.h>
 #include <units/UnitMovementPolicy.h>
 
 GroundUnit::GroundUnit(House* newOwner) : UnitBase(newOwner) {
@@ -154,7 +155,7 @@ void GroundUnit::checkPos() {
         if(getOwner()->hasCarryalls() && (target || (destination != location))) {
             requestCarryall();
         } else {
-            if(getItemID() == Unit_Harvester) {
+            if(isHarvesterLikeUnit(getItemID())) {
                 doSetAttackMode(HARVEST);
             } else {
                 doSetAttackMode(GUARD);
@@ -192,7 +193,7 @@ void GroundUnit::cancelCarryallPickup() {
     }
 
     const ATTACKMODE next = UnitMovementPolicy::attackModeAfterCancellingPickup(
-        attackMode, getItemID() == Unit_Harvester);
+        attackMode, isHarvesterLikeUnit(getItemID()));
     if(next != attackMode) {
         doSetAttackMode(next);
     }

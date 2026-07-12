@@ -37,6 +37,7 @@
 #include <structures/BuilderBase.h>
 #include <structures/ZoneStructure.h>
 #include <structures/Refinery.h>
+#include <structures/HarvesterDropoff.h>
 #include <structures/ConstructionYard.h>
 #include <units/Carryall.h>
 
@@ -48,7 +49,6 @@
 #include <misc/format.h>
 
 #include <algorithm>
-
 
 House::House(int newHouse, int newCredits, int maxUnits, int maxHarvesters, Uint8 teamID, int quota) : choam(this) {
     House::init();
@@ -387,6 +387,7 @@ void House::incrementUnits(int itemID) {
        && itemID != Unit_Carryall
        && itemID != Unit_MCV
        && itemID != Unit_Harvester
+       && itemID != Unit_RebelHarvester
        && itemID != Unit_Sandworm
        && !isAmbientUnit(itemID)) {
 
@@ -416,6 +417,7 @@ void House::decrementUnits(int itemID) {
        && itemID != Unit_Carryall
        && itemID != Unit_MCV
        && itemID != Unit_Harvester
+       && itemID != Unit_RebelHarvester
        && itemID != Unit_Sandworm
        && !isAmbientUnit(itemID)) {
 
@@ -635,10 +637,11 @@ void House::freeHarvester(int xPos, int yPos) {
 
     if(currentGameMap->tileExists(xPos, yPos)
         && currentGameMap->getTile(xPos, yPos)->hasAGroundObject()
-        && (currentGameMap->getTile(xPos, yPos)->getGroundObject()->getItemID() == Structure_Refinery))
+        && getHarvesterDropoff(currentGameMap->getTile(xPos, yPos)->getGroundObject()) != nullptr)
     {
-        Refinery* refinery = static_cast<Refinery*>(currentGameMap->getTile(xPos, yPos)->getGroundObject());
-        Coord closestPos = currentGameMap->findClosestEdgePoint(refinery->getLocation() + Coord(2,0), Coord(1,1));
+        StructureBase* refinery = getHarvesterDropoff(currentGameMap->getTile(xPos, yPos)->getGroundObject());
+        Coord closestPos = currentGameMap->findClosestEdgePoint(
+            refinery->getLocation() + Coord(refinery->getStructureSizeX() - 1, 0), Coord(1,1));
 
         Carryall* carryall = static_cast<Carryall*>(createUnit(Unit_Carryall));
         Harvester* harvester = static_cast<Harvester*>(createUnit(Unit_Harvester));
@@ -1026,13 +1029,13 @@ void House::decrementHarvesters() {
     if(numItem[Unit_Harvester] <= 0) {
         numItem[Unit_Harvester] = 0;
 
-        if(numItem[Structure_Refinery]) {
+        if(hasRefinery()) {
             Coord   closestPos;
             FixPoint    closestDistance = FixPt_MAX;
             StructureBase *pClosestRefinery = nullptr;
 
             for(StructureBase* pStructure : structureList) {
-                if((pStructure->getItemID() == Structure_Refinery) && (pStructure->getOwner() == this) && (pStructure->getHealth() > 0)) {
+                if(pStructure->acceptsHarvesterDropoff() && (pStructure->getOwner() == this) && (pStructure->getHealth() > 0)) {
                     Coord pos = pStructure->getLocation();
 
                     Coord closestPoint = pStructure->getClosestPoint(pos);

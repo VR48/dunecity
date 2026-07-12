@@ -26,6 +26,7 @@
 #include <misc/Random.h>
 
 #include <cstdio>
+#include <utility>
 
 class Map
 {
@@ -65,7 +66,8 @@ public:
     Coord findClosestEdgePoint(const Coord& origin, const Coord& buildingSize) const;
     Coord findDeploySpot(UnitBase* pUnit, const Coord& origin, Random& randomGen, const Coord& gatherPoint = Coord::Invalid(), const Coord& buildingSize = Coord(0, 0)) const; //building size is num squares
 
-    void createSpiceField(Coord location, int radius, bool centerIsThickSpice = false) const;
+    std::pair<int, int> chooseGeneratedSpiceTerrain(int thinSpiceTerrain = Terrain_Spice, int thickSpiceTerrain = Terrain_ThickSpice) const;
+    void createSpiceField(Coord location, int radius, bool centerIsThickSpice = false, int thinSpiceTerrain = Terrain_Spice, int thickSpiceTerrain = Terrain_ThickSpice) const;
 
     Uint32 getPathingRevision() const noexcept {
         return pathingRevision;

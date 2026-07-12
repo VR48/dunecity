@@ -6,40 +6,71 @@
 #include <House.h>
 #include <Game.h>
 
-AdvancedWindTrap::AdvancedWindTrap(House* newOwner) : StructureBase(newOwner) {
-    AdvancedWindTrap::init();
+#include <GUI/ObjectInterfaces/WindTrapInterface.h>
+
+AdvancedWindTrap::AdvancedWindTrap(House* newOwner, Uint32 newItemID) : StructureBase(newOwner) {
+    AdvancedWindTrap::init(newItemID);
 
     setHealth(getMaxHealth());
 }
 
-AdvancedWindTrap::AdvancedWindTrap(InputStream& stream) : StructureBase(stream) {
-    AdvancedWindTrap::init();
+AdvancedWindTrap::AdvancedWindTrap(InputStream& stream, Uint32 newItemID) : StructureBase(stream) {
+    AdvancedWindTrap::init(newItemID);
 }
 
-void AdvancedWindTrap::init() {
-    itemID = Structure_AdvancedWindTrap;
+void AdvancedWindTrap::init(Uint32 newItemID) {
+    itemID = newItemID;
     owner->incrementStructures(itemID);
 
-    structureSize.x = 3;
-    structureSize.y = 3;
+    switch(itemID) {
+        case Structure_AdvancedWindTrapMK2:
+            structureSize.x = 2;
+            structureSize.y = 3;
+            graphicID = ObjPic_AdvancedWindTrap2x3;
+            break;
 
-    // Reuse WindTrap sprite until a dedicated asset is provided
-    graphicID = ObjPic_Windtrap;
+        case Structure_AdvancedWindTrapMK3:
+            structureSize.x = 3;
+            structureSize.y = 2;
+            graphicID = ObjPic_AdvancedWindTrap3x2;
+            break;
+
+        case Structure_AdvancedWindTrap:
+        default:
+            itemID = Structure_AdvancedWindTrap;
+            structureSize.x = 3;
+            structureSize.y = 3;
+    graphicID = ObjPic_AdvancedWindTrap;
+            break;
+    }
+
     graphic = pGFXManager->getObjPic(graphicID, getOwner()->getHouseID());
-    numImagesX = NUM_WINDTRAP_ANIMATIONS_PER_ROW;
-    numImagesY = (2+NUM_WINDTRAP_ANIMATIONS+NUM_WINDTRAP_ANIMATIONS_PER_ROW-1)/NUM_WINDTRAP_ANIMATIONS_PER_ROW;
+    // Tornie advanced windtraps use the compact custom structure sheet:
+    // build site, destroyed, active frame A, active frame B.
+    numImagesX = 4;
+    numImagesY = 1;
     firstAnimFrame = 2;
-    lastAnimFrame = 2+NUM_WINDTRAP_ANIMATIONS-1;
+    lastAnimFrame = 3;
+    curAnimFrame = 2;
+    lastVisibleFrame = 2;
 }
 
 AdvancedWindTrap::~AdvancedWindTrap() = default;
+
+ObjectInterface* AdvancedWindTrap::getInterfaceContainer() {
+    if((pLocalHouse == owner) || (debug == true)) {
+        return WindTrapInterface::create(objectID);
+    }
+
+    return DefaultObjectInterface::create(objectID);
+}
 
 bool AdvancedWindTrap::update() {
     bool bResult = StructureBase::update();
 
     if(bResult) {
         if(justPlacedTimer <= 0 || curAnimFrame != 0) {
-            curAnimFrame = 2 + ((currentGame->getGameCycleCount()/8) % NUM_WINDTRAP_ANIMATIONS);
+            curAnimFrame = 2 + ((currentGame->getGameCycleCount()/8) % 2);
         }
 
         auto* citySim = currentGame->getCitySimulation();
@@ -60,7 +91,7 @@ void AdvancedWindTrap::setHealth(FixPoint newHealth) {
 }
 
 int AdvancedWindTrap::getProducedPower() const {
-    int nominal = abs(currentGame->objectData.data[Structure_AdvancedWindTrap][originalHouseID].power);
+    int nominal = abs(currentGame->objectData.data[itemID][originalHouseID].power);
     FixPoint ratio = getHealth() / getMaxHealth();
     return lround(ratio * nominal);
 }

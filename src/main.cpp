@@ -710,6 +710,7 @@ int main(int argc, char *argv[]) {
     // Discord connected and there was no log entry to diagnose why. With
     // this handler, the crash dump is written before exit so the cause
     // can be inspected post-mortem.
+    #ifndef _WIN32
     {
         struct sigaction sa {};
         sa.sa_sigaction = [](int sig, siginfo_t* info, void* /*ucontext*/) {
@@ -767,6 +768,7 @@ int main(int argc, char *argv[]) {
         sigaction(SIGFPE,  &sa, nullptr);
         SDL_Log("DuneCity: SIGSEGV/SIGABRT/SIGFPE handler installed");
     }
+    #endif
 
     // global try/catch around everything
     try {
@@ -1153,6 +1155,8 @@ int main(int argc, char *argv[]) {
                 pTextManager->loadData();
 
                 palette = LoadPalette_RW(pFileManager->openFile("IBM.PAL").get());
+                loadCustomPalette();
+                applyCustomPaletteRuntimeHouseRamps();
 
                 SDL_Log("Setting video mode...");
                 setVideoMode(currentDisplayIndex);

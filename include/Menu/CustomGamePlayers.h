@@ -77,6 +77,8 @@ private:
 
     void onChangeHousesDropDownBoxes(bool bInteractive, int houseInfoNum = -1);
     void onChangeTeamDropDownBoxes(bool bInteractive, int houseInfoNum = -1);
+    void onChangeColorDropDownBoxes(bool bInteractive, int houseInfoNum = -1);
+    void onBonusColorCheckbox(int houseInfoNum);
     void onChangePlayerDropDownBoxes(bool bInteractive, int boxnum);
     void onClickPlayerDropDownBox(int boxnum);
     void onStartGame(unsigned int timeLeft);
@@ -142,6 +144,8 @@ private:
         Label           houseLabel;
         DropDownBox     houseDropDown;
         DropDownBox     teamDropDown;
+        Checkbox        bonusColorCheckbox;
+        DropDownBox     colorDropDown;
         HBox            playerHBox;
         PictureLabel    player1ArrowLabel;
         Label           player1Label;

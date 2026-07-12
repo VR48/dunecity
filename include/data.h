@@ -31,7 +31,7 @@ typedef enum {
     Bullet_SmallRocket = 8,
     Bullet_Sonic = 9,
     Bullet_Sandworm = 10,
-    Bullet_Flame = 11             ///< Tornie: sonic-line flame (visual propagation along unit line, instant-kill light infantry)
+    Bullet_Flame = 11             ///< Tornie: launcher-like fire missile with flame area damage
 } BulletID_enum;
 
 typedef enum {
@@ -119,24 +119,26 @@ typedef enum {
 
     // Tornie mod units — extended IDs after Ambient units to preserve save-compat.
     Unit_RocketTrike = 52,            ///< Tornie: upgraded Trike (rocket weapon, Light Factory, T9 U4)
-    Unit_FlameTank = 53,              ///< Tornie: sonic-line flame weapon, Heavy Factory, T9 U4
+    Unit_FlameTank = 53,              ///< Tornie: fire missile weapon, Heavy Factory, T9 U4
     Unit_EliteLauncher = 54,          ///< Tornie: upgraded Launcher, Heavy Factory, T9 U4
     Unit_EliteSiegeTank = 55,         ///< Tornie: upgraded Siege Tank, Heavy Factory, T9 U4
     Unit_ExtLastID = 55,
 
     // Additional extended structures after units (isStructure handles non-contiguous range)
-    Structure_AdvancedWindTrap = 56,  ///< DuneCity: Advanced Windtrap (500 credits, -300 power, 3x3)
+    Structure_AdvancedWindTrap = 56,  ///< Tornie: Advanced Windtrap 3x3
     Structure_Worfinery = 57,        ///< Tornie: WOR + Refinery combo, can produce Troopers
-    Structure_AdvancedWindTrapMK2 = 58, ///< Tornie: variant of Advanced Windtrap, restricted house set (Builder=Invalid for Rebels per Tornie OOB)
+    Structure_AdvancedWindTrapMK2 = 58, ///< Tornie: Advanced Windtrap 2x3
 
     // Tornie mod unit — distinct from vanilla Harvester with a dedicated sprite.
     Unit_RebelHarvester = 59,
 
     // Tornie mod building — Palace-equivalent that spawns 1-3 random vehicles
-    // when House IX is unlocked. Area Guard behavior. TechLevel 9 (last building).
+    // when House IX is unlocked. Spawned units use Hunt behavior.
     Structure_TechCenter = 60,
+    Structure_AdvancedWindTrapMK3 = 61, ///< Tornie: Advanced Windtrap 3x2
+    Structure_Scoutpost = 62,           ///< Tornie: small power/defense/recon post
 
-    ItemID_LastID = 60,
+    ItemID_LastID = 62,
 
     Num_ItemID
 } ItemID_enum;
@@ -150,7 +152,13 @@ typedef enum {
     Terrain_Spice,
     Terrain_ThickSpice,
     Terrain_SpiceBloom,
-    Terrain_SpecialBloom
+    Terrain_SpecialBloom,
+    Terrain_GreenSpice,
+    Terrain_ThickGreenSpice,
+    Terrain_GreenSpiceBloom,
+    Terrain_RedSpice,
+    Terrain_ThickRedSpice,
+    Terrain_RedSpiceBloom
 } TERRAINTYPE;
 
 typedef enum {
@@ -177,14 +185,14 @@ typedef enum {
     \param itemID   the ID of the item (e.g. Unit_Harvester)
     \return true if it is an unit, false otherwise
 */
-inline bool isUnit(int itemID) { return (itemID >= Unit_FirstID && itemID <= Unit_LastID) || (itemID >= Unit_AmbientAirplane && itemID <= Unit_ExtLastID); }
+inline bool isUnit(int itemID) { return (itemID >= Unit_FirstID && itemID <= Unit_LastID) || (itemID >= Unit_AmbientAirplane && itemID <= Unit_ExtLastID) || itemID == Unit_RebelHarvester; }
 
 /**
     This function determines if the specified itemID is a structure or not.
     \param itemID   the ID of the item (e.g. Structure_ConstructionYard)
     \return true if it is a structure, false otherwise
 */
-inline bool isStructure(int itemID) { return (itemID >= Structure_FirstID && itemID <= Structure_LastID) || (itemID >= Structure_Stadium && itemID <= Structure_ExtLastID) || itemID == Structure_AdvancedWindTrap; }
+inline bool isStructure(int itemID) { return (itemID >= Structure_FirstID && itemID <= Structure_LastID) || (itemID >= Structure_Stadium && itemID <= Structure_ExtLastID) || (itemID >= Structure_AdvancedWindTrap && itemID <= Structure_AdvancedWindTrapMK2) || itemID == Structure_TechCenter || itemID == Structure_AdvancedWindTrapMK3 || itemID == Structure_Scoutpost; }
 
 /**
     This function determines if the specified itemID is a DuneCity zone structure.

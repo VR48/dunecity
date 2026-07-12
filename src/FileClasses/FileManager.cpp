@@ -27,10 +27,135 @@
 #include <misc/md5.h>
 #include <misc/string_util.h>
 #include <misc/exceptions.h>
+#include <mod/ModManager.h>
 
 #include <algorithm>
 #include <sstream>
 #include <iomanip>
+#include <memory>
+#include <vector>
+
+namespace {
+bool hasIniExtension(const std::string& filename) {
+    const auto upperFilename = strToUpper(filename);
+    return upperFilename.size() >= 4 && upperFilename.substr(upperFilename.size() - 4) == ".INI";
+}
+
+std::string getBaseFilenameUpper(const std::string& filepath) {
+    const auto pos = filepath.find_last_of("/\\");
+    return strToUpper(pos == std::string::npos ? filepath : filepath.substr(pos + 1));
+}
+
+bool isTornieModActive() {
+    return ModManager::instance().isInitialized() && strToUpper(ModManager::instance().getActiveModName()) == "TORNIE";
+}
+
+sdl2::RWops_ptr openFromNamedPak(const std::vector<std::unique_ptr<Pakfile>>& pakFiles, const std::string& filename, const std::string& pakNameUpper) {
+    for(const auto& pPakFile : pakFiles) {
+        if(getBaseFilenameUpper(pPakFile->getPakFilename()) == pakNameUpper && pPakFile->exists(filename)) {
+            SDL_Log("FileManager: using %s for '%s'", pakNameUpper.c_str(), filename.c_str());
+            return pPakFile->openFile(filename);
+        }
+    }
+    return nullptr;
+}
+
+sdl2::RWops_ptr openFromPriorityPak(const std::vector<std::unique_ptr<Pakfile>>& pakFiles, const std::string& filename) {
+    if(isTornieModActive()) {
+        if(auto rwop = openFromNamedPak(pakFiles, filename, "TORNIE.PAK")) {
+            return rwop;
+        }
+    }
+
+    if(auto rwop = openFromNamedPak(pakFiles, filename, "EXTRA.PAK")) {
+        return rwop;
+    }
+
+    return nullptr;
+}
+
+bool isCampaignRegionFile(const std::string& filename) {
+    const auto upperFilename = strToUpper(filename);
+    return hasIniExtension(filename) && upperFilename.size() == 11 && upperFilename.substr(0, 6) == "REGION";
+}
+
+bool isCampaignScenarioFile(const std::string& filename) {
+    const auto upperFilename = strToUpper(filename);
+    return hasIniExtension(filename) && upperFilename.size() == 12 && upperFilename.substr(0, 4) == "SCEN";
+}
+
+bool isCampaignFile(const std::string& filename) {
+    return isCampaignRegionFile(filename) || isCampaignScenarioFile(filename);
+}
+
+std::vector<std::string> getFilenameCaseVariants(const std::string& filename) {
+    std::vector<std::string> variants{filename};
+
+    const auto lowerFilename = strToLower(filename);
+    if(std::find(variants.begin(), variants.end(), lowerFilename) == variants.end()) {
+        variants.push_back(lowerFilename);
+    }
+
+    const auto upperFilename = strToUpper(filename);
+    if(std::find(variants.begin(), variants.end(), upperFilename) == variants.end()) {
+        variants.push_back(upperFilename);
+    }
+
+    return variants;
+}
+
+void addCampaignCandidates(std::vector<std::string>& candidates, const std::string& directory, const std::string& filename) {
+    for(const auto& variant : getFilenameCaseVariants(filename)) {
+        candidates.push_back(directory + "/" + variant);
+    }
+}
+
+bool isVanillaCoreCampaignHouse(const char house) {
+    return house == 'H' || house == 'A' || house == 'O' || house == 'F' || house == 'M' || house == 'S';
+}
+
+bool isVanillaAddonCampaignHouse(const char house) {
+    return house == 'N' || house == 'R';
+}
+
+char getCampaignHouseFromFilename(const std::string& filename) {
+    const auto upperFilename = strToUpper(filename);
+    if(isCampaignRegionFile(upperFilename)) {
+        return upperFilename[6];
+    }
+    if(isCampaignScenarioFile(upperFilename)) {
+        return upperFilename[4];
+    }
+    return '\0';
+}
+
+bool isVanillaCoreCampaignFile(const std::string& filename) {
+    return isVanillaCoreCampaignHouse(getCampaignHouseFromFilename(filename));
+}
+
+bool isVanillaAddonCampaignFile(const std::string& filename) {
+    return isVanillaAddonCampaignHouse(getCampaignHouseFromFilename(filename));
+}
+
+sdl2::RWops_ptr openExternalFileIfPresent(std::string filepath) {
+    if(getCaseInsensitiveFilename(filepath)) {
+        auto rwop = sdl2::RWops_ptr{SDL_RWFromFile(filepath.c_str(), "rb")};
+        if(rwop) {
+            return rwop;
+        }
+    }
+    return nullptr;
+}
+bool isTinyVocPlaceholder(const std::string& filename, SDL_RWops* rwop) {
+    const auto upperFilename = strToUpper(filename);
+    if(upperFilename.size() < 4 || upperFilename.substr(upperFilename.size() - 4) != ".VOC") {
+        return false;
+    }
+
+    const auto size = SDL_RWsize(rwop);
+    return size >= 0 && size <= 32;
+}
+}
 
 FileManager::FileManager() {
     SDL_Log("\nFileManager is loading PAK-Files...");
@@ -67,7 +192,11 @@ FileManager::~FileManager() = default;
 std::vector<std::string> FileManager::getSearchPath() {
     std::vector<std::string> searchPath;
 
-    searchPath.push_back(getDuneLegacyDataDir());
+    const auto dataDir = getDuneLegacyDataDir();
+    searchPath.push_back(dataDir);
+    searchPath.push_back(dataDir + "data");
+    searchPath.push_back(dataDir + "data/");
+
     char tmp[FILENAME_MAX];
     fnkdat("data", tmp, FILENAME_MAX, FNKDAT_USER | FNKDAT_CREAT);
     searchPath.push_back(tmp);
@@ -89,6 +218,7 @@ std::vector<std::string> FileManager::getNeededFiles() {
         "INTRO.PAK",
         "INTROVOC.PAK",
         "SOUND.PAK",
+        "Extra.PAK",
         // DuneCity 1.0.489: Tornie.PAK is the Tornie mod's
         // assets pack. Contains the custom units (Deviator,
         // Flame Tank, Sonic Tank, Elite Siege Tank), buildings
@@ -143,9 +273,19 @@ sdl2::RWops_ptr FileManager::openFile(const std::string& filename) {
         if(getCaseInsensitiveFilename(externalFilename)) {
             ret = sdl2::RWops_ptr{SDL_RWFromFile(externalFilename.c_str(), "rb")};
             if(ret) {
+                if(isTinyVocPlaceholder(filename, ret.get())) {
+                    SDL_Log("FileManager: ignoring tiny external VOC placeholder '%s'", externalFilename.c_str());
+                    ret.reset();
+                    continue;
+                }
                 return ret;
             }
         }
+    }
+
+    // now try loading from priority pak files
+    if(auto rwop = openFromPriorityPak(pakFiles, filename)) {
+        return rwop;
     }
 
     // now try loading from pak file
@@ -156,6 +296,67 @@ sdl2::RWops_ptr FileManager::openFile(const std::string& filename) {
     }
 
     THROW(io_error, "Cannot find '%s'!", filename);
+}
+
+sdl2::RWops_ptr FileManager::openCampaignFile(const std::string& filename) {
+    if(isCampaignFile(filename) && ModManager::instance().isInitialized() && strToUpper(ModManager::instance().getActiveModName()) == "TORNIE") {
+        std::vector<std::string> candidates;
+        addCampaignCandidates(candidates, ModManager::instance().getModPath("Tornie") + "/campaign", filename);
+
+        for(const auto& searchPath : getSearchPath()) {
+            addCampaignCandidates(candidates, searchPath + "/mods/Tornie/campaign", filename);
+            addCampaignCandidates(candidates, searchPath + "/../mods/Tornie/campaign", filename);
+        }
+
+        for(const auto& candidate : candidates) {
+            auto rwop = openExternalFileIfPresent(candidate);
+            if(rwop) {
+                SDL_Log("FileManager: using Tornie campaign file '%s' from '%s'", filename.c_str(), candidate.c_str());
+                return rwop;
+            }
+        }
+
+        SDL_Log("FileManager: Tornie campaign file '%s' was not found in campaign folders; falling back to normal lookup", filename.c_str());
+    }
+
+    if(isVanillaAddonCampaignFile(filename)) {
+        std::vector<std::string> candidates;
+        for(const auto& searchPath : getSearchPath()) {
+            addCampaignCandidates(candidates, searchPath + "/campaign_vanilla", filename);
+            addCampaignCandidates(candidates, searchPath + "/../campaign_vanilla", filename);
+            addCampaignCandidates(candidates, searchPath + "/../data/campaign_vanilla", filename);
+        }
+
+        for(const auto& candidate : candidates) {
+            auto rwop = openExternalFileIfPresent(candidate);
+            if(rwop) {
+                SDL_Log("FileManager: using vanilla add-on campaign file '%s' from '%s'", filename.c_str(), candidate.c_str());
+                return rwop;
+            }
+        }
+
+        SDL_Log("FileManager: vanilla add-on campaign file '%s' was not found in campaign_vanilla; falling back to normal lookup", filename.c_str());
+    }
+
+    if(isVanillaCoreCampaignFile(filename)) {
+        try {
+            SDL_Log("FileManager: using vanilla PAK campaign file '%s'", filename.c_str());
+            return openFileFromPak(filename);
+        } catch(const std::exception& e) {
+            SDL_Log("FileManager: vanilla PAK campaign lookup failed for '%s': %s", filename.c_str(), e.what());
+        }
+    }
+
+    return openFile(filename);
+}
+sdl2::RWops_ptr FileManager::openFileFromPak(const std::string& filename) {
+    for(const auto& pPakFile : pakFiles) {
+        if(pPakFile->exists(filename)) {
+            return pPakFile->openFile(filename);
+        }
+    }
+
+    THROW(io_error, "Cannot find '%s' in loaded PAK files!", filename);
 }
 
 bool FileManager::exists(const std::string& filename) const {
@@ -170,6 +371,16 @@ bool FileManager::exists(const std::string& filename) const {
     }
 
     // now try finding in one pak file
+    for(const auto& pPakFile : pakFiles) {
+        if(pPakFile->exists(filename)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool FileManager::existsInPak(const std::string& filename) const {
     for(const auto& pPakFile : pakFiles) {
         if(pPakFile->exists(filename)) {
             return true;

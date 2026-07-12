@@ -30,7 +30,7 @@
 #define DEFAULT_METASERVER  "https://dunelegacy.com/metaserver/metaserver.php"
 
 #define SAVEMAGIC           8675309
-#define SAVEGAMEVERSION     9812  // 9812: Added Structure_AdvancedWindTrap (ID 52), Num_ItemID now 53.
+#define SAVEGAMEVERSION     9814  // 9814: Save visual/custom house color slots for active houses.
 
 // v1.0.0–v1.0.7 shipped SAVEGAMEVERSION 9810 with Num_ItemID=48.
 // v1.0.8–v1.0.10 also used 9810 but with Num_ItemID=52 (4 items added
@@ -82,7 +82,7 @@
 #define INVALID (-1)
 #define INVALID_GAMECYCLE (static_cast<Uint32>(-1))
 
-#define NUM_TEAMS 7
+#define NUM_TEAMS 8
 
 #define DEVIATIONTIME MILLI2CYCLES(120*1000)
 #define TRACKSTIME MILLI2CYCLES((1 << 16))

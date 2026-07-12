@@ -180,6 +180,7 @@ inline int getStructureMaxLevel(int itemID) {
         case Structure_Airport:         // transport hub — commercial high
         case Structure_Barracks:        // residential high (infantry)
         case Structure_WOR:             // residential high (heavy infantry)
+        case Structure_TechCenter:      // civic high (IX vehicle support)
             return 3;
         default:
             return 0;

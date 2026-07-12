@@ -286,6 +286,22 @@ TechLevel = 6
 Prerequisite = Windtrap, Radar
 UpgradeLevel = 2
 
+[Scoutpost]
+Enabled = false
+HitPoints = 160
+Price = 300
+Power = -25
+ViewRange = 7
+WeaponDamage = 5
+WeaponRange = 5
+WeaponReloadTime = 150
+BuildTime = 72
+InfSpawnProp = 25
+Builder = Invalid
+TechLevel = 5
+Prerequisite = Windtrap, Radar
+UpgradeLevel = 2
+
 [Spice Silo]
 Enabled = true
 HitPoints = 150
@@ -423,14 +439,38 @@ TechLevel = 6
 Prerequisite = Windtrap
 
 [Advanced Windtrap]
-Enabled = true
+Enabled = false
 HitPoints = 500
 Price = 500
 Power = -300		# 3x WindTrap output
 ViewRange = 3
 BuildTime = 96
 InfSpawnProp = 25
-Builder = Construction Yard
+Builder = Invalid
+TechLevel = 6
+Prerequisite = Windtrap, Radar, Hightech Factory
+
+[Advanced Windtrap 2x3]
+Enabled = false
+HitPoints = 500
+Price = 500
+Power = -300		# 3x WindTrap output
+ViewRange = 3
+BuildTime = 96
+InfSpawnProp = 25
+Builder = Invalid
+TechLevel = 6
+Prerequisite = Windtrap, Radar, Hightech Factory
+
+[Advanced Windtrap 3x2]
+Enabled = false
+HitPoints = 500
+Price = 500
+Power = -300		# 3x WindTrap output
+ViewRange = 3
+BuildTime = 96
+InfSpawnProp = 25
+Builder = Invalid
 TechLevel = 6
 Prerequisite = Windtrap, Radar, Hightech Factory
 

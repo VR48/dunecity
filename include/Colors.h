@@ -76,10 +76,10 @@
 // 8-house system. The v1.0.92 baseline only has 6 houses
 // (no NEUTRAL or REBELS), so these constants didn't exist.
 // We add them here to support the Tornie mod's 8-house
-// campaign system. The actual color values are loaded
-// from Custom_IBM.PAL at runtime.
+// campaign system. Bonus color values are loaded from
+// Custom_IBM.PAL at runtime; Rebels uses a fixed dark grey ramp.
 #define PALCOLOR_NEUTRAL 128  // slot 128 in IBM.PAL (vanilla grey)
-#define PALCOLOR_REBELS  52   // slot 52 in Custom_IBM.PAL (greyscale dark ramp)
+#define PALCOLOR_REBELS  52   // runtime dark grey ramp for Rebels
 #define PALCOLOR_MOUNTAIN 47
 
 #define PALCOLOR_HARKONNEN 144

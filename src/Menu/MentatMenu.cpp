@@ -22,6 +22,7 @@
 #include <FileClasses/GFXManager.h>
 
 #include <mmath.h>
+#include <mod/ModManager.h>
 
 #include <algorithm>
 #include <regex>
@@ -66,21 +67,37 @@ MentatMenu::MentatMenu(int newHouse)
         } break;
 
         case HOUSE_ATREIDES: {
-            anim = pGFXManager->getAnimation(Anim_AtreidesEyes);
+            const bool usePaulMentat = ModManager::instance().isInitialized()
+                && (ModManager::instance().getActiveModName() == "Tornie");
+
+            anim = pGFXManager->getAnimation(usePaulMentat ? Anim_PaulAtreidesEyes : Anim_AtreidesEyes);
             eyesAnim.setAnimation(anim);
-            windowWidget.addWidget(&eyesAnim,Point(80,160),eyesAnim.getMinimumSize());
+            windowWidget.addWidget(&eyesAnim, usePaulMentat ? Point(120,116) : Point(80,160), eyesAnim.getMinimumSize());
 
-            anim = pGFXManager->getAnimation(Anim_AtreidesMouth);
+            anim = pGFXManager->getAnimation(usePaulMentat ? Anim_PaulAtreidesMouth : Anim_AtreidesMouth);
             mouthAnim.setAnimation(anim);
-            windowWidget.addWidget(&mouthAnim,Point(80,192),mouthAnim.getMinimumSize());
+            windowWidget.addWidget(&mouthAnim, usePaulMentat ? Point(119,171) : Point(80,192), mouthAnim.getMinimumSize());
 
-            anim = pGFXManager->getAnimation(Anim_AtreidesBook);
-            specialAnim.setAnimation(anim);
-            windowWidget.addWidget(&specialAnim,Point(145,305),specialAnim.getMinimumSize());
+            if(!usePaulMentat) {
+                anim = pGFXManager->getAnimation(Anim_AtreidesBook);
+                specialAnim.setAnimation(anim);
+                windowWidget.addWidget(&specialAnim,Point(145,305),specialAnim.getMinimumSize());
 
-            anim = pGFXManager->getAnimation(Anim_AtreidesShoulder);
-            shoulderAnim.setAnimation(anim);
+                anim = pGFXManager->getAnimation(Anim_AtreidesShoulder);
+                shoulderAnim.setAnimation(anim);
+            }
             // don't add shoulderAnim, draw it in DrawSpecificStuff
+        } break;
+
+        case HOUSE_NEUTRAL:
+        case HOUSE_REBELS: {
+            anim = pGFXManager->getAnimation(Anim_ChaniEyes);
+            eyesAnim.setAnimation(anim);
+            windowWidget.addWidget(&eyesAnim,Point(128,160),eyesAnim.getMinimumSize());
+
+            anim = pGFXManager->getAnimation(Anim_ChaniMouth);
+            mouthAnim.setAnimation(anim);
+            windowWidget.addWidget(&mouthAnim,Point(112,192),mouthAnim.getMinimumSize());
         } break;
 
         case HOUSE_ORDOS: {
@@ -278,6 +295,11 @@ void MentatMenu::drawSpecificStuff() {
         case HOUSE_ATREIDES:
         case HOUSE_FREMEN: {
             shoulderPos = Point(256,257) + getPosition();
+        } break;
+
+        case HOUSE_NEUTRAL:
+        case HOUSE_REBELS: {
+            shoulderPos = Point(0,0) + getPosition();
         } break;
 
         case HOUSE_ORDOS:

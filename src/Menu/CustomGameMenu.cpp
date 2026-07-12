@@ -306,6 +306,12 @@ void CustomGameMenu::onMapTypeChange(int buttonID)
     // one (single-directory mode) or scan them all (mode 4).
     std::string spDataDir   = getDuneLegacyDataDir() + "/maps/singleplayer/";
     std::string mpDataDir   = getDuneLegacyDataDir() + "/maps/multiplayer/";
+    if(getFileNamesList(spDataDir, "ini", true, FileListOrder_Name_Asc).empty()) {
+        spDataDir = getDuneLegacyDataDir() + "/data/maps/singleplayer/";
+    }
+    if(getFileNamesList(mpDataDir, "ini", true, FileListOrder_Name_Asc).empty()) {
+        mpDataDir = getDuneLegacyDataDir() + "/data/maps/multiplayer/";
+    }
     std::string spUserDir;
     std::string mpUserDir;
     {

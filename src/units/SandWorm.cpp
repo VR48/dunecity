@@ -298,7 +298,8 @@ bool Sandworm::sleepOrDie() {
 
     // Make sand worms always drop spice, even if they don't die
     if(currentGame->getGameInitSettings().getGameOptions().killedSandwormsDropSpice) {
-            currentGameMap->createSpiceField(location, 4);
+        const auto generatedSpiceTerrain = currentGameMap->chooseGeneratedSpiceTerrain();
+        currentGameMap->createSpiceField(location, 4, false, generatedSpiceTerrain.first, generatedSpiceTerrain.second);
     }
 
     if(currentGame->getGameInitSettings().getGameOptions().sandwormsRespawn) {

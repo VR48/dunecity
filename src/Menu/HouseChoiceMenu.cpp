@@ -27,9 +27,22 @@
 #include <SoundPlayer.h>
 
 
-static const int houseOrder[] = { HOUSE_ATREIDES, HOUSE_ORDOS, HOUSE_HARKONNEN, HOUSE_MERCENARY, HOUSE_FREMEN, HOUSE_SARDAUKAR };
-
 namespace {
+const int houseOrder[] = {
+    HOUSE_ATREIDES,
+    HOUSE_ORDOS,
+    HOUSE_HARKONNEN,
+    HOUSE_MERCENARY,
+    HOUSE_FREMEN,
+    HOUSE_SARDAUKAR,
+    HOUSE_NEUTRAL,
+    HOUSE_REBELS
+};
+
+constexpr int kVisibleHouseButtons = 3;
+constexpr int kHouseChoiceCount = sizeof(houseOrder) / sizeof(houseOrder[0]);
+constexpr int kMaxHouseScrollPos = kHouseChoiceCount - kVisibleHouseButtons;
+
 const char* const kSupportPlayerClasses[] = {
     "",
     "qBotSupportEasy",
@@ -176,6 +189,11 @@ void HouseChoiceMenu::onHouseButton(int button) {
         case HOUSE_HARKONNEN:   soundPlayer->playVoice(HouseHarkonnen, selectedHouse);     break;
         case HOUSE_ATREIDES:    soundPlayer->playVoice(HouseAtreides, selectedHouse);      break;
         case HOUSE_ORDOS:       soundPlayer->playVoice(HouseOrdos, selectedHouse);         break;
+        case HOUSE_FREMEN:      soundPlayer->playVoice(HouseAtreides, selectedHouse);      break;
+        case HOUSE_SARDAUKAR:   soundPlayer->playVoice(HouseHarkonnen, selectedHouse);     break;
+        case HOUSE_MERCENARY:   soundPlayer->playVoice(HouseOrdos, selectedHouse);         break;
+        case HOUSE_NEUTRAL:     soundPlayer->playVoice(HouseAtreides, selectedHouse);      break;
+        case HOUSE_REBELS:      soundPlayer->playVoice(HouseHarkonnen, selectedHouse);     break;
         default:                /* no sounds for the other houses avail.*/  break;
 
     }
@@ -206,7 +224,7 @@ void HouseChoiceMenu::onHouseLeft()
 
 void HouseChoiceMenu::onHouseRight()
 {
-    if(currentHouseChoiceScrollPos < 3) {
+    if(currentHouseChoiceScrollPos < kMaxHouseScrollPos) {
         currentHouseChoiceScrollPos++;
         updateHouseChoice();
     }

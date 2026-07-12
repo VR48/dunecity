@@ -13,10 +13,11 @@
 class AdvancedWindTrap final : public StructureBase
 {
 public:
-    explicit AdvancedWindTrap(House* newOwner);
-    explicit AdvancedWindTrap(InputStream& stream);
+    explicit AdvancedWindTrap(House* newOwner, Uint32 newItemID = Structure_AdvancedWindTrap);
+    explicit AdvancedWindTrap(InputStream& stream, Uint32 newItemID = Structure_AdvancedWindTrap);
     virtual ~AdvancedWindTrap();
 
+    ObjectInterface* getInterfaceContainer() override;
     bool update() override;
     void setHealth(FixPoint newHealth) override;
 
@@ -24,7 +25,7 @@ protected:
     int getProducedPower() const;
 
 private:
-    void init();
+    void init(Uint32 newItemID);
 };
 
 #endif // ADVANCEDWINDTRAP_H

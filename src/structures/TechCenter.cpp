@@ -20,18 +20,64 @@
 #include <globals.h>
 
 #include <FileClasses/GFXManager.h>
+#include <Command.h>
 #include <House.h>
 #include <Game.h>
 #include <Map.h>
 #include <SoundPlayer.h>
 #include <ScreenBorder.h>
 
-#include <units/Tank.h>
-#include <units/SiegeTank.h>
-#include <units/Launcher.h>
-#include <units/Quad.h>
+#include <GUI/ObjectInterfaces/DefaultObjectInterface.h>
+#include <GUI/ObjectInterfaces/TechCenterInterface.h>
+
+#include <units/HarvesterHelpers.h>
 
 #include <algorithm>
+#include <vector>
+
+namespace {
+
+std::vector<int> getTechCenterIxUnitPool(int house) {
+    switch(house) {
+        case HOUSE_HARKONNEN:
+            return { Unit_Devastator, Unit_EliteSiegeTank };
+        case HOUSE_ATREIDES:
+            return { Unit_SonicTank, Unit_EliteSiegeTank };
+        case HOUSE_ORDOS:
+            return { Unit_Deviator, Unit_EliteSiegeTank };
+        case HOUSE_FREMEN:
+            return { Unit_Deviator, Unit_Devastator };
+        case HOUSE_SARDAUKAR:
+            return { Unit_Devastator, Unit_SonicTank };
+        case HOUSE_MERCENARY:
+            return { Unit_Deviator, Unit_SonicTank };
+        case HOUSE_NEUTRAL:
+            return { Unit_Deviator, Unit_EliteLauncher };
+        case HOUSE_REBELS:
+            return { Unit_FlameTank, Unit_SonicTank };
+        default:
+            return {};
+    }
+}
+
+bool isTechCenterSpawnCandidate(int itemID, int house) {
+    if(currentGame == nullptr || !isUnit(itemID) || isFlyingUnit(itemID) || isInfantryUnit(itemID) || isHarvesterLikeUnit(itemID)) {
+        return false;
+    }
+
+    const auto& data = currentGame->objectData.data[itemID][house];
+    if(!data.enabled || data.builder == ItemID_Invalid) {
+        return false;
+    }
+
+    if(data.techLevel >= 0 && currentGame->techLevel < data.techLevel) {
+        return false;
+    }
+
+    return data.prerequisiteStructuresSet[Structure_IX];
+}
+
+} // namespace
 
 
 TechCenter::TechCenter(House* newOwner) : StructureBase(newOwner) {
@@ -39,7 +85,7 @@ TechCenter::TechCenter(House* newOwner) : StructureBase(newOwner) {
 
     setHealth(getMaxHealth());
 
-    spawnTimer = getMaxSpawnTimer();
+    spawnTimer = 0;
 }
 
 TechCenter::TechCenter(InputStream& stream) : StructureBase(stream) {
@@ -52,15 +98,18 @@ void TechCenter::init() {
     itemID = Structure_TechCenter;
     owner->incrementStructures(itemID);
 
+    structureSize.x = 3;
+    structureSize.y = 2;
+
     graphicID = ObjPic_TechCenter;
     graphic = pGFXManager->getObjPic(graphicID, getOwner()->getHouseID());
 
-    // 2 vertical frames at 3x2 tiles per frame. Animation ticks at
-    // ConstructionYard speed.
-    numImagesX = 1;
-    numImagesY = 2;
-    firstAnimFrame = 0;
-    lastAnimFrame = 1;
+    numImagesX = 4;
+    numImagesY = 1;
+    firstAnimFrame = 2;
+    lastAnimFrame = 3;
+    curAnimFrame = 2;
+    lastVisibleFrame = 2;
 }
 
 TechCenter::~TechCenter() = default;
@@ -74,16 +123,41 @@ ObjectInterface* TechCenter::getInterfaceContainer() {
     // Same interface shape as Palace — the bottom bar shows the
     // "production" progress (spawn timer) in place of the special
     // weapon readiness meter.
-    return StructureBase::getInterfaceContainer();
+    if((pLocalHouse == owner) || (debug == true)) {
+        return TechCenterInterface::create(objectID);
+    } else {
+        return DefaultObjectInterface::create(objectID);
+    }
+}
+
+bool TechCenter::canSpawnVehicles() const {
+    return isSpawnReady() && houseHasIxUnlocked();
+}
+
+void TechCenter::handleSpawnClick() {
+    if(currentGame == nullptr || pLocalPlayer == nullptr) {
+        return;
+    }
+
+    currentGame->getCommandManager().addCommand(Command(pLocalPlayer->getPlayerID(), CMD_TECHCENTER_SPAWN, objectID));
+}
+
+void TechCenter::doSpawnVehicles() {
+    if(!canSpawnVehicles()) {
+        return;
+    }
+
+    const int spawnCount = currentGame->randomGen.rand(1, 3);
+    if(spawnRandomVehicles(spawnCount) > 0) {
+        spawnTimer = getMaxSpawnTimer();
+    }
 }
 
 bool TechCenter::houseHasIxUnlocked() const {
-    // House IX unlocks the per-house advanced units (Flame Tank for R,
-    // Elite Launcher for N, Elite Siege Tank for A/H/O/R). Per Tornie
-    // spec the Tech Center only spawns once the owning house has reached
-    // its IX-unlock state. We check currentGame->techLevel >= 9, which
-    // is the IX-unlock threshold across all vanilla + Tornie houses.
-    return currentGame != nullptr && currentGame->techLevel >= 9;
+    // The Tech Center itself provides the IX-style vehicle spawn. It should
+    // not require a separate House IX building, otherwise maps that grant or
+    // build a Tech Center still hide the command button.
+    return currentGame != nullptr && getOwner() != nullptr && currentGame->techLevel >= 9;
 }
 
 int TechCenter::spawnRandomVehicles(int count) {
@@ -93,17 +167,29 @@ int TechCenter::spawnRandomVehicles(int count) {
     // (FlameTank, RocketTrike, Elite*) are deliberately NOT spawned
     // here because their production is gated separately by their own
     // tech levels.
-    static const int vehiclePool[] = {
-        Unit_Tank,
-        Unit_SiegeTank,
-        Unit_Launcher,
-        Unit_Quad
-    };
-    static const int poolSize = sizeof(vehiclePool) / sizeof(vehiclePool[0]);
+    std::vector<int> vehiclePool;
+    for(const auto candidate : getTechCenterIxUnitPool(originalHouseID)) {
+        if(isTechCenterSpawnCandidate(candidate, originalHouseID)) {
+            vehiclePool.push_back(candidate);
+        }
+    }
+
+    if(vehiclePool.empty()) {
+        for(const auto fallback : { Unit_Trike, Unit_Quad }) {
+            const auto& data = currentGame->objectData.data[fallback][originalHouseID];
+            if(data.enabled && data.builder != ItemID_Invalid) {
+                vehiclePool.push_back(fallback);
+            }
+        }
+    }
+
+    if(vehiclePool.empty()) {
+        return 0;
+    }
 
     int spawned = 0;
     for(int i = 0; i < count; i++) {
-        const int idx = currentGame->randomGen.rand(0, poolSize - 1);
+        const int idx = currentGame->randomGen.rand(0, static_cast<int>(vehiclePool.size()) - 1);
         const int itemID = vehiclePool[idx];
 
         UnitBase* newUnit = getOwner()->createUnit(itemID);
@@ -113,24 +199,16 @@ int TechCenter::spawnRandomVehicles(int count) {
 
         // Place around the Tech Center footprint (3x3 Palace-size).
         // findDeploySpot picks the nearest empty tile in the 4-tile ring.
-        const Coord center = getLocation();
-        Coord deployPos;
-        if(!currentGameMap->findDeploySpot(newUnit, center, currentGame->randomGen,
-                                            center, getStructureSize())) {
+        Coord deployPos = currentGameMap->findDeploySpot(newUnit, getLocation(), currentGame->randomGen,
+                                                         getLocation(), getStructureSize());
+        if(deployPos.isInvalid()) {
             delete newUnit;
             continue;
         }
 
         newUnit->deploy(deployPos);
-
-        // Area Guard behaviour by default (per Tornie OOB).
-        if(auto* tracked = dynamic_cast<GroundUnit*>(newUnit)) {
-            // setAttackMode(GUARD) is the base-game Area Guard stance.
-            // The unit will hold position and engage nearby enemies.
-            // We don't have a direct setter here in base, but
-            // AttackMode = GUARD is the default for tracked units
-            // spawned via House::placeUnit.
-        }
+        newUnit->setGuardPoint(deployPos);
+        newUnit->doSetAttackMode(HUNT);
 
         spawned++;
     }
@@ -140,13 +218,16 @@ int TechCenter::spawnRandomVehicles(int count) {
 void TechCenter::updateStructureSpecificStuff() {
     if(spawnTimer > 0) {
         spawnTimer--;
-    }
+        if(spawnTimer <= 0) {
+            spawnTimer = 0;
 
-    if(spawnTimer == 0 && houseHasIxUnlocked()) {
-        // Spawn 1-3 random vehicles when IX is unlocked and the timer hits 0.
-        // Reset the timer for the next cycle.
-        const int spawnCount = currentGame->randomGen.rand(1, 3);
-        spawnRandomVehicles(spawnCount);
-        spawnTimer = getMaxSpawnTimer();
+            if(getOwner() == pLocalHouse) {
+                currentGame->addToNewsTicker(_("Tech Center is ready"));
+            } else if(getOwner()->isAI()) {
+                doSpawnVehicles();
+            }
+        }
+    } else if(getOwner()->isAI()) {
+        doSpawnVehicles();
     }
 }

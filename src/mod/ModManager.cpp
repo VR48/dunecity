@@ -397,7 +397,23 @@ std::string ModManager::hashFileCanonical(const std::string& path) {
 
 bool ModManager::installedObjectDataDiffersFromDefaults(const std::string& modName) const {
     const std::string installed = getModPath(modName) + "/" + OBJECT_DATA_FILE;
-    const std::string defaults = getInstallConfigPath() + "/" + OBJECT_DATA_DEFAULT;
+    std::string defaults = getInstallConfigPath() + "/" + OBJECT_DATA_DEFAULT;
+
+    if (modName == TORNIE_MOD_NAME) {
+        const std::string candidatePaths[] = {
+            getDuneLegacyDataDir() + "/mods/" + TORNIE_MOD_NAME,
+            getDuneLegacyDataDir() + "/../mods/" + TORNIE_MOD_NAME,
+            getDuneLegacyDataDir() + "/../../mods/" + TORNIE_MOD_NAME,
+            getDuneLegacyDataDir() + "/../../../mods/" + TORNIE_MOD_NAME
+        };
+        for (const std::string& candidatePath : candidatePaths) {
+            const std::string candidateObjectData = candidatePath + "/" + OBJECT_DATA_FILE;
+            if (existsFile(candidateObjectData)) {
+                defaults = candidateObjectData;
+                break;
+            }
+        }
+    }
 
     if (!existsFile(installed) || !existsFile(defaults)) {
         return false;  // Existence check already triggers reseed; don't double-fire.
@@ -823,14 +839,23 @@ void ModManager::seedTornieFromDefaults() {
     // 2. <data_dir>/../mods/Tornie/ (older install layout)
     // The Tornie.PAK is also extracted into both locations
     // by the CMake install step.
-    std::string installModsPath = getDuneLegacyDataDir() + "/mods/" + TORNIE_MOD_NAME;
-    if (!std::filesystem::is_directory(installModsPath)) {
-        installModsPath = getDuneLegacyDataDir() + "/../mods/" + TORNIE_MOD_NAME;
+    std::string installModsPath;
+    const std::string candidatePaths[] = {
+        getDuneLegacyDataDir() + "/mods/" + TORNIE_MOD_NAME,
+        getDuneLegacyDataDir() + "/../mods/" + TORNIE_MOD_NAME,
+        getDuneLegacyDataDir() + "/../../mods/" + TORNIE_MOD_NAME,
+        getDuneLegacyDataDir() + "/../../../mods/" + TORNIE_MOD_NAME
+    };
+    for(const std::string& candidatePath : candidatePaths) {
+        if(std::filesystem::is_directory(candidatePath)) {
+            installModsPath = candidatePath;
+            break;
+        }
     }
-    if (!std::filesystem::is_directory(installModsPath)) {
-        // Try one more - the install root's mods dir
-        installModsPath = getDuneLegacyDataDir() + "/../../../mods/" + TORNIE_MOD_NAME;
+    if(installModsPath.empty()) {
+        installModsPath = candidatePaths[0];
     }
+    SDL_Log("ModManager: Tornie install source: %s", installModsPath.c_str());
 
     createDir(torniePath);
 

@@ -2,6 +2,7 @@
 #define DUNECITY_CITYSIMULATION_H
 
 #include <cstdint>
+#include <DataTypes.h>
 #include <dunecity/CityConstants.h>
 #include <dunecity/CityMapLayer.h>
 #include <dunecity/CityBudget.h>
@@ -13,7 +14,7 @@ namespace DuneCity {
 
 /// Per-house city state — population, demand, economy, civic buildings.
 /// Density maps (pollution, crime, land value) remain global (shared environment).
-static constexpr int kMaxCityHouses = 6;  // matches NUM_HOUSES
+static constexpr int kMaxCityHouses = NUM_HOUSES;
 
 struct HouseCityState {
     int resPop = 0, comPop = 0, indPop = 0;
