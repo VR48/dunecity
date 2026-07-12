@@ -101,21 +101,51 @@ jobs:
           path: build/*.zip
 
   build-macos:
-    runs-on: ubuntu-latest
+    # GitHub-hosted Apple Silicon runner (arm64) — matches the arm64-osx vcpkg
+    # triplet and the project's CMAKE_OSX_DEPLOYMENT_TARGET of 14.0. No
+    # self-hosted runner needed, so the DMG builds automatically on every push.
+    runs-on: macos-14
     needs: [verify-version]
     if: always() && (needs.verify-version.result == 'success' || needs.verify-version.result == 'skipped')
     steps:
       - uses: actions/checkout@v4
 
-      - name: Skip macOS build (no self-hosted ARM64 runner on moonbear fork)
-        run: |
-          echo "macOS self-hosted ARM64 runner not configured on moonbear-dev/dunecity."
-          echo "Re-add the [self-hosted, macOS, ARM64] runs-on in the main repo"
-          echo "when the macOS DMG build is wanted there. This no-op produces a"
-          echo "zero-byte placeholder artifact so dev-release/tornie-release can"
-          echo "still upload the macOS step (artifact is just absent)."
-          mkdir -p build
-          touch build/DuneCity-macOS-SKIP.txt
+      # vcpkg probes the compiler with a Ninja generator; macOS runners don't
+      # ship Ninja, so install it or the Configure step fails needing "-G Ninja".
+      - name: Install build deps
+        run: brew install ninja
+
+      - name: Cache vcpkg binary packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/vcpkg/archives
+          key: vcpkg-macos-arm64-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-macos-arm64-
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgJsonGlob: 'vcpkg.json'
+
+      # run-vcpkg points VCPKG_BINARY_SOURCES at the removed x-gha backend;
+      # override to the files-based cache backed by the actions/cache step above.
+      - name: Fix vcpkg binary caching
+        run: echo "VCPKG_BINARY_SOURCES=clear;files,$HOME/.cache/vcpkg/archives,readwrite" >> "$GITHUB_ENV"
+
+      - name: Configure CMake
+        run: cmake -B build -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake -DCMAKE_BUILD_TYPE=Release
+
+      # The `dmg` target builds the app bundle, ad-hoc code-signs it, and packs
+      # the drag-to-Applications DMG (build/DuneCity-<version>-macOS.dmg).
+      - name: Build + Create DMG
+        run: cmake --build build --target dmg --config Release --parallel 3
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: DuneCity-macOS-DMG
+          path: build/*.dmg
 
   build-linux:
     runs-on: ubuntu-latest
