@@ -688,6 +688,9 @@ StructureBase* House::placeStructure(Uint32 builderID, int itemID, int xPos, int
             // Slabs are no normal buildings
             currentGameMap->getTile(xPos, yPos)->setType(Terrain_Slab);
             currentGameMap->getTile(xPos, yPos)->setOwner(getHouseID());
+            // A slab overwrites any road on the tile — clear the road flag so
+            // the tile becomes pure concrete (no stale road under the slab).
+            currentGameMap->getTile(xPos, yPos)->setRoad(false);
             currentGameMap->viewMap(getHouseID(), xPos, yPos, currentGame->objectData.data[Structure_Slab1][houseID].viewrange);
     //      currentGameMap->getTile(xPos, yPos)->clearTerrain();
 
@@ -744,6 +747,9 @@ StructureBase* House::placeStructure(Uint32 builderID, int itemID, int xPos, int
 
                     t.setType(Terrain_Slab);
                     t.setOwner(houseID);
+                    // Slab overwrites any road on the tile → clear the road flag
+                    // so each covered tile becomes pure concrete.
+                    t.setRoad(false);
                     currentGameMap->viewMap(getHouseID(), t.getLocation().x, t.getLocation().y, currentGame->objectData.data[Structure_Slab4][houseID].viewrange);
                     //pTile->clearTerrain();
                 });
