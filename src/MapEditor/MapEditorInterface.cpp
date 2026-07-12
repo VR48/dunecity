@@ -311,24 +311,28 @@ MapEditorInterface::MapEditorInterface(MapEditor* pMapEditor)
     editorModeTerrain_HBox4.setVisible(isTornie);
 
     editorModeTerrain_RedSpice.setToggleButton(true);
+    editorModeTerrain_RedSpice.setTooltipText(_("Red Spice Field"));
     editorModeTerrain_RedSpice.setOnClick(std::bind(&MapEditorInterface::onTerrainButton, this, Terrain_RedSpice));
     editorModeTerrain_HBox4.addWidget(&editorModeTerrain_RedSpice);
 
     editorModeTerrain_HBox4.addWidget(HSpacer::create(2));
 
     editorModeTerrain_GreenSpice.setToggleButton(true);
+    editorModeTerrain_GreenSpice.setTooltipText(_("Green Spice Field"));
     editorModeTerrain_GreenSpice.setOnClick(std::bind(&MapEditorInterface::onTerrainButton, this, Terrain_GreenSpice));
     editorModeTerrain_HBox4.addWidget(&editorModeTerrain_GreenSpice);
 
     editorModeTerrain_HBox4.addWidget(HSpacer::create(4));
 
     editorModeTerrain_RedSpiceBloom.setToggleButton(true);
+    editorModeTerrain_RedSpiceBloom.setTooltipText(_("Red Spice Bloom"));
     editorModeTerrain_RedSpiceBloom.setOnClick(std::bind(&MapEditorInterface::onTerrainButton, this, Terrain_RedSpiceBloom));
     editorModeTerrain_HBox4.addWidget(&editorModeTerrain_RedSpiceBloom);
 
     editorModeTerrain_HBox4.addWidget(HSpacer::create(2));
 
     editorModeTerrain_GreenSpiceBloom.setToggleButton(true);
+    editorModeTerrain_GreenSpiceBloom.setTooltipText(_("Green Spice Bloom"));
     editorModeTerrain_GreenSpiceBloom.setOnClick(std::bind(&MapEditorInterface::onTerrainButton, this, Terrain_GreenSpiceBloom));
     editorModeTerrain_HBox4.addWidget(&editorModeTerrain_GreenSpiceBloom);
 

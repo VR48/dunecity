@@ -1465,6 +1465,13 @@ void MapEditor::drawMap(ScreenBorder* pScreenborder, bool bCompleteMap) {
         for(int x = TopLeftTile.x; x <= BottomRightTile.x; x++) {
 
             int tile;
+            // Tornie custom spice fields/blooms live in a separate sprite strip
+            // (ObjPic_TerrainRedSpice/GreenSpice), not the vanilla ObjPic_Terrain
+            // atlas. Sampling the vanilla atlas at their tile index renders black,
+            // so draw them from the custom texture instead (mirrors Tile::blitGround).
+            SDL_Texture* customSpiceTex = nullptr;
+            SDL_Rect customSpiceSrc{};
+            bool customSpiceNeedsSand = false;
 
             switch(getTerrain(x,y)) {
                 case Terrain_Slab: {
@@ -1533,28 +1540,33 @@ void MapEditor::drawMap(ScreenBorder* pScreenborder, bool bCompleteMap) {
                     tile = Tile::TerrainTile_SpecialBloom;
                 } break;
 
-                case Terrain_RedSpice: {
-                    bool up = (y-1 < 0) || isSpiceTerrain(getTerrain(x, y-1));
-                    bool right = (x+1 >= map.getSizeX()) || isSpiceTerrain(getTerrain(x+1, y));
-                    bool down = (y+1 >= map.getSizeY()) || isSpiceTerrain(getTerrain(x, y+1));
-                    bool left = (x-1 < 0) || isSpiceTerrain(getTerrain(x-1, y));
-                    tile = Tile::TerrainTile_RedSpice + (up | (right << 1) | (down << 2) | (left << 3));
-                } break;
-
+                case Terrain_RedSpice:
                 case Terrain_GreenSpice: {
                     bool up = (y-1 < 0) || isSpiceTerrain(getTerrain(x, y-1));
                     bool right = (x+1 >= map.getSizeX()) || isSpiceTerrain(getTerrain(x+1, y));
                     bool down = (y+1 >= map.getSizeY()) || isSpiceTerrain(getTerrain(x, y+1));
                     bool left = (x-1 < 0) || isSpiceTerrain(getTerrain(x-1, y));
-                    tile = Tile::TerrainTile_GreenSpice + (up | (right << 1) | (down << 2) | (left << 3));
+                    int mask = (up | (right << 1) | (down << 2) | (left << 3));
+                    int objPicId = (getTerrain(x,y) == Terrain_RedSpice) ? ObjPic_TerrainRedSpice : ObjPic_TerrainGreenSpice;
+                    customSpiceTex = pGFXManager->getZoomedObjPic(objPicId, currentZoomlevel);
+                    if(customSpiceTex) {
+                        // Field: connectivity variant on row 0 of the custom strip, over a sand base.
+                        customSpiceSrc = { mask*zoomedTilesize, 0, zoomedTilesize, zoomedTilesize };
+                        customSpiceNeedsSand = true;
+                    }
+                    tile = Tile::TerrainTile_Spice + mask;   // vanilla fallback if custom strip missing
                 } break;
 
-                case Terrain_RedSpiceBloom: {
-                    tile = Tile::TerrainTile_RedSpiceBloom;
-                } break;
-
+                case Terrain_RedSpiceBloom:
                 case Terrain_GreenSpiceBloom: {
-                    tile = Tile::TerrainTile_GreenSpiceBloom;
+                    int objPicId = (getTerrain(x,y) == Terrain_RedSpiceBloom) ? ObjPic_TerrainRedSpice : ObjPic_TerrainGreenSpice;
+                    customSpiceTex = pGFXManager->getZoomedObjPic(objPicId, currentZoomlevel);
+                    if(customSpiceTex) {
+                        // Bloom is pre-composited on sand at column 16, row 1 of the strip.
+                        customSpiceSrc = { 16*zoomedTilesize, 1*zoomedTilesize, zoomedTilesize, zoomedTilesize };
+                        customSpiceNeedsSand = false;
+                    }
+                    tile = Tile::TerrainTile_SpiceBloom;   // vanilla fallback if custom strip missing
                 } break;
 
                 default: {
@@ -1563,11 +1575,20 @@ void MapEditor::drawMap(ScreenBorder* pScreenborder, bool bCompleteMap) {
             }
 
             //draw map[x][y]
-            SDL_Rect source = { (tile % NUM_TERRAIN_TILES_X)*zoomedTilesize, (tile / NUM_TERRAIN_TILES_X)*zoomedTilesize,
-                                zoomedTilesize, zoomedTilesize };
             SDL_Rect drawLocation = {   pScreenborder->world2screenX(x*TILESIZE), pScreenborder->world2screenY(y*TILESIZE),
                                         zoomedTilesize, zoomedTilesize };
-            SDL_RenderCopy(renderer, TerrainSprite, &source, &drawLocation);
+            if(customSpiceTex) {
+                if(customSpiceNeedsSand) {
+                    SDL_Rect sandSrc = { (Tile::TerrainTile_Sand % NUM_TERRAIN_TILES_X)*zoomedTilesize, (Tile::TerrainTile_Sand / NUM_TERRAIN_TILES_X)*zoomedTilesize,
+                                         zoomedTilesize, zoomedTilesize };
+                    SDL_RenderCopy(renderer, TerrainSprite, &sandSrc, &drawLocation);
+                }
+                SDL_RenderCopy(renderer, customSpiceTex, &customSpiceSrc, &drawLocation);
+            } else {
+                SDL_Rect source = { (tile % NUM_TERRAIN_TILES_X)*zoomedTilesize, (tile / NUM_TERRAIN_TILES_X)*zoomedTilesize,
+                                    zoomedTilesize, zoomedTilesize };
+                SDL_RenderCopy(renderer, TerrainSprite, &source, &drawLocation);
+            }
         }
     }
 
