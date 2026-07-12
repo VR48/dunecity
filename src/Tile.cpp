@@ -69,10 +69,10 @@ Tile::~Tile() = default;
 void Tile::load(InputStream& stream) {
     type = stream.readUint32();
 
-    stream.readBools(&explored[0], &explored[1], &explored[2], &explored[3], &explored[4], &explored[5], &explored[6]);
+    stream.readBools(&explored[0], &explored[1], &explored[2], &explored[3], &explored[4], &explored[5], &explored[6], &explored[7]);
 
     bool bLastAccess[NUM_TEAMS];
-    stream.readBools(&bLastAccess[0], &bLastAccess[1], &bLastAccess[2], &bLastAccess[3], &bLastAccess[4], &bLastAccess[5], &bLastAccess[6]);
+    stream.readBools(&bLastAccess[0], &bLastAccess[1], &bLastAccess[2], &bLastAccess[3], &bLastAccess[4], &bLastAccess[5], &bLastAccess[6], &bLastAccess[7]);
 
     for (int i = 0; i < NUM_TEAMS; i++) {
         if (bLastAccess[i] == true) {
@@ -160,9 +160,9 @@ void Tile::load(InputStream& stream) {
 void Tile::save(OutputStream& stream) const {
     stream.writeUint32(type);
 
-    stream.writeBools(explored[0], explored[1], explored[2], explored[3], explored[4], explored[5], explored[6]);
+    stream.writeBools(explored[0], explored[1], explored[2], explored[3], explored[4], explored[5], explored[6], explored[7]);
 
-    stream.writeBools((lastAccess[0] != 0), (lastAccess[1] != 0), (lastAccess[2] != 0), (lastAccess[3] != 0), (lastAccess[4] != 0), (lastAccess[5] != 0), (lastAccess[6] != 0));
+    stream.writeBools((lastAccess[0] != 0), (lastAccess[1] != 0), (lastAccess[2] != 0), (lastAccess[3] != 0), (lastAccess[4] != 0), (lastAccess[5] != 0), (lastAccess[6] != 0), (lastAccess[7] != 0));
     for (auto lastAccessFromTeam : lastAccess) {
         if (lastAccessFromTeam != 0) {
             stream.writeUint32(lastAccessFromTeam);

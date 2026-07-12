@@ -126,8 +126,10 @@ PlayerSettingsWindow::PlayerSettingsWindow(MapEditor* pMapEditor, HOUSETYPE curr
             playerWidgets[i].teamDropDownBox.addEntry("Team4", 3);
             playerWidgets[i].teamDropDownBox.addEntry("Team5", 4);
             playerWidgets[i].teamDropDownBox.addEntry("Team6", 5);
+            playerWidgets[i].teamDropDownBox.addEntry("Team7", 6);
+            playerWidgets[i].teamDropDownBox.addEntry("Team8", 7);
 
-            for(int j = 0; j < 6; j++) {
+            for(int j = 0; j < 8; j++) {
                 if(playerWidgets[i].teamDropDownBox.getEntry(j) == playerInfo.brain) {
                     playerWidgets[i].teamDropDownBox.setSelectedItem(j);
                     break;

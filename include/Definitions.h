@@ -84,7 +84,14 @@
 #define INVALID (-1)
 #define INVALID_GAMECYCLE (static_cast<Uint32>(-1))
 
-#define NUM_TEAMS 7
+// Sizes every per-team/per-house array. Two distinct index ranges flow in here:
+//   * teamScore[]/canBeSeen[]/visible[] are indexed by teamID, which is 1-based
+//     with 0 reserved for "no team" — 8 players on distinct teams give teamIDs
+//     1..8, so the max index is 8 and the arrays need 9 slots.
+//   * Tile::lastAccess/explored are indexed by houseID (Rebels = 7), max index 7.
+// 9 covers both. The old value of 7 overflowed teamScore (teams 7/8) and the
+// Tile arrays (Rebels house) — a latent out-of-bounds even before 8-team maps.
+#define NUM_TEAMS 9
 
 #define DEVIATIONTIME MILLI2CYCLES(120*1000)
 #define TRACKSTIME MILLI2CYCLES((1 << 16))
