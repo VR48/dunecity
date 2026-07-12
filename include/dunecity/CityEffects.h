@@ -95,7 +95,7 @@ constexpr int kSandLandValueBonus       = 8;   // Per-tile direct stampFalloff
 constexpr int kSandTerrainRawBonus      = 40;
 constexpr int kPoliceCoverageFull       = 100; // Barracks / WOR
 constexpr int kPoliceCoverageGunTurret  =  25; // Gun Turret (1/4 strength)
-constexpr int kPoliceCoverageRocketTurret = 10; // Rocket Turret (less than guns)
+constexpr int kPoliceCoverageRocketTurret = 25; // Rocket Turret (1/4 strength)
 
 constexpr int kMaxLandValue = 250;
 constexpr int kMaxCrime     = 250;
@@ -267,9 +267,9 @@ inline int getPoliceCoverage(int itemID) {
 /// per city year; if the city has under-funded police, coverage scales
 /// down proportionally (handled at scan time, not here).
 ///
-/// PoliceStation upkeep equals its build price (500), matching SimCity
-/// Classic's TOOL_POLICESTATION (tool.cpp gCostOf[4] = 500).
-constexpr int kPoliceCostPoliceStation = 500;
+/// PoliceStation annual upkeep is designer-tuned to 100 (down from SimCity
+/// Classic's TOOL_POLICESTATION price of 500) so police is affordable to run.
+constexpr int kPoliceCostPoliceStation = 100;
 // Gun and Rocket turrets contribute fractional police coverage as a
 // "garrison adjacency" effect, but no longer cost anything to operate.
 // They're defensive structures first — the police effect is a bonus,
