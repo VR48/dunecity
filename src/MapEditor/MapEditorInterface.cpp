@@ -253,18 +253,21 @@ MapEditorInterface::MapEditorInterface(MapEditor* pMapEditor)
     editorModeTerrain_VBox.addWidget(&editorModeTerrain_HBox1);
 
     editorModeTerrain_Sand.setToggleButton(true);
+    editorModeTerrain_Sand.setTooltipText(_("Sand"));
     editorModeTerrain_Sand.setOnClick(std::bind(&MapEditorInterface::onTerrainButton, this, Terrain_Sand));
     editorModeTerrain_HBox1.addWidget(&editorModeTerrain_Sand);
 
     editorModeTerrain_HBox1.addWidget(HSpacer::create(2));
 
     editorModeTerrain_Dunes.setToggleButton(true);
+    editorModeTerrain_Dunes.setTooltipText(_("Dunes"));
     editorModeTerrain_Dunes.setOnClick(std::bind(&MapEditorInterface::onTerrainButton, this, Terrain_Dunes));
     editorModeTerrain_HBox1.addWidget(&editorModeTerrain_Dunes);
 
     editorModeTerrain_HBox1.addWidget(HSpacer::create(2));
 
     editorModeTerrain_SpecialBloom.setToggleButton(true);
+    editorModeTerrain_SpecialBloom.setTooltipText(_("Special Bloom (spawns a sandworm when triggered)"));
     editorModeTerrain_SpecialBloom.setOnClick(std::bind(&MapEditorInterface::onTerrainButton, this, Terrain_SpecialBloom));
     editorModeTerrain_HBox1.addWidget(&editorModeTerrain_SpecialBloom);
 
@@ -272,18 +275,21 @@ MapEditorInterface::MapEditorInterface(MapEditor* pMapEditor)
     editorModeTerrain_VBox.addWidget(&editorModeTerrain_HBox2);
 
     editorModeTerrain_Spice.setToggleButton(true);
+    editorModeTerrain_Spice.setTooltipText(_("Spice Field"));
     editorModeTerrain_Spice.setOnClick(std::bind(&MapEditorInterface::onTerrainButton, this, Terrain_Spice));
     editorModeTerrain_HBox2.addWidget(&editorModeTerrain_Spice);
 
     editorModeTerrain_HBox2.addWidget(HSpacer::create(2));
 
     editorModeTerrain_ThickSpice.setToggleButton(true);
+    editorModeTerrain_ThickSpice.setTooltipText(_("Thick Spice (richer, slower to deplete)"));
     editorModeTerrain_ThickSpice.setOnClick(std::bind(&MapEditorInterface::onTerrainButton, this, Terrain_ThickSpice));
     editorModeTerrain_HBox2.addWidget(&editorModeTerrain_ThickSpice);
 
     editorModeTerrain_HBox2.addWidget(HSpacer::create(2));
 
     editorModeTerrain_SpiceBloom.setToggleButton(true);
+    editorModeTerrain_SpiceBloom.setTooltipText(_("Spice Bloom (bursts into a spice field when triggered)"));
     editorModeTerrain_SpiceBloom.setOnClick(std::bind(&MapEditorInterface::onTerrainButton, this, Terrain_SpiceBloom));
     editorModeTerrain_HBox2.addWidget(&editorModeTerrain_SpiceBloom);
 
@@ -291,12 +297,14 @@ MapEditorInterface::MapEditorInterface(MapEditor* pMapEditor)
     editorModeTerrain_VBox.addWidget(&editorModeTerrain_HBox3);
 
     editorModeTerrain_Rock.setToggleButton(true);
+    editorModeTerrain_Rock.setTooltipText(_("Rock (buildable ground)"));
     editorModeTerrain_Rock.setOnClick(std::bind(&MapEditorInterface::onTerrainButton, this, Terrain_Rock));
     editorModeTerrain_HBox3.addWidget(&editorModeTerrain_Rock);
 
     editorModeTerrain_HBox3.addWidget(HSpacer::create(2));
 
     editorModeTerrain_Mountain.setToggleButton(true);
+    editorModeTerrain_Mountain.setTooltipText(_("Mountain (impassable; blocks units)"));
     editorModeTerrain_Mountain.setOnClick(std::bind(&MapEditorInterface::onTerrainButton, this, Terrain_Mountain));
     editorModeTerrain_HBox3.addWidget(&editorModeTerrain_Mountain);
 
