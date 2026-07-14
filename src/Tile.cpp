@@ -71,10 +71,13 @@ void Tile::load(InputStream& stream) {
 
     stream.readBools(&explored[0], &explored[1], &explored[2], &explored[3], &explored[4], &explored[5], &explored[6], &explored[7]);
 
-    bool bLastAccess[NUM_TEAMS];
+    // Tile visibility is indexed by house (0..7), not by the 1-based team ID.
+    // NUM_TEAMS is 9 so other arrays can address team IDs 0..8; using it here
+    // left bLastAccess[8] uninitialized because readBools stores only 8 bits.
+    bool bLastAccess[NUM_HOUSES]{};
     stream.readBools(&bLastAccess[0], &bLastAccess[1], &bLastAccess[2], &bLastAccess[3], &bLastAccess[4], &bLastAccess[5], &bLastAccess[6], &bLastAccess[7]);
 
-    for (int i = 0; i < NUM_TEAMS; i++) {
+    for (int i = 0; i < NUM_HOUSES; i++) {
         if (bLastAccess[i] == true) {
             lastAccess[i] = stream.readUint32();
         }
@@ -163,9 +166,9 @@ void Tile::save(OutputStream& stream) const {
     stream.writeBools(explored[0], explored[1], explored[2], explored[3], explored[4], explored[5], explored[6], explored[7]);
 
     stream.writeBools((lastAccess[0] != 0), (lastAccess[1] != 0), (lastAccess[2] != 0), (lastAccess[3] != 0), (lastAccess[4] != 0), (lastAccess[5] != 0), (lastAccess[6] != 0), (lastAccess[7] != 0));
-    for (auto lastAccessFromTeam : lastAccess) {
-        if (lastAccessFromTeam != 0) {
-            stream.writeUint32(lastAccessFromTeam);
+    for (int i = 0; i < NUM_HOUSES; ++i) {
+        if (lastAccess[i] != 0) {
+            stream.writeUint32(lastAccess[i]);
         }
     }
 

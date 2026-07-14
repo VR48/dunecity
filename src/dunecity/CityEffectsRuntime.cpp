@@ -547,6 +547,75 @@ void CitySimulation::runEffectsScans() {
     decayGrowthRateMap();
 }
 
+void CitySimulation::reconcileLoadedMapState(uint32_t gameCycleCount) {
+    if (!initialized_ || !currentGameMap) return;
+
+    const int beforeRes = getResPop();
+    const int beforeCom = getComPop();
+    const int beforeInd = getIndPop();
+    int cityRoleStructures = 0;
+    int zoneStructures = 0;
+
+    Map& map = *currentGameMap;
+    for (int y = 0; y < map.getSizeY(); ++y) {
+        for (int x = 0; x < map.getSizeX(); ++x) {
+            Tile* t = map.getTile(x, y);
+            if (!t || !t->hasANonInfantryGroundObject()) continue;
+            ObjectBase* pObj = t->getNonInfantryGroundObject();
+            if (!pObj || !pObj->isAStructure()) continue;
+
+            auto* pStruct = static_cast<StructureBase*>(pObj);
+            if (pStruct->getLocation().x != x || pStruct->getLocation().y != y) {
+                continue;
+            }
+
+            if (getStructureCityRole(pStruct->getItemID()) == CityRole::None) {
+                continue;
+            }
+            ++cityRoleStructures;
+
+            auto* pZone = dynamic_cast<ZoneStructure*>(pStruct);
+            if (!pZone) continue;
+
+            ++zoneStructures;
+            uint8_t density = 0;
+            const Coord pos = pZone->getLocation();
+            for (int dy = 0; dy < pZone->getStructureSizeY(); ++dy) {
+                for (int dx = 0; dx < pZone->getStructureSizeX(); ++dx) {
+                    Tile* zt = map.getTile(pos.x + dx, pos.y + dy);
+                    if (zt) density = std::max<uint8_t>(density, zt->getCityZoneDensity());
+                }
+            }
+            for (int dy = 0; dy < pZone->getStructureSizeY(); ++dy) {
+                for (int dx = 0; dx < pZone->getStructureSizeX(); ++dx) {
+                    Tile* zt = map.getTile(pos.x + dx, pos.y + dy);
+                    if (!zt) continue;
+                    zt->setCityZoneType(pZone->getZoneType());
+                    zt->setCityZoneDensity(density);
+                }
+            }
+            pZone->refreshZonePowerDraw();
+        }
+    }
+
+    const uint32_t totalDays = gameCycleCount / kCyclesPerCityDay;
+    cityYear_ = static_cast<int>(totalDays / kCityDaysPerYear);
+    cityDay_  = static_cast<int>(totalDays % kCityDaysPerYear);
+    lastProcessedDay_ = totalDays;
+    lastBudgetTick_ = gameCycleCount / kCyclesPerBudgetTick;
+    pendingGrowthPhase_ = false;
+
+    runEffectsScans();
+    runZoneGrowth();
+
+    SDL_Log("[CitySim] load-reconcile cityRoleStructures=%d zones=%d "
+            "pop R/C/I %d/%d/%d -> %d/%d/%d valves=R%+d C%+d I%+d",
+            cityRoleStructures, zoneStructures,
+            beforeRes, beforeCom, beforeInd,
+            getResPop(), getComPop(), getIndPop(),
+            getResValve(), getComValve(), getIndValve());
+}
+
 void CitySimulation::runZoneGrowth() {
     if (!currentGameMap) return;
 

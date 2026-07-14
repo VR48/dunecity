@@ -3238,6 +3238,20 @@ bool Game::loadSaveGame(InputStream& stream) {
     pathRequestQueue.clear();
     pendingPathRequestIds.clear();
 
+    const char* loadStage = "header";
+    auto logLoadStage = [&stream, &loadStage](const char* stage) {
+        loadStage = stage;
+        if(const auto* fileStream = dynamic_cast<const IFileStream*>(&stream)) {
+            SDL_Log("[SaveLoad] stage=%s offset=%ld/%ld",
+                    loadStage, fileStream->getPosition(), fileStream->getLength());
+        } else {
+            SDL_Log("[SaveLoad] stage=%s offset=unavailable", loadStage);
+        }
+    };
+
+    try {
+    logLoadStage("header");
+
     Uint32 magicNum = stream.readUint32();
     if (magicNum != SAVEMAGIC) {
         SDL_Log("Game::loadSaveGame(): No valid savegame! Expected magic number %.8X, but got %.8X!", SAVEMAGIC, magicNum);
@@ -3260,6 +3274,7 @@ bool Game::loadSaveGame(InputStream& stream) {
     std::string duneVersion = stream.readString();
 
     // Read mod info (version 9806+)
+    logLoadStage("mod metadata");
     std::string savedModName = "vanilla";
     std::string savedModChecksum = "";
     if (savegameVersion >= 9806) {
@@ -3300,15 +3315,18 @@ bool Game::loadSaveGame(InputStream& stream) {
     GameInitSettings::HouseInfoList oldHouseInfoList = gameInitSettings.getHouseInfoList();
 
     // read gameInitSettings
+    logLoadStage("game settings");
     gameInitSettings = GameInitSettings(stream);
 
     // read the actual house setup choosen at the beginning of the game
+    logLoadStage("house setup");
     Uint32 numHouseInfo = stream.readUint32();
     for(Uint32 i=0;i<numHouseInfo;i++) {
         houseInfoListSetup.push_back(GameInitSettings::HouseInfo(stream));
     }
 
     //read map size
+    logLoadStage("map dimensions and game state");
     short mapSizeX = stream.readUint32();
     short mapSizeY = stream.readUint32();
 
@@ -3325,6 +3343,7 @@ bool Game::loadSaveGame(InputStream& stream) {
     randomGen.setSeed(stream.readUint32());
 
     // read in the unit/structure data
+    logLoadStage("object data");
     // SAVEGAMEVERSION 9811+ stores an item count in the stream (pass 0 to auto-read).
     // Pre-9811 saves lack the count field; we infer it from duneVersion:
     //   "dunelegacy*"               → 41 items (original Dune Legacy 0.99.x)
@@ -3338,6 +3357,7 @@ bool Game::loadSaveGame(InputStream& stream) {
     objectData.load(stream, savedItemCount);
 
     //load the house(s) info
+    logLoadStage("houses and players");
     for(int i=0; i<NUM_HOUSES; i++) {
         if (stream.readBool() == true) {
             //house in game
@@ -3346,6 +3366,7 @@ bool Game::loadSaveGame(InputStream& stream) {
     }
 
     // we have to set the local player
+    logLoadStage("local player and flags");
     if(bMultiplayerLoad) {
         // get it from the gameInitSettings that started the game (not the one saved in the savegame)
         for(const GameInitSettings::HouseInfo& houseInfo : oldHouseInfoList) {
@@ -3396,21 +3417,26 @@ bool Game::loadSaveGame(InputStream& stream) {
     winFlags = stream.readUint32();
     loseFlags = stream.readUint32();
 
+    logLoadStage("map tiles");
     currentGameMap->load(stream);
 
     //load the structures and units
+    logLoadStage("objects");
     objectManager.load(stream);
 
+    logLoadStage("bullets");
     int numBullets = stream.readUint32();
     for(int i = 0; i < numBullets; i++) {
         bulletList.push_back(new Bullet(stream));
     }
 
+    logLoadStage("explosions");
     int numExplosions = stream.readUint32();
     for(int i = 0; i < numExplosions; i++) {
         explosionList.push_back(new Explosion(stream));
     }
 
+    logLoadStage("selection and screen position");
     if(bMultiplayerLoad) {
         screenborder->adjustScreenBorderToMapsize(currentGameMap->getSizeX(), currentGameMap->getSizeY());
 
@@ -3426,6 +3452,7 @@ bool Game::loadSaveGame(InputStream& stream) {
     }
 
     // load city simulation state (version 9807+)
+    logLoadStage("city simulation");
     if (savegameVersion >= 9807) {
         bool hasCitySim = stream.readBool();
         if (hasCitySim) {
@@ -3435,6 +3462,7 @@ bool Game::loadSaveGame(InputStream& stream) {
             citySimulation_->setCityEffectsEnabled(
                 gameInitSettings.getGameOptions().cityEffects);
             citySimulation_->load(stream);
+            citySimulation_->reconcileLoadedMapState(gameCycleCount);
         }
     }
 
@@ -3450,14 +3478,32 @@ bool Game::loadSaveGame(InputStream& stream) {
     }
 
     // load triggers
+    logLoadStage("triggers");
     triggerManager.load(stream);
 
     // CommandManager is at the very end of the file. DO NOT CHANGE THIS!
+    logLoadStage("command history");
     cmdManager.load(stream);
 
+    logLoadStage("complete");
     finished = false;
 
     return true;
+    } catch(const InputStream::exception& e) {
+        if(const auto* fileStream = dynamic_cast<const IFileStream*>(&stream)) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                         "[SaveLoad] FAILED stage=%s offset=%ld/%ld error=%s",
+                         loadStage, fileStream->getPosition(), fileStream->getLength(), e.what());
+            THROW(InputStream::error,
+                  "Save load failed during '%s' at byte %ld of %ld: %s",
+                  loadStage, fileStream->getPosition(), fileStream->getLength(), e.what());
+        }
+
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "[SaveLoad] FAILED stage=%s offset=unavailable error=%s",
+                     loadStage, e.what());
+        throw;
+    }
 }
 
 

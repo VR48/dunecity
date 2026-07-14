@@ -81,6 +81,27 @@ void IFileStream::close()
     }
 }
 
+long IFileStream::getPosition() const
+{
+    return fp != nullptr ? ftell(fp) : -1;
+}
+
+long IFileStream::getLength() const
+{
+    if(fp == nullptr) {
+        return -1;
+    }
+
+    const long position = ftell(fp);
+    if(position < 0 || fseek(fp, 0, SEEK_END) != 0) {
+        return -1;
+    }
+
+    const long length = ftell(fp);
+    fseek(fp, position, SEEK_SET);
+    return length;
+}
+
 std::string IFileStream::readString()
 {
     Uint32 length;

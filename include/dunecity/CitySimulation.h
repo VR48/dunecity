@@ -50,6 +50,7 @@ public:
     void init(int width, int height);
     void load(InputStream& stream);
     void save(OutputStream& stream) const;
+    void reconcileLoadedMapState(uint32_t gameCycleCount);
     void advancePhase(uint32_t gameCycleCount);
 
     bool isInitialized() const { return initialized_; }

@@ -159,9 +159,11 @@ ObjectBase::ObjectBase(InputStream& stream) {
     targetFriendly = stream.readBool();
     attackMode = static_cast<ATTACKMODE>(stream.readUint32());
 
-    std::array<bool, 7> b{false, false, false, false, false, false, false};
+    // The packed save field contains 8 bits. Keep the ninth team-array slot
+    // initialized instead of indexing past the old seven-element temporary.
+    std::array<bool, NUM_TEAMS> b{};
 
-    stream.readBools(&b[0], &b[1], &b[2], &b[3], &b[4], &b[5], &b[6]);
+    stream.readBools(&b[0], &b[1], &b[2], &b[3], &b[4], &b[5], &b[6], &b[7]);
 
     for (decltype(visible.size()) i = 0; i < visible.size(); ++i)
         visible[i] = b[i];
@@ -228,7 +230,7 @@ void ObjectBase::save(OutputStream& stream) const {
     stream.writeBool(targetFriendly);
     stream.writeUint32(attackMode);
 
-    stream.writeBools(visible[0], visible[1], visible[2], visible[3], visible[4], visible[5], visible[6]);
+    stream.writeBools(visible[0], visible[1], visible[2], visible[3], visible[4], visible[5], visible[6], visible[7]);
 }
 
 
