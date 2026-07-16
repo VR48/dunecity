@@ -354,8 +354,26 @@ sdl2::surface_ptr getSubPicture(SDL_Surface* pic, int left, int top, int width, 
         }
     }
 
+    const bool protectOpaqueBlack =
+        pic->format->BitsPerPixel == 8
+        && pic->format->palette
+        && returnPic->format->palette
+        && pic->format->palette->ncolors > PALCOLOR_BLACK
+        && returnPic->format->palette->ncolors > PALCOLOR_BLACK;
+    const SDL_Color sourceBlack = protectOpaqueBlack ? pic->format->palette->colors[PALCOLOR_BLACK] : SDL_Color{};
+    const SDL_Color returnBlack = protectOpaqueBlack ? returnPic->format->palette->colors[PALCOLOR_BLACK] : SDL_Color{};
+    if(protectOpaqueBlack) {
+        pic->format->palette->colors[PALCOLOR_BLACK].g = 1;
+        returnPic->format->palette->colors[PALCOLOR_BLACK].g = 1;
+    }
+
     SDL_Rect srcRect = {left,top,width,height};
     SDL_BlitSurface(pic,&srcRect,returnPic.get(),nullptr);
+
+    if(protectOpaqueBlack) {
+        pic->format->palette->colors[PALCOLOR_BLACK] = sourceBlack;
+        returnPic->format->palette->colors[PALCOLOR_BLACK] = returnBlack;
+    }
 
     return returnPic;
 }
@@ -590,8 +608,13 @@ sdl2::surface_ptr mapSurfaceColorRange(SDL_Surface* source, int srcColor, int de
 
     sdl2::surface_ptr retPic{ SDL_ConvertSurface(source,source->format,source->flags) };
 
-    if (!source)
+    if (!retPic)
         THROW(std::runtime_error, "mapSurfaceColorRange(): Cannot copy image!");
+
+    Uint32 colorKey = 0;
+    if (SDL_GetColorKey(source, &colorKey) == 0) {
+        SDL_SetColorKey(retPic.get(), SDL_TRUE, colorKey);
+    }
 
     if (retPic->format->BytesPerPixel == 1) {
         SDL_SetSurfaceBlendMode(retPic.get(), SDL_BLENDMODE_NONE);

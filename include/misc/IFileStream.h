@@ -32,6 +32,9 @@ public:
     bool open(const std::string& filename);
     void close();
 
+    long getPosition() const;
+    long getLength() const;
+
     std::string readString() override;
 
     Uint8 readUint8() override;

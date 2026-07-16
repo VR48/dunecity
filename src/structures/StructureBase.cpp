@@ -35,6 +35,32 @@
 #include <GUI/ObjectInterfaces/DefaultStructureInterface.h>
 #include <GUI/ObjectInterfaces/CityStatsStructureInterface.h>
 
+#include <set>
+#include <tuple>
+
+namespace {
+bool isTornieStructureForDiagnostics(int itemID) {
+    return itemID == Structure_AdvancedWindTrap
+        || itemID == Structure_AdvancedWindTrapMK2
+        || itemID == Structure_AdvancedWindTrapMK3
+        || itemID == Structure_Worfinery
+        || itemID == Structure_TechCenter
+        || itemID == Structure_Scoutpost;
+}
+
+const char* getTornieStructureDiagnosticName(int itemID) {
+    switch(itemID) {
+        case Structure_AdvancedWindTrap:    return "AdvancedWindTrap3x3";
+        case Structure_AdvancedWindTrapMK2: return "AdvancedWindTrap2x3";
+        case Structure_AdvancedWindTrapMK3: return "AdvancedWindTrap3x2";
+        case Structure_Worfinery:           return "Worfinery";
+        case Structure_TechCenter:          return "TechCenter";
+        case Structure_Scoutpost:           return "Scoutpost";
+        default:                            return "Unknown";
+    }
+}
+}
+
 StructureBase::StructureBase(House* newOwner) : ObjectBase(newOwner) {
     StructureBase::init();
 
@@ -155,13 +181,82 @@ void StructureBase::blitToScreen() {
     int indexX = index % numImagesX;
     int indexY = index / numImagesX;
 
-    SDL_Rect dest = calcSpriteDrawingRect(  graphic[currentZoomlevel],
+    // Loading a map or switching mods invalidates GFXManager's texture cache.
+    // Structures keep raw texture pointers, so refresh them before every draw.
+    if(owner != nullptr) {
+        graphic = pGFXManager->getObjPic(graphicID, owner->getHouseID());
+    }
+
+    SDL_Texture* structureTexture = graphic[currentZoomlevel];
+    if(structureTexture == nullptr) {
+        if(isTornieStructureForDiagnostics(itemID)) {
+            SDL_Log("TornieGFX: draw %s object=%u house=%d frame=%d zoom=%d texture=null",
+                    getTornieStructureDiagnosticName(itemID),
+                    objectID,
+                    owner ? owner->getHouseID() : -1,
+                    index,
+                    currentZoomlevel);
+        }
+        return;
+    }
+
+    SDL_Rect dest = calcSpriteDrawingRect(  structureTexture,
                                             screenborder->world2screenX(lround(realX)),
                                             screenborder->world2screenY(lround(realY)),
                                             numImagesX, numImagesY);
-    SDL_Rect source = calcSpriteSourceRect(graphic[currentZoomlevel],indexX,numImagesX,indexY,numImagesY);
+    SDL_Rect source = calcSpriteSourceRect(structureTexture,indexX,numImagesX,indexY,numImagesY);
 
-    SDL_RenderCopy(renderer, graphic[currentZoomlevel], &source, &dest);
+    if(isTornieStructureForDiagnostics(itemID)) {
+        static std::set<std::tuple<int, int, int, int, int>> loggedDrawStates;
+        const int ownerHouse = owner ? owner->getHouseID() : -1;
+        const auto key = std::make_tuple(itemID, ownerHouse, currentZoomlevel, numImagesX, index);
+        if(loggedDrawStates.insert(key).second) {
+            int textureWidth = 0;
+            int textureHeight = 0;
+            Uint32 textureFormat = 0;
+            int textureAccess = 0;
+            SDL_BlendMode textureBlend = SDL_BLENDMODE_NONE;
+            Uint8 textureAlpha = SDL_ALPHA_OPAQUE;
+            SDL_QueryTexture(structureTexture, &textureFormat, &textureAccess, &textureWidth, &textureHeight);
+            SDL_GetTextureBlendMode(structureTexture, &textureBlend);
+            SDL_GetTextureAlphaMod(structureTexture, &textureAlpha);
+            const bool sourceOutOfBounds =
+                source.x < 0 || source.y < 0 || source.w <= 0 || source.h <= 0
+                || source.x + source.w > textureWidth
+                || source.y + source.h > textureHeight;
+            SDL_Log("TornieGFX: draw %s object=%u house=%d frame=%d index=(%d,%d) visibleFrame=%d fogged=%d zoom=%d numImages=%dx%d texture=%dx%d format=%u access=%d blend=%d alpha=%u source=(%d,%d,%d,%d) dest=(%d,%d,%d,%d) map=(%d,%d) sourceOutOfBounds=%d",
+                    getTornieStructureDiagnosticName(itemID),
+                    objectID,
+                    ownerHouse,
+                    index,
+                    indexX,
+                    indexY,
+                    lastVisibleFrame,
+                    fogged ? 1 : 0,
+                    currentZoomlevel,
+                    numImagesX,
+                    numImagesY,
+                    textureWidth,
+                    textureHeight,
+                    textureFormat,
+                    textureAccess,
+                    static_cast<int>(textureBlend),
+                    static_cast<unsigned int>(textureAlpha),
+                    source.x,
+                    source.y,
+                    source.w,
+                    source.h,
+                    dest.x,
+                    dest.y,
+                    dest.w,
+                    dest.h,
+                    location.x,
+                    location.y,
+                    sourceOutOfBounds ? 1 : 0);
+        }
+    }
+
+    SDL_RenderCopy(renderer, structureTexture, &source, &dest);
 
     if(!fogged) {
         SDL_Texture* pSmokeTex = pGFXManager->getZoomedObjPic(ObjPic_Smoke, getOwner()->getHouseID(), currentZoomlevel);
@@ -203,8 +298,8 @@ void StructureBase::drawSelectionBox() {
     SDL_Rect dest;
     dest.x = screenborder->world2screenX(realX);
     dest.y = screenborder->world2screenY(realY);
-    dest.w = getWidth(graphic[currentZoomlevel])/numImagesX;
-    dest.h = getHeight(graphic[currentZoomlevel])/numImagesY;
+    dest.w = world2zoomedWorld(TILESIZE * structureSize.x);
+    dest.h = world2zoomedWorld(TILESIZE * structureSize.y);
 
     //now draw the selection box thing, with parts at all corners of structure
 
@@ -242,8 +337,8 @@ void StructureBase::drawOtherPlayerSelectionBox() {
     SDL_Rect dest;
     dest.x = screenborder->world2screenX(realX) + (currentZoomlevel+1);
     dest.y = screenborder->world2screenY(realY) + (currentZoomlevel+1);
-    dest.w = getWidth(graphic[currentZoomlevel])/numImagesX - 2*(currentZoomlevel+1);
-    dest.h = getHeight(graphic[currentZoomlevel])/numImagesY - 2*(currentZoomlevel+1);
+    dest.w = world2zoomedWorld(TILESIZE * structureSize.x) - 2*(currentZoomlevel+1);
+    dest.h = world2zoomedWorld(TILESIZE * structureSize.y) - 2*(currentZoomlevel+1);
 
     //now draw the selection box thing, with parts at all corners of structure
 
@@ -444,6 +539,9 @@ void StructureBase::destroy() {
                                                 Destroyed2x2Structure_BottomLeft, Destroyed2x2Structure_BottomRight };
     static int DestroyedStructureTiles3x2[] = { Destroyed3x2Structure_TopLeft, Destroyed3x2Structure_TopCenter, Destroyed3x2Structure_TopRight,
                                                 Destroyed3x2Structure_BottomLeft, Destroyed3x2Structure_BottomCenter, Destroyed3x2Structure_BottomRight};
+    static int DestroyedStructureTiles2x3[] = { Destroyed3x3Structure_TopLeft, Destroyed3x3Structure_TopCenter,
+                                                Destroyed3x3Structure_CenterLeft, Destroyed3x3Structure_CenterCenter,
+                                                Destroyed3x3Structure_BottomLeft, Destroyed3x3Structure_BottomCenter};
     static int DestroyedStructureTiles3x3[] = { Destroyed3x3Structure_TopLeft, Destroyed3x3Structure_TopCenter, Destroyed3x3Structure_TopRight,
                                                 Destroyed3x3Structure_CenterLeft, Destroyed3x3Structure_CenterCenter, Destroyed3x3Structure_CenterRight,
                                                 Destroyed3x3Structure_BottomLeft, Destroyed3x3Structure_BottomCenter, Destroyed3x3Structure_BottomRight};
@@ -472,8 +570,15 @@ void StructureBase::destroy() {
             } break;
 
             case 3: {
-                pDestroyedStructureTiles = DestroyedStructureTiles3x3;
-                DestroyedStructureTilesSizeY = 3;
+                if(structureSize.x == 2) {
+                    pDestroyedStructureTiles = DestroyedStructureTiles2x3;
+                    DestroyedStructureTilesSizeY = 2;
+                } else if(structureSize.x == 3) {
+                    pDestroyedStructureTiles = DestroyedStructureTiles3x3;
+                    DestroyedStructureTilesSizeY = 3;
+                } else {
+                    THROW(std::runtime_error, "StructureBase::destroy(): Invalid structure size");
+                }
             } break;
 
             default: {

@@ -31,6 +31,9 @@
 #include <misc/draw_util.h>
 #include <misc/format.h>
 #include <misc/DiscordManager.h>
+#include <misc/TouchInput.h>
+
+#include <mod/ModManager.h>
 
 #include <globals.h>
 #include <mmath.h>
@@ -39,11 +42,71 @@
 #include <Tile.h>
 
 #include <config.h>
-
 #include <typeinfo>
 #include <algorithm>
 
 extern int currentZoomlevel;
+
+namespace {
+
+bool isThinSpiceTerrain(int terrainType) noexcept {
+    return terrainType == Terrain_Spice
+        || terrainType == Terrain_GreenSpice
+        || terrainType == Terrain_RedSpice;
+}
+
+bool isThickSpiceTerrain(int terrainType) noexcept {
+    return terrainType == Terrain_ThickSpice
+        || terrainType == Terrain_ThickGreenSpice
+        || terrainType == Terrain_ThickRedSpice;
+}
+
+bool isSpiceTerrain(int terrainType) noexcept {
+    return isThinSpiceTerrain(terrainType) || isThickSpiceTerrain(terrainType);
+}
+
+int getThinSpiceTerrain(int terrainType) noexcept {
+    switch(terrainType) {
+        case Terrain_GreenSpice:
+        case Terrain_ThickGreenSpice: return Terrain_GreenSpice;
+        case Terrain_RedSpice:
+        case Terrain_ThickRedSpice: return Terrain_RedSpice;
+        default: return Terrain_Spice;
+    }
+}
+
+bool isSameSpiceFamily(int terrainType, int familyType) noexcept {
+    return isSpiceTerrain(terrainType) && getThinSpiceTerrain(terrainType) == getThinSpiceTerrain(familyType);
+}
+
+unsigned int getTerrainObjPic(int terrainType) noexcept {
+    switch(terrainType) {
+        case Terrain_GreenSpice:
+        case Terrain_ThickGreenSpice:
+        case Terrain_GreenSpiceBloom:
+            return ObjPic_Terrain_GreenSpice;
+        case Terrain_RedSpice:
+        case Terrain_ThickRedSpice:
+        case Terrain_RedSpiceBloom:
+            return ObjPic_Terrain_RedSpice;
+        default:
+            return ObjPic_Terrain;
+    }
+}
+
+unsigned int getMapEditorStructureUIGraphic(int itemID) noexcept {
+    switch(itemID) {
+        case Structure_AdvancedWindTrap:    return UI_MapEditor_AdvancedWindTrap;
+        case Structure_AdvancedWindTrapMK2: return UI_MapEditor_AdvancedWindTrapMK2;
+        case Structure_AdvancedWindTrapMK3: return UI_MapEditor_AdvancedWindTrapMK3;
+        case Structure_Worfinery:           return UI_MapEditor_Worfinery;
+        case Structure_TechCenter:          return UI_MapEditor_TechCenter;
+        case Structure_Scoutpost:           return UI_MapEditor_Scoutpost;
+        default:                            return NUM_UIGRAPHICS;
+    }
+}
+
+} // namespace
 
 // functor for std::find_if
 class CoordDistance {
@@ -185,6 +248,8 @@ void MapEditor::setMap(const MapData& mapdata, const MapInfo& newMapInfo) {
         players.push_back(Player(getHouseNameByNumber(HOUSE_FREMEN),HOUSE_FREMEN,HOUSE_FREMEN,false,false,"CPU",25));
         players.emplace_back(getHouseNameByNumber(HOUSE_SARDAUKAR),HOUSE_SARDAUKAR,HOUSE_SARDAUKAR,true,false,"CPU",25);
         players.push_back(Player(getHouseNameByNumber(HOUSE_MERCENARY),HOUSE_MERCENARY,HOUSE_MERCENARY,false,false,"CPU",25));
+        players.push_back(Player(getHouseNameByNumber(HOUSE_NEUTRAL),HOUSE_NEUTRAL,HOUSE_NEUTRAL,false,false,"CPU",25));
+        players.push_back(Player(getHouseNameByNumber(HOUSE_REBELS),HOUSE_REBELS,HOUSE_REBELS,false,false,"CPU",25));
     } else {
         players.push_back(Player(getHouseNameByNumber(HOUSE_HARKONNEN),HOUSE_HARKONNEN,HOUSE_HARKONNEN,true,true,"Team1"));
         players.push_back(Player(getHouseNameByNumber(HOUSE_ATREIDES),HOUSE_ATREIDES,HOUSE_ATREIDES,true,true,"Team2"));
@@ -192,6 +257,8 @@ void MapEditor::setMap(const MapData& mapdata, const MapInfo& newMapInfo) {
         players.push_back(Player(getHouseNameByNumber(HOUSE_FREMEN),HOUSE_FREMEN,HOUSE_FREMEN,false,false,"Team4"));
         players.push_back(Player(getHouseNameByNumber(HOUSE_SARDAUKAR),HOUSE_SARDAUKAR,HOUSE_SARDAUKAR,true,true,"Team5"));
         players.push_back(Player(getHouseNameByNumber(HOUSE_MERCENARY),HOUSE_MERCENARY,HOUSE_MERCENARY,false,false,"Team6"));
+        players.push_back(Player(getHouseNameByNumber(HOUSE_NEUTRAL),HOUSE_NEUTRAL,HOUSE_NEUTRAL,false,false,"Team7"));
+        players.push_back(Player(getHouseNameByNumber(HOUSE_REBELS),HOUSE_REBELS,HOUSE_REBELS,false,false,"Team8"));
     }
 
     // setup default choam
@@ -374,6 +441,8 @@ void MapEditor::loadMap(const std::string& filepath) {
     players.push_back(Player(getHouseNameByNumber(HOUSE_FREMEN),HOUSE_FREMEN,HOUSE_FREMEN,false,false,"Team4"));
     players.push_back(Player(getHouseNameByNumber(HOUSE_SARDAUKAR),HOUSE_SARDAUKAR,HOUSE_SARDAUKAR,false,false,"Team5"));
     players.push_back(Player(getHouseNameByNumber(HOUSE_MERCENARY),HOUSE_MERCENARY,HOUSE_MERCENARY,false,false,"Team6"));
+    players.push_back(Player(getHouseNameByNumber(HOUSE_NEUTRAL),HOUSE_NEUTRAL,HOUSE_NEUTRAL,false,false,"Team7"));
+    players.push_back(Player(getHouseNameByNumber(HOUSE_REBELS),HOUSE_REBELS,HOUSE_REBELS,false,false,"Team8"));
 
     // load map
     loadedINIFile = std::make_unique<INIFile>(filepath, false);
@@ -542,6 +611,36 @@ void MapEditor::saveMap(const std::string& filepath) {
                     case Terrain_ThickSpice: {
                         // Thick spice
                         row += '+';
+                    } break;
+
+                    case Terrain_GreenSpice: {
+                        // Tornie green spice
+                        row += 'g';
+                    } break;
+
+                    case Terrain_ThickGreenSpice: {
+                        // Tornie thick green spice
+                        row += 'G';
+                    } break;
+
+                    case Terrain_GreenSpiceBloom: {
+                        // Tornie green spice bloom
+                        row += 'b';
+                    } break;
+
+                    case Terrain_RedSpice: {
+                        // Tornie red spice
+                        row += 'r';
+                    } break;
+
+                    case Terrain_ThickRedSpice: {
+                        // Tornie thick red spice
+                        row += 'R';
+                    } break;
+
+                    case Terrain_RedSpiceBloom: {
+                        // Tornie red spice bloom
+                        row += 'B';
                     } break;
 
                     case Terrain_Rock: {
@@ -909,21 +1008,26 @@ void MapEditor::performTerrainChange(int x, int y, TERRAINTYPE terrainType) {
             if(map.isInsideMap(x, y+1) && (map(x,y+1) != Terrain_Mountain) && (map(x,y+1) != Terrain_Rock))     performTerrainChange(x,y+1,Terrain_Rock);
         } break;
 
-        case Terrain_ThickSpice: {
-            if(map.isInsideMap(x-1, y) && (map(x-1,y) != Terrain_ThickSpice) && (map(x-1,y) != Terrain_Spice))     performTerrainChange(x-1,y,Terrain_Spice);
-            if(map.isInsideMap(x, y-1) && (map(x,y-1) != Terrain_ThickSpice) && (map(x,y-1) != Terrain_Spice))     performTerrainChange(x,y-1,Terrain_Spice);
-            if(map.isInsideMap(x+1, y) && (map(x+1,y) != Terrain_ThickSpice) && (map(x+1,y) != Terrain_Spice))     performTerrainChange(x+1,y,Terrain_Spice);
-            if(map.isInsideMap(x, y+1) && (map(x,y+1) != Terrain_ThickSpice) && (map(x,y+1) != Terrain_Spice))     performTerrainChange(x,y+1,Terrain_Spice);
+        case Terrain_ThickSpice:
+        case Terrain_ThickGreenSpice:
+        case Terrain_ThickRedSpice: {
+            const auto thinSpice = static_cast<TERRAINTYPE>(getThinSpiceTerrain(terrainType));
+            if(map.isInsideMap(x-1, y) && !isSameSpiceFamily(map(x-1,y), terrainType))     performTerrainChange(x-1,y,thinSpice);
+            if(map.isInsideMap(x, y-1) && !isSameSpiceFamily(map(x,y-1), terrainType))     performTerrainChange(x,y-1,thinSpice);
+            if(map.isInsideMap(x+1, y) && !isSameSpiceFamily(map(x+1,y), terrainType))     performTerrainChange(x+1,y,thinSpice);
+            if(map.isInsideMap(x, y+1) && !isSameSpiceFamily(map(x,y+1), terrainType))     performTerrainChange(x,y+1,thinSpice);
         } break;
 
         case Terrain_Rock: {
-            if(map.isInsideMap(x-1, y) && (map(x-1,y) == Terrain_ThickSpice))     performTerrainChange(x-1,y,Terrain_Spice);
-            if(map.isInsideMap(x, y-1) && (map(x,y-1) == Terrain_ThickSpice))     performTerrainChange(x,y-1,Terrain_Spice);
-            if(map.isInsideMap(x+1, y) && (map(x+1,y) == Terrain_ThickSpice))     performTerrainChange(x+1,y,Terrain_Spice);
-            if(map.isInsideMap(x, y+1) && (map(x,y+1) == Terrain_ThickSpice))     performTerrainChange(x,y+1,Terrain_Spice);
+            if(map.isInsideMap(x-1, y) && isThickSpiceTerrain(map(x-1,y)))     performTerrainChange(x-1,y,static_cast<TERRAINTYPE>(getThinSpiceTerrain(map(x-1,y))));
+            if(map.isInsideMap(x, y-1) && isThickSpiceTerrain(map(x,y-1)))     performTerrainChange(x,y-1,static_cast<TERRAINTYPE>(getThinSpiceTerrain(map(x,y-1))));
+            if(map.isInsideMap(x+1, y) && isThickSpiceTerrain(map(x+1,y)))     performTerrainChange(x+1,y,static_cast<TERRAINTYPE>(getThinSpiceTerrain(map(x+1,y))));
+            if(map.isInsideMap(x, y+1) && isThickSpiceTerrain(map(x,y+1)))     performTerrainChange(x,y+1,static_cast<TERRAINTYPE>(getThinSpiceTerrain(map(x,y+1))));
         } break;
 
-        case Terrain_Spice: {
+        case Terrain_Spice:
+        case Terrain_GreenSpice:
+        case Terrain_RedSpice: {
             if(map.isInsideMap(x-1, y) && (map(x-1,y) == Terrain_Mountain))     performTerrainChange(x-1,y,Terrain_Rock);
             if(map.isInsideMap(x, y-1) && (map(x,y-1) == Terrain_Mountain))     performTerrainChange(x,y-1,Terrain_Rock);
             if(map.isInsideMap(x+1, y) && (map(x+1,y) == Terrain_Mountain))     performTerrainChange(x+1,y,Terrain_Rock);
@@ -933,16 +1037,18 @@ void MapEditor::performTerrainChange(int x, int y, TERRAINTYPE terrainType) {
         case Terrain_Sand:
         case Terrain_Dunes:
         case Terrain_SpiceBloom:
+        case Terrain_GreenSpiceBloom:
+        case Terrain_RedSpiceBloom:
         case Terrain_SpecialBloom: {
             if(map.isInsideMap(x-1, y) && (map(x-1,y) == Terrain_Mountain))     performTerrainChange(x-1,y,Terrain_Rock);
             if(map.isInsideMap(x, y-1) && (map(x,y-1) == Terrain_Mountain))     performTerrainChange(x,y-1,Terrain_Rock);
             if(map.isInsideMap(x+1, y) && (map(x+1,y) == Terrain_Mountain))     performTerrainChange(x+1,y,Terrain_Rock);
             if(map.isInsideMap(x, y+1) && (map(x,y+1) == Terrain_Mountain))     performTerrainChange(x,y+1,Terrain_Rock);
 
-            if(map.isInsideMap(x-1, y) && (map(x-1,y) == Terrain_ThickSpice))     performTerrainChange(x-1,y,Terrain_Spice);
-            if(map.isInsideMap(x, y-1) && (map(x,y-1) == Terrain_ThickSpice))     performTerrainChange(x,y-1,Terrain_Spice);
-            if(map.isInsideMap(x+1, y) && (map(x+1,y) == Terrain_ThickSpice))     performTerrainChange(x+1,y,Terrain_Spice);
-            if(map.isInsideMap(x, y+1) && (map(x,y+1) == Terrain_ThickSpice))     performTerrainChange(x,y+1,Terrain_Spice);
+            if(map.isInsideMap(x-1, y) && isThickSpiceTerrain(map(x-1,y)))     performTerrainChange(x-1,y,static_cast<TERRAINTYPE>(getThinSpiceTerrain(map(x-1,y))));
+            if(map.isInsideMap(x, y-1) && isThickSpiceTerrain(map(x,y-1)))     performTerrainChange(x,y-1,static_cast<TERRAINTYPE>(getThinSpiceTerrain(map(x,y-1))));
+            if(map.isInsideMap(x+1, y) && isThickSpiceTerrain(map(x+1,y)))     performTerrainChange(x+1,y,static_cast<TERRAINTYPE>(getThinSpiceTerrain(map(x+1,y))));
+            if(map.isInsideMap(x, y+1) && isThickSpiceTerrain(map(x,y+1)))     performTerrainChange(x,y+1,static_cast<TERRAINTYPE>(getThinSpiceTerrain(map(x,y+1))));
         } break;
 
         default: {
@@ -972,6 +1078,9 @@ void MapEditor::processInput() {
     SDL_Event event;
 
     while(SDL_PollEvent(&event)) {
+        if(TouchInput::translateTouchEvent(event)) {
+            continue;
+        }
 
         // first of all update mouse
         if(event.type == SDL_MOUSEMOTION) {
@@ -1376,7 +1485,9 @@ void MapEditor::drawMap(ScreenBorder* pScreenborder, bool bCompleteMap) {
 
             int tile;
 
-            switch(getTerrain(x,y)) {
+            const TERRAINTYPE terrainType = getTerrain(x,y);
+
+            switch(terrainType) {
                 case Terrain_Slab: {
                     tile = Tile::TerrainTile_Slab;
                 } break;
@@ -1415,27 +1526,33 @@ void MapEditor::drawMap(ScreenBorder* pScreenborder, bool bCompleteMap) {
                     tile = Tile::TerrainTile_Mountain + (up | (right << 1) | (down << 2) | (left << 3));
                 } break;
 
-                case Terrain_Spice: {
+                case Terrain_Spice:
+                case Terrain_GreenSpice:
+                case Terrain_RedSpice: {
                     //determine which surounding tiles are spice
-                    bool up = (y-1 < 0) || (getTerrain(x, y-1) == Terrain_Spice) || (getTerrain(x, y-1) == Terrain_ThickSpice);
-                    bool right = (x+1 >= map.getSizeX()) || (getTerrain(x+1, y) == Terrain_Spice) || (getTerrain(x+1, y) == Terrain_ThickSpice);
-                    bool down = (y+1 >= map.getSizeY()) || (getTerrain(x, y+1) == Terrain_Spice) || (getTerrain(x, y+1) == Terrain_ThickSpice);
-                    bool left = (x-1 < 0) || (getTerrain(x-1, y) == Terrain_Spice) || (getTerrain(x-1, y) == Terrain_ThickSpice);
+                    bool up = (y-1 < 0) || isSameSpiceFamily(getTerrain(x, y-1), terrainType);
+                    bool right = (x+1 >= map.getSizeX()) || isSameSpiceFamily(getTerrain(x+1, y), terrainType);
+                    bool down = (y+1 >= map.getSizeY()) || isSameSpiceFamily(getTerrain(x, y+1), terrainType);
+                    bool left = (x-1 < 0) || isSameSpiceFamily(getTerrain(x-1, y), terrainType);
 
                     tile = Tile::TerrainTile_Spice + (up | (right << 1) | (down << 2) | (left << 3));
                 } break;
 
-                case Terrain_ThickSpice: {
+                case Terrain_ThickSpice:
+                case Terrain_ThickGreenSpice:
+                case Terrain_ThickRedSpice: {
                     //determine which surounding tiles are thick spice
-                    bool up = (y-1 < 0) || (getTerrain(x, y-1) == Terrain_ThickSpice);
-                    bool right = (x+1 >= map.getSizeX()) || (getTerrain(x+1, y) == Terrain_ThickSpice);
-                    bool down = (y+1 >= map.getSizeY()) || (getTerrain(x, y+1) == Terrain_ThickSpice);
-                    bool left = (x-1 < 0) || (getTerrain(x-1, y) == Terrain_ThickSpice);
+                    bool up = (y-1 < 0) || (getTerrain(x, y-1) == terrainType);
+                    bool right = (x+1 >= map.getSizeX()) || (getTerrain(x+1, y) == terrainType);
+                    bool down = (y+1 >= map.getSizeY()) || (getTerrain(x, y+1) == terrainType);
+                    bool left = (x-1 < 0) || (getTerrain(x-1, y) == terrainType);
 
                     tile = Tile::TerrainTile_ThickSpice + (up | (right << 1) | (down << 2) | (left << 3));
                 } break;
 
-                case Terrain_SpiceBloom: {
+                case Terrain_SpiceBloom:
+                case Terrain_GreenSpiceBloom:
+                case Terrain_RedSpiceBloom: {
                     tile = Tile::TerrainTile_SpiceBloom;
                 } break;
 
@@ -1453,7 +1570,12 @@ void MapEditor::drawMap(ScreenBorder* pScreenborder, bool bCompleteMap) {
                                 zoomedTilesize, zoomedTilesize };
             SDL_Rect drawLocation = {   pScreenborder->world2screenX(x*TILESIZE), pScreenborder->world2screenY(y*TILESIZE),
                                         zoomedTilesize, zoomedTilesize };
-            SDL_RenderCopy(renderer, TerrainSprite, &source, &drawLocation);
+            SDL_Texture* terrainSprite = TerrainSprite;
+            const unsigned int terrainObjPic = getTerrainObjPic(terrainType);
+            if(terrainObjPic != ObjPic_Terrain) {
+                terrainSprite = pGFXManager->getZoomedObjPic(terrainObjPic, currentZoomlevel);
+            }
+            SDL_RenderCopy(renderer, terrainSprite, &source, &drawLocation);
         }
     }
 
@@ -1601,6 +1723,12 @@ void MapEditor::drawMap(ScreenBorder* pScreenborder, bool bCompleteMap) {
                 case Structure_ZoneCommercial:      objectPic = ObjPic_ZoneCommercial;      break;
                 case Structure_ZoneIndustrial:      objectPic = ObjPic_ZoneIndustrial;      break;
                 case Structure_NuclearPlant:        objectPic = ObjPic_NuclearPlant;        break;
+                case Structure_AdvancedWindTrap:    objectPic = ObjPic_AdvancedWindTrap;    break;
+                case Structure_AdvancedWindTrapMK2: objectPic = ObjPic_AdvancedWindTrap2x3; break;
+                case Structure_AdvancedWindTrapMK3: objectPic = ObjPic_AdvancedWindTrap3x2; break;
+                case Structure_Worfinery:           objectPic = ObjPic_Worfinery;           break;
+                case Structure_TechCenter:          objectPic = ObjPic_TechCenter;          break;
+                case Structure_Scoutpost:           objectPic = ObjPic_Scoutpost;           break;
                 default:                            objectPic = 0;                          break;
             }
 
@@ -1608,16 +1736,40 @@ void MapEditor::drawMap(ScreenBorder* pScreenborder, bool bCompleteMap) {
 
             Coord frameSize = world2zoomedWorld(getStructureSize(structure.itemID)*TILESIZE);
 
-            // Frame index: WindTrap uses frame 9, zones are single-frame, others use frame 2.
+            // Frame index: vanilla WindTrap uses frame 9. Tornie custom atlases keep
+            // construction/destroyed/active frames horizontally, so the active frame is 2.
             int frameIdx = 2;
-            if(structure.itemID == Structure_WindTrap) frameIdx = 9;
+            if(structure.itemID == Structure_WindTrap) {
+                frameIdx = 9;
+            }
             else if(structure.itemID == Structure_ZoneResidential
                  || structure.itemID == Structure_ZoneCommercial
                  || structure.itemID == Structure_ZoneIndustrial) frameIdx = 0;
             SDL_Rect source = { frameSize.x*frameIdx, 0, frameSize.x, frameSize.y };
             SDL_Rect dest = { pScreenborder->world2screenX(position.x*TILESIZE), pScreenborder->world2screenY(position.y*TILESIZE), frameSize.x, frameSize.y };
 
-            SDL_RenderCopy(renderer, ObjectSprite, &source, &dest);
+            bool structureDrawn = false;
+            const auto editorStructureUIGraphic = getMapEditorStructureUIGraphic(structure.itemID);
+            if(editorStructureUIGraphic != NUM_UIGRAPHICS) {
+                if(SDL_Texture* uiStructureTexture = pGFXManager->getUIGraphic(editorStructureUIGraphic, structure.house)) {
+                    SDL_RenderCopy(renderer, uiStructureTexture, nullptr, &dest);
+                    structureDrawn = true;
+                }
+            }
+
+            if(!structureDrawn && ObjectSprite != nullptr) {
+                int textureWidth = 0;
+                int textureHeight = 0;
+                if(SDL_QueryTexture(ObjectSprite, nullptr, nullptr, &textureWidth, &textureHeight) == 0) {
+                    if(source.x < 0 || source.y < 0 || source.x + source.w > textureWidth || source.y + source.h > textureHeight) {
+                        source.x = 0;
+                        source.y = 0;
+                        source.w = std::min(frameSize.x, textureWidth);
+                        source.h = std::min(frameSize.y, textureHeight);
+                    }
+                }
+                SDL_RenderCopy(renderer, ObjectSprite, &source, &dest);
+            }
 
             selectionDest = dest;
         }
@@ -1652,6 +1804,9 @@ void MapEditor::drawMap(ScreenBorder* pScreenborder, bool bCompleteMap) {
         }
 
     }
+
+    const bool tornieActive = ModManager::instance().isInitialized()
+        && ModManager::instance().getActiveModName() == "Tornie";
 
     for(const Unit& unit : units) {
 
@@ -1708,20 +1863,30 @@ void MapEditor::drawMap(ScreenBorder* pScreenborder, bool bCompleteMap) {
                                                     Coord(0, -12)
                                                 };
 
-
+        const Coord harvestankTurretOffset[] =   {
+                                                    Coord(0, 0),
+                                                    Coord(0, 0),
+                                                    Coord(0, 0),
+                                                    Coord(0, 0),
+                                                    Coord(0, 0),
+                                                    Coord(0, 0),
+                                                    Coord(0, 0),
+                                                    Coord(0, 0)
+                                                };
 
         int objectPicBase = 0;
         int framesX = NUM_ANGLES;
         int framesY = 1;
         int objectPicGun = -1;
+        int objectPicGunHouse = unit.house;
         const Coord* gunOffset = nullptr;
-
         switch(unit.itemID) {
             case Unit_Carryall:         objectPicBase = ObjPic_Carryall;        framesY = 2;                                                                    break;
             case Unit_Devastator:       objectPicBase = ObjPic_Devastator_Base; objectPicGun = ObjPic_Devastator_Gun;   gunOffset = devastatorTurretOffset;     break;
-            case Unit_Deviator:         objectPicBase = ObjPic_Tank_Base;       objectPicGun = ObjPic_Launcher_Gun;     gunOffset = launcherTurretOffset;       break;
+            case Unit_Deviator:         objectPicBase = ObjPic_Tank_Base;       objectPicGun = tornieActive ? ObjPic_DeviatorGunTornie : ObjPic_Launcher_Gun; objectPicGunHouse = tornieActive ? HOUSE_HARKONNEN : unit.house; gunOffset = launcherTurretOffset; break;
             case Unit_Frigate:          objectPicBase = ObjPic_Frigate;                                                                                         break;
             case Unit_Harvester:        objectPicBase = ObjPic_Harvester;                                                                                       break;
+            case Unit_RebelHarvester:   objectPicBase = ObjPic_Harvester;     objectPicGun = tornieActive ? ObjPic_HarvestankGunTornie : -1; gunOffset = harvestankTurretOffset; break;
             case Unit_Soldier:          objectPicBase = ObjPic_Soldier;         framesX = 4;    framesY = 3;                                                    break;
             case Unit_Launcher:         objectPicBase = ObjPic_Tank_Base;       objectPicGun = ObjPic_Launcher_Gun;     gunOffset = launcherTurretOffset;       break;
             case Unit_MCV:              objectPicBase = ObjPic_MCV;                                                                                             break;
@@ -1738,6 +1903,11 @@ void MapEditor::drawMap(ScreenBorder* pScreenborder, bool bCompleteMap) {
             case Unit_Special:          objectPicBase = ObjPic_Devastator_Base; objectPicGun = ObjPic_Devastator_Gun;   gunOffset = devastatorTurretOffset;     break;
             case Unit_Infantry:         objectPicBase = ObjPic_Infantry;         framesX = 4;    framesY = 4;                                                   break;
             case Unit_Troopers:         objectPicBase = ObjPic_Troopers;         framesX = 4;    framesY = 4;                                                   break;
+            case Unit_RocketTrike:      objectPicBase = ObjPic_RocketTrike;                                                                                       break;
+            case Unit_SonicTrike:       objectPicBase = ObjPic_SonicTrike;                                                                                        break;
+            case Unit_FlameTank:        objectPicBase = ObjPic_Tank_Base;       objectPicGun = tornieActive ? ObjPic_FlameTankGunTornie : ObjPic_Launcher_Gun; objectPicGunHouse = tornieActive ? HOUSE_HARKONNEN : unit.house; gunOffset = launcherTurretOffset; break;
+            case Unit_EliteLauncher:    objectPicBase = ObjPic_Tank_Base;       objectPicGun = tornieActive ? ObjPic_EliteLauncherGunTornie : ObjPic_Launcher_Gun; objectPicGunHouse = tornieActive ? HOUSE_HARKONNEN : unit.house; gunOffset = launcherTurretOffset; break;
+            case Unit_EliteSiegeTank:   objectPicBase = ObjPic_Siegetank_Base;  objectPicGun = ObjPic_EliteSiegeTankGunTornie; gunOffset = siegeTankTurretOffset; break;
         }
 
         SDL_Texture* pObjectSprite = pGFXManager->getZoomedObjPic(objectPicBase, unit.house, currentZoomlevel);
@@ -1757,7 +1927,7 @@ void MapEditor::drawMap(ScreenBorder* pScreenborder, bool bCompleteMap) {
         SDL_RenderCopy(renderer, pObjectSprite, &source, &drawLocation);
 
         if(objectPicGun >= 0) {
-            SDL_Texture* pGunSprite = pGFXManager->getZoomedObjPic(objectPicGun, unit.house, currentZoomlevel);
+            SDL_Texture* pGunSprite = pGFXManager->getZoomedObjPic(objectPicGun, objectPicGunHouse, currentZoomlevel);
 
             SDL_Rect source2 = calcSpriteSourceRect(pGunSprite, unit.angle, NUM_ANGLES);
             SDL_Rect drawLocation2 = calcSpriteDrawingRect( pGunSprite,
@@ -1768,15 +1938,34 @@ void MapEditor::drawMap(ScreenBorder* pScreenborder, bool bCompleteMap) {
             SDL_RenderCopy(renderer, pGunSprite, &source2, &drawLocation2);
         }
 
-        if(unit.itemID == Unit_RaiderTrike || unit.itemID == Unit_Deviator || unit.itemID == Unit_Special) {
+        const bool yellowStarMarker = (unit.itemID == Unit_RaiderTrike || unit.itemID == Unit_Special
+                                       || unit.itemID == Unit_Deviator);
+        const bool customStarMarker = (unit.itemID == Unit_RocketTrike || unit.itemID == Unit_SonicTrike
+                                       || unit.itemID == Unit_FlameTank || unit.itemID == Unit_EliteLauncher
+                                       || unit.itemID == Unit_EliteSiegeTank || unit.itemID == Unit_RebelHarvester);
+        if(yellowStarMarker || customStarMarker) {
             SDL_Texture* pStarSprite = pGFXManager->getZoomedObjPic(ObjPic_Star, currentZoomlevel);
 
-            SDL_Rect drawLocation2 = calcDrawingRect(   pStarSprite,
-                                                        pScreenborder->world2screenX((position.x*TILESIZE)+(TILESIZE/2)) + frameSizeX/2 - 1,
-                                                        pScreenborder->world2screenY((position.y*TILESIZE)+(TILESIZE/2)) + frameSizeY/2 - 1,
-                                                        HAlign::Right, VAlign::Bottom);
+            const int markerRight = pScreenborder->world2screenX((position.x*TILESIZE)+(TILESIZE/2)) + frameSizeX/2 - 1;
+            const int markerBottom = pScreenborder->world2screenY((position.y*TILESIZE)+(TILESIZE/2)) + frameSizeY/2 - 1;
 
-            SDL_RenderCopy(renderer, pStarSprite, nullptr, &drawLocation2);
+            if(customStarMarker) {
+                const int radius = (currentZoomlevel == 0) ? 2 : ((currentZoomlevel == 1) ? 3 : 5);
+                const int cx = markerRight - radius;
+                const int cy = markerBottom - radius;
+                renderDrawLine(renderer, cx - radius, cy, cx + radius, cy, COLOR_BLUE);
+                renderDrawLine(renderer, cx, cy - radius, cx, cy + radius, COLOR_BLUE);
+                renderDrawLine(renderer, cx - radius + 1, cy - radius + 1, cx + radius - 1, cy + radius - 1, COLOR_BLUE);
+                renderDrawLine(renderer, cx - radius + 1, cy + radius - 1, cx + radius - 1, cy - radius + 1, COLOR_BLUE);
+                renderDrawLine(renderer, cx - radius + 1, cy, cx + radius - 1, cy, COLOR_LIGHTBLUE);
+                renderDrawLine(renderer, cx, cy - radius + 1, cx, cy + radius - 1, COLOR_LIGHTBLUE);
+            } else {
+                SDL_Rect drawLocation2 = calcDrawingRect(pStarSprite,
+                                                         markerRight,
+                                                         markerBottom,
+                                                         HAlign::Right, VAlign::Bottom);
+                SDL_RenderCopy(renderer, pStarSprite, nullptr, &drawLocation2);
+            }
         }
 
     }

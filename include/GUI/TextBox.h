@@ -45,7 +45,27 @@ public:
 
     /// destructor
     virtual ~TextBox() {
+#ifdef __ANDROID__
+        if(isActive() && SDL_IsTextInputActive()) {
+            SDL_StopTextInput();
+        }
+#endif
         invalidateTextures();
+    }
+
+    void setActive() override {
+        const bool gainedFocus = !isActive();
+        Widget::setActive();
+        if(gainedFocus) {
+            startPlatformTextInput();
+        }
+    }
+
+    void setInactive() override {
+        if(isActive()) {
+            stopPlatformTextInput();
+        }
+        Widget::setInactive();
     }
 
     /**
@@ -316,6 +336,19 @@ public:
     }
 
 protected:
+    void setActive(bool bActive) override {
+        const bool focusChanged = (isActive() != bActive);
+        if(focusChanged && !bActive) {
+            stopPlatformTextInput();
+        }
+
+        Widget::setActive(bActive);
+
+        if(focusChanged && bActive) {
+            startPlatformTextInput();
+        }
+    }
+
     /**
         This method sets a new text for this text box.
         \param  text            The new text for this text box
@@ -340,6 +373,22 @@ protected:
     }
 
 private:
+    static void startPlatformTextInput() {
+#ifdef __ANDROID__
+        if(!SDL_IsTextInputActive()) {
+            SDL_StartTextInput();
+        }
+#endif
+    }
+
+    static void stopPlatformTextInput() {
+#ifdef __ANDROID__
+        if(SDL_IsTextInputActive()) {
+            SDL_StopTextInput();
+        }
+#endif
+    }
+
     int fontSize;                               ///< the size of the font to use
     Uint32 textcolor;                           ///< Text color
     Uint32 textshadowcolor;                     ///< Text shadow color

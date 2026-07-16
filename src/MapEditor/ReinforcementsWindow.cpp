@@ -35,7 +35,7 @@
 ReinforcementsWindow::ReinforcementsWindow(MapEditor* pMapEditor, HOUSETYPE currentHouse)
  : Window(0,0,0,0), pMapEditor(pMapEditor), house(currentHouse), reinforcements(pMapEditor->getReinforcements()) {
 
-    color = SDL2RGB(palette[houseToPaletteIndex[house]+3]);
+    color = getHouseInterfaceColor(house);
 
     // set up window
     SDL_Texture *pBackground = pGFXManager->getUIGraphic(UI_NewMapWindow);
@@ -126,7 +126,13 @@ ReinforcementsWindow::ReinforcementsWindow(MapEditor* pMapEditor, HOUSETYPE curr
     hBox2.addWidget(&unitLabel, 125);
     unitDropDownBox.setColor(color);
     unitDropDownBox.setOnSelectionChange(std::bind(&ReinforcementsWindow::onEntryChange, this, std::placeholders::_1));
-    for(int itemID = Unit_FirstID; itemID <= Unit_LastID; ++itemID) {
+    static const int reinforcementUnits[] = {
+        Unit_Carryall, Unit_Devastator, Unit_Deviator, Unit_Frigate, Unit_Harvester, Unit_RebelHarvester,
+        Unit_Soldier, Unit_Launcher, Unit_MCV, Unit_Ornithopter, Unit_Quad, Unit_Saboteur,
+        Unit_Sandworm, Unit_SiegeTank, Unit_SonicTank, Unit_Tank, Unit_Trike, Unit_RaiderTrike,
+        Unit_Trooper, Unit_RocketTrike, Unit_SonicTrike, Unit_FlameTank, Unit_EliteLauncher, Unit_EliteSiegeTank
+    };
+    for(int itemID : reinforcementUnits) {
         if(itemID == Unit_Carryall || itemID == Unit_Ornithopter || itemID == Unit_Frigate) {
             continue;
         }

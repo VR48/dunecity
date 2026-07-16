@@ -286,6 +286,22 @@ TechLevel = 6
 Prerequisite = Windtrap, Radar
 UpgradeLevel = 2
 
+[Scoutpost]
+Enabled = false
+HitPoints = 160
+Price = 300
+Power = -25
+ViewRange = 7
+WeaponDamage = 5
+WeaponRange = 5
+WeaponReloadTime = 150
+BuildTime = 72
+InfSpawnProp = 25
+Builder = Invalid
+TechLevel = 5
+Prerequisite = Windtrap, Radar
+UpgradeLevel = 2
+
 [Spice Silo]
 Enabled = true
 HitPoints = 150
@@ -422,6 +438,42 @@ Builder = Construction Yard
 TechLevel = 6
 Prerequisite = Windtrap
 
+[Advanced Windtrap]
+Enabled = false
+HitPoints = 500
+Price = 500
+Power = -300		# 3x WindTrap output
+ViewRange = 3
+BuildTime = 96
+InfSpawnProp = 25
+Builder = Invalid
+TechLevel = 6
+Prerequisite = Windtrap, Radar, Hightech Factory
+
+[Advanced Windtrap 2x3]
+Enabled = false
+HitPoints = 500
+Price = 500
+Power = -300		# 3x WindTrap output
+ViewRange = 3
+BuildTime = 96
+InfSpawnProp = 25
+Builder = Invalid
+TechLevel = 6
+Prerequisite = Windtrap, Radar, Hightech Factory
+
+[Advanced Windtrap 3x2]
+Enabled = false
+HitPoints = 500
+Price = 500
+Power = -300		# 3x WindTrap output
+ViewRange = 3
+BuildTime = 96
+InfSpawnProp = 25
+Builder = Invalid
+TechLevel = 6
+Prerequisite = Windtrap, Radar, Hightech Factory
+
 [Police Station]
 # DuneCity city-mode-only. Sole source of police coverage — Barracks/WOR
 # no longer count toward crime reduction. Price matches SimCity Classic's
@@ -541,6 +593,12 @@ WeaponReloadTime = 540
 MaxSpeed = 3.8400
 BuildTime = 80
 InfSpawnProp = 25
+Builder = Heavy Factory
+Builder(H) = Invalid
+Builder(A) = Invalid
+Builder(S) = Invalid
+Builder(M) = Invalid
+Builder(F) = Invalid
 Builder(O) = Heavy Factory
 TechLevel = 1
 Prerequisite = House IX
@@ -578,6 +636,21 @@ InfSpawnProp = 25
 Builder = Heavy Factory
 TechLevel = 5
 UpgradeLevel = 2
+
+[Elite Launcher]
+Enabled = true
+HitPoints = 120
+Price = 725
+ViewRange = 5
+WeaponDamage = 94
+WeaponRange = 9
+WeaponReloadTime = 360
+MaxSpeed = 3.8400
+BuildTime = 72
+InfSpawnProp = 25
+Builder = Invalid
+TechLevel = 1
+UpgradeLevel = 0
 
 [MCV]
 Enabled = true
@@ -640,6 +713,20 @@ InfSpawnProp = 25
 Builder = Light Factory
 Builder(A) = Invalid
 Builder(H) = Invalid
+
+[Rocket Trike]
+Enabled = true
+HitPoints = 80
+Price = 200
+ViewRange = 2
+WeaponDamage = 5
+WeaponRange = 5
+WeaponReloadTime = 150
+MaxSpeed = 9.25
+BuildTime = 40
+InfSpawnProp = 25
+Builder = Invalid
+UpgradeLevel = 0
 
 [Saboteur]
 Enabled = true

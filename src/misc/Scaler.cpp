@@ -166,6 +166,16 @@ sdl2::surface_ptr Scaler::tripleSurfaceNN(SDL_Surface* src) {
     \return the scaled surface
 */
 sdl2::surface_ptr Scaler::tripleTiledSurfaceNN(SDL_Surface* src, int tilesX, int tilesY) {
+    // v1.0.515: silence MSVC C4100 ('unreferenced parameter'). The tilesX /
+    // tilesY parameters are intentionally accepted for API parity with
+    // doubleTiledSurfaceNN which does honour the tile counts; a future
+    // tripleTiled implementation may use them too. Without these casts,
+    // MSVC builds fail with warning-as-errors in /WX mode. C++17 requires
+    // the names to remain in scope (no [[maybe_unused]] on parameter
+    // declarations is portable enough across clang/gcc), hence the
+    // (void)discard pattern.
+    (void)tilesX;
+    (void)tilesY;
     return tripleSurfaceNN(src);
 }
 

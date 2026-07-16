@@ -197,11 +197,18 @@ public:
      */
     void seedDunecityFromDefaults();
 
+    // DuneCity 1.0.492: seed the Tornie mod
+    void seedTornieFromDefaults();
+    void seedDune2RFromDefaults();
+
     /**
      * \return true if the dunecity mod is missing required files or has
      *         a stale game version and should be re-seeded.
      */
     bool dunecityNeedsReseed() const;
+
+    // DuneCity 1.0.492: Tornie mod reseed check
+    bool tornieNeedsReseed() const;
     
     // === Paths ===
     

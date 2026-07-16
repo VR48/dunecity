@@ -45,7 +45,7 @@ TEST_CASE("getStructureMaxLevel matches structure tier", "[city-effects][role]")
     REQUIRE(getStructureMaxLevel(Structure_ZoneResidential)  == 3);
     REQUIRE(getStructureMaxLevel(Structure_ZoneCommercial)   == 3);
     REQUIRE(getStructureMaxLevel(Structure_ZoneIndustrial)   == 3);
-    REQUIRE(getStructureMaxLevel(Structure_Silo)             == 2);  // I-medium
+    REQUIRE(getStructureMaxLevel(Structure_Silo)             == 3);  // I-high (no pollution)
     REQUIRE(getStructureMaxLevel(Structure_Radar)            == 2);  // C-medium
     REQUIRE(getStructureMaxLevel(Structure_HighTechFactory)  == 3);  // I-high
     REQUIRE(getStructureMaxLevel(Structure_IX)               == 3);  // C-high
@@ -173,7 +173,7 @@ TEST_CASE("Police coverage: PoliceStation full, gun turrets quarter, rocket turr
           "[city-effects][police]") {
     REQUIRE(getPoliceCoverage(Structure_PoliceStation) == 100);
     REQUIRE(getPoliceCoverage(Structure_GunTurret)     == 25);
-    REQUIRE(getPoliceCoverage(Structure_RocketTurret)  == 10);
+    REQUIRE(getPoliceCoverage(Structure_RocketTurret)  == 25);
     REQUIRE(getPoliceCoverage(Structure_Wall)          == 0);
     REQUIRE(getPoliceCoverage(Structure_HeavyFactory)  == 0);
 }
@@ -190,10 +190,10 @@ TEST_CASE("Police coverage: Barracks and WOR no longer count as police (regressi
     REQUIRE(getPoliceAnnualCost(Structure_WOR)      == 0);
 }
 
-TEST_CASE("Police annual cost mirrors coverage; PoliceStation costs 500 (SC TOOL_POLICESTATION)",
+TEST_CASE("Police annual cost mirrors coverage; PoliceStation costs 100 (designer-tuned)",
           "[city-effects][police]") {
-    // SC source: MicropolisEngine/src/tool.cpp gCostOf[4] = 500.
-    REQUIRE(getPoliceAnnualCost(Structure_PoliceStation) == 500);
+    // Originally matched SC's gCostOf[TOOL_POLICESTATION] = 500; reduced to 100.
+    REQUIRE(getPoliceAnnualCost(Structure_PoliceStation) == 100);
     // GunTurret and RocketTurret keep their fractional police coverage
     // as a garrison adjacency effect, but contribute zero to the police
     // bill — base defenses shouldn't drain the city budget.
@@ -304,19 +304,20 @@ TEST_CASE("Annual tax is zero for empty city or zero rate",
 
 TEST_CASE("Annual tax scales linearly with population and rate (no land value)",
           "[city-effects][tax]") {
-    // With avgLandValue=0 (default), base formula applies: pop*200*rate/100
-    // pop=100, rate=7: 100*200*7/100 = 1400
-    REQUIRE(computeAnnualTaxRevenue(100, 7)  == 1400);
-    REQUIRE(computeAnnualTaxRevenue(200, 7)  == 2800);
-    REQUIRE(computeAnnualTaxRevenue(100, 14) == 2800);
-    REQUIRE(computeAnnualTaxRevenue(50, 20)  == 2000);
+    // Per-citizen contribution: 200/3 credits/year at 100% tax rate.
+    // Formula: pop*200*rate/(100*3)
+    // pop=100, rate=7: 100*200*7/300 = 466
+    REQUIRE(computeAnnualTaxRevenue(100, 7)  == 466);
+    REQUIRE(computeAnnualTaxRevenue(200, 7)  == 933);
+    REQUIRE(computeAnnualTaxRevenue(100, 14) == 933);
+    REQUIRE(computeAnnualTaxRevenue(50, 20)  == 666);
 }
 
 TEST_CASE("Annual tax scales with land value when provided",
           "[city-effects][tax]") {
-    // Base: pop=100, rate=7, no LV: 1400
+    // Base: pop=100, rate=7, no LV: 100*200*7/300 = 466
     const int32_t base = computeAnnualTaxRevenue(100, 7);
-    REQUIRE(base == 1400);
+    REQUIRE(base == 466);
     // avgLandValue=128 → 1.0x multiplier (1400*128/128 = 1400)
     REQUIRE(computeAnnualTaxRevenue(100, 7, 128) == base);
     // avgLandValue=250 → ~1.95x

@@ -386,6 +386,11 @@ int fnkdat(const _TCHAR* target, _TCHAR* buffer, int len, int flags) {
 #include <unistd.h>
 #include <cstdlib>
 
+#ifdef __ANDROID__
+#include <SDL_filesystem.h>
+#include <SDL_system.h>
+#endif
+
 #ifdef __APPLE__
 #include <misc/MacFunctions.h>
 #endif
@@ -441,6 +446,22 @@ int fnkdat(const char* target, char* buffer, int len, int flags) {
 #ifdef __APPLE__
       getMacApplicationSupportFolder(buffer, len);
       FNKDAT_S(strncat(buffer, "/Dune City", len));
+#elif defined(__ANDROID__)
+      const char* androidPath = SDL_AndroidGetExternalStoragePath();
+      if(androidPath == NULL || androidPath[0] == '\0') {
+         androidPath = SDL_AndroidGetInternalStoragePath();
+      }
+
+      if(androidPath != NULL && androidPath[0] != '\0') {
+         FNKDAT_S(strncpy(buffer, androidPath, len));
+      } else {
+         char* prefPath = SDL_GetPrefPath("DuneCity", "DuneCity");
+         if(prefPath == NULL) {
+            return -1;
+         }
+         FNKDAT_S(strncpy(buffer, prefPath, len));
+         SDL_free(prefPath);
+      }
 #else
       {
          char* xdg_config = getenv("XDG_CONFIG_HOME");

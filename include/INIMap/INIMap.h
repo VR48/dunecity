@@ -43,7 +43,9 @@ public:
 
     INIMap(GameType gameType, const std::string& mapname, const std::string& mapdata = "") : mapname(mapname) {
 
-        if(gameType == GameType::Campaign || gameType == GameType::Skirmish) {
+        if(gameType == GameType::Campaign) {
+            inifile = std::make_unique<INIFile>(pFileManager->openCampaignFile(this->mapname).get());
+        } else if(gameType == GameType::Skirmish) {
             // load from PAK-File
             inifile = std::make_unique<INIFile>(pFileManager->openFile(this->mapname).get());
         } else if(gameType == GameType::CustomGame || gameType == GameType::CustomMultiplayer) {

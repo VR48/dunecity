@@ -37,6 +37,9 @@ if(APPLE)
         MACOSX_PACKAGE_LOCATION "Resources"
     )
     target_sources(dunecity PRIVATE ${CMAKE_SOURCE_DIR}/dunecity.icns)
+elseif(ANDROID)
+    add_library(dunecity SHARED)
+    set_target_properties(dunecity PROPERTIES OUTPUT_NAME main)
 else()
     add_executable(dunecity)
 endif()
@@ -253,6 +256,10 @@ target_sources(dunecity
         structures/StarPort.cpp
         structures/Wall.cpp
         structures/WindTrap.cpp
+        structures/AdvancedWindTrap.cpp
+        structures/Worfinery.cpp
+        structures/TechCenter.cpp
+        structures/Scoutpost.cpp
         structures/WOR.cpp
         structures/NuclearPlant.cpp
         structures/PoliceStation.cpp
@@ -272,6 +279,7 @@ target_sources(dunecity
         units/Deviator.cpp
         units/Frigate.cpp
         units/Harvester.cpp
+        units/RebelHarvester.cpp
         units/Launcher.cpp
         units/MCV.cpp
         units/Ornithopter.cpp
@@ -287,6 +295,11 @@ target_sources(dunecity
         units/Trooper.cpp
         units/AmbientAirplane.cpp
         units/AmbientHelicopter.cpp
+        units/RocketTrike.cpp
+        units/SonicTrike.cpp
+        units/FlameTank.cpp
+        units/EliteLauncher.cpp
+        units/EliteSiegeTank.cpp
 
         # CutScenes
         CutScenes/CutScene.cpp
@@ -345,6 +358,7 @@ target_sources(dunecity
         misc/sound_util.cpp
         misc/string_util.cpp
         misc/Scaler.cpp
+        misc/TouchInput.cpp
 )
 
 # C source files
@@ -445,6 +459,7 @@ if(WIN32)
             winmm
             imm32
             version
+            dbghelp
     )
 endif()
 
@@ -467,6 +482,31 @@ target_compile_options(dunecity
 
 # Data directory handling
 set(DATA_DIR "${CMAKE_SOURCE_DIR}/data")
+set(TORNIE_MOD_DIR "${CMAKE_SOURCE_DIR}/mods/Tornie")
+set(TORNIE_MOD_REFERENCE_FILES
+    "${TORNIE_MOD_DIR}/mod.ini"
+    "${TORNIE_MOD_DIR}/ObjectData.ini"
+    "${TORNIE_MOD_DIR}/QuantBot Config.ini"
+    "${TORNIE_MOD_DIR}/GameOptions.ini"
+)
+
+function(add_copy_tornie_mod_reference DEST_DIR)
+    if(EXISTS "${TORNIE_MOD_DIR}")
+        add_custom_command(
+            TARGET dunecity
+            POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                "${DEST_DIR}/mods/Tornie"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${TORNIE_MOD_REFERENCE_FILES}
+                "${DEST_DIR}/mods/Tornie/"
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${TORNIE_MOD_DIR}/campaign"
+                "${DEST_DIR}/mods/Tornie/campaign"
+            COMMENT "Copying Tornie mod reference files"
+        )
+    endif()
+endfunction()
 
 if(APPLE)
     # For macOS bundle, copy data files directly to Resources/ (not Resources/data/)
@@ -491,6 +531,8 @@ if(APPLE)
             "${BUNDLE_RESOURCES_DIR}/config/"
         COMMENT "Copying data and config files into app bundle Resources"
     )
+
+    add_copy_tornie_mod_reference("${BUNDLE_RESOURCES_DIR}")
 
     # Copy imported Micropolis-derived zone sprites into the bundle so they
     # are found by getDuneLegacyDataDir() + "imported_sprites/..." at runtime.
@@ -542,6 +584,8 @@ else()
             "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/config/"
         COMMENT "Copying config template files to build output"
     )
+
+    add_copy_tornie_mod_reference("${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
 
     # Copy imported zone sprites next to the binary for non-bundle builds
     set(IMPORTED_SPRITES_SRC "${CMAKE_SOURCE_DIR}/imported_sprites")
@@ -623,6 +667,25 @@ if(EXISTS "${IMPORTED_SPRITES_SRC}")
     endif()
 endif()
 
+if(EXISTS "${TORNIE_MOD_DIR}")
+    if(WIN32)
+        set(TORNIE_INSTALL_BASE ".")
+    elseif(NOT APPLE)
+        set(TORNIE_INSTALL_BASE "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}")
+    endif()
+
+    if(WIN32 OR NOT APPLE)
+        install(
+            FILES ${TORNIE_MOD_REFERENCE_FILES}
+            DESTINATION "${TORNIE_INSTALL_BASE}/mods/Tornie"
+        )
+        install(
+            DIRECTORY "${TORNIE_MOD_DIR}/campaign/"
+            DESTINATION "${TORNIE_INSTALL_BASE}/mods/Tornie/campaign"
+        )
+    endif()
+endif()
+
 # Install executable
 if(WIN32)
     # Windows: install to root directory
@@ -672,10 +735,32 @@ elseif(APPLE)
         message(STATUS \"Installed dunecity.app signature verified.\")
     ")
 else()
-    # Linux: install to bin directory
+    # Linux: set rpath so the installed binary finds bundled .so files relative
+    # to itself rather than requiring system-installed or build-tree libraries.
+    # $ORIGIN expands to the directory containing the binary at runtime, so
+    # $ORIGIN/../lib/dunecity resolves to <prefix>/lib/dunecity.
+    set_target_properties(dunecity PROPERTIES
+        INSTALL_RPATH "$ORIGIN/../lib/dunecity"
+        BUILD_WITH_INSTALL_RPATH FALSE
+    )
+
     install(TARGETS dunecity
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     )
+
+    # Bundle all vcpkg-built shared libraries so the installed binary is
+    # self-contained and does not depend on system SDL2/mixer/ttf/curl/etc.
+    # VCPKG_INSTALLED_DIR and VCPKG_TARGET_TRIPLET are set by the vcpkg
+    # toolchain file; skip silently if building without vcpkg.
+    if(DEFINED VCPKG_INSTALLED_DIR AND DEFINED VCPKG_TARGET_TRIPLET)
+        install(DIRECTORY "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/lib/"
+            DESTINATION "${CMAKE_INSTALL_LIBDIR}/dunecity"
+            FILES_MATCHING
+                PATTERN "*.so"
+                PATTERN "*.so.*"
+            PATTERN "pkgconfig" EXCLUDE
+        )
+    endif()
 endif()
 
 # DUNELEGACY_DATADIR is set at the top of this file (before configure_file)

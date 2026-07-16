@@ -26,7 +26,10 @@
 
 static std::string getSourceDir() {
     const char* env = std::getenv("DUNE_CITY_SOURCE_DIR");
-    return env ? std::string(env) : std::string();
+    if (!env) {
+        SKIP("DUNE_CITY_SOURCE_DIR not set — skipping source-scan test");
+    }
+    return std::string(env);
 }
 
 static std::string readFile(const std::string& relativePath) {

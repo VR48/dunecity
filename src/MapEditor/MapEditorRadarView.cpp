@@ -181,7 +181,7 @@ void MapEditorRadarView::updateRadarSurface(const MapData& map, const RadarScale
                         putPixel(   radarSurface.get(),
                                     drawX,
                                     drawY,
-                                    SDL2RGB(palette[houseToPaletteIndex[unit.house]]));
+                                    getHouseRadarColor(unit.house));
                     }
                 }
             }
@@ -206,7 +206,7 @@ void MapEditorRadarView::updateRadarSurface(const MapData& map, const RadarScale
                     putPixel(   radarSurface.get(),
                                 drawX,
                                 drawY,
-                                SDL2RGB(palette[houseToPaletteIndex[structure.house]]));
+                                getHouseRadarColor(structure.house));
                 }
             }
         }

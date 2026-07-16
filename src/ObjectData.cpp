@@ -137,7 +137,7 @@ void ObjectData::logSettings() const {
     SDL_Log("===============================================================");
 }
 
-void ObjectData::loadFromINIFile(const std::string& filename)
+void ObjectData::loadFromINIFile(const std::string& filename, bool preferUserConfig)
 {
     // Try to load from user directory first, fall back to install directory
     std::string userConfigPath = getObjectDataConfigFilepath();
@@ -145,10 +145,14 @@ void ObjectData::loadFromINIFile(const std::string& filename)
     std::string loadedFrom;
     
     try {
-        if (existsFile(userConfigPath)) {
+        if (preferUserConfig && existsFile(userConfigPath)) {
             SDL_Log("Loading ObjectData.ini from user directory: %s", userConfigPath.c_str());
             objectDataFile = new INIFile(userConfigPath);
             loadedFrom = userConfigPath;
+        } else if (existsFile(filename)) {
+            SDL_Log("Loading ObjectData.ini from filesystem path: %s", filename.c_str());
+            objectDataFile = new INIFile(filename);
+            loadedFrom = filename;
         } else {
             SDL_Log("Loading ObjectData.ini from install directory: %s", filename.c_str());
             objectDataFile = new INIFile(pFileManager->openFile(filename).get());
@@ -160,10 +164,14 @@ void ObjectData::loadFromINIFile(const std::string& filename)
             delete objectDataFile;
             objectDataFile = nullptr;
         }
-        // Final fallback
         SDL_Log("Trying install directory as fallback");
-        objectDataFile = new INIFile(pFileManager->openFile(filename).get());
-        loadedFrom = filename + " (install directory)";
+        if (existsFile(filename)) {
+            objectDataFile = new INIFile(filename);
+            loadedFrom = filename;
+        } else {
+            objectDataFile = new INIFile(pFileManager->openFile(filename).get());
+            loadedFrom = filename + " (install directory)";
+        }
     }
     
     if (!objectDataFile) {
@@ -247,7 +255,8 @@ void ObjectData::loadFromINIFile(const std::string& filename)
     for(INIFile::Section& section : *objectDataFile) {
         const std::string& sectionName = section.getSectionName();
 
-        if(sectionName == "" || sectionName == "default structure" || sectionName == "default unit") {
+        if(sectionName == "" || sectionName == "default structure" || sectionName == "default unit"
+            || sectionName == "Map Settings") {
             continue;
         }
 

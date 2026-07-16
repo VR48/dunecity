@@ -21,10 +21,19 @@
 
 #include <FileClasses/GFXManager.h>
 #include <Game.h>
+#include <Map.h>
 #include <ScreenBorder.h>
 #include <misc/exceptions.h>
 
 #define CYCLES_PER_FRAME    5
+
+namespace {
+
+constexpr int FLAME_IMPACT_FIRST_FRAME = 3;
+constexpr int FLAME_IMPACT_FADE_FIRST_FRAME = 18;
+constexpr int FLAME_IMPACT_LOOP_FRAMES = 3;
+
+}
 
 Explosion::Explosion()
  : explosionID(NONE_ID), house(HOUSE_HARKONNEN)
@@ -39,7 +48,17 @@ Explosion::Explosion(Uint32 explosionID, const Coord& position, int house)
     init();
 
     frameTimer = CYCLES_PER_FRAME;
-    currentFrame = 0;
+    currentFrame = (explosionID == Explosion_FlameImpact || explosionID == Explosion_FlameImpactVisual)
+        ? FLAME_IMPACT_FIRST_FRAME
+        : 0;
+}
+
+Explosion::Explosion(Uint32 explosionID, const Coord& position, int house, Uint32 damagerID, int persistentDamage, int damageRadius)
+ : Explosion(explosionID, position, house)
+{
+    this->damagerID = damagerID;
+    this->persistentDamage = persistentDamage;
+    this->damageRadius = damageRadius;
 }
 
 Explosion::Explosion(InputStream& stream)
@@ -52,6 +71,17 @@ Explosion::Explosion(InputStream& stream)
     currentFrame = stream.readSint32();
 
     init();
+
+    // The transient damage payload is intentionally not serialized so old
+    // saves remain readable. Reconstruct a conservative fallback if a game
+    // was saved during the very short flame animation.
+    if(explosionID == Explosion_FlameImpact && house >= 0 && house < NUM_HOUSES) {
+        persistentDamage = currentGame->objectData.data[Unit_FlameTank][house].weapondamage / 10;
+        if(persistentDamage < 1) {
+            persistentDamage = 1;
+        }
+        damageRadius = TILESIZE;
+    }
 }
 
 Explosion::~Explosion() = default;
@@ -114,6 +144,14 @@ void Explosion::init()
             numFrames = 21;
         } break;
 
+        case Explosion_FlameImpact:
+        case Explosion_FlameImpactVisual: {
+            // Frames 0-2 contain the burnt vehicle. Flame Tank impacts start
+            // at the repeating ground-fire frames and finish with the fade.
+            graphic = pGFXManager->getObjPic(ObjPic_ExplosionFlames);
+            numFrames = 21;
+        } break;
+
         case Explosion_SpiceBloom: {
             graphic = pGFXManager->getObjPic(ObjPic_ExplosionSpiceBloom);
             numFrames = 3;
@@ -158,6 +196,16 @@ void Explosion::update()
     if(frameTimer < 0) {
         frameTimer = CYCLES_PER_FRAME;
         currentFrame++;
+
+        if(explosionID == Explosion_FlameImpact
+           && persistentDamage > 0
+           && currentFrame >= FLAME_IMPACT_FIRST_FRAME + FLAME_IMPACT_LOOP_FRAMES
+           && currentFrame < FLAME_IMPACT_FADE_FIRST_FRAME
+           && (currentFrame - FLAME_IMPACT_FIRST_FRAME) % FLAME_IMPACT_LOOP_FRAMES == 0)
+        {
+            currentGameMap->damage(damagerID, currentGame->getHouse(house), position,
+                                   Bullet_Flame, persistentDamage, damageRadius, false, false);
+        }
 
         if(currentFrame >= numFrames) {
             //this explosion is finished

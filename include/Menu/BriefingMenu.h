@@ -19,8 +19,11 @@
 #define BRIEFINGMENU_H
 
 #include "MentatMenu.h"
+#include <FileClasses/Animation.h>
 #include <GUI/PictureButton.h>
 #include <GUI/dune/AnimationLabel.h>
+
+#include <memory>
 
 #define BRIEFING        0
 #define DEBRIEFING_WIN  1
@@ -45,6 +48,7 @@ private:
     int type;
     PictureButton   proccedButton;
     PictureButton   repeatButton;
+    std::unique_ptr<Animation> tornieHouseAnimation;
     AnimationLabel  animation;
 };
 

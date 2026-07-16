@@ -32,6 +32,7 @@
 #include <misc/Scaler.h>
 #include <misc/exceptions.h>
 
+#include <algorithm>
 #include <memory>
 
 PictureFactory::PictureFactory() {
@@ -665,13 +666,15 @@ sdl2::surface_ptr PictureFactory::createMapChoiceScreen(int House) const {
 
     switch(House) {
         case HOUSE_HARKONNEN:
-        case HOUSE_SARDAUKAR: {
+        case HOUSE_SARDAUKAR:
+        case HOUSE_NEUTRAL: {
             SDL_BlitSurface(harkonnenLogo.get(),nullptr,pMapChoiceScreen.get(),&LeftLogo);
             SDL_BlitSurface(harkonnenLogo.get(),nullptr,pMapChoiceScreen.get(),&RightLogo);
         } break;
 
         case HOUSE_ATREIDES:
-        case HOUSE_FREMEN: {
+        case HOUSE_FREMEN:
+        case HOUSE_REBELS: {
             SDL_BlitSurface(atreidesLogo.get(),nullptr,pMapChoiceScreen.get(),&LeftLogo);
             SDL_BlitSurface(atreidesLogo.get(),nullptr,pMapChoiceScreen.get(),&RightLogo);
         } break;
@@ -705,7 +708,18 @@ sdl2::surface_ptr PictureFactory::createMapChoiceScreen(int House) const {
     SDL_Rect clearRect = {8,24,304,119};
     SDL_FillRect(pMapChoiceScreen.get(),&clearRect,PALCOLOR_TRANSPARENT);
 
-    pMapChoiceScreen = Scaler::defaultDoubleSurface(mapSurfaceColorRange(pMapChoiceScreen.get(), PALCOLOR_HARKONNEN, houseToPaletteIndex[House]).get());
+    auto houseColorScreen = mapSurfaceColorRange(pMapChoiceScreen.get(), PALCOLOR_HARKONNEN, getHouseColorPaletteIndexFromSlot(House));
+    if(House == HOUSE_REBELS) {
+        static const Uint8 rebelsGreyRamp[8] = { 82, 72, 62, 52, 42, 34, 27, 20 };
+        for(int k = 0; k < 8; k++) {
+            SDL_Color& color = houseColorScreen->format->palette->colors[PALCOLOR_REBELS + k];
+            color.r = rebelsGreyRamp[k];
+            color.g = rebelsGreyRamp[k];
+            color.b = rebelsGreyRamp[k];
+            color.a = 255;
+        }
+    }
+    pMapChoiceScreen = Scaler::defaultDoubleSurface(houseColorScreen.get());
     auto pFullMapChoiceScreen = copySurface(background.get());
 
     SDL_Rect dest = calcAlignedDrawingRect(pMapChoiceScreen.get(), pFullMapChoiceScreen.get());
@@ -734,7 +748,35 @@ sdl2::surface_ptr PictureFactory::createMentatHouseChoiceQuestion(int House, Pal
         case HOUSE_FREMEN:      pQuestionPart2 = Scaler::defaultDoubleSurface(LoadPNG_RW(pFileManager->openFile("Fremen.png").get()).get());      break;
         case HOUSE_SARDAUKAR:   pQuestionPart2 = Scaler::defaultDoubleSurface(LoadPNG_RW(pFileManager->openFile("Sardaukar.png").get()).get());   break;
         case HOUSE_MERCENARY:   pQuestionPart2 = Scaler::defaultDoubleSurface(LoadPNG_RW(pFileManager->openFile("Mercenary.png").get()).get());   break;
-        default:    break;
+        case HOUSE_NEUTRAL:
+        case HOUSE_REBELS: {
+            const std::string houseName = (House == HOUSE_NEUTRAL) ? "Neutral ?" : "Rebels ?";
+            unsigned int fontSize = 30;
+            while(fontSize > 18 && (pFontManager->getTextWidth(houseName, fontSize) > 198 || pFontManager->getTextHeight(fontSize) > 44)) {
+                fontSize--;
+            }
+
+            pQuestionPart2 = sdl2::surface_ptr{ SDL_CreateRGBSurface(0, 208, 48, 8, 0, 0, 0, 0) };
+            if(pQuestionPart2 == nullptr) {
+                THROW(sdl_error, "Cannot create new surface: %s!", SDL_GetError());
+            }
+
+            benePalette.applyToSurface(pQuestionPart2.get());
+            SDL_FillRect(pQuestionPart2.get(), nullptr, 0);
+            SDL_SetColorKey(pQuestionPart2.get(), SDL_TRUE, 0);
+
+            auto shadowSurface = pFontManager->createSurfaceWithText(houseName, COLOR_RGB(65, 42, 24), fontSize);
+            auto textSurface = pFontManager->createSurfaceWithText(houseName, COLOR_RGB(226, 188, 94), fontSize);
+            const int textX = 12;
+            const int textY = std::max(0, (48 - static_cast<int>(textSurface->h)) / 2 + 4);
+            SDL_Rect shadowDest = calcDrawingRect(shadowSurface.get(), textX + 2, textY + 2);
+            SDL_Rect textDest = calcDrawingRect(textSurface.get(), textX, textY);
+            SDL_BlitSurface(shadowSurface.get(), nullptr, pQuestionPart2.get(), &shadowDest);
+            SDL_BlitSurface(textSurface.get(), nullptr, pQuestionPart2.get(), &textDest);
+        } break;
+        default: {
+            pQuestionPart2 = pFontManager->createSurfaceWithText("Unknown", COLOR_WHITE, 22);
+        } break;
     }
 
     SDL_SetColorKey(pQuestionPart2.get(), SDL_TRUE, 0);
@@ -923,6 +965,89 @@ std::unique_ptr<Animation> PictureFactory::createMercenaryPlanet(Animation* atre
         SDL_Rect src =  {0, 0, getWidth(heraldMerc), 126};
         SDL_Rect dest = calcDrawingRect(heraldMerc, 12, 66);
         SDL_BlitSurface(heraldMerc,&src,newFrame.get(),&dest);
+
+        newAnimation->addFrame(std::move(newFrame));
+    }
+
+    return newAnimation;
+}
+
+std::unique_ptr<Animation> PictureFactory::createNeutralPlanet(Animation* harkonnenPlanetAnimation, SDL_Surface* heraldNeutral) {
+    auto newAnimation = std::make_unique<Animation>();
+
+    for(const sdl2::surface_ptr& pSurface : harkonnenPlanetAnimation->getFrames()) {
+        auto newFrame = mapSurfaceColorRange(pSurface.get(), PALCOLOR_HARKONNEN, PALCOLOR_NEUTRAL);
+
+        SDL_Rect src = { 0, 0, getWidth(heraldNeutral), 126 };
+        SDL_Rect dest = calcDrawingRect(heraldNeutral, 12, 66);
+        SDL_BlitSurface(heraldNeutral, &src, newFrame.get(), &dest);
+
+        newAnimation->addFrame(std::move(newFrame));
+    }
+
+    return newAnimation;
+}
+
+std::unique_ptr<Animation> PictureFactory::createRebelsPlanet(Animation* atreidesPlanetAnimation, SDL_Surface* heraldRebels) {
+    auto newAnimation = std::make_unique<Animation>();
+
+    auto applyHostileWaterMap = [](SDL_Surface* surface, Uint8 colorMap[256]) {
+        if(surface == nullptr || surface->format == nullptr || surface->format->palette == nullptr) {
+            return;
+        }
+
+        static const Uint8 hostileWaterRamp[] = { 177, 178, 179, 180, 181, 182 };
+        const int ncolors = surface->format->palette->ncolors < 256 ? surface->format->palette->ncolors : 256;
+        for(int i = 0; i < ncolors; i++) {
+            const SDL_Color& c = surface->format->palette->colors[i];
+            const bool blueWater = c.b >= 80 && c.b > c.r + 18 && c.g >= 45 && c.g + 35 >= c.r;
+            const bool cyanWater = c.g >= 95 && c.b >= 95 && c.r < 170 && (c.g > c.r + 12 || c.b > c.r + 12);
+            if(blueWater || cyanWater) {
+                const int brightness = std::max(static_cast<int>(c.r), std::max(static_cast<int>(c.g), static_cast<int>(c.b)));
+                int pos = ((235 - brightness) * 5) / 180;
+                if(pos < 0) {
+                    pos = 0;
+                } else if(pos > 5) {
+                    pos = 5;
+                }
+                colorMap[i] = hostileWaterRamp[pos];
+            }
+        }
+    };
+
+    for(const sdl2::surface_ptr& pSurface : atreidesPlanetAnimation->getFrames()) {
+        sdl2::surface_ptr newFrame = copySurface(pSurface.get());
+
+        Uint8 colorMap[256];
+        for(int i = 0; i < 256; i++) {
+            colorMap[i] = i;
+        }
+
+        applyHostileWaterMap(pSurface.get(), colorMap);
+
+        // Known Caladan ocean indices, kept as fallback for palettes whose RGB
+        // ramp is too close to sky colors.
+        colorMap[3] = 178;
+        colorMap[4] = 179;
+        colorMap[68] = 177;
+        colorMap[69] = 178;
+        colorMap[70] = 179;
+        colorMap[71] = 179;
+        colorMap[72] = 180;
+        colorMap[73] = 180;
+        colorMap[74] = 181;
+        colorMap[75] = 182;
+        colorMap[76] = 182;
+        colorMap[176] = 178;
+        colorMap[177] = 179;
+        colorMap[178] = 180;
+        colorMap[179] = 181;
+
+        mapColor(newFrame.get(), colorMap);
+
+        SDL_Rect src = { 0, 0, getWidth(heraldRebels), 126 };
+        SDL_Rect dest = calcDrawingRect(heraldRebels, 12, 66);
+        SDL_BlitSurface(heraldRebels, &src, newFrame.get(), &dest);
 
         newAnimation->addFrame(std::move(newFrame));
     }

@@ -21,6 +21,7 @@ namespace {
 constexpr int SAMPLE_RATE = 22050;
 constexpr int BITS_PER_SAMPLE = 16;
 constexpr int NUM_CHANNELS = 1;
+constexpr double PI = 3.14159265358979323846;
 
 // Helper: write little-endian 16-bit value into a byte buffer
 void writeLE16(uint8_t* out, uint16_t val) {
@@ -39,7 +40,7 @@ void writeLE32(uint8_t* out, uint32_t val) {
 std::vector<int16_t> generateSineWave(int frequencyHz, int numSamples, int volume) {
     std::vector<int16_t> samples(numSamples);
     const double amplitude = (volume / 128.0) * 32767.0;
-    const double twoPiF = 2.0 * M_PI * frequencyHz;
+    const double twoPiF = 2.0 * PI * frequencyHz;
     const double invRate = 1.0 / SAMPLE_RATE;
 
     for (int i = 0; i < numSamples; ++i) {

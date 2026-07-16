@@ -69,6 +69,7 @@
 //#include <sys/types.h>
 //#include <sys/stat.h>
 #include <fcntl.h>
+#include <signal.h>
 
 
 #ifdef _WIN32
@@ -83,6 +84,10 @@
 
 #ifdef __APPLE__
 #include <misc/MacFunctions.h>
+#endif
+
+#if defined(__linux__)
+#include <dlfcn.h>
 #endif
 
 #if !defined(__GNUG__) || (defined(_GLIBCXX_HAS_GTHREADS) && defined(_GLIBCXX_USE_C99_STDINT_TR1) && (ATOMIC_INT_LOCK_FREE > 1) && !defined(_GLIBCXX_HAS_GTHREADS))
@@ -606,9 +611,35 @@ void logOutputFunction(void *userdata, int category, SDL_LogPriority priority, c
     */
     fprintf(stderr, "%s\n", message);
     fflush(stderr);
+
+    // DuneCity 1.0.501: mirror all SDL logs to dunecity-crash.log next to the
+    // executable. On Windows release builds stderr isn't visible, so a silent
+    // crash in the async GFXManager/SFXManager loaders left users (Tornie)
+    // staring at a black screen with no diagnostic. The log file gives Stefan
+    // something to attach to a bug report.
+    static FILE* logFile = nullptr;
+    if(logFile == nullptr) {
+        logFile = fopen("dunecity-crash.log", "w");
+    }
+    if(logFile != nullptr) {
+        fprintf(logFile, "%s\n", message);
+        fflush(logFile);
+    }
 }
 
 void showMissingFilesMessageBox() {
+#ifdef __ANDROID__
+    if((SDL_WasInit(SDL_INIT_VIDEO) & SDL_INIT_VIDEO) == 0) {
+        std::string instruction = "DuneCity is missing required data files. Search paths:\n";
+        for(const std::string& searchPath : FileManager::getSearchPath()) {
+            instruction += " " + searchPath + "\n";
+        }
+        SDL_Log("%s", instruction.c_str());
+        fprintf(stderr, "%s\n", instruction.c_str());
+        return;
+    }
+#endif
+
     SDL_ShowCursor(SDL_ENABLE);
 
     std::string instruction = "DuneCity uses the data files from original Dune II. The following files are missing:\n";
@@ -675,6 +706,86 @@ int main(int argc, char *argv[]) {
     SDL_LogSetPriority(SDL_LOG_CATEGORY_APPLICATION, SDL_LOG_PRIORITY_VERBOSE);
 
     SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1");
+    SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "1");
+    SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "0");
+#ifdef __ANDROID__
+    SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1");
+#endif
+
+    // v1.0.512: build-stamp log so Stefan can verify the binary on disk
+    // actually contains the v1.0.5xx fixes. If this line is missing from
+    // the run log, the .exe is stale.
+    SDL_Log("DuneCity v%s — build stamp active", std::string(VERSION).c_str());
+
+    // v1.0.514: install SIGSEGV/SIGABRT/SIGFPE handler so a fatal native
+    // crash (nullptr deref, divide by zero, etc.) writes a diagnostic to
+    // dunecity-crash.log before the process dies, instead of dying silently
+    // with no visible feedback. The handler then re-raises the signal with
+    // the default handler so a debugger can attach if running under one.
+    // This is the Tornie fix for the silent SIGSEGV that Stefan reported:
+    // a previous binary (v1.0.499 etc.) crashed at the main menu after
+    // Discord connected and there was no log entry to diagnose why. With
+    // this handler, the crash dump is written before exit so the cause
+    // can be inspected post-mortem.
+    #ifndef _WIN32
+    {
+        struct sigaction sa {};
+        sa.sa_sigaction = [](int sig, siginfo_t* info, void* /*ucontext*/) {
+            // Async-signal-safe: only write(), no malloc, no SDL_Log, no fprintf
+            // to a FILE* (those can deadlock). Use raw write() to fd 2 (stderr)
+            // and a fixed file descriptor for the crash log.
+            const char* sigName = "UNKNOWN";
+            switch(sig) {
+                case SIGSEGV: sigName = "SIGSEGV"; break;
+                case SIGABRT: sigName = "SIGABRT"; break;
+                case SIGFPE:  sigName = "SIGFPE";  break;
+                default: break;
+            }
+            char buf[512];
+            int n = snprintf(buf, sizeof(buf),
+                "\n=== DuneCity fatal crash ===\n"
+                "  Signal:  %d (%s)\n"
+                "  Reason:  %d (si_code)\n"
+                "  Address: %p (si_addr)\n"
+                "  Version: %s\n"
+                "  Stack trace not available (would require libunwind).\n"
+                "  Check Dune City.log for the last SDL_Log lines before the\n"
+                "  crash — that is where the actionable diagnostic lives.\n"
+                "=============================\n",
+                sig, sigName, info->si_code, info->si_addr, VERSION);
+            if(n > 0) {
+                // stderr
+                (void)!write(2, buf, n);
+                // crash log file (best-effort, opened each invocation)
+                int fd = open("dunecity-crash.log",
+#ifdef O_APPEND
+                    O_WRONLY | O_CREAT | O_APPEND
+#else
+                    O_WRONLY | O_CREAT
+#endif
+                    , 0644);
+                if(fd >= 0) {
+                    (void)!write(fd, buf, n);
+                    close(fd);
+                }
+            }
+            // Re-raise with the default handler so a debugger can catch
+            // the signal and the process exits with the conventional code.
+            struct sigaction dfl {};
+            dfl.sa_handler = SIG_DFL;
+            sigemptyset(&dfl.sa_mask);
+            dfl.sa_flags = 0;
+            sigaction(sig, &dfl, nullptr);
+            raise(sig);
+        };
+        sa.sa_flags = SA_SIGINFO | SA_RESETHAND;
+        sigemptyset(&sa.sa_mask);
+        sigaction(SIGSEGV, &sa, nullptr);
+        sigaction(SIGABRT, &sa, nullptr);
+        sigaction(SIGFPE,  &sa, nullptr);
+        SDL_Log("DuneCity: SIGSEGV/SIGABRT/SIGFPE handler installed");
+    }
+    #endif
 
     // global try/catch around everything
     try {
@@ -762,6 +873,42 @@ int main(int argc, char *argv[]) {
 
         SDL_Log("Starting DuneCity %s on %s", VERSION, SDL_GetPlatform());
 
+#if defined(__linux__) && !defined(__ANDROID__)
+        // Verify that required shared libraries are loadable before proceeding.
+        // If the binary was installed without bundled .so files and the system
+        // libraries are the wrong version or absent, dlopen catches this and
+        // logs a human-readable error instead of crashing silently on SDL_Init.
+        {
+            const char* const requiredLibs[] = {
+                "libSDL2-2.0.so.0",
+                "libSDL2_mixer-2.0.so.0",
+                "libSDL2_ttf-2.0.so.0",
+            };
+            bool allLibsFound = true;
+            for (const char* lib : requiredLibs) {
+                // RTLD_NOLOAD checks if already loaded (it is, since we're running);
+                // if it returns null anyway, fall back to a full load attempt.
+                void* handle = dlopen(lib, RTLD_LAZY | RTLD_NOLOAD);
+                if (!handle) {
+                    handle = dlopen(lib, RTLD_LAZY);
+                }
+                if (!handle) {
+                    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                        "Required library missing or incompatible: %s — %s", lib, dlerror());
+                    allLibsFound = false;
+                } else {
+                    dlclose(handle);
+                }
+            }
+            if (!allLibsFound) {
+                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                    "Cannot start: one or more required shared libraries could not be loaded. "
+                    "See log at: %s", getLogFilepath().c_str());
+                return EXIT_FAILURE;
+            }
+        }
+#endif
+
         // First check for missing files
         std::vector<std::string> missingFiles = FileManager::getMissingFiles();
 
@@ -816,6 +963,8 @@ int main(int argc, char *argv[]) {
             settings.video.preferredZoomLevel = myINIFile.getIntValue("Video","Preferred Zoom Level", 0);
             settings.video.scaler = myINIFile.getStringValue("Video","Scaler","ScaleHD");
             settings.video.rotateUnitGraphics = myINIFile.getBoolValue("Video","RotateUnitGraphics",false);
+            settings.video.showWatermark = myINIFile.getBoolValue("Video","Show Watermark",true);
+            settings.video.cursorScale = myINIFile.getIntValue("Video","Cursor Scale",0);
             settings.audio.musicType = myINIFile.getStringValue("Audio","Music Type","adl");
             settings.audio.playMusic = myINIFile.getBoolValue("Audio","Play Music", true);
             settings.audio.musicVolume = myINIFile.getIntValue("Audio","Music Volume", 64);
@@ -952,6 +1101,38 @@ int main(int argc, char *argv[]) {
                 myINIFile.saveChangesTo(getConfigFilepath());
             }
 
+#ifdef __ANDROID__
+            if(bFirstInit == true) {
+                SDL_DisplayMode displayMode;
+                SDL_GetDesktopDisplayMode(currentDisplayIndex, &displayMode);
+
+                if(displayMode.w > 0 && displayMode.h > 0 &&
+                   (settings.video.physicalHeight > settings.video.physicalWidth ||
+                    settings.video.physicalWidth != displayMode.w ||
+                    settings.video.physicalHeight != displayMode.h)) {
+                    int factor = getLogicalToPhysicalResolutionFactor(displayMode.w, displayMode.h);
+                    settings.video.physicalWidth = displayMode.w;
+                    settings.video.physicalHeight = displayMode.h;
+                    settings.video.width = std::max(640, displayMode.w / factor);
+                    settings.video.height = std::max(480, displayMode.h / factor);
+                    settings.video.fullscreen = true;
+                    settings.video.preferredZoomLevel = 1;
+
+                    SDL_Log("Android display config updated to %dx%d physical, %dx%d logical",
+                            settings.video.physicalWidth, settings.video.physicalHeight,
+                            settings.video.width, settings.video.height);
+
+                    myINIFile.setIntValue("Video","Width",settings.video.width);
+                    myINIFile.setIntValue("Video","Height",settings.video.height);
+                    myINIFile.setIntValue("Video","Physical Width",settings.video.physicalWidth);
+                    myINIFile.setIntValue("Video","Physical Height",settings.video.physicalHeight);
+                    myINIFile.setBoolValue("Video","Fullscreen",settings.video.fullscreen);
+                    myINIFile.setIntValue("Video","Preferred Zoom Level",settings.video.preferredZoomLevel);
+                    myINIFile.saveChangesTo(getConfigFilepath());
+                }
+            }
+#endif
+
             Scaler::setDefaultScaler(Scaler::getScalerByName(settings.video.scaler));
 
             if(bFirstInit == true) {
@@ -1023,6 +1204,8 @@ int main(int argc, char *argv[]) {
                 pTextManager->loadData();
 
                 palette = LoadPalette_RW(pFileManager->openFile("IBM.PAL").get());
+                loadCustomPalette();
+                applyCustomPaletteRuntimeHouseRamps();
 
                 SDL_Log("Setting video mode...");
                 setVideoMode(currentDisplayIndex);
@@ -1049,8 +1232,37 @@ int main(int argc, char *argv[]) {
                 auto gfxManagerFut = std::async(std::launch::async, []() { return std::make_unique<GFXManager>(); } );
                 auto sfxManagerFut = std::async(std::launch::async, []() { return std::make_unique<SFXManager>(); } );
 
-                pGFXManager = gfxManagerFut.get();
-                pSFXManager = sfxManagerFut.get();
+                // DuneCity 1.0.501: catch any exception from the async loaders
+                // so a failed load produces a visible error dialog + log file
+                // entry instead of the silent death that 1.0.499 had (Tornie
+                // OOB: "game doesn't launch, no alert, just nothing").
+                try {
+                    pGFXManager = gfxManagerFut.get();
+                } catch(const std::exception& e) {
+                    std::string msg = std::string("GFXManager failed to initialize:\n\n") + e.what()
+                                    + "\n\nA required data file is probably missing or the bundled PAK is corrupt."
+                                    + "\nSee dunecity-crash.log next to the executable for the full SDL log.";
+                    SDL_LogCritical(SDL_LOG_CATEGORY_APPLICATION, "%s", msg.c_str());
+                    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "DuneCity — graphics load failed", msg.c_str(), nullptr);
+                    THROW(std::runtime_error, "%s", msg.c_str());
+                } catch(...) {
+                    SDL_LogCritical(SDL_LOG_CATEGORY_APPLICATION, "GFXManager failed to initialize: unknown exception");
+                    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "DuneCity — graphics load failed",
+                                              "GFXManager threw an unknown exception. See dunecity-crash.log.", nullptr);
+                    THROW(std::runtime_error, "GFXManager unknown exception");
+                }
+
+                try {
+                    pSFXManager = sfxManagerFut.get();
+                } catch(const std::exception& e) {
+                    // SFX is non-fatal: log and continue with a null manager so the
+                    // game at least shows the menu. Audio will be silent but visible.
+                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "SFXManager failed to initialize: %s — continuing without audio", e.what());
+                    pSFXManager = nullptr;
+                } catch(...) {
+                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "SFXManager threw an unknown exception — continuing without audio");
+                    pSFXManager = nullptr;
+                }
 #else
                 // g++ does not provide std::launch::async on all platforms
                 pGFXManager = std::make_unique<GFXManager>();

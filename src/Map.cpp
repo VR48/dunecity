@@ -23,6 +23,7 @@
 #include <House.h>
 #include <ScreenBorder.h>
 #include <sand.h>
+#include <mod/ModManager.h>
 
 #include <units/UnitBase.h>
 #include <units/InfantryBase.h>
@@ -30,8 +31,17 @@
 #include <structures/StructureBase.h>
 
 #include <climits>
+#include <algorithm>
 #include <stack>
 #include <set>
+
+namespace {
+
+bool isTornieModActive() {
+    return ModManager::instance().isInitialized() && ModManager::instance().getActiveModName() == "Tornie";
+}
+
+} // namespace
 
 Map::Map(int xSize, int ySize)
  : sizeX(xSize), sizeY(ySize), lastSinglySelectedObject(nullptr), pathingRevision(0) {
@@ -115,7 +125,7 @@ void Map::createSandRegions() {
     }
 }
 
-void Map::damage(Uint32 damagerID, House* damagerOwner, const Coord& realPos, Uint32 bulletID, FixPoint damage, int damageRadius, bool air) {
+void Map::damage(Uint32 damagerID, House* damagerOwner, const Coord& realPos, Uint32 bulletID, FixPoint damage, int damageRadius, bool air, bool affectTerrain) {
     const auto location = Coord(realPos.x/TILESIZE, realPos.y/TILESIZE);
 
     std::set<Uint32>    affectedAirUnits;
@@ -214,7 +224,7 @@ void Map::damage(Uint32 damagerID, House* damagerOwner, const Coord& realPos, Ui
                     if(realPos.x >= topLeftCorner.x && realPos.y >= topLeftCorner.y && realPos.x < bottomRightCorner.x && realPos.y < bottomRightCorner.y) {
                         pStructure->handleDamage(lround(damage), damagerID, damagerOwner);
 
-                        if( (bulletID == Bullet_LargeRocket || bulletID == Bullet_Rocket || bulletID == Bullet_TurretRocket || bulletID == Bullet_SmallRocket)
+                        if( (bulletID == Bullet_LargeRocket || bulletID == Bullet_Rocket || bulletID == Bullet_TurretRocket || bulletID == Bullet_SmallRocket || bulletID == Bullet_Flame)
                             && (pStructure->getHealth() < pStructure->getMaxHealth()/2)) {
                             if(pStructure->getNumSmoke() < 5) {
                                 pStructure->addSmoke(realPos, currentGame->getGameCycleCount());
@@ -239,8 +249,14 @@ void Map::damage(Uint32 damagerID, House* damagerOwner, const Coord& realPos, Ui
                                     pUnit->deviate(damagerOwner);
                                 }
                             }
-                        } else if(bulletID == Bullet_Sonic) {
+                        } else if(bulletID == Bullet_Sonic || bulletID == Bullet_SonicTrike) {
                             pUnit->handleDamage(lround(damage), damagerID, damagerOwner);
+                        } else if(bulletID == Bullet_Flame) {
+                            auto scaledDamage = lround(damage) >> (distance/16 + 1);
+                            if(pUnit->isInfantry()) {
+                                scaledDamage = std::max<int>(lround(damage), scaledDamage * 2);
+                            }
+                            pUnit->handleDamage(scaledDamage, damagerID, damagerOwner);
                         } else {
                             const auto scaledDamage = lround(damage) >> (distance/16 + 1);
                             pUnit->handleDamage(scaledDamage, damagerID, damagerOwner);
@@ -266,8 +282,8 @@ void Map::damage(Uint32 damagerID, House* damagerOwner, const Coord& realPos, Ui
 
             const auto pTile = currentGameMap->getTile_internal(location.x, location.y);
 
-            if(pTile
-                && ((bulletID == Bullet_Rocket) || (bulletID == Bullet_TurretRocket) || (bulletID == Bullet_SmallRocket) || (bulletID == Bullet_LargeRocket))
+            if(affectTerrain && pTile
+                && ((bulletID == Bullet_Rocket) || (bulletID == Bullet_TurretRocket) || (bulletID == Bullet_SmallRocket) || (bulletID == Bullet_LargeRocket) || (bulletID == Bullet_Flame))
                 && (!pTile->hasAGroundObject() || !pTile->getGroundObject()->isAStructure()) )
             {
                 const auto type = pTile->getType();
@@ -281,7 +297,7 @@ void Map::damage(Uint32 damagerID, House* damagerOwner, const Coord& realPos, Ui
 
                     pTile->addDamage(Tile::Terrain_RockDamage, (bulletID==Bullet_SmallRocket) ? Tile::RockDamage1 : Tile::RockDamage2, realPos);
 
-                } else if((type == Terrain_Sand) || (type == Terrain_Spice)) {
+                } else if((type == Terrain_Sand) || pTile->isSpice()) {
                     const auto damage_tile = bulletID == Bullet_SmallRocket
                         ? currentGame->randomGen.rand(Tile::SandDamage1, Tile::SandDamage2)
                         : currentGame->randomGen.rand(Tile::SandDamage3, Tile::SandDamage4);
@@ -291,14 +307,14 @@ void Map::damage(Uint32 damagerID, House* damagerOwner, const Coord& realPos, Ui
             }
 
             // Roads are tile flags, not structures — destroy them on sufficient impact.
-            if (pTile && pTile->isRoad() && damage >= 10) {
+            if (affectTerrain && pTile && pTile->isRoad() && damage >= 10) {
                 pTile->setRoad(false);
                 pTile->setDestroyedStructureTile(Destroyed1x1Structure);
             }
         }
     }
 
-    if ((bulletID != Bullet_Sonic) && (bulletID != Bullet_Sandworm)) {
+    if (affectTerrain && (bulletID != Bullet_Sonic) && (bulletID != Bullet_SonicTrike) && (bulletID != Bullet_Sandworm)) {
         const auto tile = getTile_internal(location.x, location.y);
 
         if (tile && tile->isSpiceBloom()) {
@@ -738,7 +754,13 @@ void Map::spiceRemoved(const Coord& coord) {
 
             if (pTile && pTile->isThickSpice()) {
                 //only check tile right, up, left and down of this one
-                pTile->setType(Terrain_Spice);
+                if(pTile->getType() == Terrain_ThickGreenSpice) {
+                    pTile->setType(Terrain_GreenSpice);
+                } else if(pTile->getType() == Terrain_ThickRedSpice) {
+                    pTile->setType(Terrain_RedSpice);
+                } else {
+                    pTile->setType(Terrain_Spice);
+                }
             }
         }
     }
@@ -789,7 +811,26 @@ void Map::viewMap(int houseID, const Coord& location, const int maxViewRange) {
     \param  radius              the radius in tiles (0 = only one tile is filled)
     \param  centerIsThickSpice  if set the center is filled with thick spice
 */
-void Map::createSpiceField(Coord location, int radius, bool centerIsThickSpice) const {
+std::pair<int, int> Map::chooseGeneratedSpiceTerrain(int thinSpiceTerrain, int thickSpiceTerrain) const {
+    if(currentGame == nullptr
+       || thinSpiceTerrain != Terrain_Spice
+       || thickSpiceTerrain != Terrain_ThickSpice
+       || !isTornieModActive()) {
+        return std::make_pair(thinSpiceTerrain, thickSpiceTerrain);
+    }
+
+    const int roll = currentGame->randomGen.rand(0, 99);
+    if(roll < 10) {
+        return std::make_pair(Terrain_GreenSpice, Terrain_ThickGreenSpice);
+    }
+    if(roll < 20) {
+        return std::make_pair(Terrain_RedSpice, Terrain_ThickRedSpice);
+    }
+
+    return std::make_pair(Terrain_Spice, Terrain_ThickSpice);
+}
+
+void Map::createSpiceField(Coord location, int radius, bool centerIsThickSpice, int thinSpiceTerrain, int thickSpiceTerrain) const {
     Coord offset;
     for(offset.x = -radius; offset.x <= radius; offset.x++) {
         for(offset.y = -radius; offset.y <= radius; offset.y++) {
@@ -802,9 +843,9 @@ void Map::createSpiceField(Coord location, int radius, bool centerIsThickSpice) 
 
             if(pTile->isSand() && (distanceFrom(location, coord) <= radius)) {
                 if(centerIsThickSpice && (offset.x == 0) && (offset.y == 0)) {
-                    pTile->setType(Terrain_ThickSpice);
+                    pTile->setType(thickSpiceTerrain);
                 } else {
-                    pTile->setType(Terrain_Spice);
+                    pTile->setType(thinSpiceTerrain);
                 }
             }
         }

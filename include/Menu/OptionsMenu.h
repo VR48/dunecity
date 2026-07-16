@@ -88,6 +88,9 @@ private:
     Checkbox    fullScreenCheckbox;
     Checkbox    frameLimitCheckbox;
     Checkbox    showTutorialHintsCheckbox;
+    HBox        videoHBox2;
+    Checkbox    showWatermarkCheckbox;
+    DropDownBox cursorScaleDropDownBox;
 
     HBox        audioHBox;
     Checkbox    playSFXCheckbox;

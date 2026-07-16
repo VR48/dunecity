@@ -55,6 +55,7 @@ public:
     ~Pakfile();
 
     const std::string& getFilename(unsigned int index) const;
+    const std::string& getPakFilename() const { return filename; }
 
     /// Number of files in this pak-File.
     /**

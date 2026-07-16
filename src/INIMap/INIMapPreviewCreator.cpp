@@ -300,6 +300,36 @@ sdl2::surface_ptr INIMapPreviewCreator::createMinimapImageOfMap(int borderWidth,
                         color = COLOR_THICKSPICE;
                     } break;
 
+                    case 'g': {
+                        // Tornie green spice
+                        color = COLOR_RGB(28, 124, 48);
+                    } break;
+
+                    case 'G': {
+                        // Tornie thick green spice
+                        color = COLOR_RGB(20, 92, 42);
+                    } break;
+
+                    case 'b': {
+                        // Tornie green spice bloom
+                        color = COLOR_RGB(28, 124, 48);
+                    } break;
+
+                    case 'r': {
+                        // Tornie red spice
+                        color = COLOR_RGB(154, 48, 38);
+                    } break;
+
+                    case 'R': {
+                        // Tornie thick red spice
+                        color = COLOR_RGB(104, 32, 28);
+                    } break;
+
+                    case 'B': {
+                        // Tornie red spice bloom
+                        color = COLOR_RGB(154, 48, 38);
+                    } break;
+
                     case '%': {
                         // Rock
                         color = COLOR_ROCK;
@@ -408,7 +438,7 @@ sdl2::surface_ptr INIMapPreviewCreator::createMinimapImageOfMap(int borderWidth,
                 int house = getHouseByName(HouseStr);
                 Uint32 color = COLOR_WHITE;
                 if(house != HOUSE_INVALID) {
-                    color = SDL2RGB(palette[houseToPaletteIndex[house]]);
+                    color = getHouseRadarColor(static_cast<HOUSETYPE>(house));
                 } else {
                     convertToLower(HouseStr);
                     if(HouseStr.length() == 7 && HouseStr.substr(0,6) == "player") {
@@ -447,7 +477,7 @@ sdl2::surface_ptr INIMapPreviewCreator::createMinimapImageOfMap(int borderWidth,
                 int house = getHouseByName(HouseStr);
                 Uint32 color = COLOR_WHITE;
                 if(house != HOUSE_INVALID) {
-                    color = SDL2RGB(palette[houseToPaletteIndex[house]]);
+                    color = getHouseRadarColor(static_cast<HOUSETYPE>(house));
                 } else {
                     convertToLower(HouseStr);
                     if(HouseStr.length() == 7 && HouseStr.substr(0,6) == "player") {

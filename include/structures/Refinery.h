@@ -23,6 +23,8 @@
 
 // forward declarations
 class Harvester;
+class TrackedUnit;
+class UnitBase;
 class Carryall;
 
 class Refinery final : public StructureBase
@@ -37,7 +39,7 @@ public:
 
     ObjectInterface* getInterfaceContainer() override;
 
-    void assignHarvester(Harvester* newHarvester);
+    void assignHarvester(TrackedUnit* newHarvester);
     void deployHarvester(Carryall* pCarryall = nullptr);
     void startAnimate();
     void stopAnimate();
@@ -54,8 +56,21 @@ public:
     }
     inline bool isFree() const { return !extractingSpice; }
     inline int getNumBookings() const { return bookings; }  //number of units goings there
+    inline UnitBase* getContainedHarvester() { return harvester.getUnitPointer(); }
+    inline const UnitBase* getContainedHarvester() const { return harvester.getUnitPointer(); }
     inline const Harvester* getHarvester() const  { return reinterpret_cast<Harvester*>(harvester.getObjPointer()); }
     inline Harvester* getHarvester() { return reinterpret_cast<Harvester*>(harvester.getObjPointer()); }
+
+    bool acceptsHarvesterDropoff() const override { return true; }
+    bool isHarvesterDropoffFree() const override { return isFree(); }
+    int getHarvesterDropoffBookings() const override { return getNumBookings(); }
+    void bookHarvesterDropoff() override { book(); }
+    void unbookHarvesterDropoff() override { unBook(); }
+    void startHarvesterDropoffAnimation() override { startAnimate(); }
+    bool receiveHarvester(TrackedUnit* unit) override { assignHarvester(unit); return true; }
+    void deployContainedHarvester(Carryall* carryall = nullptr) override { deployHarvester(carryall); }
+    UnitBase* getContainedHarvesterUnit() override { return getContainedHarvester(); }
+    const UnitBase* getContainedHarvesterUnit() const override { return getContainedHarvester(); }
 
 protected:
     /**

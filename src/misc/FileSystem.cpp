@@ -19,6 +19,7 @@
 #include <misc/string_util.h>
 #include <misc/exceptions.h>
 #include <misc/SDL2pp.h>
+#include <misc/fnkdat.h>
 
 #include <stdio.h>
 #include <algorithm>
@@ -598,14 +599,25 @@ std::string getDuneLegacyDataDir() {
     if(duneLegacyDataDir.empty()) {
 
         std::string dataDir;
+#ifdef __ANDROID__
+        char androidDataPath[FILENAME_MAX];
+        if(fnkdat(nullptr, androidDataPath, FILENAME_MAX, FNKDAT_USER | FNKDAT_CREAT) == 0
+           && androidDataPath[0] != '\0') {
+            dataDir = androidDataPath;
+            SDL_Log("Using Android app storage as data dir: %s", dataDir.c_str());
+        }
+#endif
+
 #ifdef DUNELEGACY_DATADIR
         // Only use the compile-time install path if it actually exists
         // (i.e. the binary was installed, not run from a build directory)
-        struct stat dirCheck;
-        if (stat(DUNELEGACY_DATADIR, &dirCheck) == 0 && S_ISDIR(dirCheck.st_mode)) {
-            dataDir = DUNELEGACY_DATADIR;
-        } else {
-            SDL_Log("DUNELEGACY_DATADIR '%s' not found, falling through to SDL_GetBasePath()", DUNELEGACY_DATADIR);
+        if(dataDir.empty()) {
+            struct stat dirCheck;
+            if (stat(DUNELEGACY_DATADIR, &dirCheck) == 0 && S_ISDIR(dirCheck.st_mode)) {
+                dataDir = DUNELEGACY_DATADIR;
+            } else {
+                SDL_Log("DUNELEGACY_DATADIR '%s' not found, falling through to SDL_GetBasePath()", DUNELEGACY_DATADIR);
+            }
         }
 #endif
 

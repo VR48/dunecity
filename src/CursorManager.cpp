@@ -24,7 +24,60 @@
 #include <structures/StructureBase.h>
 #include <structures/Palace.h>
 
+#include <algorithm>
+
 namespace {
+
+// Scale an SDL_Surface up by an integer factor. Returns a new surface the
+// caller must SDL_FreeSurface() after use, or nullptr on failure.
+SDL_Surface* scaleSurface(SDL_Surface* src, int scale) {
+    if (!src || scale <= 1) {
+        return nullptr;
+    }
+    SDL_Surface* dst = SDL_CreateRGBSurfaceWithFormat(
+        0, src->w * scale, src->h * scale, src->format->BitsPerPixel, src->format->format);
+    if (!dst) {
+        return nullptr;
+    }
+    // Copy palette from src so indexed (8-bit) pixels map correctly on dst.
+    if (src->format->palette) {
+        SDL_SetPixelFormatPalette(dst->format, src->format->palette);
+    }
+    // Preserve color key on the scaled surface.
+    Uint32 colorKey = 0;
+    if (SDL_GetColorKey(src, &colorKey) == 0) {
+        SDL_SetColorKey(dst, SDL_TRUE, colorKey);
+    }
+    // Disable blending on src so the blitter treats color-keyed pixels as
+    // opaque indices, not as alpha values (SDL2 trap with paletted surfaces).
+    SDL_SetSurfaceBlendMode(src, SDL_BLENDMODE_NONE);
+    SDL_Rect srcRect = { 0, 0, src->w, src->h };
+    SDL_Rect dstRect = { 0, 0, src->w * scale, src->h * scale };
+    SDL_BlitScaled(src, &srcRect, dst, &dstRect);
+    return dst;
+}
+
+// Determine the effective cursor scale from settings. 0 = auto-detect from DPI.
+int getEffectiveCursorScale() {
+    const int configured = settings.video.cursorScale;
+    if (configured >= 1 && configured <= 4) {
+        return configured;
+    }
+    // Auto-detect: use the display's logical-to-physical pixel ratio.
+    // SDL_GetDisplayDPI gives horizontal DPI; 96 dpi is "1x" baseline.
+    float ddpi = 96.0f, hdpi = 96.0f, vdpi = 96.0f;
+    int displayIndex = window ? SDL_GetWindowDisplayIndex(window) : 0;
+    if (displayIndex < 0) displayIndex = 0;
+    SDL_GetDisplayDPI(displayIndex, &ddpi, &hdpi, &vdpi);
+    const float dpi = hdpi > 0.0f ? hdpi : ddpi;
+    SDL_LogVerbose(SDL_LOG_CATEGORY_APPLICATION,
+                   "CursorManager: display %d DPI=%.1f, auto-detecting cursor scale", displayIndex, dpi);
+    if (dpi >= 288.0f) return 4;  // 4K HiDPI (e.g. 4x retina)
+    if (dpi >= 192.0f) return 3;
+    if (dpi >= 144.0f) return 2;  // 2x Retina / 150% Windows
+    return 1;
+}
+
 struct CursorCache {
     SDL_Cursor* normal = nullptr;
     SDL_Cursor* move = nullptr;
@@ -116,6 +169,42 @@ SDL_Point findTopLeftOpaquePixel(SDL_Surface* surface) {
 
     return hotspot;
 }
+
+SDL_Cursor* createColorCursorSafe(SDL_Surface* source, int hotspotX, int hotspotY, int scale, SDL_SystemCursor fallback) {
+#if defined(_WIN32)
+    (void) source;
+    (void) hotspotX;
+    (void) hotspotY;
+    (void) scale;
+    return SDL_CreateSystemCursor(fallback);
+#else
+    if(source == nullptr) {
+        return SDL_CreateSystemCursor(fallback);
+    }
+
+    SDL_Surface* scaled = scaleSurface(source, scale);
+    SDL_Surface* cursorSource = scaled != nullptr ? scaled : source;
+    sdl2::surface_ptr converted{ SDL_ConvertSurfaceFormat(cursorSource, SDL_PIXELFORMAT_ARGB8888, 0) };
+    if(scaled != nullptr) {
+        SDL_FreeSurface(scaled);
+    }
+
+    if(converted == nullptr) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "CursorManager: failed to convert cursor surface: %s", SDL_GetError());
+        return SDL_CreateSystemCursor(fallback);
+    }
+
+    const int clampedX = std::clamp(hotspotX * scale, 0, converted->w - 1);
+    const int clampedY = std::clamp(hotspotY * scale, 0, converted->h - 1);
+    SDL_Cursor* cursor = SDL_CreateColorCursor(converted.get(), clampedX, clampedY);
+    if(cursor == nullptr) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "CursorManager: failed to create color cursor: %s", SDL_GetError());
+        return SDL_CreateSystemCursor(fallback);
+    }
+
+    return cursor;
+#endif
+}
 }
 
 CursorManager::CursorManager() : 
@@ -139,6 +228,10 @@ void CursorManager::initialize() {
     auto& cache = getCursorCache();
 
     if(cache.normal == nullptr) {
+        const int scale = getEffectiveCursorScale();
+        SDL_LogVerbose(SDL_LOG_CATEGORY_APPLICATION,
+                       "CursorManager: using cursor scale %dx (setting=%d)", scale, settings.video.cursorScale);
+
         SDL_Surface* normalSurface = pGFXManager->getUIGraphicSurface(UI_CursorNormal);
         SDL_Surface* moveSurface = pGFXManager->getUIGraphicSurface(UI_CursorMove_Zoomlevel0);
         SDL_Surface* attackSurface = pGFXManager->getUIGraphicSurface(UI_CursorAttack_Zoomlevel0);
@@ -147,19 +240,19 @@ void CursorManager::initialize() {
 
         if (normalSurface) {
             SDL_Point hotspot = findTopLeftOpaquePixel(normalSurface);
-            cache.normal = SDL_CreateColorCursor(normalSurface, hotspot.x, hotspot.y);
+            cache.normal = createColorCursorSafe(normalSurface, hotspot.x, hotspot.y, scale, SDL_SYSTEM_CURSOR_ARROW);
         }
         if (moveSurface) {
-            cache.move = SDL_CreateColorCursor(moveSurface, moveSurface->w / 2, moveSurface->h / 2);
+            cache.move = createColorCursorSafe(moveSurface, moveSurface->w / 2, moveSurface->h / 2, scale, SDL_SYSTEM_CURSOR_SIZEALL);
         }
         if (attackSurface) {
-            cache.attack = SDL_CreateColorCursor(attackSurface, attackSurface->w / 2, attackSurface->h / 2);
+            cache.attack = createColorCursorSafe(attackSurface, attackSurface->w / 2, attackSurface->h / 2, scale, SDL_SYSTEM_CURSOR_CROSSHAIR);
         }
         if (captureSurface) {
-            cache.capture = SDL_CreateColorCursor(captureSurface, captureSurface->w / 2, captureSurface->h / 2);
+            cache.capture = createColorCursorSafe(captureSurface, captureSurface->w / 2, captureSurface->h / 2, scale, SDL_SYSTEM_CURSOR_HAND);
         }
         if (carryallDropSurface) {
-            cache.carryallDrop = SDL_CreateColorCursor(carryallDropSurface, carryallDropSurface->w / 2, carryallDropSurface->h / 2);
+            cache.carryallDrop = createColorCursorSafe(carryallDropSurface, carryallDropSurface->w / 2, carryallDropSurface->h / 2, scale, SDL_SYSTEM_CURSOR_SIZEALL);
         }
     }
 

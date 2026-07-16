@@ -60,6 +60,8 @@ std::string     getAITeamTypeNameByID(AITeamType aiTeamType);
 
 
 Uint32          getColorByTerrainType(int terrainType);
+Uint32          getHouseRadarColor(HOUSETYPE house);
+Uint32          getHouseInterfaceColor(HOUSETYPE house, int shadeOffset = 3);
 
 FixPoint        getDeviateWeakness(HOUSETYPE house);
 

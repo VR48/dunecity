@@ -28,8 +28,10 @@
 
 #include <structures/RepairYard.h>
 #include <structures/Refinery.h>
+#include <structures/HarvesterDropoff.h>
 #include <structures/ConstructionYard.h>
 #include <units/Harvester.h>
+#include <units/HarvesterHelpers.h>
 #include <units/GroundUnit.h>
 
 Carryall::Carryall(House* newOwner) : AirUnit(newOwner)
@@ -125,8 +127,8 @@ bool Carryall::update() {
             
             // CRITICAL: Clear any bookings BEFORE leaving map
             // Harvesters may have booked this delivery carryall while it was flying away
-            if(target.getObjPointer() != nullptr && target.getObjPointer()->getItemID() == Structure_Refinery) {
-                static_cast<Refinery*>(target.getObjPointer())->unBook();
+            if(StructureBase* dropoff = getHarvesterDropoff(target.getObjPointer())) {
+                dropoff->unbookHarvesterDropoff();
             }
             if(targetFriendly && target.getObjPointer() && target.getObjPointer()->isAGroundUnit()) {
                 GroundUnit* ground = static_cast<GroundUnit*>(target.getObjPointer());
@@ -264,10 +266,10 @@ void Carryall::deployUnit(Uint32 unitID)
                         // unit is still going to repair yard but was unbooked from repair yard at pickup => book now
                         static_cast<RepairYard*>(object)->book();
                     }
-                } else if ((object->getItemID() == Structure_Refinery) && (pUnit->getItemID() == Unit_Harvester)) {
-                    if (static_cast<Refinery*>(object)->isFree()) {
-                        static_cast<Harvester*>(pUnit)->setTarget(object);
-                        static_cast<Harvester*>(pUnit)->setReturned();
+                } else if (getHarvesterDropoff(object) != nullptr && isHarvesterLikeUnit(pUnit->getItemID())) {
+                    if (getHarvesterDropoff(object)->isHarvesterDropoffFree()) {
+                        pUnit->setTarget(object);
+                        harvesterSetReturned(pUnit);
                         pUnit = nullptr;
                         goingToRepairYard = false;
                     }
@@ -282,7 +284,7 @@ void Carryall::deployUnit(Uint32 unitID)
             pUnit->deploy(deployPos);
             if(pUnit->getItemID() == Unit_Saboteur) {
                 pUnit->doSetAttackMode(HUNT);
-            } else if(pUnit->getItemID() != Unit_Harvester) {
+            } else if(!isHarvesterLikeUnit(pUnit->getItemID())) {
                 pUnit->doSetAttackMode(AREAGUARD);
             } else {
                 pUnit->doSetAttackMode(HARVEST);
@@ -305,8 +307,8 @@ void Carryall::deployUnit(Uint32 unitID)
 void Carryall::destroy()
 {
     // Clean up bookings to prevent stranded units/refineries
-    if(target.getObjPointer() != nullptr && target.getObjPointer()->getItemID() == Structure_Refinery) {
-        static_cast<Refinery*>(target.getObjPointer())->unBook();
+    if(StructureBase* dropoff = getHarvesterDropoff(target.getObjPointer())) {
+        dropoff->unbookHarvesterDropoff();
     }
     if(targetFriendly && target.getObjPointer() && target.getObjPointer()->isAGroundUnit()) {
         GroundUnit* ground = static_cast<GroundUnit*>(target.getObjPointer());
@@ -380,8 +382,8 @@ void Carryall::engageTarget()
     }
 
     Coord targetLocation;
-    if(pTarget->getItemID() == Structure_Refinery) {
-        targetLocation = pTarget->getLocation() + Coord(2,0);
+    if(getHarvesterDropoff(pTarget) != nullptr) {
+        targetLocation = pTarget->getLocation() + Coord(getHarvesterDropoff(pTarget)->getStructureSizeX() - 1, 0);
     } else if(pTarget->isAUnit()) {
         // For units (like harvesters), use their exact location, not getClosestPoint
         // getClosestPoint recalculates every frame causing circular flight patterns
@@ -496,7 +498,7 @@ void Carryall::pickupTarget()
             || pGroundUnitTarget->isBadlyDamaged()
             || pGroundUnitTarget->isAwaitingPickup()) {
 
-            if(pGroundUnitTarget->isBadlyDamaged() || (pGroundUnitTarget->hasATarget() == false && pGroundUnitTarget->getItemID() != Unit_Harvester))   {
+            if(pGroundUnitTarget->isBadlyDamaged() || (pGroundUnitTarget->hasATarget() == false && !isHarvesterLikeUnit(pGroundUnitTarget->getItemID())))   {
                 pGroundUnitTarget->doRepair();
             }
 
@@ -507,12 +509,12 @@ void Carryall::pickupTarget()
 
             drawnFrame = 1;
 
-            if(newTarget && (newTarget->getItemID() == Structure_Refinery)) {
+            if(newTarget && getHarvesterDropoff(newTarget) != nullptr) {
                 pGroundUnitTarget->setGuardPoint(pGroundUnitTarget->getLocation());
                 setTarget(newTarget);
                 ObjectBase* pNewTarget = target.getObjPointer();
                 if(pNewTarget != nullptr) {
-                    setDestination(pNewTarget->getLocation() + Coord(2,0));
+                    setDestination(pNewTarget->getLocation() + Coord(getHarvesterDropoff(pNewTarget)->getStructureSizeX() - 1, 0));
                 } else {
                     releaseTarget();
                 }
@@ -540,9 +542,9 @@ void Carryall::pickupTarget()
         }
     } else {
         // get unit from structure
-        if(pTarget->getItemID() == Structure_Refinery) {
-            // get harvester
-            static_cast<Refinery*>(pTarget)->deployHarvester(this);
+        if(getHarvesterDropoff(pTarget) != nullptr) {
+            // get a stored harvester (normal Refinery; Worfinery stores none)
+            getHarvesterDropoff(pTarget)->deployContainedHarvester(this);
         } else if(pTarget->getItemID() == Structure_RepairYard) {
             // get repaired unit
             static_cast<RepairYard*>(pTarget)->deployRepairUnit(this);
@@ -560,16 +562,16 @@ void Carryall::setTarget(const ObjectBase* newTarget) {
         static_cast<GroundUnit*>(oldTarget)->bookCarrier(nullptr);
     }
 
-    if(oldTarget != nullptr && (oldTarget->getItemID() == Structure_Refinery)) {
-        static_cast<Refinery*>(oldTarget)->unBook();
+    if(StructureBase* oldDropoff = getHarvesterDropoff(oldTarget)) {
+        oldDropoff->unbookHarvesterDropoff();
     }
 
     UnitBase::setTarget(newTarget);
 
     ObjectBase* pTarget = target.getObjPointer();
-    if(pTarget != nullptr && (pTarget->getItemID() == Structure_Refinery))
+    if(StructureBase* newDropoff = getHarvesterDropoff(pTarget))
     {
-        static_cast<Refinery*>(pTarget)->book();
+        newDropoff->bookHarvesterDropoff();
     }
 
     if(pTarget != nullptr && targetFriendly && pTarget->isAGroundUnit()) {

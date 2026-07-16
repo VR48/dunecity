@@ -24,6 +24,32 @@
 #include <FileClasses/GFXManager.h>
 #include <FileClasses/TextManager.h>
 #include <FileClasses/music/MusicPlayer.h>
+#include <misc/draw_util.h>
+#include <mod/ModManager.h>
+
+namespace {
+
+std::unique_ptr<Animation> createTornieHouseAnimation(Animation* source, int house) {
+    if(source == nullptr) {
+        return nullptr;
+    }
+
+    const int destination = getHouseColorPaletteIndexFromSlot(house);
+    auto result = std::make_unique<Animation>();
+
+    for(const auto& frame : source->getFrames()) {
+        auto recolored = mapSurfaceColorRange(frame.get(), PALCOLOR_HARKONNEN, destination);
+        recolored = mapSurfaceColorRange(recolored.get(), PALCOLOR_ATREIDES, destination);
+        recolored = mapSurfaceColorRange(recolored.get(), PALCOLOR_ORDOS, destination);
+        result->addFrame(std::move(recolored));
+    }
+
+    result->setFrameDurationTime(source->getFrameDurationTime());
+    result->setNumLoops(source->getLoopsLeft());
+    return result;
+}
+
+}
 
 BriefingMenu::BriefingMenu(int newHouse,int mission,int type) : MentatMenu(newHouse) {
     this->mission = mission;
@@ -69,6 +95,15 @@ BriefingMenu::BriefingMenu(int newHouse,int mission,int type) : MentatMenu(newHo
             text = pTextManager->getBriefingText(missionnumber,MISSION_DESCRIPTION,house);
         } break;
     }
+
+    if(ModManager::instance().isInitialized()
+            && ModManager::instance().getActiveModName() == "Tornie") {
+        tornieHouseAnimation = createTornieHouseAnimation(anim, house);
+        if(tornieHouseAnimation != nullptr) {
+            anim = tornieHouseAnimation.get();
+        }
+    }
+
     setText(text);
     animation.setAnimation(anim);
     windowWidget.addWidget(&animation,Point(256,96),animation.getMinimumSize());
@@ -90,12 +125,14 @@ int BriefingMenu::showMenu()
         {
             switch(house) {
                 case HOUSE_HARKONNEN:
-                case HOUSE_SARDAUKAR: {
+                case HOUSE_SARDAUKAR:
+                case HOUSE_NEUTRAL: {
                     musicPlayer->changeMusic(MUSIC_WIN_H);
                 } break;
 
                 case HOUSE_ATREIDES:
-                case HOUSE_FREMEN: {
+                case HOUSE_FREMEN:
+                case HOUSE_REBELS: {
                     musicPlayer->changeMusic(MUSIC_WIN_A);
                 } break;
 
@@ -110,12 +147,14 @@ int BriefingMenu::showMenu()
         {
             switch(house) {
                 case HOUSE_HARKONNEN:
-                case HOUSE_SARDAUKAR: {
+                case HOUSE_SARDAUKAR:
+                case HOUSE_NEUTRAL: {
                     musicPlayer->changeMusic(MUSIC_LOSE_H);
                 } break;
 
                 case HOUSE_ATREIDES:
-                case HOUSE_FREMEN: {
+                case HOUSE_FREMEN:
+                case HOUSE_REBELS: {
                     musicPlayer->changeMusic(MUSIC_LOSE_A);
                 } break;
 
@@ -130,12 +169,14 @@ int BriefingMenu::showMenu()
         {
             switch(house) {
                 case HOUSE_HARKONNEN:
-                case HOUSE_SARDAUKAR: {
+                case HOUSE_SARDAUKAR:
+                case HOUSE_NEUTRAL: {
                     musicPlayer->changeMusic(MUSIC_BRIEFING_H);
                 } break;
 
                 case HOUSE_ATREIDES:
-                case HOUSE_FREMEN: {
+                case HOUSE_FREMEN:
+                case HOUSE_REBELS: {
                     musicPlayer->changeMusic(MUSIC_BRIEFING_A);
                 } break;
 

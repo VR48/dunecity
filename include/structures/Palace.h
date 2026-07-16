@@ -73,6 +73,7 @@ public:
 
 protected:
     bool callFremen();
+    bool callLightVehicles();
     bool spawnSaboteur();
 
     /**

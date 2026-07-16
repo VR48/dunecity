@@ -8,6 +8,8 @@
 #define CITYSCORE_H
 
 #include <cstdint>
+#include <algorithm>
+#include <SDL2/SDL.h>
 #include <string>
 #include <vector>
 #include <functional>

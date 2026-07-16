@@ -22,6 +22,10 @@
 
 #include <list>
 
+class TrackedUnit;
+class UnitBase;
+class Carryall;
+
 struct StructureSmoke {
     StructureSmoke(const Coord& pos, Uint32 gameCycle)
      : realPos(pos), startGameCycle(gameCycle) {
@@ -112,6 +116,20 @@ public:
         \return true, if this structure can be captured, false otherwise
     */
     virtual bool canBeCaptured() const { return true; }
+
+    // Harvester drop-off interface. Refinery stores/extracts normally;
+    // Worfinery accepts a harvester and unloads it immediately.
+    virtual bool acceptsHarvesterDropoff() const { return false; }
+    virtual bool isHarvesterDropoffFree() const { return false; }
+    virtual int getHarvesterDropoffBookings() const { return 0; }
+    virtual void bookHarvesterDropoff() { }
+    virtual void unbookHarvesterDropoff() { }
+    virtual void startHarvesterDropoffAnimation() { }
+    // Returns true when the unit is stored inside the structure.
+    virtual bool receiveHarvester(TrackedUnit*) { return false; }
+    virtual void deployContainedHarvester(Carryall* = nullptr) { }
+    virtual UnitBase* getContainedHarvesterUnit() { return nullptr; }
+    virtual const UnitBase* getContainedHarvesterUnit() const { return nullptr; }
 
     bool isRepairing() const { return repairing; }
 

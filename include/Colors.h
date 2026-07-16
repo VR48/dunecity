@@ -71,6 +71,15 @@
 #define PALCOLOR_DESERTSAND 105
 #define PALCOLOR_SPICE 111
 #define PALCOLOR_THICKSPICE 116
+
+// DuneCity 1.0.491: per-house color slot constants for the
+// 8-house system. The v1.0.92 baseline only has 6 houses
+// (no NEUTRAL or REBELS), so these constants didn't exist.
+// We add them here to support the Tornie mod's 8-house
+// campaign system. Bonus color values are loaded from
+// Custom_IBM.PAL at runtime; Rebels uses a fixed dark grey ramp.
+#define PALCOLOR_NEUTRAL 128  // slot 128 in IBM.PAL (vanilla grey)
+#define PALCOLOR_REBELS  52   // runtime dark grey ramp for Rebels
 #define PALCOLOR_MOUNTAIN 47
 
 #define PALCOLOR_HARKONNEN 144

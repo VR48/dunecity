@@ -41,12 +41,12 @@ TEST_CASE("PoliceStation: provides full police coverage",
     REQUIRE(getPoliceCoverage(Structure_PoliceStation) == 100);
 }
 
-TEST_CASE("PoliceStation: annual upkeep is 500 (matches SC TOOL_POLICESTATION)",
+TEST_CASE("PoliceStation: annual upkeep is 100 (designer-tuned from SC's 500)",
           "[police-station][police][regression]") {
-    // SC source: MicropolisCore/MicropolisEngine/src/tool.cpp line 218,
-    // gCostOf[TOOL_POLICESTATION] = 500.
+    // Originally matched SC's gCostOf[TOOL_POLICESTATION] = 500;
+    // reduced to 100 to make Police Stations more accessible.
     REQUIRE(getPoliceAnnualCost(Structure_PoliceStation) == kPoliceCostPoliceStation);
-    REQUIRE(getPoliceAnnualCost(Structure_PoliceStation) == 500);
+    REQUIRE(getPoliceAnnualCost(Structure_PoliceStation) == 100);
 }
 
 TEST_CASE("PoliceStation: replaces Barracks/WOR as the police source",
@@ -62,8 +62,8 @@ TEST_CASE("PoliceStation: replaces Barracks/WOR as the police source",
 
 TEST_CASE("PoliceStation: turrets keep their fractional coverage",
           "[police-station][police]") {
-    // The user asked to remove police from Barracks/WOR only — turrets
-    // retain their 1/4 and 1/10 partial coverage as garrison adjacency.
+    // Turrets retain their fractional coverage as garrison adjacency.
+    // Both Gun and Rocket Turrets now provide 25% after tuning.
     REQUIRE(getPoliceCoverage(Structure_GunTurret)    == kPoliceCoverageGunTurret);
     REQUIRE(getPoliceCoverage(Structure_RocketTurret) == kPoliceCoverageRocketTurret);
 }

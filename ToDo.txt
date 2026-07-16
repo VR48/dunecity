@@ -12,10 +12,12 @@ Not all original terrain effects on unit speed are present right now, e.g. units
 Add missing voice announcements
 
 Think about other cursor and indictator graphics
+  - Scale system cursors for high-DPI / 4K displays (cursor pixel size is fixed at native sprite dimensions, needs rescaling or software-rendered cursor override)
 
 Make an option to show the original build icons
 
 Make GUI scale option for higher resolution screens.
+  - Add option to hide version watermark / mod label during gameplay (esp. combat view clutter)
 
 Test sound and music volume
 
@@ -52,6 +54,21 @@ Modding:
 --------
 
 Allow for modifications to be created and used
+
+Tornie - prochaine session:
+---------------------------
+
+- Integrer les feuilles d'unites personnalisees envoyees par Tornie:
+  - C:/Users/canti/OneDrive/Images/Dune 2/Pixelart/units_sp.png
+  - C:/Users/canti/OneDrive/Images/Dune 2/Pixelart/units2_sp.png
+- Utiliser ces feuilles pour customiser Deviator Tornie, Harvestank, Elite Siege Tank et Rocket Trike.
+- Verifier si les masques blancs sont necessaires: les masques par defaut peuvent etre noirs et masquer les sprites.
+- Verifier un possible bug quand une unite Rebels ou Neutral se fait ecraser.
+- Revoir Rebels 1 et toute la campagne pour confirmer qu'elle suit le plan Tornie.
+- Garder Rebels 1 different des autres cartes, avec un defi d'intro.
+- S'assurer que Rocket Trike, Flame Tank et Elite Launcher sont presents dans la campagne Rebels et quand l'adversaire joue Rebels.
+- Dans la campagne Fremen Tornie, verifier que les sandworms ont un adversaire Neutral pour eviter le partage de vision.
+- Continuer le diagnostic des batiments custom invisibles: verifier structure PAK, frames placement/destruction/active/animation, masques et conversion texture.
 
 Ideas:
 ------

@@ -1,0 +1,111 @@
+--- a/src/INIMap/INIMapLoader.cpp
++++ b/src/INIMap/INIMapLoader.cpp
+@@ -36,7 +36,7 @@
+ 
+ namespace {
+ 
+-int chooseSpecialVehicle(Game* pGame, int houseID, int& nextIndex) {
++int chooseSpecialVehicle(Game* pGame, int houseID) {
+     if(pGame == nullptr || houseID < 0 || houseID >= NUM_HOUSES) {
+         return ItemID_Invalid;
+     }
+@@ -44,20 +44,33 @@
+     const bool tornieActive = ModManager::instance().isInitialized()
+         && ModManager::instance().getActiveModName() == "Tornie";
+     const auto pool = getSpecialVehiclePoolForHouse(houseID, tornieActive);
+-    if(pool.empty()) {
+-        return ItemID_Invalid;
+-    }
+ 
+-    for(size_t i = 0; i < pool.size(); i++) {
+-        const int poolIndex = (nextIndex + static_cast<int>(i)) % static_cast<int>(pool.size());
+-        const int candidate = pool[poolIndex];
++    std::vector<int> enabledPool;
++    enabledPool.reserve(pool.size());
++
++    for(const int candidate : pool) {
+         if(isUnit(candidate) && pGame->objectData.data[candidate][houseID].enabled) {
+-            nextIndex = (poolIndex + 1) % static_cast<int>(pool.size());
+-            return candidate;
++            enabledPool.push_back(candidate);
+         }
+     }
+ 
+-    return ItemID_Invalid;
++    if(enabledPool.empty()) {
++        return ItemID_Invalid;
++    }
++
++    // Avoid consuming the synchronized game RNG when there is only one
++    // enabled result. This keeps single-entry pools fully deterministic.
++    if(enabledPool.size() == 1) {
++        return enabledPool.front();
++    }
++
++    // Use the game's synchronized RNG so scenario loading remains identical
++    // for every multiplayer peer and reproducible from the same game state.
++    const Sint32 randomIndex = pGame->randomGen.rand(
++        static_cast<Sint32>(0),
++        static_cast<Sint32>(enabledPool.size() - 1));
++
++    return enabledPool[static_cast<size_t>(randomIndex)];
+ }
+ 
+ } // namespace
+@@ -615,11 +628,6 @@
+         return;
+     }
+ 
+-    int nextSpecialUnitIndex[NUM_HOUSES];
+-    for(int i=0;i<NUM_HOUSES;i++) {
+-        nextSpecialUnitIndex[i] = 0;
+-    }
+-
+     for(const INIFile::Key& key : inifile->getSection("UNITS")) {
+         if(key.getKeyName().find("ID") == 0) {
+             std::string HouseStr, UnitStr, health, PosStr, rotation, mode;
+@@ -665,7 +673,7 @@
+                 itemID = Unit_Trooper;
+                 Num2Place = 3;
+             } else if(itemID == Unit_Special) {
+-                itemID = chooseSpecialVehicle(pGame, houseID, nextSpecialUnitIndex[houseID]);
++                itemID = chooseSpecialVehicle(pGame, houseID);
+                 if(itemID == ItemID_Invalid) {
+                     continue;
+                 }
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -1,7 +1,7 @@
+ cmake_minimum_required(VERSION 3.15)
+ 
+ # Project name and version
+-project(DuneCity VERSION 1.0.519 LANGUAGES C CXX)
++project(DuneCity VERSION 1.0.520 LANGUAGES C CXX)
+ 
+ # Set C++ standard
+ set(CMAKE_CXX_STANDARD 17)
+--- a/include/config.h
++++ b/include/config.h
+@@ -16,7 +16,7 @@
+  */
+ 
+ #ifndef VERSION
+-    #define VERSION "1.0.519"
++    #define VERSION "1.0.520"
+ #endif
+ 
+ #ifndef PACKAGE
+--- a/release_notes/RELEASE_NOTES.md
++++ b/release_notes/RELEASE_NOTES.md
+@@ -1,5 +1,11 @@
+ # DuneCity Tornie Edition Release Notes
+ 
++## Version 1.0.520
++
++- `Unit_Special` scenario entries now choose randomly from every enabled vehicle in the selected House pool when more than one result is available.
++- Single-entry and single-enabled-entry pools remain deterministic and do not consume the synchronized game RNG.
++- The scenario loader now uses the same synchronized game random generator as runtime special-unit creation and Tech Center spawning.
++
+ ## Version 1.0.519
+ 
+ - Added the Rebels Sonic Trike and finalized Tornie-only unit progression.

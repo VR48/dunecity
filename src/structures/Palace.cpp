@@ -30,6 +30,7 @@
 #include <players/HumanPlayer.h>
 
 #include <units/InfantryBase.h>
+#include <units/UnitBase.h>
 #include <units/Trooper.h>
 #include <units/Saboteur.h>
 
@@ -123,8 +124,16 @@ void Palace::doSpecialWeapon() {
             }
         } break;
 
+        case HOUSE_NEUTRAL:
+        case HOUSE_REBELS: {
+            if(callLightVehicles()) {
+                specialWeaponTimer = getMaxSpecialWeaponTimer();
+            }
+        } break;
+
         default: {
-            THROW(std::runtime_error, "Palace::DoSpecialWeapon(): Invalid house");
+            SDL_Log("PALACE: Ignoring special weapon for unsupported house %d", originalHouseID);
+            return;
         } break;
     }
 }
@@ -275,4 +284,75 @@ bool Palace::spawnSaboteur() {
     }
 
     return true;
+}
+
+bool Palace::callLightVehicles() {
+    int count = 0;
+    int x;
+    int y;
+    do {
+        x = currentGame->randomGen.rand(1, currentGameMap->getSizeX()-2);
+        y = currentGame->randomGen.rand(1, currentGameMap->getSizeY()-2);
+    } while((currentGameMap->getTile(x-1, y-1)->hasAGroundObject()
+            || currentGameMap->getTile(x, y-1)->hasAGroundObject()
+            || currentGameMap->getTile(x+1, y-1)->hasAGroundObject()
+            || currentGameMap->getTile(x-1, y)->hasAGroundObject()
+            || currentGameMap->getTile(x, y)->hasAGroundObject()
+            || currentGameMap->getTile(x+1, y)->hasAGroundObject()
+            || currentGameMap->getTile(x-1, y+1)->hasAGroundObject()
+            || currentGameMap->getTile(x, y+1)->hasAGroundObject()
+            || currentGameMap->getTile(x+1, y+1)->hasAGroundObject())
+            && (count++ <= 1000));
+
+    if(count >= 1000) {
+        if(getOwner() == pLocalHouse) {
+            currentGame->addToNewsTicker(_("Unable to spawn vehicles"));
+        }
+        return false;
+    }
+
+    const int trikeCount = currentGame->randomGen.rand(1, 3);
+    const int quadCount = currentGame->randomGen.rand(0, 2);
+    int spawned = 0;
+
+    const auto spawnVehicle = [&](int itemID) {
+        UnitBase* newUnit = getOwner()->createUnit(itemID);
+        if(newUnit == nullptr) {
+            return;
+        }
+
+        for(int tries = 0; tries < 30; ++tries) {
+            const int i = currentGame->randomGen.rand(-1, 1);
+            const int j = currentGame->randomGen.rand(-1, 1);
+            const Coord deployPos(x + i, y + j);
+
+            if(currentGameMap->getTile(deployPos)->hasAGroundObject()) {
+                continue;
+            }
+            if(!newUnit->canPass(deployPos.x, deployPos.y)) {
+                continue;
+            }
+
+            newUnit->deploy(deployPos);
+            newUnit->setGuardPoint(deployPos);
+            newUnit->doSetAttackMode(HUNT);
+            spawned++;
+            return;
+        }
+
+        delete newUnit;
+    };
+
+    for(int i = 0; i < trikeCount; ++i) {
+        spawnVehicle(Unit_Trike);
+    }
+    for(int i = 0; i < quadCount; ++i) {
+        spawnVehicle(Unit_Quad);
+    }
+
+    if(spawned <= 0 && getOwner() == pLocalHouse) {
+        currentGame->addToNewsTicker(_("Unable to spawn vehicles"));
+    }
+
+    return spawned > 0;
 }

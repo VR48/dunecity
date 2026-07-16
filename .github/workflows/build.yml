@@ -38,6 +38,33 @@ jobs:
           fi
           echo "OK — all source files agree on $SOURCE_VERSION, matches tag v${TAG_VERSION}"
 
+  test-linux:
+    runs-on: ubuntu-latest
+    needs: [verify-version]
+    if: always() && (needs.verify-version.result == 'success' || needs.verify-version.result == 'skipped')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libsdl2-dev libsdl2-mixer-dev libsdl2-ttf-dev \
+            libcurl4-openssl-dev \
+            catch2
+
+      - name: Configure CMake
+        run: cmake -B build -DDUNECITY_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Build tests
+        run: cmake --build build --target dunelegacy_tests
+
+      - name: Run tests
+        run: |
+          DUNE_CITY_SOURCE_DIR=${{ github.workspace }} \
+          DUNECITY_DATADIR=${{ github.workspace }}/data \
+          ./build/bin/dunelegacy_tests
+
   build-windows:
     runs-on: windows-latest
     # Wait for version check on tag builds; run unconditionally otherwise
@@ -74,24 +101,42 @@ jobs:
           path: build/*.zip
 
   build-macos:
+    # Self-hosted on Stefan's MacBook (8-core arm64) with a warm vcpkg binary
+    # cache. GitHub's free hosted macos-14 runner is a 3-core box that took
+    # ~70 min per cold build (and its 60-min cap killed a run); this machine
+    # builds in ~10 min. The DMG is ad-hoc signed, so no signing certs needed.
     runs-on: [self-hosted, macOS, ARM64]
     needs: [verify-version]
     if: always() && (needs.verify-version.result == 'success' || needs.verify-version.result == 'skipped')
+    timeout-minutes: 60
     env:
-      PATH: /opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+      CMAKE_BUILD_PARALLEL_LEVEL: "8"
     steps:
       - uses: actions/checkout@v4
 
       - name: Clean previous build
         run: rm -rf build
 
+      # vcpkg builds SDL2 + its audio codecs, curl, miniupnpc and discord-rpc
+      # from source; ensure the autotools toolchain + nasm are present
+      # (idempotent — already installed on the runner).
+      - name: Install build deps
+        run: brew install autoconf autoconf-archive automake libtool pkg-config nasm ninja || true
+
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
         with:
           vcpkgJsonGlob: 'vcpkg.json'
 
+      # Use the machine-local vcpkg binary cache (already warm) so deps restore
+      # instead of rebuilding from source.
+      - name: Fix vcpkg binary caching
+        run: |
+          mkdir -p "$HOME/.cache/vcpkg/archives"
+          echo "VCPKG_BINARY_SOURCES=clear;files,$HOME/.cache/vcpkg/archives,readwrite" >> "$GITHUB_ENV"
+
       - name: Configure CMake
-        run: cmake -B build -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+        run: cmake -B build -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
 
       - name: Build
         run: cmake --build build --config Release --parallel
@@ -184,6 +229,36 @@ jobs:
           cmake --install . --prefix install --config Release
           cpack -G "DEB;RPM;TGZ" -C Release
 
+      - name: Create AppImage
+        run: |
+          # Download linuxdeploy (fuse-less FUSE_APPIMAGE_EXTRACT_AND_RUN avoids
+          # "fuse: device not found" errors on GitHub-hosted runners)
+          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          chmod +x linuxdeploy-x86_64.AppImage
+
+          # Stage the AppDir from the cmake install tree
+          cd build
+          cmake --install . --prefix AppDir/usr --config Release
+
+          # Ensure icons and desktop file are in the right AppDir locations
+          mkdir -p AppDir/usr/share/applications AppDir/usr/share/icons/hicolor/128x128/apps
+          cp ../dunecity.desktop AppDir/usr/share/applications/
+          cp ../dunecity-128x128.png AppDir/usr/share/icons/hicolor/128x128/apps/dunecity.png
+
+          # linuxdeploy bundles the binary's shared-library dependencies into the
+          # AppDir, generates AppRun, and creates the final .AppImage
+          ARCH=x86_64 FUSE_APPIMAGE_EXTRACT_AND_RUN=1 \
+            ../linuxdeploy-x86_64.AppImage \
+            --appdir AppDir \
+            --executable AppDir/usr/bin/dunecity \
+            --desktop-file AppDir/usr/share/applications/dunecity.desktop \
+            --icon-file AppDir/usr/share/icons/hicolor/128x128/apps/dunecity.png \
+            --output appimage
+
+          # Rename with version for clarity
+          VERSION=$(sed -n 's/^project(DuneCity VERSION \([0-9]*\.[0-9]*\.[0-9]*\).*/\1/p' ../CMakeLists.txt)
+          mv DuneCity-*.AppImage "DuneCity-${VERSION}-Linux-x86_64.AppImage" 2>/dev/null || true
+
       - name: Upload Packages
         uses: actions/upload-artifact@v4
         with:
@@ -192,12 +267,16 @@ jobs:
             build/*.deb
             build/*.rpm
             build/*.tar.gz
+            build/*.AppImage
 
   # Rolling dev build: update a "latest-dev" pre-release on every main push
   # so builds are always downloadable from the releases page.
   dev-release:
-    needs: [build-windows, build-macos]
-    if: github.ref == 'refs/heads/main'
+    needs: [build-windows, build-linux, build-macos]
+    if: |
+      always() &&
+      github.ref == 'refs/heads/main' &&
+      (needs.build-windows.result == 'success' || needs.build-linux.result == 'success' || needs.build-macos.result == 'success')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -295,7 +374,9 @@ jobs:
             echo "**Downloads** (attached below):"
             echo "- Windows: \`DuneCity-*.zip\`"
             echo "- macOS: \`DuneCity-*.dmg\`"
-            echo "- Linux: \`.deb\` / \`.rpm\` / \`.tar.gz\`"
+            echo "- Linux: \`.AppImage\` (recommended) / \`.deb\` / \`.rpm\` / \`.tar.gz\`"
+            echo
+            echo "**Running on macOS:** the build is ad-hoc signed, so Gatekeeper blocks it on first launch (\"dunecity.app was blocked to protect your Mac\"). It's not damaged — approve it once: **System Settings → Privacy & Security → Open Anyway** (macOS 15/26), or right-click the app → **Open** on macOS 14 and earlier. Details: https://dunelegacy.com/dune-city.html#macos-fix"
             echo
             echo "Upgrading from a previous Dune City install? Your built-in mod INI files are reseeded automatically on first launch."
           } > "$NOTES_FILE"
@@ -314,13 +395,21 @@ jobs:
 
       - name: Update dunelegacy.com website
         env:
-          WEBSITE_TOKEN: ${{ secrets.WEBSITE_DEPLOY_TOKEN }}
+          WEBSITE_DEPLOY_KEY: ${{ secrets.WEBSITE_DEPLOY_KEY }}
           TAG: ${{ github.ref_name }}
         run: |
           # Strip leading 'v' to get bare version number (e.g. v1.0.5 -> 1.0.5)
           VERSION="${TAG#v}"
 
-          git clone "https://x-access-token:${WEBSITE_TOKEN}@github.com/svan058/dunelegacy.com.git" website-repo
+          # Authenticate to dunelegacy.com with an SSH deploy key (write-enabled).
+          # Deploy keys don't expire — unlike the old WEBSITE_DEPLOY_TOKEN PAT,
+          # which lapsed and silently broke this step.
+          mkdir -p ~/.ssh
+          printf '%s\n' "$WEBSITE_DEPLOY_KEY" > ~/.ssh/website_deploy
+          chmod 600 ~/.ssh/website_deploy
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/website_deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+
+          git clone git@github.com:svan058/dunelegacy.com.git website-repo
           cd website-repo
 
           # Guard: don't let a stale older run overwrite a newer version

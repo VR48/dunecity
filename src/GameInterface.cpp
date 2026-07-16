@@ -178,6 +178,10 @@ GameInterface::GameInterface() : Window(0,0,0,0) {
                                Point(marginX,
                                      getRendererHeight() - labelHeight - marginY),
                                Point(labelWidth, labelHeight));
+
+        if (!settings.video.showWatermark) {
+            modVersionLabel.setVisible(false);
+        }
     }
 }
 

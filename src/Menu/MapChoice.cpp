@@ -368,7 +368,7 @@ void MapChoice::createMapSurfaceWithPieces(unsigned int scenario) {
 void MapChoice::loadINI() {
     const std::string filename = fmt::sprintf("REGION%c.INI", houseChar[house]);
 
-    INIFile RegionINI(pFileManager->openFile(filename).get());
+    INIFile RegionINI(pFileManager->openCampaignFile(filename).get());
 
     piecePosition[0].x = 0;
     piecePosition[0].y = 0;
@@ -405,6 +405,8 @@ void MapChoice::loadINI() {
                 case HOUSE_FREMEN:      key = "FRE"; break;
                 case HOUSE_SARDAUKAR:   key = "SAR"; break;
                 case HOUSE_MERCENARY:   key = "MER"; break;
+                case HOUSE_NEUTRAL:     key = "NEU"; break;
+                case HOUSE_REBELS:      key = "REB"; break;
             }
 
             std::string strValue = RegionINI.getStringValue(strSection,key);
