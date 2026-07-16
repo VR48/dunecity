@@ -101,13 +101,15 @@ jobs:
           path: build/*.zip
 
   build-macos:
+    # Optional: set the repository variable ENABLE_MACOS_BUILD=true when a
+    # compatible self-hosted runner is online.
     # Self-hosted on Stefan's MacBook (8-core arm64) with a warm vcpkg binary
     # cache. GitHub's free hosted macos-14 runner is a 3-core box that took
     # ~70 min per cold build (and its 60-min cap killed a run); this machine
     # builds in ~10 min. The DMG is ad-hoc signed, so no signing certs needed.
     runs-on: [self-hosted, macOS, ARM64]
     needs: [verify-version]
-    if: always() && (needs.verify-version.result == 'success' || needs.verify-version.result == 'skipped')
+    if: always() && vars.ENABLE_MACOS_BUILD == 'true' && (needs.verify-version.result == 'success' || needs.verify-version.result == 'skipped')
     timeout-minutes: 60
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: "8"
@@ -332,9 +334,9 @@ jobs:
   # so creating a release here automatically flips every existing
   # install's "update available" flag the next time they launch.
   release:
-    needs: [verify-version, build-windows, build-macos]
-    # Linux is best-effort; Windows + macOS are required for release
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [verify-version, build-windows, build-linux, build-macos]
+    # Windows is required. Linux and macOS are attached when available.
+    if: always() && startsWith(github.ref, 'refs/tags/v') && needs.verify-version.result == 'success' && needs.build-windows.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -349,6 +351,7 @@ jobs:
 
       - name: Download macOS artifact
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: DuneCity-macOS-DMG
           path: dist/macos
@@ -373,10 +376,12 @@ jobs:
             echo
             echo "**Downloads** (attached below):"
             echo "- Windows: \`DuneCity-*.zip\`"
-            echo "- macOS: \`DuneCity-*.dmg\`"
+            echo "- macOS (when available): \`DuneCity-*.dmg\`"
             echo "- Linux: \`.AppImage\` (recommended) / \`.deb\` / \`.rpm\` / \`.tar.gz\`"
-            echo
-            echo "**Running on macOS:** the build is ad-hoc signed, so Gatekeeper blocks it on first launch (\"dunecity.app was blocked to protect your Mac\"). It's not damaged — approve it once: **System Settings → Privacy & Security → Open Anyway** (macOS 15/26), or right-click the app → **Open** on macOS 14 and earlier. Details: https://dunelegacy.com/dune-city.html#macos-fix"
+            if compgen -G "dist/macos/*.dmg" > /dev/null; then
+              echo
+              echo "**Running on macOS:** the build is ad-hoc signed, so Gatekeeper blocks it on first launch (\"dunecity.app was blocked to protect your Mac\"). It's not damaged — approve it once: **System Settings → Privacy & Security → Open Anyway** (macOS 15/26), or right-click the app → **Open** on macOS 14 and earlier. Details: https://dunelegacy.com/dune-city.html#macos-fix"
+            fi
             echo
             echo "Upgrading from a previous Dune City install? Your built-in mod INI files are reseeded automatically on first launch."
           } > "$NOTES_FILE"
