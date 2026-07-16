@@ -69,6 +69,7 @@
 //#include <sys/types.h>
 //#include <sys/stat.h>
 #include <fcntl.h>
+#include <signal.h>
 
 
 #ifdef _WIN32
@@ -610,6 +611,20 @@ void logOutputFunction(void *userdata, int category, SDL_LogPriority priority, c
     */
     fprintf(stderr, "%s\n", message);
     fflush(stderr);
+
+    // DuneCity 1.0.501: mirror all SDL logs to dunecity-crash.log next to the
+    // executable. On Windows release builds stderr isn't visible, so a silent
+    // crash in the async GFXManager/SFXManager loaders left users (Tornie)
+    // staring at a black screen with no diagnostic. The log file gives Stefan
+    // something to attach to a bug report.
+    static FILE* logFile = nullptr;
+    if(logFile == nullptr) {
+        logFile = fopen("dunecity-crash.log", "w");
+    }
+    if(logFile != nullptr) {
+        fprintf(logFile, "%s\n", message);
+        fflush(logFile);
+    }
 }
 
 void showMissingFilesMessageBox() {
@@ -679,6 +694,81 @@ int main(int argc, char *argv[]) {
     SDL_LogSetPriority(SDL_LOG_CATEGORY_APPLICATION, SDL_LOG_PRIORITY_VERBOSE);
 
     SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1");
+
+    // v1.0.512: build-stamp log so Stefan can verify the binary on disk
+    // actually contains the v1.0.5xx fixes. If this line is missing from
+    // the run log, the .exe is stale.
+    SDL_Log("DuneCity v%s — build stamp active", std::string(VERSION).c_str());
+
+    // v1.0.514: install SIGSEGV/SIGABRT/SIGFPE handler so a fatal native
+    // crash (nullptr deref, divide by zero, etc.) writes a diagnostic to
+    // dunecity-crash.log before the process dies, instead of dying silently
+    // with no visible feedback. The handler then re-raises the signal with
+    // the default handler so a debugger can attach if running under one.
+    // This is the Tornie fix for the silent SIGSEGV that Stefan reported:
+    // a previous binary (v1.0.499 etc.) crashed at the main menu after
+    // Discord connected and there was no log entry to diagnose why. With
+    // this handler, the crash dump is written before exit so the cause
+    // can be inspected post-mortem.
+    #ifndef _WIN32
+    {
+        struct sigaction sa {};
+        sa.sa_sigaction = [](int sig, siginfo_t* info, void* /*ucontext*/) {
+            // Async-signal-safe: only write(), no malloc, no SDL_Log, no fprintf
+            // to a FILE* (those can deadlock). Use raw write() to fd 2 (stderr)
+            // and a fixed file descriptor for the crash log.
+            const char* sigName = "UNKNOWN";
+            switch(sig) {
+                case SIGSEGV: sigName = "SIGSEGV"; break;
+                case SIGABRT: sigName = "SIGABRT"; break;
+                case SIGFPE:  sigName = "SIGFPE";  break;
+                default: break;
+            }
+            char buf[512];
+            int n = snprintf(buf, sizeof(buf),
+                "\n=== DuneCity fatal crash ===\n"
+                "  Signal:  %d (%s)\n"
+                "  Reason:  %d (si_code)\n"
+                "  Address: %p (si_addr)\n"
+                "  Version: %s\n"
+                "  Stack trace not available (would require libunwind).\n"
+                "  Check Dune City.log for the last SDL_Log lines before the\n"
+                "  crash — that is where the actionable diagnostic lives.\n"
+                "=============================\n",
+                sig, sigName, info->si_code, info->si_addr, VERSION);
+            if(n > 0) {
+                // stderr
+                (void)!write(2, buf, n);
+                // crash log file (best-effort, opened each invocation)
+                int fd = open("dunecity-crash.log",
+#ifdef O_APPEND
+                    O_WRONLY | O_CREAT | O_APPEND
+#else
+                    O_WRONLY | O_CREAT
+#endif
+                    , 0644);
+                if(fd >= 0) {
+                    (void)!write(fd, buf, n);
+                    close(fd);
+                }
+            }
+            // Re-raise with the default handler so a debugger can catch
+            // the signal and the process exits with the conventional code.
+            struct sigaction dfl {};
+            dfl.sa_handler = SIG_DFL;
+            sigemptyset(&dfl.sa_mask);
+            dfl.sa_flags = 0;
+            sigaction(sig, &dfl, nullptr);
+            raise(sig);
+        };
+        sa.sa_flags = SA_SIGINFO | SA_RESETHAND;
+        sigemptyset(&sa.sa_mask);
+        sigaction(SIGSEGV, &sa, nullptr);
+        sigaction(SIGABRT, &sa, nullptr);
+        sigaction(SIGFPE,  &sa, nullptr);
+        SDL_Log("DuneCity: SIGSEGV/SIGABRT/SIGFPE handler installed");
+    }
+    #endif
 
     // global try/catch around everything
     try {
@@ -1065,23 +1155,8 @@ int main(int argc, char *argv[]) {
                 pTextManager->loadData();
 
                 palette = LoadPalette_RW(pFileManager->openFile("IBM.PAL").get());
-                ibmPalette = palette;  // save vanilla IBM.PAL before any mod overrides
-
-                // Tornie mod: load Custom_IBM.pal to replace palette entries 192-199 with rebels grey
-                if (ModManager::instance().getActiveModName() == "Tornie" && pFileManager->exists("Custom_IBM.pal")) {
-                    auto palRw = pFileManager->openFile("Custom_IBM.pal");
-                    std::vector<Uint8> palData(768);
-                    SDL_RWread(palRw.get(), palData.data(), 1, 768);
-                    for (int i = 192; i < 200; ++i) {
-                        SDL_Color c;
-                        c.r = std::min(255, (int)palData[i*3+0] * 4);
-                        c.g = std::min(255, (int)palData[i*3+1] * 4);
-                        c.b = std::min(255, (int)palData[i*3+2] * 4);
-                        c.a = 255;
-                        palette[i] = c;
-                    }
-                    SDL_Log("Tornie Custom_IBM.pal applied (rebels grey range 192-199)");
-                }
+                loadCustomPalette();
+                applyCustomPaletteRuntimeHouseRamps();
 
                 SDL_Log("Setting video mode...");
                 setVideoMode(currentDisplayIndex);
@@ -1089,15 +1164,15 @@ int main(int argc, char *argv[]) {
                 // Give the renderer time to fully initialize
                 SDL_Delay(100);
                 
+                SDL_RendererInfo rendererInfo;
+                SDL_GetRendererInfo(renderer, &rendererInfo);
+                SDL_Log("Renderer: %s (max texture size: %dx%d)", rendererInfo.name, rendererInfo.max_texture_width, rendererInfo.max_texture_height);
+
                 // Verify renderer is valid before proceeding
                 if(renderer == nullptr) {
                     SDL_Log("Error: Renderer is null after setVideoMode!");
                     THROW(std::runtime_error, "Failed to create renderer during video mode initialization");
                 }
-
-                SDL_RendererInfo rendererInfo;
-                SDL_GetRendererInfo(renderer, &rendererInfo);
-                SDL_Log("Renderer: %s (max texture size: %dx%d)", rendererInfo.name, rendererInfo.max_texture_width, rendererInfo.max_texture_height);
 
                 SDL_Log("Loading fonts...");
                 pFontManager = std::make_unique<FontManager>();
@@ -1108,8 +1183,37 @@ int main(int argc, char *argv[]) {
                 auto gfxManagerFut = std::async(std::launch::async, []() { return std::make_unique<GFXManager>(); } );
                 auto sfxManagerFut = std::async(std::launch::async, []() { return std::make_unique<SFXManager>(); } );
 
-                pGFXManager = gfxManagerFut.get();
-                pSFXManager = sfxManagerFut.get();
+                // DuneCity 1.0.501: catch any exception from the async loaders
+                // so a failed load produces a visible error dialog + log file
+                // entry instead of the silent death that 1.0.499 had (Tornie
+                // OOB: "game doesn't launch, no alert, just nothing").
+                try {
+                    pGFXManager = gfxManagerFut.get();
+                } catch(const std::exception& e) {
+                    std::string msg = std::string("GFXManager failed to initialize:\n\n") + e.what()
+                                    + "\n\nA required data file is probably missing or the bundled PAK is corrupt."
+                                    + "\nSee dunecity-crash.log next to the executable for the full SDL log.";
+                    SDL_LogCritical(SDL_LOG_CATEGORY_APPLICATION, "%s", msg.c_str());
+                    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "DuneCity — graphics load failed", msg.c_str(), nullptr);
+                    THROW(std::runtime_error, "%s", msg.c_str());
+                } catch(...) {
+                    SDL_LogCritical(SDL_LOG_CATEGORY_APPLICATION, "GFXManager failed to initialize: unknown exception");
+                    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "DuneCity — graphics load failed",
+                                              "GFXManager threw an unknown exception. See dunecity-crash.log.", nullptr);
+                    THROW(std::runtime_error, "GFXManager unknown exception");
+                }
+
+                try {
+                    pSFXManager = sfxManagerFut.get();
+                } catch(const std::exception& e) {
+                    // SFX is non-fatal: log and continue with a null manager so the
+                    // game at least shows the menu. Audio will be silent but visible.
+                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "SFXManager failed to initialize: %s — continuing without audio", e.what());
+                    pSFXManager = nullptr;
+                } catch(...) {
+                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "SFXManager threw an unknown exception — continuing without audio");
+                    pSFXManager = nullptr;
+                }
 #else
                 // g++ does not provide std::launch::async on all platforms
                 pGFXManager = std::make_unique<GFXManager>();

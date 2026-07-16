@@ -27,9 +27,22 @@
 #include <GameInitSettings.h>
 #include <sand.h>
 
-static const int houseOrder[] = { HOUSE_ATREIDES, HOUSE_ORDOS, HOUSE_HARKONNEN, HOUSE_MERCENARY, HOUSE_FREMEN, HOUSE_SARDAUKAR, HOUSE_NEUTRAL, HOUSE_REBELS };
-
 namespace {
+const int houseOrder[] = {
+    HOUSE_ATREIDES,
+    HOUSE_ORDOS,
+    HOUSE_HARKONNEN,
+    HOUSE_MERCENARY,
+    HOUSE_FREMEN,
+    HOUSE_SARDAUKAR,
+    HOUSE_NEUTRAL,
+    HOUSE_REBELS
+};
+
+constexpr int kVisibleHouseButtons = 3;
+constexpr int kHouseChoiceCount = sizeof(houseOrder) / sizeof(houseOrder[0]);
+constexpr int kMaxHouseScrollPos = kHouseChoiceCount - kVisibleHouseButtons;
+
 const char* const kSupportPlayerClasses[] = {
     "",
     "qBotSupportEasy",
@@ -311,14 +324,14 @@ void SinglePlayerSkirmishMenu::onHouseLeft()
 
 void SinglePlayerSkirmishMenu::onHouseRight()
 {
-    if(currentHouseChoiceScrollPos < 4) {
+    if(currentHouseChoiceScrollPos < kMaxHouseScrollPos) {
         currentHouseChoiceScrollPos++;
         selectedButton--;
         onSelectHouseButton(selectedButton);
         updateHouseChoice();
 
         houseLeftButton.setVisible(true);
-        houseRightButton.setVisible( (currentHouseChoiceScrollPos < 4) );
+        houseRightButton.setVisible( (currentHouseChoiceScrollPos < kMaxHouseScrollPos) );
     }
 }
 

@@ -20,7 +20,6 @@
 #include <FileClasses/TextManager.h>
 
 #include <globals.h>
-#include <mod/ModManager.h>
 
 #include <SoundPlayer.h>
 #include <Map.h>
@@ -28,27 +27,80 @@
 #include <Game.h>
 #include <dunecity/CitySimulation.h>
 #include <units/UnitBase.h>
+#include <units/HarvesterHelpers.h>
 
 #include <players/HumanPlayer.h>
 
 #include <GUI/ObjectInterfaces/BuilderInterface.h>
 
+#include <algorithm>
+
 const int BuilderBase::itemOrder[] = {    Structure_Slab4, Structure_Slab1, Structure_Road, Structure_IX, Structure_StarPort,
                                            Structure_HighTechFactory, Structure_HeavyFactory, Structure_RocketTurret,
-                                           Structure_RepairYard, Structure_GunTurret, Structure_WOR,
+                                           Structure_Scoutpost,
+                                           Structure_RepairYard, Structure_GunTurret, Structure_TechCenter, Structure_WOR,
+                                           Structure_Worfinery,
                                            Structure_Barracks, Structure_Wall, Structure_LightFactory,
                                            Structure_Silo, Structure_Radar, Structure_Refinery, Structure_WindTrap,
-                                           Structure_NuclearPlant, Structure_AdvancedWindTrap,
-                                           Structure_PoliceStation, Structure_Palace,
+                                           Structure_AdvancedWindTrap, Structure_AdvancedWindTrapMK2, Structure_AdvancedWindTrapMK3,
+                                           Structure_NuclearPlant, Structure_PoliceStation, Structure_Palace,
                                            Structure_Stadium, Structure_Airport,
                                            Structure_ZoneResidential, Structure_ZoneCommercial, Structure_ZoneIndustrial,
-                                           Unit_EliteLauncher, Unit_EliteSiegeTank, Unit_FlameTank,
                                            Unit_SonicTank, Unit_Devastator, Unit_Deviator, Unit_Special,
-                                           Unit_Launcher, Unit_SiegeTank, Unit_Tank, Unit_MCV, Unit_Harvester,
-                                           Unit_Ornithopter, Unit_Carryall, Unit_Quad, Unit_RaiderTrike,
-                                           Unit_RocketTrike,
+                                           Unit_EliteLauncher, Unit_EliteSiegeTank, Unit_FlameTank,
+                                           Unit_Launcher, Unit_SiegeTank, Unit_Tank, Unit_MCV,
+                                           Unit_RebelHarvester, Unit_Harvester,
+                                           Unit_Ornithopter, Unit_Carryall, Unit_Quad, Unit_RocketTrike, Unit_SonicTrike, Unit_RaiderTrike,
                                            Unit_Trike, Unit_Troopers, Unit_Trooper, Unit_Infantry, Unit_Soldier,
                                            Unit_Frigate, Unit_Sandworm, Unit_Saboteur, ItemID_Invalid };
+
+namespace {
+bool isWorfineryDirectProduct(Uint32 itemID) {
+    return itemID == Unit_Trooper
+        || itemID == Unit_Troopers
+        || itemID == Unit_Harvester;
+}
+
+bool isAlternateTornieBuilder(Uint32 builderID, Uint32 itemID) {
+    return builderID == Structure_Worfinery && isWorfineryDirectProduct(itemID);
+}
+
+void logTechCenterBuildGate(const BuilderBase* builder,
+                            const House* owner,
+                            const ObjectData::ObjectDataStruct& objData,
+                            bool producedHere,
+                            bool prerequisitesMet,
+                            int missingPrerequisite,
+                            const char* reason,
+                            bool available) {
+    if(builder == nullptr || owner == nullptr || currentGame == nullptr) {
+        return;
+    }
+
+    SDL_Log("TornieBuild: TechCenter builderObject=%u house=%d originalHouse=%d "
+            "gameTech=%d itemTech=%d enabled=%d builder=%d currentBuilder=%d "
+            "producedHere=%d upgrade=%d/%d prereqMet=%d missingPrereq=%d "
+            "hasWindtrap=%d hasIX=%d hasPalace=%d available=%d reason=%s",
+            builder->getObjectID(),
+            owner->getHouseID(),
+            builder->getOriginalHouseID(),
+            currentGame->techLevel,
+            objData.techLevel,
+            objData.enabled ? 1 : 0,
+            objData.builder,
+            builder->getItemID(),
+            producedHere ? 1 : 0,
+            builder->getCurrentUpgradeLevel(),
+            objData.upgradeLevel,
+            prerequisitesMet ? 1 : 0,
+            missingPrerequisite,
+            owner->getNumItems(Structure_WindTrap),
+            owner->getNumItems(Structure_IX),
+            owner->getNumItems(Structure_Palace),
+            available ? 1 : 0,
+            reason);
+}
+}
 
 BuilderBase::BuilderBase(House* newOwner) : StructureBase(newOwner) {
     BuilderBase::init();
@@ -207,7 +259,7 @@ bool BuilderBase::isUnitLimitReached(Uint32 itemID) const {
     }
 
     // Check harvester-specific limit first
-    if(itemID == Unit_Harvester) {
+    if(isHarvesterLikeUnit(itemID)) {
         return getOwner()->isHarvesterLimitReached();
     }
 
@@ -229,24 +281,25 @@ void BuilderBase::updateProductionProgress() {
 
             FixPoint oldProgress = productionProgress;
 
-            // City-sim mode: roads feel right as instant placement (think
-            // SimCity road-laying), not Dune-style timed construction. Roads
-            // are a single-tile city-sim structure that mutates tile state on
-            // placement; gating them behind a build timer would feel sluggish
-            // for laying out a road network. Concrete slabs use the normal Dune
-            // build timer — they're core Dune infrastructure, not city-sim.
+            // City-sim mode: concrete slabs AND road tiles feel right as
+            // instant placement (think SimCity road-laying), not Dune-style
+            // timed construction. Roads are a single-tile structure that
+            // mutates tile state on placement; gating them behind a build
+            // timer would feel sluggish for laying out a road network.
             const bool tileLikeInCityMode = currentGame->isCitySimEnabled()
-                                        && (currentProducedItem == Structure_Road);
+                                        && (currentProducedItem == Structure_Slab1
+                                         || currentProducedItem == Structure_Slab4
+                                         || currentProducedItem == Structure_Road);
 
             if(currentGame->getGameInitSettings().getGameOptions().instantBuild == true || tileLikeInCityMode) {
-                FixPoint totalBuildCosts = currentGame->objectData.data[currentProducedItem][originalHouseID].price;
+                FixPoint totalBuildCosts = tmp->price;
                 FixPoint buildCosts = totalBuildCosts - productionProgress;
 
                 productionProgress += owner->takeCredits(buildCosts);
             } else {
 
                 FixPoint buildSpeed = std::min( getHealth() / getMaxHealth(), buildSpeedLimit);
-                FixPoint totalBuildCosts = currentGame->objectData.data[currentProducedItem][originalHouseID].price;
+                FixPoint totalBuildCosts = tmp->price;
                 FixPoint totalBuildGameTicks = currentGame->objectData.data[currentProducedItem][originalHouseID].buildtime*15;
                 FixPoint buildCosts = totalBuildCosts / totalBuildGameTicks;
 
@@ -330,13 +383,6 @@ void BuilderBase::updateBuildList()
             continue;
         }
 
-        // AdvancedWindTrap and Flame Tank are exclusive to the Tornie mod.
-        if ((itemID2Add == Structure_AdvancedWindTrap || itemID2Add == Unit_FlameTank)
-            && ModManager::instance().getActiveModName() != "Tornie") {
-            removeItem(buildList, iter, itemID2Add);
-            continue;
-        }
-
         // City-sim gate: Starport is a shipyard scaled to a sizable city —
         // require 20000 displayed population (= 1000 internal) before it can
         // be built. Outside city sim there's no population, so no gate.
@@ -356,23 +402,65 @@ void BuilderBase::updateBuildList()
 
         const ObjectData::ObjectDataStruct& objData = currentGame->objectData.data[itemID2Add][originalHouseID];
 
-        if(!objData.enabled || (objData.builder != (int) itemID) || (objData.upgradeLevel > curUpgradeLev) || (objData.techLevel > currentGame->techLevel)) {
+        const bool producedHere = objData.builder == static_cast<int>(itemID)
+                               || isAlternateTornieBuilder(itemID, itemID2Add);
+        const bool directWorfineryProduct = itemID == Structure_Worfinery
+                                          && isWorfineryDirectProduct(itemID2Add);
+        const bool traceTechCenter = (itemID2Add == Structure_TechCenter)
+                                  && (itemID == Structure_ConstructionYard);
+
+        // Trooper, Troopers and the normal Harvester are always available in
+        // the Worfinery: no tech-center, upgrade or structure prerequisite.
+        if(!objData.enabled || !producedHere
+           || (!directWorfineryProduct && (objData.upgradeLevel > curUpgradeLev))
+           || (!directWorfineryProduct && (objData.techLevel > currentGame->techLevel))) {
             // first simple checks have rejected this item as being available for built in this builder
+            if(traceTechCenter) {
+                const char* reason = "available";
+                if(!objData.enabled) {
+                    reason = "disabled";
+                } else if(!producedHere) {
+                    reason = "wrong-builder";
+                } else if(objData.upgradeLevel > curUpgradeLev) {
+                    reason = "upgrade-too-low";
+                } else if(objData.techLevel > currentGame->techLevel) {
+                    reason = "tech-too-low";
+                }
+                logTechCenterBuildGate(this, owner, objData, producedHere, false, ItemID_Invalid, reason, false);
+            }
             removeItem(buildList, iter, itemID2Add);
         } else {
 
-            // check if prerequisites are met
-            bool bPrerequisitesMet = true;
-            for(int itemID2Test = Structure_FirstID; itemID2Test <= Structure_LastID; itemID2Test++) {
-                if(objData.prerequisiteStructuresSet[itemID2Test] && (owner->getNumItems(itemID2Test) <= 0)) {
-                    bPrerequisitesMet = false;
-                    break;
+            // check if prerequisites are met. Worfinery direct products bypass
+            // all prerequisite structures by design.
+            bool bPrerequisitesMet = directWorfineryProduct;
+            int missingPrerequisite = ItemID_Invalid;
+            if(!directWorfineryProduct) {
+                bPrerequisitesMet = true;
+                const int prerequisiteLimit = std::min<int>(Num_ItemID, static_cast<int>(objData.prerequisiteStructuresSet.size()));
+                for(int itemID2Test = ItemID_FirstID; itemID2Test < prerequisiteLimit; itemID2Test++) {
+                    if(!isStructure(itemID2Test)) {
+                        continue;
+                    }
+
+                    if(objData.prerequisiteStructuresSet[itemID2Test] && (owner->getNumItems(itemID2Test) <= 0)) {
+                        bPrerequisitesMet = false;
+                        missingPrerequisite = itemID2Test;
+                        break;
+                    }
                 }
             }
 
             if(bPrerequisitesMet) {
-                insertItem(buildList, iter, itemID2Add);
+                if(traceTechCenter) {
+                    logTechCenterBuildGate(this, owner, objData, producedHere, true, ItemID_Invalid, "available", true);
+                }
+                const int worfineryPrice = directWorfineryProduct && itemID2Add == Unit_Harvester ? 425 : -1;
+                insertItem(buildList, iter, itemID2Add, worfineryPrice);
             } else {
+                if(traceTechCenter) {
+                    logTechCenterBuildGate(this, owner, objData, producedHere, false, missingPrerequisite, "missing-prerequisite", false);
+                }
                 removeItem(buildList, iter, itemID2Add);
             }
         }
@@ -387,7 +475,7 @@ void BuilderBase::setWaitingToPlace() {
                 soundPlayer->playVoice(ConstructionComplete, getOwner()->getHouseID());
             } else if(isFlyingUnit(currentProducedItem)) {
                 soundPlayer->playVoice(UnitLaunched, getOwner()->getHouseID());
-            } else if(currentProducedItem == Unit_Harvester) {
+            } else if(isHarvesterLikeUnit(currentProducedItem)) {
                 soundPlayer->playVoice(HarvesterDeployed, getOwner()->getHouseID());
             } else {
                 soundPlayer->playVoice(UnitDeployed, getOwner()->getHouseID());
@@ -439,6 +527,7 @@ bool BuilderBase::update() {
                 num2Place = 3;
             }
 
+            Coord groupDeploySpot = Coord::Invalid();
             for(int i = 0; i < num2Place; i++) {
                 UnitBase* newUnit = getOwner()->createUnit(finishedItemID);
 
@@ -446,7 +535,7 @@ bool BuilderBase::update() {
                     Coord unitDestination;
                     if( getOwner()->isAI()
                         && ((newUnit->getItemID() == Unit_Carryall)
-                            || (newUnit->getItemID() == Unit_Harvester)
+                            || isHarvesterLikeUnit(newUnit->getItemID())
                             || (newUnit->getItemID() == Unit_MCV))) {
                         // Don't want harvesters going to the rally point
                         unitDestination = location;
@@ -454,14 +543,24 @@ bool BuilderBase::update() {
                         unitDestination = destination;
                     }
 
-                    Coord spot = newUnit->isAFlyingUnit() ? location + Coord(1,1) : currentGameMap->findDeploySpot(newUnit, location, currentGame->randomGen, unitDestination, structureSize);
+                    Coord spot = newUnit->isAFlyingUnit() ? location + Coord(1,1) : Coord::Invalid();
+                    if(!newUnit->isAFlyingUnit()) {
+                        if((num2Place > 1) && groupDeploySpot.isValid()) {
+                            spot = groupDeploySpot;
+                        } else {
+                            spot = currentGameMap->findDeploySpot(newUnit, location, currentGame->randomGen, unitDestination, structureSize);
+                            if(num2Place > 1) {
+                                groupDeploySpot = spot;
+                            }
+                        }
+                    }
                     newUnit->deploy(spot);
 
                     // Set AI unit default mode
                     if(getOwner()->isAI()) {
                         int unitType = newUnit->getItemID();
                         // Harvesters should start harvesting automatically
-                        if(unitType == Unit_Harvester) {
+                        if(isHarvesterLikeUnit(unitType)) {
                             newUnit->doSetAttackMode(HARVEST);
                         }
                         // All other units keep their default GUARD/STOP until AI orders them

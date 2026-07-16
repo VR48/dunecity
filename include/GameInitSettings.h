@@ -53,11 +53,12 @@ public:
     class HouseInfo {
     public:
         HouseInfo(HOUSETYPE newHouseID, int newTeam)
-         : houseID(newHouseID), team(newTeam) {
+         : houseID(newHouseID), colorOfHouse(newHouseID), team(newTeam) {
         }
 
         explicit HouseInfo(InputStream& stream) {
             houseID = (HOUSETYPE) stream.readSint32();
+            colorOfHouse = HOUSE_INVALID;
             team = stream.readSint32();
 
             Uint32 numPlayerInfo = stream.readUint32();
@@ -81,6 +82,7 @@ public:
         typedef std::vector<PlayerInfo> PlayerInfoList;
 
         HOUSETYPE       houseID;
+        int             colorOfHouse;
         int             team;
         PlayerInfoList  playerInfoList;
     };

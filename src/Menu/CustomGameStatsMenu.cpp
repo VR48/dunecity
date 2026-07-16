@@ -41,7 +41,8 @@ CustomGameStatsMenu::CustomGameStatsMenu() : MenuBase()
 
     setWindowWidget(&windowWidget);
 
-    Uint32 localHouseColor = SDL2RGB(palette[houseToPaletteIndex[pLocalHouse->getHouseID()]+3]);
+    const int localColorSlot = getHouseVisualHouse(pLocalHouse->getHouseID());
+    Uint32 localHouseColor = getHouseColorRGB(localColorSlot, 3);
 
     windowWidget.addWidget(&mainVBox, Point(24,23), Point(getRendererWidth() - 48, getRendererHeight() - 32));
 
@@ -98,8 +99,9 @@ CustomGameStatsMenu::CustomGameStatsMenu() : MenuBase()
         House* pHouse = currentGame->getHouse(i);
 
         if(pHouse != nullptr) {
-            Uint32 textcolor = SDL2RGB(palette[houseToPaletteIndex[i]+3]);
-            Uint32 progresscolor = SDL2RGB(palette[houseToPaletteIndex[i]+1]);
+            const int visualColorSlot = getHouseVisualHouse(i);
+            Uint32 textcolor = getHouseColorRGB(visualColorSlot, 3);
+            Uint32 progresscolor = getHouseColorRGB(visualColorSlot, 1);
 
             curHouseStat.houseName.setText(_("House") + " " + getHouseNameByNumber((HOUSETYPE) i));
             curHouseStat.houseName.setTextColor(textcolor);

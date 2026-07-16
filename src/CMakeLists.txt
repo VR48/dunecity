@@ -254,6 +254,9 @@ target_sources(dunecity
         structures/Wall.cpp
         structures/WindTrap.cpp
         structures/AdvancedWindTrap.cpp
+        structures/Worfinery.cpp
+        structures/TechCenter.cpp
+        structures/Scoutpost.cpp
         structures/WOR.cpp
         structures/NuclearPlant.cpp
         structures/PoliceStation.cpp
@@ -273,9 +276,8 @@ target_sources(dunecity
         units/Deviator.cpp
         units/Frigate.cpp
         units/Harvester.cpp
+        units/RebelHarvester.cpp
         units/Launcher.cpp
-        units/EliteLauncher.cpp
-        units/EliteSiegeTank.cpp
         units/MCV.cpp
         units/Ornithopter.cpp
         units/Quad.cpp
@@ -291,7 +293,10 @@ target_sources(dunecity
         units/AmbientAirplane.cpp
         units/AmbientHelicopter.cpp
         units/RocketTrike.cpp
+        units/SonicTrike.cpp
         units/FlameTank.cpp
+        units/EliteLauncher.cpp
+        units/EliteSiegeTank.cpp
 
         # CutScenes
         CutScenes/CutScene.cpp
@@ -450,6 +455,7 @@ if(WIN32)
             winmm
             imm32
             version
+            dbghelp
     )
 endif()
 
@@ -472,6 +478,31 @@ target_compile_options(dunecity
 
 # Data directory handling
 set(DATA_DIR "${CMAKE_SOURCE_DIR}/data")
+set(TORNIE_MOD_DIR "${CMAKE_SOURCE_DIR}/mods/Tornie")
+set(TORNIE_MOD_REFERENCE_FILES
+    "${TORNIE_MOD_DIR}/mod.ini"
+    "${TORNIE_MOD_DIR}/ObjectData.ini"
+    "${TORNIE_MOD_DIR}/QuantBot Config.ini"
+    "${TORNIE_MOD_DIR}/GameOptions.ini"
+)
+
+function(add_copy_tornie_mod_reference DEST_DIR)
+    if(EXISTS "${TORNIE_MOD_DIR}")
+        add_custom_command(
+            TARGET dunecity
+            POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                "${DEST_DIR}/mods/Tornie"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${TORNIE_MOD_REFERENCE_FILES}
+                "${DEST_DIR}/mods/Tornie/"
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${TORNIE_MOD_DIR}/campaign"
+                "${DEST_DIR}/mods/Tornie/campaign"
+            COMMENT "Copying Tornie mod reference files"
+        )
+    endif()
+endfunction()
 
 if(APPLE)
     # For macOS bundle, copy data files directly to Resources/ (not Resources/data/)
@@ -497,17 +528,7 @@ if(APPLE)
         COMMENT "Copying data and config files into app bundle Resources"
     )
 
-    # Copy mods directory into the app bundle
-    if(EXISTS "${CMAKE_SOURCE_DIR}/mods")
-        add_custom_command(
-            TARGET dunecity
-            POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_directory
-                "${CMAKE_SOURCE_DIR}/mods"
-                "${BUNDLE_RESOURCES_DIR}/mods"
-            COMMENT "Copying mods into app bundle Resources"
-        )
-    endif()
+    add_copy_tornie_mod_reference("${BUNDLE_RESOURCES_DIR}")
 
     # Copy imported Micropolis-derived zone sprites into the bundle so they
     # are found by getDuneLegacyDataDir() + "imported_sprites/..." at runtime.
@@ -560,17 +581,7 @@ else()
         COMMENT "Copying config template files to build output"
     )
 
-    # Copy mods directory next to the binary for non-bundle builds
-    if(EXISTS "${CMAKE_SOURCE_DIR}/mods")
-        add_custom_command(
-            TARGET dunecity
-            POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_directory
-                "${CMAKE_SOURCE_DIR}/mods"
-                "${CMAKE_BINARY_DIR}/bin/mods"
-            COMMENT "Copying mods to build output"
-        )
-    endif()
+    add_copy_tornie_mod_reference("${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
 
     # Copy imported zone sprites next to the binary for non-bundle builds
     set(IMPORTED_SPRITES_SRC "${CMAKE_SOURCE_DIR}/imported_sprites")
@@ -622,49 +633,6 @@ if(WIN32)
         DIRECTORY ${CMAKE_SOURCE_DIR}/config
         DESTINATION .
     )
-
-    # Neutral campaign scenario and region files (REGIONN.INI, scenn001-022.ini)
-    # are now packed inside Tornie.PAK and loaded via pFileManager->openFile().
-    # Install Neutral house voice VOC files (not in VOC.PAK, loaded as loose files)
-    install(
-        FILES
-            "${DATA_DIR}/ANEU.VOC"
-            "${DATA_DIR}/HNEU.VOC"
-            "${DATA_DIR}/MNEU.VOC"
-            "${DATA_DIR}/NNEU.VOC"
-            "${DATA_DIR}/ONEU.VOC"
-        DESTINATION .
-    )
-    # Install Advanced Windtrap icon (custom PNG, loaded as a loose file by GFXManager)
-    install(
-        FILES "${DATA_DIR}/Tornie_AdvancedWindtrap_icon.png"
-        DESTINATION .
-    )
-    # Install Advanced Windtrap building graphic (custom PNG, loaded as a loose file by GFXManager)
-    install(
-        FILES "${DATA_DIR}/Tornie_AdvancedWindtrap_gfx.png"
-        DESTINATION .
-    )
-    # Install Neutral mentat assets (MENTATM.CPS background, MENSHPM.SHP animations)
-    install(
-        FILES "${DATA_DIR}/MENTATM.CPS" "${DATA_DIR}/MENSHPM.SHP"
-        DESTINATION .
-    )
-    # Install Tornie.PAK (bundled Neutral-house art assets)
-    if(EXISTS "${DATA_DIR}/Tornie.PAK")
-        install(
-            FILES "${DATA_DIR}/Tornie.PAK"
-            DESTINATION .
-        )
-    endif()
-
-    # Install mods directory (Windows)
-    if(EXISTS "${CMAKE_SOURCE_DIR}/mods")
-        install(
-            DIRECTORY "${CMAKE_SOURCE_DIR}/mods/"
-            DESTINATION mods
-        )
-    endif()
 elseif(NOT APPLE)
     # Linux: use FHS structure
     install(
@@ -672,14 +640,6 @@ elseif(NOT APPLE)
         DESTINATION ${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}
         FILES_MATCHING PATTERN "*.*"
     )
-
-    # Install mods directory (Linux)
-    if(EXISTS "${CMAKE_SOURCE_DIR}/mods")
-        install(
-            DIRECTORY "${CMAKE_SOURCE_DIR}/mods/"
-            DESTINATION ${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/mods
-        )
-    endif()
 endif()
 
 # Install imported sprite assets (Micropolis-derived civic/zone PNGs).
@@ -699,6 +659,25 @@ if(EXISTS "${IMPORTED_SPRITES_SRC}")
         install(
             DIRECTORY "${IMPORTED_SPRITES_SRC}/"
             DESTINATION ${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/imported_sprites
+        )
+    endif()
+endif()
+
+if(EXISTS "${TORNIE_MOD_DIR}")
+    if(WIN32)
+        set(TORNIE_INSTALL_BASE ".")
+    elseif(NOT APPLE)
+        set(TORNIE_INSTALL_BASE "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}")
+    endif()
+
+    if(WIN32 OR NOT APPLE)
+        install(
+            FILES ${TORNIE_MOD_REFERENCE_FILES}
+            DESTINATION "${TORNIE_INSTALL_BASE}/mods/Tornie"
+        )
+        install(
+            DIRECTORY "${TORNIE_MOD_DIR}/campaign/"
+            DESTINATION "${TORNIE_INSTALL_BASE}/mods/Tornie/campaign"
         )
     endif()
 endif()

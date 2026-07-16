@@ -253,11 +253,7 @@ void CityBudgetWindow::updateDisplay() {
     }
 
     yearLabel.setText(fmt::sprintf("Year: %d", citySim->getCityYear()));
-    {
-        int funds = citySim->getTotalFunds();
-        treasuryLabel.setText(fmt::sprintf("Credits: %s",
-            funds >= 1000 ? fmt::sprintf("%d,%03d", funds/1000, funds%1000) : fmt::sprintf("%d", funds)));
-    }
+    treasuryLabel.setText(fmt::sprintf("Credits: %d", citySim->getTotalFunds()));
 
     // Projected annual revenue using the pending tax slider and land value.
     const int totalPop  = citySim->getTotalPop();

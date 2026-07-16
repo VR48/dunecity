@@ -23,7 +23,6 @@
 #include <House.h>
 #include <Game.h>
 #include <Map.h>
-#include <mod/ModManager.h>
 #include <ScreenBorder.h>
 #include <SoundPlayer.h>
 
@@ -299,15 +298,8 @@ bool Sandworm::sleepOrDie() {
 
     // Make sand worms always drop spice, even if they don't die
     if(currentGame->getGameInitSettings().getGameOptions().killedSandwormsDropSpice) {
-        const bool tornie = (ModManager::instance().getActiveModName() == "Tornie");
-        if (tornie && currentGame->randomGen.rand(0, 19) == 0) {
-            if (currentGame->randomGen.rand(0, 1) == 0)
-                currentGameMap->createRedSpiceField(location, 4);
-            else
-                currentGameMap->createGreenSpiceField(location, 4);
-        } else {
-            currentGameMap->createSpiceField(location, 4);
-        }
+        const auto generatedSpiceTerrain = currentGameMap->chooseGeneratedSpiceTerrain();
+        currentGameMap->createSpiceField(location, 4, false, generatedSpiceTerrain.first, generatedSpiceTerrain.second);
     }
 
     if(currentGame->getGameInitSettings().getGameOptions().sandwormsRespawn) {

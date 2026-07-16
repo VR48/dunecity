@@ -31,7 +31,8 @@ typedef enum {
     Bullet_SmallRocket = 8,
     Bullet_Sonic = 9,
     Bullet_Sandworm = 10,
-    Bullet_Flame = 11          ///< DuneCity: Flame Tank line attack (Tornie mod, sonic-style flame propagation)
+    Bullet_Flame = 11,            ///< Tornie: launcher-like fire missile with flame area damage
+    Bullet_SonicTrike = 12        ///< Tornie: shorter and weaker Sonic Trike wave
 } BulletID_enum;
 
 typedef enum {
@@ -46,7 +47,9 @@ typedef enum {
     Explosion_ShellLarge = 8,
     Explosion_SmallUnit = 9,
     Explosion_Flames = 10,
-    Explosion_SpiceBloom = 11
+    Explosion_SpiceBloom = 11,
+    Explosion_FlameImpact = 12,       ///< Tornie: damaging ground fire without the destroyed-vehicle opening frames
+    Explosion_FlameImpactVisual = 13 ///< Tornie: visual-only companion flames around the damaging impact
 } ExplosionID_enum;
 
 typedef enum {
@@ -113,19 +116,35 @@ typedef enum {
     Structure_ExtLastID = 49,
 
     // Extended unit IDs — placed after extended structures to preserve
-    // save-compat for all pre-existing IDs.
+    // save-compat for all pre-existing IDs.  isUnit() handles the gap.
     Unit_AmbientAirplane = 50,        ///< DuneCity: Ambient city airplane (non-combat, spawned by Airport)
     Unit_AmbientHelicopter = 51,      ///< DuneCity: Ambient city helicopter (non-combat, spawned by Airport)
-    Unit_RocketTrike = 52,            ///< DuneCity: Rocket Trike (Neutral only, trooper rockets, light factory)
-    Unit_EliteLauncher = 53,           ///< DuneCity: Elite Launcher (Neutral only, Heavy Factory, House IX prereq)
-    Unit_EliteSiegeTank = 55,          ///< DuneCity: Elite Siege Tank (Atreides/Harkonnen/Ordos via Tornie mod, Heavy Factory, House IX prereq)
-    Unit_FlameTank = 56,               ///< DuneCity: Flame Tank (Tornie mod, Heavy Factory, sonic-style flame line attack)
-    Unit_ExtLastID = 56,
+
+    // Tornie mod units — extended IDs after Ambient units to preserve save-compat.
+    Unit_RocketTrike = 52,            ///< Tornie: upgraded Trike (rocket weapon, Light Factory, T9 U4)
+    Unit_FlameTank = 53,              ///< Tornie: fire missile weapon, Heavy Factory, T9 U4
+    Unit_EliteLauncher = 54,          ///< Tornie: upgraded Launcher, Heavy Factory, T9 U4
+    Unit_EliteSiegeTank = 55,         ///< Tornie: upgraded Siege Tank, Heavy Factory, T9 U4
+    Unit_ExtLastID = 55,
 
     // Additional extended structures after units (isStructure handles non-contiguous range)
-    Structure_AdvancedWindTrap = 54,  ///< DuneCity: Advanced Windtrap (500 credits, -300 power, 3x3)
+    Structure_AdvancedWindTrap = 56,  ///< Tornie: Advanced Windtrap 3x3
+    Structure_Worfinery = 57,        ///< Tornie: WOR + Refinery combo, can produce Troopers
+    Structure_AdvancedWindTrapMK2 = 58, ///< Tornie: Advanced Windtrap 2x3
 
-    ItemID_LastID = 56,
+    // Tornie mod unit — distinct from vanilla Harvester with a dedicated sprite.
+    Unit_RebelHarvester = 59,
+
+    // Tornie mod building — Palace-equivalent that spawns 1-3 random vehicles
+    // when House IX is unlocked. Spawned units use Hunt behavior.
+    Structure_TechCenter = 60,
+    Structure_AdvancedWindTrapMK3 = 61, ///< Tornie: Advanced Windtrap 3x2
+    Structure_Scoutpost = 62,           ///< Tornie: small power/defense/recon post
+
+    // Appended after every 1.0.517 object ID to preserve save compatibility.
+    Unit_SonicTrike = 63,               ///< Tornie: Rebels-only light sonic vehicle
+
+    ItemID_LastID = 63,
 
     Num_ItemID
 } ItemID_enum;
@@ -140,10 +159,12 @@ typedef enum {
     Terrain_ThickSpice,
     Terrain_SpiceBloom,
     Terrain_SpecialBloom,
-    Terrain_RedSpice,       ///< Tornie: red spice (same gather rate, +25% credits at refinery)
-    Terrain_GreenSpice,     ///< Tornie: green spice (+30% faster gather, same credits)
-    Terrain_RedSpiceBloom,  ///< Tornie: red spice bloom
-    Terrain_GreenSpiceBloom ///< Tornie: green spice bloom
+    Terrain_GreenSpice,
+    Terrain_ThickGreenSpice,
+    Terrain_GreenSpiceBloom,
+    Terrain_RedSpice,
+    Terrain_ThickRedSpice,
+    Terrain_RedSpiceBloom
 } TERRAINTYPE;
 
 typedef enum {
@@ -170,14 +191,14 @@ typedef enum {
     \param itemID   the ID of the item (e.g. Unit_Harvester)
     \return true if it is an unit, false otherwise
 */
-inline bool isUnit(int itemID) { return (itemID >= Unit_FirstID && itemID <= Unit_LastID) || (itemID >= Unit_AmbientAirplane && itemID <= Unit_ExtLastID && itemID != Structure_AdvancedWindTrap); }
+inline bool isUnit(int itemID) { return (itemID >= Unit_FirstID && itemID <= Unit_LastID) || (itemID >= Unit_AmbientAirplane && itemID <= Unit_ExtLastID) || itemID == Unit_RebelHarvester || itemID == Unit_SonicTrike; }
 
 /**
     This function determines if the specified itemID is a structure or not.
     \param itemID   the ID of the item (e.g. Structure_ConstructionYard)
     \return true if it is a structure, false otherwise
 */
-inline bool isStructure(int itemID) { return (itemID >= Structure_FirstID && itemID <= Structure_LastID) || (itemID >= Structure_Stadium && itemID <= Structure_ExtLastID) || itemID == Structure_AdvancedWindTrap; }
+inline bool isStructure(int itemID) { return (itemID >= Structure_FirstID && itemID <= Structure_LastID) || (itemID >= Structure_Stadium && itemID <= Structure_ExtLastID) || (itemID >= Structure_AdvancedWindTrap && itemID <= Structure_AdvancedWindTrapMK2) || itemID == Structure_TechCenter || itemID == Structure_AdvancedWindTrapMK3 || itemID == Structure_Scoutpost; }
 
 /**
     This function determines if the specified itemID is a DuneCity zone structure.

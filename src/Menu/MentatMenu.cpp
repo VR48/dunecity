@@ -19,11 +19,10 @@
 
 #include <globals.h>
 
-#include <FileClasses/FileManager.h>
-#include <mod/ModManager.h>
 #include <FileClasses/GFXManager.h>
 
 #include <mmath.h>
+#include <mod/ModManager.h>
 
 #include <algorithm>
 #include <regex>
@@ -42,6 +41,10 @@ MentatMenu::MentatMenu(int newHouse)
     SDL_Texture *pBackground;
     if(house == HOUSE_INVALID) {
         pBackground = pGFXManager->getUIGraphic(UI_MentatBackgroundBene);
+    } else if(house == HOUSE_ATREIDES
+              && ModManager::instance().isInitialized()
+              && ModManager::instance().getActiveModName() == "Tornie") {
+        pBackground = pGFXManager->getUIGraphic(UI_MentatBackgroundPaul, house);
     } else {
         pBackground = pGFXManager->getUIGraphic(UI_MentatBackground,house);
     }
@@ -55,51 +58,50 @@ MentatMenu::MentatMenu(int newHouse)
     switch(house) {
         case HOUSE_HARKONNEN: {
             anim = pGFXManager->getAnimation(Anim_HarkonnenEyes);
-            if (anim && anim->getNumberOfFrames() > 0) {
-                eyesAnim.setAnimation(anim);
-                windowWidget.addWidget(&eyesAnim,Point(64,176),eyesAnim.getMinimumSize());
-            }
+            eyesAnim.setAnimation(anim);
+            windowWidget.addWidget(&eyesAnim,Point(64,176),eyesAnim.getMinimumSize());
 
             anim = pGFXManager->getAnimation(Anim_HarkonnenMouth);
-            if (anim && anim->getNumberOfFrames() > 0) {
-                mouthAnim.setAnimation(anim);
-                windowWidget.addWidget(&mouthAnim,Point(64,208),mouthAnim.getMinimumSize());
-            }
+            mouthAnim.setAnimation(anim);
+            windowWidget.addWidget(&mouthAnim,Point(64,208),mouthAnim.getMinimumSize());
 
             anim = pGFXManager->getAnimation(Anim_HarkonnenShoulder);
-            if (anim && anim->getNumberOfFrames() > 0) {
+            shoulderAnim.setAnimation(anim);
+            // don't add shoulderAnim, draw it in DrawSpecificStuff
+        } break;
+
+        case HOUSE_ATREIDES: {
+            const bool usePaulMentat = ModManager::instance().isInitialized()
+                && (ModManager::instance().getActiveModName() == "Tornie");
+
+            anim = pGFXManager->getAnimation(usePaulMentat ? Anim_PaulAtreidesEyes : Anim_AtreidesEyes);
+            eyesAnim.setAnimation(anim);
+            windowWidget.addWidget(&eyesAnim, usePaulMentat ? Point(120,116) : Point(80,160), eyesAnim.getMinimumSize());
+
+            anim = pGFXManager->getAnimation(usePaulMentat ? Anim_PaulAtreidesMouth : Anim_AtreidesMouth);
+            mouthAnim.setAnimation(anim);
+            windowWidget.addWidget(&mouthAnim, usePaulMentat ? Point(119,171) : Point(80,192), mouthAnim.getMinimumSize());
+
+            if(!usePaulMentat) {
+                anim = pGFXManager->getAnimation(Anim_AtreidesBook);
+                specialAnim.setAnimation(anim);
+                windowWidget.addWidget(&specialAnim,Point(145,305),specialAnim.getMinimumSize());
+
+                anim = pGFXManager->getAnimation(Anim_AtreidesShoulder);
                 shoulderAnim.setAnimation(anim);
             }
             // don't add shoulderAnim, draw it in DrawSpecificStuff
         } break;
 
-        case HOUSE_ATREIDES: {
-            const bool paulMod = (ModManager::instance().getActiveModName() == "Tornie")
-                              && pFileManager->exists("PaulAtreidesMentat.png");
-            SDL_Log("MentatMenu ATREIDES: paulMod=%s (mod=%s, file=%s)",
-                paulMod ? "YES" : "NO",
-                ModManager::instance().getActiveModName().c_str(),
-                pFileManager->exists("PaulAtreidesMentat.png") ? "found" : "MISSING");
-
-            anim = paulMod && pGFXManager->getAnimation(Anim_PaulEyes)
-                 ? pGFXManager->getAnimation(Anim_PaulEyes)
-                 : pGFXManager->getAnimation(Anim_AtreidesEyes);
+        case HOUSE_NEUTRAL:
+        case HOUSE_REBELS: {
+            anim = pGFXManager->getAnimation(Anim_ChaniEyes);
             eyesAnim.setAnimation(anim);
-            windowWidget.addWidget(&eyesAnim, paulMod ? Point(118,114) : Point(80,160), eyesAnim.getMinimumSize());
+            windowWidget.addWidget(&eyesAnim,Point(128,160),eyesAnim.getMinimumSize());
 
-            anim = paulMod && pGFXManager->getAnimation(Anim_PaulMouth)
-                 ? pGFXManager->getAnimation(Anim_PaulMouth)
-                 : pGFXManager->getAnimation(Anim_AtreidesMouth);
+            anim = pGFXManager->getAnimation(Anim_ChaniMouth);
             mouthAnim.setAnimation(anim);
-            windowWidget.addWidget(&mouthAnim, paulMod ? Point(116,170) : Point(80,192), mouthAnim.getMinimumSize());
-
-            anim = pGFXManager->getAnimation(Anim_AtreidesBook);
-            specialAnim.setAnimation(anim);
-            windowWidget.addWidget(&specialAnim,Point(145,305),specialAnim.getMinimumSize());
-
-            anim = pGFXManager->getAnimation(Anim_AtreidesShoulder);
-            shoulderAnim.setAnimation(anim);
-            // don't add shoulderAnim, draw it in DrawSpecificStuff
+            windowWidget.addWidget(&mouthAnim,Point(112,192),mouthAnim.getMinimumSize());
         } break;
 
         case HOUSE_ORDOS: {
@@ -123,27 +125,19 @@ MentatMenu::MentatMenu(int newHouse)
 
         case HOUSE_FREMEN: {
             anim = pGFXManager->getAnimation(Anim_FremenEyes);
-            if (anim && anim->getNumberOfFrames() > 0) {
-                eyesAnim.setAnimation(anim);
-                windowWidget.addWidget(&eyesAnim,Point(80,160),eyesAnim.getMinimumSize());
-            }
+            eyesAnim.setAnimation(anim);
+            windowWidget.addWidget(&eyesAnim,Point(80,160),eyesAnim.getMinimumSize());
 
             anim = pGFXManager->getAnimation(Anim_FremenMouth);
-            if (anim && anim->getNumberOfFrames() > 0) {
-                mouthAnim.setAnimation(anim);
-                windowWidget.addWidget(&mouthAnim,Point(80,192),mouthAnim.getMinimumSize());
-            }
+            mouthAnim.setAnimation(anim);
+            windowWidget.addWidget(&mouthAnim,Point(80,192),mouthAnim.getMinimumSize());
 
             anim = pGFXManager->getAnimation(Anim_FremenBook);
-            if (anim && anim->getNumberOfFrames() > 0) {
-                specialAnim.setAnimation(anim);
-                windowWidget.addWidget(&specialAnim,Point(145,305),specialAnim.getMinimumSize());
-            }
+            specialAnim.setAnimation(anim);
+            windowWidget.addWidget(&specialAnim,Point(145,305),specialAnim.getMinimumSize());
 
             anim = pGFXManager->getAnimation(Anim_FremenShoulder);
-            if (anim && anim->getNumberOfFrames() > 0) {
-                shoulderAnim.setAnimation(anim);
-            }
+            shoulderAnim.setAnimation(anim);
             // don't add shoulderAnim, draw it in DrawSpecificStuff
         } break;
 
@@ -158,36 +152,6 @@ MentatMenu::MentatMenu(int newHouse)
 
             anim = pGFXManager->getAnimation(Anim_SardaukarShoulder);
             shoulderAnim.setAnimation(anim);
-            // don't add shoulderAnim, draw it in DrawSpecificStuff
-        } break;
-
-        case HOUSE_NEUTRAL: {
-            const bool chaniMod = (ModManager::instance().getActiveModName() == "Tornie")
-                               && pFileManager->exists("ChaniMentat.png");
-
-            anim = pGFXManager->getAnimation(Anim_NeutralEyes);
-            if (anim && anim->getNumberOfFrames() > 0) {
-                eyesAnim.setAnimation(anim);
-                windowWidget.addWidget(&eyesAnim, chaniMod ? Point(56, 96) : Point(80, 160), eyesAnim.getMinimumSize());
-            }
-
-            anim = pGFXManager->getAnimation(Anim_NeutralMouth);
-            if (anim && anim->getNumberOfFrames() > 0) {
-                mouthAnim.setAnimation(anim);
-                windowWidget.addWidget(&mouthAnim, chaniMod ? Point(64, 80) : Point(80, 192), mouthAnim.getMinimumSize());
-            }
-
-            anim = pGFXManager->getAnimation(Anim_NeutralRing);
-            if (anim) {
-                specialAnim.setAnimation(anim);
-                specialAnim.getAnimation()->setCurrentFrameNumber(specialAnim.getAnimation()->getNumberOfFrames()-1);
-                windowWidget.addWidget(&specialAnim,Point(178,289),specialAnim.getMinimumSize());
-            }
-
-            anim = pGFXManager->getAnimation(Anim_NeutralShoulder);
-            if (anim) {
-                shoulderAnim.setAnimation(anim);
-            }
             // don't add shoulderAnim, draw it in DrawSpecificStuff
         } break;
 
@@ -236,9 +200,7 @@ void MentatMenu::setText(const std::string& text) {
         mentatTexts.push_back(text);
     }
 
-    if(auto* anim = mouthAnim.getAnimation()) {
-        anim->setNumLoops(mentatTexts[0].empty() ? 0 : mentatTexts[0].length()/25 + 1);
-    }
+    mouthAnim.getAnimation()->setNumLoops(mentatTexts[0].empty() ? 0 : mentatTexts[0].length()/25 + 1);
     textLabel.setText(mentatTexts[0]);
     textLabel.setVisible(true);
     textLabel.resize(620,240);
@@ -248,13 +210,8 @@ void MentatMenu::setText(const std::string& text) {
 }
 
 void MentatMenu::update() {
-    auto* eyesAnimPtr = eyesAnim.getAnimation();
-    auto* mouthAnimPtr = mouthAnim.getAnimation();
-
     // speedup blink of the eye
-    if(eyesAnimPtr) {
-        eyesAnimPtr->setFrameRate((eyesAnimPtr->getCurrentFrameNumber() == MentatEyesClosed) ? 4.0 : 0.5);
-    }
+    eyesAnim.getAnimation()->setFrameRate((eyesAnim.getAnimation()->getCurrentFrameNumber() == MentatEyesClosed) ? 4.0 : 0.5);
 
     if(SDL_GetTicks() > nextMentatTextSwitch) {
         currentMentatTextIndex++;
@@ -275,9 +232,7 @@ void MentatMenu::update() {
             }
         }
 
-        if(mouthAnimPtr) {
-            mouthAnimPtr->setNumLoops(text.empty() ? 0 : text.length()/25 + 1);
-        }
+        mouthAnim.getAnimation()->setNumLoops(text.empty() ? 0 : text.length()/25 + 1);
 
         textLabel.setText(text);
         textLabel.setVisible(true);
@@ -299,22 +254,20 @@ void MentatMenu::update() {
     const Point eyesCenter = eyesPos + eyesSize/2;
     const Point mouseEyePos = mouse - eyesCenter;
 
-    if(eyesAnimPtr) {
-        eyesAnimPtr->resetFrameOverride();
+    eyesAnim.getAnimation()->resetFrameOverride();
 
-        if((mouseEyePos.x >= -eyesSize.x/2 - 30) && (mouseEyePos.x <= -eyesSize.x/2) && (mouseEyePos.y >= -eyesSize.y/2 - 20) && (mouseEyePos.y <= eyesSize.y/2)) {
-             eyesAnimPtr->setFrameOverride(MentatEyesLeft);
-        } else if((mouseEyePos.x <= eyesSize.x/2 + 30) && (mouseEyePos.x >= eyesSize.x/2) && (mouseEyePos.y >= -eyesSize.y/2 - 20) && (mouseEyePos.y <= eyesSize.y/2)) {
-             eyesAnimPtr->setFrameOverride(MentatEyesRight);
-        } else if((abs(mouseEyePos.x) < eyesSize.x) && (mouseEyePos.y >= -eyesSize.y/2 - 20) && (mouseEyePos.y <= eyesSize.y/2)) {
-             eyesAnimPtr->setFrameOverride(MentatEyesNormal);
-        } else if((abs(mouseEyePos.x) < eyesSize.x) && (mouseEyePos.y > eyesSize.y/2) && (mouseEyePos.y <= eyesSize.y/2 + 15)) {
-             eyesAnimPtr->setFrameOverride(MentatEyesDown);
-        }
+    if((mouseEyePos.x >= -eyesSize.x/2 - 30) && (mouseEyePos.x <= -eyesSize.x/2) && (mouseEyePos.y >= -eyesSize.y/2 - 20) && (mouseEyePos.y <= eyesSize.y/2)) {
+         eyesAnim.getAnimation()->setFrameOverride(MentatEyesLeft);
+    } else if((mouseEyePos.x <= eyesSize.x/2 + 30) && (mouseEyePos.x >= eyesSize.x/2) && (mouseEyePos.y >= -eyesSize.y/2 - 20) && (mouseEyePos.y <= eyesSize.y/2)) {
+         eyesAnim.getAnimation()->setFrameOverride(MentatEyesRight);
+    } else if((abs(mouseEyePos.x) < eyesSize.x) && (mouseEyePos.y >= -eyesSize.y/2 - 20) && (mouseEyePos.y <= eyesSize.y/2)) {
+         eyesAnim.getAnimation()->setFrameOverride(MentatEyesNormal);
+    } else if((abs(mouseEyePos.x) < eyesSize.x) && (mouseEyePos.y > eyesSize.y/2) && (mouseEyePos.y <= eyesSize.y/2 + 15)) {
+         eyesAnim.getAnimation()->setFrameOverride(MentatEyesDown);
+    }
 
-        if(bPressed && (abs(mouseEyePos.x) <= eyesSize.x/2) && (abs(mouseEyePos.y) <= eyesSize.y/2)) {
-            eyesAnimPtr->setFrameOverride(MentatEyesClosed);
-        }
+    if(bPressed && (abs(mouseEyePos.x) <= eyesSize.x/2) && (abs(mouseEyePos.y) <= eyesSize.y/2)) {
+        eyesAnim.getAnimation()->setFrameOverride(MentatEyesClosed);
     }
 
     const Point mouthPos = windowWidget.getWidgetPosition(&mouthAnim);
@@ -322,18 +275,16 @@ void MentatMenu::update() {
     const Point mouthCenter = mouthPos + mouthSize/2;
     const Point mouseMouthPos = mouse - mouthCenter;
 
-    if(mouthAnimPtr) {
-        if(bPressed) {
-            if((abs(mouseMouthPos.x) <= mouthSize.x/2) && (abs(mouseMouthPos.y) <= mouthSize.y/2)) {
-                if(mouthAnimPtr->getCurrentFrameOverride() == INVALID_FRAME) {
-                    mouthAnimPtr->setFrameOverride(getRandomOf({MentatMouthOpen1, MentatMouthOpen2, MentatMouthOpen3, MentatMouthOpen4}));
-                }
-            } else {
-                mouthAnimPtr->resetFrameOverride();
+    if(bPressed) {
+        if((abs(mouseMouthPos.x) <= mouthSize.x/2) && (abs(mouseMouthPos.y) <= mouthSize.y/2)) {
+            if(mouthAnim.getAnimation()->getCurrentFrameOverride() == INVALID_FRAME) {
+                mouthAnim.getAnimation()->setFrameOverride(getRandomOf({MentatMouthOpen1, MentatMouthOpen2, MentatMouthOpen3, MentatMouthOpen4}));
             }
         } else {
-            mouthAnimPtr->resetFrameOverride();
+            mouthAnim.getAnimation()->resetFrameOverride();
         }
+    } else {
+        mouthAnim.getAnimation()->resetFrameOverride();
     }
 }
 
@@ -341,8 +292,7 @@ void MentatMenu::drawSpecificStuff() {
     Point shoulderPos;
     switch(house) {
         case HOUSE_HARKONNEN:
-        case HOUSE_SARDAUKAR:
-        case HOUSE_REBELS: {
+        case HOUSE_SARDAUKAR: {
             shoulderPos = Point(256,209) + getPosition();
         } break;
 
@@ -351,9 +301,13 @@ void MentatMenu::drawSpecificStuff() {
             shoulderPos = Point(256,257) + getPosition();
         } break;
 
+        case HOUSE_NEUTRAL:
+        case HOUSE_REBELS: {
+            shoulderPos = Point(0,0) + getPosition();
+        } break;
+
         case HOUSE_ORDOS:
-        case HOUSE_MERCENARY:
-        case HOUSE_NEUTRAL: {
+        case HOUSE_MERCENARY: {
             shoulderPos = Point(256,257) + getPosition();
         } break;
 

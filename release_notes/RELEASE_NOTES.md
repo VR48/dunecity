@@ -1,4 +1,25 @@
-# Dune Legacy 0.99.5 Release Notes
+# DuneCity Tornie Edition Release Notes
+
+## Version 1.0.520
+
+- `Unit_Special` scenario entries now choose randomly from every enabled vehicle in the selected House pool when more than one result is available.
+- Single-entry and single-enabled-entry pools remain deterministic and do not consume the synchronized game RNG.
+- The scenario loader now uses the same synchronized game random generator as runtime special-unit creation and Tech Center spawning.
+
+## Version 1.0.519
+
+- Added the Rebels Sonic Trike and finalized Tornie-only unit progression.
+- Updated Flame Tank fire behavior, damage over time, and House IX prerequisite.
+- Finalized Tornie and non-Tornie campaign routing for all eight Houses.
+- Added and corrected custom unit sheets, icons, Mentats, structures, and palettes.
+- Added six optional player colors with save-game persistence and unique-color validation.
+- Improved eight-player lobby setup, Neutral/Rebels AI support, and campaign stability.
+- Fixed infantry crushing crashes and several mod-switching resource conflicts.
+- Packaged custom assets in Tornie.PAK and shared non-Tornie additions in Extra.PAK.
+
+---
+
+## Dune Legacy 0.99.5
 
 **Release Date:** December 21, 2025  
 **Download:** [Windows Installer](https://dunelegacy.sourceforge.net/downloads/)

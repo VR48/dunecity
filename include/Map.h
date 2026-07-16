@@ -26,6 +26,7 @@
 #include <misc/Random.h>
 
 #include <cstdio>
+#include <utility>
 
 class Map
 {
@@ -45,7 +46,7 @@ public:
     void save(OutputStream& stream) const;
 
     void createSandRegions();
-    void damage(Uint32 damagerID, House* damagerOwner, const Coord& realPos, Uint32 bulletID, FixPoint damage, int damageRadius, bool air);
+    void damage(Uint32 damagerID, House* damagerOwner, const Coord& realPos, Uint32 bulletID, FixPoint damage, int damageRadius, bool air, bool affectTerrain = true);
     static Coord getMapPos(int angle, const Coord& source);
     void removeObjectFromMap(Uint32 objectID);
     void spiceRemoved(const Coord& coord);
@@ -65,9 +66,8 @@ public:
     Coord findClosestEdgePoint(const Coord& origin, const Coord& buildingSize) const;
     Coord findDeploySpot(UnitBase* pUnit, const Coord& origin, Random& randomGen, const Coord& gatherPoint = Coord::Invalid(), const Coord& buildingSize = Coord(0, 0)) const; //building size is num squares
 
-    void createSpiceField(Coord location, int radius, bool centerIsThickSpice = false) const;
-    void createRedSpiceField(Coord location, int radius) const;
-    void createGreenSpiceField(Coord location, int radius) const;
+    std::pair<int, int> chooseGeneratedSpiceTerrain(int thinSpiceTerrain = Terrain_Spice, int thickSpiceTerrain = Terrain_ThickSpice) const;
+    void createSpiceField(Coord location, int radius, bool centerIsThickSpice = false, int thinSpiceTerrain = Terrain_Spice, int thickSpiceTerrain = Terrain_ThickSpice) const;
 
     Uint32 getPathingRevision() const noexcept {
         return pathingRevision;

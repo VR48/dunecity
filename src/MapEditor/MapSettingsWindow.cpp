@@ -34,7 +34,7 @@
 MapSettingsWindow::MapSettingsWindow(MapEditor* pMapEditor, HOUSETYPE currentHouse)
  : Window(0,0,0,0), pMapEditor(pMapEditor), house(currentHouse) {
 
-    color = SDL2RGB(getHouseSDLColor(house));
+    color = getHouseInterfaceColor(house);
 
     MapInfo& mapInfo = pMapEditor->getMapInfo();
 
@@ -228,10 +228,12 @@ MapSettingsWindow::MapSettingsWindow(MapEditor* pMapEditor, HOUSETYPE currentHou
     techLevelDropDownBox.addEntry(_("Level 2:  Radar, Barracks/Light Factory/WOR, Silo, Soldier/Trooper, Trike"),2);
     techLevelDropDownBox.addEntry(_("Level 3:  Light Factory, Quad"),3);
     techLevelDropDownBox.addEntry(_("Level 4:  2x2 Concrete, Wall, Heavy Factory, Tank, Harvester, MCV"),4);
-    techLevelDropDownBox.addEntry(_("Level 5:  Gun Turret, Hightech Factory, Rapair Yard, Launcher, Carryall"),5);
-    techLevelDropDownBox.addEntry(_("Level 6:  Starport, Rocket Turret, Siege Tank"),6);
+    techLevelDropDownBox.addEntry(_("Level 5:  Gun Turret, Scoutpost, Hightech Factory, Repair Yard, Launcher, Carryall"),5);
+    techLevelDropDownBox.addEntry(_("Level 6:  Starport, Rocket Turret, Siege Tank, Advanced Windtrap"),6);
     techLevelDropDownBox.addEntry(_("Level 7:  House IX, Sonic Tank/Deviator/Devastator, Ornithopter"),7);
     techLevelDropDownBox.addEntry(_("Level 8:  Palace, Fremen, Saboteur"),8);
+    // Tornie: Level 9 unlocks Tech Center (Palace-equivalent that spawns vehicles).
+    techLevelDropDownBox.addEntry(_("Level 9:  Tech Center"),9);
     techLevelDropDownBox.setSelectedItem(mapInfo.techLevel > 0 ? mapInfo.techLevel-1 : 7);
     techLevelDropDownBox.setVisible( (pMapEditor->getMapVersion() >= 2) );
     techLevelHBox.addWidget(&techLevelDropDownBox);

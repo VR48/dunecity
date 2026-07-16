@@ -25,16 +25,11 @@
 #include <FileClasses/INIFile.h>
 #include <FileClasses/music/MusicPlayer.h>
 
-#include <mod/ModManager.h>
-
 #include <misc/string_util.h>
 #include <misc/exceptions.h>
 #include <misc/format.h>
 
-#include <filesystem>
-
 #include <sand.h>
-#include <stdexcept>
 
 MapChoice::MapChoice(int newHouse, unsigned int lastMission, Uint32 oldAlreadyPlayedRegions) : MenuBase() {
     disableQuiting(true);
@@ -62,20 +57,8 @@ MapChoice::MapChoice(int newHouse, unsigned int lastMission, Uint32 oldAlreadyPl
 
     msgticker.resize(640,30);
 
-    // load all data from ini — guarded so a malformed REGION*.INI or unknown
-    // house key logs and degrades gracefully instead of throwing std::runtime_error
-    // out of the constructor (which becomes an uncaught 0xE06D7363 crash on Windows).
-    try {
-        loadINI();
-    } catch(const std::exception& e) {
-        SDL_Log("MapChoice: failed to load campaign data for house %d: %s", house, e.what());
-        // zero out group[] so the menu can still render (no selectable regions)
-        for(int g = 0; g <= (int)lastScenario && g < (int)(sizeof(group)/sizeof(group[0])); g++) {
-            for(unsigned int h = 0; h < group[g].newRegion.size(); h++) {
-                group[g].newRegion[h].clear();
-            }
-        }
-    }
+    // load all data from ini
+    loadINI();
 
     int numSelectableRegions = 0;
     int numRegions = 0;
@@ -136,9 +119,6 @@ MapChoice::~MapChoice() = default;
 int MapChoice::showMenu()
 {
     musicPlayer->changeMusic(MUSIC_MAPCHOICE);
-
-    // Re-enable cursor in case a cutscene or game teardown left it hidden
-    SDL_ShowCursor(SDL_ENABLE);
 
     return MenuBase::showMenu();
 }
@@ -386,26 +366,9 @@ void MapChoice::createMapSurfaceWithPieces(unsigned int scenario) {
 }
 
 void MapChoice::loadINI() {
-    // Neutral house now has its own region map (REGIONN.INI).
     const std::string filename = fmt::sprintf("REGION%c.INI", houseChar[house]);
 
-    // DuneCity: prefer mod campaign override if available
-    std::unique_ptr<INIFile> pRegionINI;
-    std::string campaignDir = ModManager::instance().getActiveCampaignDir();
-    if (!campaignDir.empty()) {
-        std::string modPath = campaignDir + "/" + filename;
-        if (std::filesystem::exists(modPath)) {
-            SDL_RWops* rw = SDL_RWFromFile(modPath.c_str(), "rb");
-            if (rw) {
-                pRegionINI = std::make_unique<INIFile>(rw);
-                SDL_RWclose(rw);
-            }
-        }
-    }
-    if (!pRegionINI) {
-        pRegionINI = std::make_unique<INIFile>(pFileManager->openFile(filename).get());
-    }
-    INIFile& RegionINI = *pRegionINI;
+    INIFile RegionINI(pFileManager->openCampaignFile(filename).get());
 
     piecePosition[0].x = 0;
     piecePosition[0].y = 0;
@@ -444,7 +407,6 @@ void MapChoice::loadINI() {
                 case HOUSE_MERCENARY:   key = "MER"; break;
                 case HOUSE_NEUTRAL:     key = "NEU"; break;
                 case HOUSE_REBELS:      key = "REB"; break;
-                default:                              break;
             }
 
             std::string strValue = RegionINI.getStringValue(strSection,key);

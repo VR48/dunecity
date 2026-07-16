@@ -30,11 +30,9 @@
 #include <players/HumanPlayer.h>
 
 #include <units/InfantryBase.h>
+#include <units/UnitBase.h>
 #include <units/Trooper.h>
 #include <units/Saboteur.h>
-#include <units/Trike.h>
-#include <units/Quad.h>
-#include <units/SonicTank.h>
 
 #include <GUI/ObjectInterfaces/PalaceInterface.h>
 
@@ -126,20 +124,16 @@ void Palace::doSpecialWeapon() {
             }
         } break;
 
-        case HOUSE_NEUTRAL: {
-            if(spawnNeutralUnits()) {
-                specialWeaponTimer = getMaxSpecialWeaponTimer();
-            }
-        } break;
-
+        case HOUSE_NEUTRAL:
         case HOUSE_REBELS: {
-            if(spawnRebelsUnits()) {
+            if(callLightVehicles()) {
                 specialWeaponTimer = getMaxSpecialWeaponTimer();
             }
         } break;
 
         default: {
-            THROW(std::runtime_error, "Palace::DoSpecialWeapon(): Invalid house");
+            SDL_Log("PALACE: Ignoring special weapon for unsupported house %d", originalHouseID);
+            return;
         } break;
     }
 }
@@ -292,45 +286,73 @@ bool Palace::spawnSaboteur() {
     return true;
 }
 
-bool Palace::spawnNeutralUnits() {
-    int numTrikes = 1 + (currentGame->randomGen.rand(0, 2));  // 1, 2, or 3
-    int numQuads  = 1 + (currentGame->randomGen.rand(0, 2));
+bool Palace::callLightVehicles() {
+    int count = 0;
+    int x;
+    int y;
+    do {
+        x = currentGame->randomGen.rand(1, currentGameMap->getSizeX()-2);
+        y = currentGame->randomGen.rand(1, currentGameMap->getSizeY()-2);
+    } while((currentGameMap->getTile(x-1, y-1)->hasAGroundObject()
+            || currentGameMap->getTile(x, y-1)->hasAGroundObject()
+            || currentGameMap->getTile(x+1, y-1)->hasAGroundObject()
+            || currentGameMap->getTile(x-1, y)->hasAGroundObject()
+            || currentGameMap->getTile(x, y)->hasAGroundObject()
+            || currentGameMap->getTile(x+1, y)->hasAGroundObject()
+            || currentGameMap->getTile(x-1, y+1)->hasAGroundObject()
+            || currentGameMap->getTile(x, y+1)->hasAGroundObject()
+            || currentGameMap->getTile(x+1, y+1)->hasAGroundObject())
+            && (count++ <= 1000));
 
-    for(int i = 0; i < numTrikes; i++) {
-        Trike* pTrike = static_cast<Trike*>(getOwner()->createUnit(Unit_Trike));
-        Coord spot = currentGameMap->findDeploySpot(pTrike, getLocation(), currentGame->randomGen, getDestination(), getStructureSize());
-        pTrike->deploy(spot);
-        pTrike->doSetAttackMode(HUNT);
+    if(count >= 1000) {
+        if(getOwner() == pLocalHouse) {
+            currentGame->addToNewsTicker(_("Unable to spawn vehicles"));
+        }
+        return false;
     }
 
-    for(int i = 0; i < numQuads; i++) {
-        Quad* pQuad = static_cast<Quad*>(getOwner()->createUnit(Unit_Quad));
-        Coord spot = currentGameMap->findDeploySpot(pQuad, getLocation(), currentGame->randomGen, getDestination(), getStructureSize());
-        pQuad->deploy(spot);
-        // DuneCity: spawned units start in Hunt mode (player can change)
-        pQuad->doSetAttackMode(HUNT);
+    const int trikeCount = currentGame->randomGen.rand(1, 3);
+    const int quadCount = currentGame->randomGen.rand(0, 2);
+    int spawned = 0;
+
+    const auto spawnVehicle = [&](int itemID) {
+        UnitBase* newUnit = getOwner()->createUnit(itemID);
+        if(newUnit == nullptr) {
+            return;
+        }
+
+        for(int tries = 0; tries < 30; ++tries) {
+            const int i = currentGame->randomGen.rand(-1, 1);
+            const int j = currentGame->randomGen.rand(-1, 1);
+            const Coord deployPos(x + i, y + j);
+
+            if(currentGameMap->getTile(deployPos)->hasAGroundObject()) {
+                continue;
+            }
+            if(!newUnit->canPass(deployPos.x, deployPos.y)) {
+                continue;
+            }
+
+            newUnit->deploy(deployPos);
+            newUnit->setGuardPoint(deployPos);
+            newUnit->doSetAttackMode(HUNT);
+            spawned++;
+            return;
+        }
+
+        delete newUnit;
+    };
+
+    for(int i = 0; i < trikeCount; ++i) {
+        spawnVehicle(Unit_Trike);
+    }
+    for(int i = 0; i < quadCount; ++i) {
+        spawnVehicle(Unit_Quad);
     }
 
-    if(getOwner() == pLocalHouse) {
-        currentGame->addToNewsTicker(_("Neutral raiders deployed"));
+    if(spawned <= 0 && getOwner() == pLocalHouse) {
+        currentGame->addToNewsTicker(_("Unable to spawn vehicles"));
     }
 
-    return true;
-}
-
-bool Palace::spawnRebelsUnits() {
-    int numSonic = 1 + (currentGame->randomGen.rand(0, 1));  // 1 or 2
-
-    for (int i = 0; i < numSonic; i++) {
-        SonicTank* pSonic = static_cast<SonicTank*>(getOwner()->createUnit(Unit_SonicTank));
-        Coord spot = currentGameMap->findDeploySpot(pSonic, getLocation(), currentGame->randomGen, getDestination(), getStructureSize());
-        pSonic->deploy(spot);
-        pSonic->doSetAttackMode(HUNT);
-    }
-
-    if(getOwner() == pLocalHouse) {
-        currentGame->addToNewsTicker(_("Rebels sonic tanks deployed"));
-    }
-
-    return true;
+    return spawned > 0;
 }

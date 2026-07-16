@@ -38,8 +38,10 @@
 #include <GUI/ObjectInterfaces/UnitInterface.h>
 
 #include <structures/Refinery.h>
+#include <structures/HarvesterDropoff.h>
 #include <structures/RepairYard.h>
 #include <units/Harvester.h>
+#include <units/HarvesterHelpers.h>
 #include <units/GroundUnit.h>
 
 #define SMOKEDELAY 30
@@ -142,7 +144,6 @@ void UnitBase::init() {
     turreted = false;
     numWeapons = 0;
     bulletType = Bullet_DRocket;
-    lastFiredBulletType = Bullet_DRocket;
 
     drawnFrame = 0;
 
@@ -249,13 +250,12 @@ bool UnitBase::attack() {
                 if(pObject != nullptr) {
                     currentGameMap->viewMap(pObject->getOwner()->getHouseID(), location, 2);
                 }
-                lastFiredBulletType = currentBulletType;
                 playAttackSound();
                 primaryWeaponTimer = getWeaponReloadTime();
 
                 secondaryWeaponTimer = 15;
 
-                if(attackPos && getItemID() != Unit_SonicTank && (currentGameMap->getTile(attackPos)->isSpiceBloom() || currentGameMap->getTile(attackPos)->isRedSpiceBloom() || currentGameMap->getTile(attackPos)->isGreenSpiceBloom())) {
+                if(attackPos && getItemID() != Unit_SonicTank && currentGameMap->getTile(attackPos)->isSpiceBloom()) {
                     setDestination(location);
                     forced = false;
                     attackPos.invalidate();
@@ -279,11 +279,10 @@ bool UnitBase::attack() {
                 if(pObject != nullptr) {
                     currentGameMap->viewMap(pObject->getOwner()->getHouseID(), location, 2);
                 }
-                lastFiredBulletType = currentBulletType;
                 playAttackSound();
                 secondaryWeaponTimer = -1;
 
-                if(attackPos && getItemID() != Unit_SonicTank && (currentGameMap->getTile(attackPos)->isSpiceBloom() || currentGameMap->getTile(attackPos)->isRedSpiceBloom() || currentGameMap->getTile(attackPos)->isGreenSpiceBloom())) {
+                if(attackPos && getItemID() != Unit_SonicTank && currentGameMap->getTile(attackPos)->isSpiceBloom()) {
                     setDestination(location);
                     forced = false;
                     attackPos.invalidate();
@@ -305,7 +304,17 @@ void UnitBase::blitToScreen() {
     int x = screenborder->world2screenX(realX);
     int y = screenborder->world2screenY(realY);
 
+    // Sprite textures are invalidated when a game or mod is loaded. The Sonic
+    // Trike may already exist at that point (notably on loaded custom maps), so
+    // refresh its cached raw pointers before drawing it.
+    if(getItemID() == Unit_SonicTrike) {
+        graphic = pGFXManager->getObjPic(graphicID, getOwner()->getHouseID());
+    }
+
     SDL_Texture* pUnitGraphic = graphic[currentZoomlevel];
+    if(pUnitGraphic == nullptr) {
+        return;
+    }
     SDL_Rect source = calcSpriteSourceRect(pUnitGraphic, drawnAngle, numImagesX, drawnFrame, numImagesY);
     SDL_Rect dest = calcSpriteDrawingRect( pUnitGraphic, x, y, numImagesX, numImagesY, HAlign::Center, VAlign::Center);
 
@@ -344,7 +353,7 @@ void UnitBase::deploy(const Coord& newLocation) {
 
         // Deployment logic to hopefully stop units freezing
         if (getAttackMode() == CARRYALLREQUESTED || getAttackMode() == HUNT) {
-            if(getItemID() == Unit_Harvester) {
+            if(isHarvesterLikeUnit(getItemID())) {
                 doSetAttackMode(HARVEST);
             } else {
                 doSetAttackMode(GUARD);
@@ -366,10 +375,6 @@ void UnitBase::deploy(const Coord& newLocation) {
                     setHealth(0);
                     setVisible(VIS_ALL, false);
                 }
-            } else if(currentGameMap->getTile(location)->isRedSpiceBloom()) {
-                currentGameMap->getTile(location)->triggerRedSpiceBloom(getOwner());
-            } else if(currentGameMap->getTile(location)->isGreenSpiceBloom()) {
-                currentGameMap->getTile(location)->triggerGreenSpiceBloom(getOwner());
             } else if(currentGameMap->getTile(location)->isSpecialBloom()){
                 currentGameMap->getTile(location)->triggerSpecialBloom(getOwner());
             }
@@ -699,7 +704,7 @@ void UnitBase::bumpyMovementOnRock(FixPoint fromDistanceX, FixPoint fromDistance
 
     if(hasBumpyMovementOnRock() && ((currentGameMap->getTile(location)->getType() == Terrain_Rock)
                                     || (currentGameMap->getTile(location)->getType() == Terrain_Mountain)
-                                    || (currentGameMap->getTile(location)->getType() == Terrain_ThickSpice))) {
+                                    || (currentGameMap->getTile(location)->isThickSpice()))) {
         // bumping effect
 
         const FixPoint epsilon = 0.005_fix;
@@ -820,7 +825,7 @@ void UnitBase::navigate() {
 
 void UnitBase::idleAction() {
     //not moving and not wanting to go anywhere, do some random turning
-    if(isAGroundUnit() && (getItemID() != Unit_Harvester) && (getAttackMode() == GUARD)) {
+    if(isAGroundUnit() && !isHarvesterLikeUnit(getItemID()) && (getAttackMode() == GUARD)) {
         // we might turn this cylce with 20% chance
         if(currentGame->randomGen.rand(0, 4) == 0) {
             // choose a random one of the eight possible angles
@@ -971,7 +976,7 @@ void UnitBase::doAttackPos(int xPos, int yPos, bool bForced) {
 }
 
 void UnitBase::doAttackObject(const ObjectBase* pTargetObject, bool bForced) {
-    if(pTargetObject->getObjectID() == getObjectID() || (!canAttack() && getItemID() != Unit_Harvester)) {
+    if(pTargetObject->getObjectID() == getObjectID() || (!canAttack() && !isHarvesterLikeUnit(getItemID()))) {
         return;
     }
 
@@ -1049,7 +1054,7 @@ void UnitBase::handleDamage(int damage, Uint32 damagerID, House* damagerOwner) {
         
         // CRITICAL FIX: AMBUSH units switch to HUNT when damaged (Dynasty behavior, line 1930-1933)
         // This allows them to pursue and counter-attack instead of sitting in their 1-tile view range
-        if(damage > 0 && attackMode == AMBUSH && getItemID() != Unit_Harvester) {
+        if(damage > 0 && attackMode == AMBUSH && !isHarvesterLikeUnit(getItemID())) {
             doSetAttackMode(HUNT);
             findTargetTimer = 0;  // Allow immediate target search
         }
@@ -1205,7 +1210,7 @@ void UnitBase::setGuardPoint(int newX, int newY) {
         guardPoint.x = newX;
         guardPoint.y = newY;
 
-        if((getItemID() == Unit_Harvester) && guardPoint.isValid()) {
+        if(isHarvesterLikeUnit(getItemID()) && guardPoint.isValid()) {
             if(currentGameMap->getTile(newX, newY)->hasSpice()) {
                 if(attackMode == STOP) {
                     attackMode = GUARD;
@@ -1253,10 +1258,11 @@ void UnitBase::setPickedUp(UnitBase* newCarrier) {
         spatialGrid->unregister(getGridHandle());
     }
 
-    if(getItemID() == Unit_Harvester) {
-        Harvester* harvester = static_cast<Harvester*>(this);
-        if(harvester->isReturning() && target && (target.getObjPointer()!= nullptr) && (target.getObjPointer()->getItemID() == Structure_Refinery)) {
-            static_cast<Refinery*>(target.getObjPointer())->unBook();
+    if(isHarvesterLikeUnit(getItemID())) {
+        if(harvesterIsReturning(this) && target) {
+            if(StructureBase* dropoff = getHarvesterDropoff(target.getObjPointer())) {
+                dropoff->unbookHarvesterDropoff();
+            }
         }
     }
 
@@ -1581,25 +1587,24 @@ UnitBase::PathRequestStats UnitBase::resolvePendingPathRequest() {
         if(++noCloserPointCount >= 3) {
             if(target.getObjPointer() != nullptr && targetFriendly
                && (target.getObjPointer()->getItemID() != Structure_RepairYard)
-               && ((target.getObjPointer()->getItemID() != Structure_Refinery)
-                   || (getItemID() != Unit_Harvester))) {
+               && ((getHarvesterDropoff(target.getObjPointer()) == nullptr)
+                   || !isHarvesterLikeUnit(getItemID()))) {
                 setTarget(nullptr);
             }
 
             if(getOwner()->hasCarryalls()
                && this->isAGroundUnit()
                && !static_cast<GroundUnit*>(this)->hasBookedCarrier()
-               && carryallRequestCooldown <= 0
                && (currentGame->getGameInitSettings().getGameOptions().manualCarryallDrops || getOwner()->isAI())
                && blockDistance(location, destination) >= MIN_CARRYALL_LIFT_DISTANCE) {
                 static_cast<GroundUnit*>(this)->requestCarryall();
             } else if(getOwner()->isAI()
-                      && (getItemID() == Unit_Harvester)
-                      && !static_cast<Harvester*>(this)->isReturning()
+                      && isHarvesterLikeUnit(getItemID())
+                      && !harvesterIsReturning(this)
                       && blockDistance(location, destination) >= 2) {
-                static_cast<Harvester*>(this)->doReturn();
-            } else if((getItemID() == Unit_Harvester)
-                      && static_cast<Harvester*>(this)->isReturning()) {
+                harvesterDoReturn(this);
+            } else if(isHarvesterLikeUnit(getItemID())
+                      && harvesterIsReturning(this)) {
                 // Returning harvester - don't give up, blocker will move eventually
                 noCloserPointCount = 0;
             } else {
@@ -1829,8 +1834,9 @@ Coord UnitBase::resolvePathDestination() const {
     if(target && target.getObjPointer() != nullptr) {
         const ObjectBase* pTargetObject = target.getObjPointer();
 
-        if(itemID == Unit_Carryall && pTargetObject->getItemID() == Structure_Refinery) {
-            return pTargetObject->getLocation() + Coord(2,0);
+        if(itemID == Unit_Carryall && getHarvesterDropoff(pTargetObject) != nullptr) {
+            const auto* dropoff = getHarvesterDropoff(pTargetObject);
+            return pTargetObject->getLocation() + Coord(dropoff->getStructureSizeX() - 1, 0);
         } else if(itemID == Unit_Frigate && pTargetObject->getItemID() == Structure_StarPort) {
             return pTargetObject->getLocation() + Coord(1,1);
         }

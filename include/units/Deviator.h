@@ -38,6 +38,7 @@ private:
     // drawing information
     zoomable_texture turretGraphic{};   ///< The turret graphic
     int              gunGraphicID;      ///< The id of the turret graphic (needed if we want to reload the graphic)
+    bool             usesFullSprite;    ///< true when Tornie provides a combined base/turret sprite
 };
 
 #endif //DEVIATOR_H

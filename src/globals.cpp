@@ -24,6 +24,7 @@
 #include <FileClasses/SFXManager.h>
 #include <FileClasses/FontManager.h>
 #include <FileClasses/TextManager.h>
+#include <FileClasses/Palfile.h>
 #include <Network/NetworkManager.h>
 
 // Explicit definitions of global variables (instead of relying on EXTERN macro)
@@ -32,7 +33,8 @@ SDL_Window*          window = nullptr;
 SDL_Renderer*        renderer = nullptr;
 SDL_Texture*         screenTexture = nullptr;
 Palette              palette;
-Palette              ibmPalette;
+Palette              customPalette;
+bool                 customPaletteLoaded = false;
 int                  drawnMouseX = 0;
 int                  drawnMouseY = 0;
 int                  currentZoomlevel = 0;
@@ -62,3 +64,64 @@ RobustList<Bullet*>         bulletList;
 SettingsClass    settings;
 SettingsClass::GameOptionsClass effectiveGameOptions;
 bool debug = false;
+std::array<int, NUM_HOUSES> houseToVisualHouse = {
+    HOUSE_HARKONNEN,
+    HOUSE_ATREIDES,
+    HOUSE_ORDOS,
+    HOUSE_FREMEN,
+    HOUSE_SARDAUKAR,
+    HOUSE_MERCENARY,
+    HOUSE_NEUTRAL,
+    HOUSE_REBELS
+};
+
+void loadCustomPalette() {
+    customPaletteLoaded = false;
+
+    if(pFileManager == nullptr || !pFileManager->exists("Custom_IBM.PAL")) {
+        return;
+    }
+
+    try {
+        customPalette = LoadPalette_RW(pFileManager->openFile("Custom_IBM.PAL").get());
+        customPaletteLoaded = customPalette.getNumColors() >= 256;
+    } catch(const std::exception& e) {
+        SDL_Log("Warning: Could not load Custom_IBM.PAL: %s", e.what());
+        customPalette = Palette();
+        customPaletteLoaded = false;
+    }
+}
+
+void applyCustomPaletteRuntimeHouseRamps() {
+    if(palette.getNumColors() < 256) {
+        return;
+    }
+
+    static const Uint8 rebelsGreyRamp[8] = { 82, 72, 62, 52, 42, 34, 27, 20 };
+    for(int k = 0; k < 8; k++) {
+        SDL_Color& color = palette[PALCOLOR_REBELS + k];
+        color.r = rebelsGreyRamp[k];
+        color.g = rebelsGreyRamp[k];
+        color.b = rebelsGreyRamp[k];
+        color.a = 255;
+    }
+}
+
+void resetHouseVisualHouseMapping() {
+    for(int house = 0; house < NUM_HOUSES; ++house) {
+        houseToVisualHouse[house] = house;
+    }
+}
+
+void setHouseVisualHouse(HOUSETYPE house, int visualHouse) {
+    if(house < 0 || house >= NUM_HOUSES) {
+        return;
+    }
+
+    if(!isValidHouseColorSlot(visualHouse)) {
+        houseToVisualHouse[house] = house;
+        return;
+    }
+
+    houseToVisualHouse[house] = visualHouse;
+}

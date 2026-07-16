@@ -18,9 +18,11 @@
 #include <units/TrackedUnit.h>
 
 #include <units/Harvester.h>
+#include <units/HarvesterHelpers.h>
 
 #include <structures/RepairYard.h>
 #include <structures/Refinery.h>
+#include <structures/HarvesterDropoff.h>
 
 #include <globals.h>
 
@@ -88,9 +90,8 @@ bool TrackedUnit::canPass(int xPos, int yPos) const
             // are we entering a repair yard?
             if(goingToRepairYard && (pObject->getItemID() == Structure_RepairYard)) {
                 return static_cast<const RepairYard*>(pObject)->isFree();
-            } else if(getItemID() == Unit_Harvester) {
-                const Harvester* pHarvester = static_cast<const Harvester*>(this);
-                return (pHarvester->isReturning() && (pObject->getItemID() == Structure_Refinery) && static_cast<const Refinery*>(pObject)->isFree());
+            } else if(isHarvesterLikeUnit(getItemID())) {
+                return (harvesterIsReturning(this) && getHarvesterDropoff(pObject) != nullptr && getHarvesterDropoff(pObject)->isHarvesterDropoffFree());
             } else {
                 return false;
             }

@@ -39,8 +39,8 @@ HouseChoiceInfoMenu::HouseChoiceInfoMenu(int newHouse) : MentatMenu(HOUSE_INVALI
         case HOUSE_FREMEN:      anim = pGFXManager->getAnimation(Anim_FremenPlanet);    break;
         case HOUSE_SARDAUKAR:   anim = pGFXManager->getAnimation(Anim_SardaukarPlanet); break;
         case HOUSE_MERCENARY:   anim = pGFXManager->getAnimation(Anim_MercenaryPlanet); break;
-        case HOUSE_NEUTRAL:     anim = pGFXManager->getAnimation(Anim_NeutralPlanet); break;
-        case HOUSE_REBELS:      anim = pGFXManager->getAnimation(Anim_HarkonnenPlanet); break;
+        case HOUSE_NEUTRAL:     anim = pGFXManager->getAnimation(Anim_NeutralPlanet);   break;
+        case HOUSE_REBELS:      anim = pGFXManager->getAnimation(Anim_RebelsPlanet);    break;
         default: {
             THROW(std::invalid_argument, "HouseChoiceInfoMenu::HouseChoiceInfoMenu(): Invalid house id '%d'.", newHouse);
         } break;
@@ -56,8 +56,12 @@ HouseChoiceInfoMenu::HouseChoiceInfoMenu(int newHouse) : MentatMenu(HOUSE_INVALI
 
     // init textbox but skip first line (this line contains "House ???")
     std::string desc = pTextManager->getBriefingText(0,MISSION_DESCRIPTION,house);
-    int linebreak = desc.find("\n",0) + 1;
-    setText(desc.substr(linebreak,desc.length()-linebreak));
+    const auto linebreak = desc.find("\n", 0);
+    if(linebreak == std::string::npos) {
+        setText(desc);
+    } else {
+        setText(desc.substr(linebreak + 1, desc.length() - linebreak - 1));
+    }
 
     SDL_Texture* pMentatYes = pGFXManager->getUIGraphic(UI_MentatYes);
     SDL_Texture* pMentatYesPressed = pGFXManager->getUIGraphic(UI_MentatYes_Pressed);

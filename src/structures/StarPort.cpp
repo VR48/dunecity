@@ -26,6 +26,7 @@
 #include <Choam.h>
 #include <Map.h>
 #include <SoundPlayer.h>
+#include <units/HarvesterHelpers.h>
 
 #include <players/HumanPlayer.h>
 
@@ -292,7 +293,7 @@ void StarPort::updateStructureSpecificStuff() {
                         Coord unitDestination;
                         if( getOwner()->isAI()
                             && ((newUnit->getItemID() == Unit_Carryall)
-                                || (newUnit->getItemID() == Unit_Harvester)
+                                || isHarvesterLikeUnit(newUnit->getItemID())
                                 || (newUnit->getItemID() == Unit_MCV))) {
                             // Don't want harvesters going to the rally point
                             unitDestination = location;
@@ -312,7 +313,7 @@ void StarPort::updateStructureSpecificStuff() {
                         if(getOwner() == pLocalHouse) {
                             if(isFlyingUnit(newUnitItemID)) {
                                 soundPlayer->playVoice(UnitLaunched, getOwner()->getHouseID());
-                            } else if(newUnitItemID == Unit_Harvester) {
+                            } else if(isHarvesterLikeUnit(newUnitItemID)) {
                                 soundPlayer->playVoice(HarvesterDeployed, getOwner()->getHouseID());
                             } else {
                                 soundPlayer->playVoice(UnitDeployed, getOwner()->getHouseID());

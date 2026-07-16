@@ -28,6 +28,7 @@ class Explosion
 public:
     Explosion();
     Explosion(Uint32 explosionID, const Coord& position, int house = HOUSE_HARKONNEN);
+    Explosion(Uint32 explosionID, const Coord& position, int house, Uint32 damagerID, int persistentDamage, int damageRadius);
     explicit Explosion(InputStream& stream);
     ~Explosion();
 
@@ -49,6 +50,9 @@ private:
     int numFrames = 0;
     int currentFrame;
     int frameTimer;
+    Uint32 damagerID = NONE_ID;
+    int persistentDamage = 0;
+    int damageRadius = 0;
 };
 
 

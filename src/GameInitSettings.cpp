@@ -27,6 +27,11 @@
 #include <globals.h>
 #include <mod/ModManager.h>
 
+namespace {
+constexpr Uint32 GAMEINIT_MOD_MARKER = 0x4D4F4421;   // "MOD!"
+constexpr Uint32 GAMEINIT_MOD2_MARKER = 0x4D4F4432;  // "MOD2"
+}
+
 // Helper to capture current mod info
 static void setModInfo(std::string& modName, std::string& modChecksum) {
     if (ModManager::instance().isInitialized()) {
@@ -127,9 +132,19 @@ GameInitSettings::GameInitSettings(InputStream& stream) {
     // Use marker to detect presence for backward compatibility
     try {
         Uint32 modMarker = stream.readUint32();
-        if (modMarker == 0x4D4F4421) {  // "MOD!" marker
+        if (modMarker == GAMEINIT_MOD_MARKER || modMarker == GAMEINIT_MOD2_MARKER) {
             modName = stream.readString();
             modChecksum = stream.readString();
+
+            if(modMarker == GAMEINIT_MOD2_MARKER) {
+                Uint32 numHouseColors = stream.readUint32();
+                for(Uint32 i = 0; i < numHouseColors; i++) {
+                    const int colorOfHouse = stream.readSint32();
+                    if(i < houseInfoList.size()) {
+                        houseInfoList[i].colorOfHouse = colorOfHouse;
+                    }
+                }
+            }
         }
     } catch (InputStream::eof&) {
         // Old format without mod info - use defaults
@@ -175,9 +190,14 @@ void GameInitSettings::save(OutputStream& stream) const {
     }
     
     // Write mod info with marker for forward compatibility
-    stream.writeUint32(0x4D4F4421);  // "MOD!" marker
+    stream.writeUint32(GAMEINIT_MOD2_MARKER);
     stream.writeString(modName);
     stream.writeString(modChecksum);
+
+    stream.writeUint32(houseInfoList.size());
+    for(const HouseInfo& houseInfo : houseInfoList) {
+        stream.writeSint32(houseInfo.colorOfHouse);
+    }
 }
 
 
@@ -191,9 +211,9 @@ std::string GameInitSettings::getScenarioFilename(HOUSETYPE newHouse, int missio
         THROW(std::invalid_argument, "GameInitSettings::getScenarioFilename(): There is no mission number " + std::to_string(mission) + ".");
     }
 
-    // Neutral house now has its own campaign scenarios (SCENN0??.INI).
     std::string name = "SCEN?0??.INI";
     name[4] = houseChar[newHouse];
+
     name[6] = '0' + (mission / 10);
     name[7] = '0' + (mission % 10);
 

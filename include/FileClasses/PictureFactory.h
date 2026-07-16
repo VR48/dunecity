@@ -57,12 +57,12 @@ public:
     sdl2::surface_ptr createHeraldFre(SDL_Surface* heraldHark) const;
     sdl2::surface_ptr createHeraldSard(SDL_Surface* heraldOrd, SDL_Surface* heraldAtre) const;
     sdl2::surface_ptr createHeraldMerc(SDL_Surface* heraldAtre, SDL_Surface* heraldOrd) const;
-    sdl2::surface_ptr createHeraldNeu(SDL_Surface* heraldOrdos, SDL_Surface* launcherIcon = nullptr) const;
 
     static std::unique_ptr<Animation> createFremenPlanet(SDL_Surface* heraldFre);
     static std::unique_ptr<Animation> createSardaukarPlanet(Animation* ordosPlanetAnimation, SDL_Surface* heraldSard);
     static std::unique_ptr<Animation> createMercenaryPlanet(Animation* atreidesPlanetAnimation, SDL_Surface* heraldMerc);
     static std::unique_ptr<Animation> createNeutralPlanet(Animation* harkonnenPlanetAnimation, SDL_Surface* heraldNeutral);
+    static std::unique_ptr<Animation> createRebelsPlanet(Animation* atreidesPlanetAnimation, SDL_Surface* heraldRebels);
 
     static sdl2::surface_ptr mapMentatSurfaceToFremen(SDL_Surface* atreidesMentat);
     static std::unique_ptr<Animation> mapMentatAnimationToFremen(Animation* atreidesAnimation);
@@ -70,10 +70,6 @@ public:
     static std::unique_ptr<Animation> mapMentatAnimationToSardaukar(Animation* harkonnenAnimation);
     static sdl2::surface_ptr mapMentatSurfaceToMercenary(SDL_Surface* ordosMentat);
     static std::unique_ptr<Animation> mapMentatAnimationToMercenary(Animation* ordosAnimation);
-    static sdl2::surface_ptr mapMentatSurfaceToNeutral(SDL_Surface* pSurface);
-    static std::unique_ptr<Animation> mapMentatAnimationToNeutral(Animation* pAnimation);
-    static sdl2::surface_ptr mapMentatSurfaceToRebels(SDL_Surface* harkonnenMentat);
-    static std::unique_ptr<Animation> mapMentatAnimationToRebels(Animation* harkonnenAnimation);
 
     typedef enum {
         SimpleFrame,

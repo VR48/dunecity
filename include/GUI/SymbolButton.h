@@ -99,9 +99,20 @@ protected:
         if(!pUnpressedTexture) {
             invalidateTextures();
 
-            sdl2::surface_ptr pUnpressed = GUIStyle::getInstance().createButtonSurface(getSize().x, getSize().y, "", false, true);
-            sdl2::surface_ptr pPressed = GUIStyle::getInstance().createButtonSurface(getSize().x, getSize().y, "", true, true);
+            const Point minimumSize = getMinimumSize();
+            const Uint32 width = static_cast<Uint32>((getSize().x > 0) ? getSize().x : minimumSize.x);
+            const Uint32 height = static_cast<Uint32>((getSize().y > 0) ? getSize().y : minimumSize.y);
+            if(width == 0 || height == 0) {
+                return;
+            }
+
+            sdl2::surface_ptr pUnpressed = GUIStyle::getInstance().createButtonSurface(width, height, "", false, true);
+            sdl2::surface_ptr pPressed = GUIStyle::getInstance().createButtonSurface(width, height, "", true, true);
             sdl2::surface_ptr pActive;
+
+            if(!pUnpressed || !pPressed) {
+                return;
+            }
 
             if(pSymbolSurface) {
                 SDL_Rect dest = calcAlignedDrawingRect(pSymbolSurface.get(), pUnpressed.get());
@@ -113,7 +124,10 @@ protected:
             }
 
             if(pActiveSymbolSurface) {
-                pActive = GUIStyle::getInstance().createButtonSurface(getSize().x, getSize().y, "", false, true);
+                pActive = GUIStyle::getInstance().createButtonSurface(width, height, "", false, true);
+                if(!pActive) {
+                    return;
+                }
 
                 SDL_Rect dest = calcAlignedDrawingRect(pActiveSymbolSurface.get(), pActive.get());
                 SDL_BlitSurface(pActiveSymbolSurface.get(), nullptr, pActive.get(), &dest);

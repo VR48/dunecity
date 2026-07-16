@@ -302,7 +302,6 @@ protected:
     bool     turreted;               ///< Does this unit have a turret?
     int      numWeapons;             ///< How many weapons do we have?
     int      bulletType;             ///< Type of bullet to shot with
-    int      lastFiredBulletType;    ///< Bullet type actually fired last (may differ from bulletType at close range)
 
     // unit state/properties
     Coord    guardPoint;             ///< The guard point where to return to after the micro-AI hunted some nearby enemy unit

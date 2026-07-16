@@ -31,6 +31,7 @@ public:
         enum class EventType {
             ChangeHouse,
             ChangeTeam,
+            ChangeColor,
             ChangePlayer,
             SetHumanPlayer
         };

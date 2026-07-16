@@ -66,7 +66,7 @@ protected:
 
         weaponSelectButton.setOnClick(std::bind(&PalaceInterface::onSpecial, this));
 
-        Uint32 color = SDL2RGB(palette[houseToPaletteIndex[pLocalHouse->getHouseID()]+3]);
+        Uint32 color = getHouseColorRGB(getHouseVisualHouse(pLocalHouse->getHouseID()), 3);
 
         levelLabel.setTextFontSize(12);
         levelLabel.setTextColor(color);
@@ -97,7 +97,7 @@ protected:
         if(pPalace != nullptr) {
             int picID;
 
-            switch(pPalace->getOwner()->getHouseID()) {
+            switch(pPalace->getOriginalHouseID()) {
                 case HOUSE_HARKONNEN:
                 case HOUSE_SARDAUKAR: {
                     picID = Picture_DeathHand;
@@ -115,7 +115,7 @@ protected:
 
                 case HOUSE_NEUTRAL:
                 case HOUSE_REBELS: {
-                    picID = Picture_PalaceNeutral;
+                    picID = Picture_PalaceLightVehicles;
                 } break;
 
                 default: {

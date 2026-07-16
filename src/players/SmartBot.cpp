@@ -386,7 +386,7 @@ int SmartBot::getNumAdjacentStructureTiles(Coord pos, int structureSizeX, int st
 
 void SmartBot::build() {
     // Lets count what we are building
-    int buildQueue[ItemID_LastID] = {};
+    int buildQueue[Num_ItemID] = {};
 
     for(const StructureBase* pStructure : getStructureList()) {
         if(pStructure->getOwner() == getHouse() && pStructure->isABuilder()) {

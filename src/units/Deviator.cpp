@@ -20,13 +20,13 @@
 #include <globals.h>
 
 #include <FileClasses/GFXManager.h>
-#include <mod/ModManager.h>
 #include <House.h>
 #include <Game.h>
 #include <Map.h>
 #include <Explosion.h>
 #include <ScreenBorder.h>
 #include <SoundPlayer.h>
+#include <mod/ModManager.h>
 
 Deviator::Deviator(House* newOwner) : TrackedUnit(newOwner)
 {
@@ -45,19 +45,13 @@ void Deviator::init()
     itemID = Unit_Deviator;
     owner->incrementUnits(itemID);
 
+    usesFullSprite = false;
     graphicID = ObjPic_Tank_Base;
-    gunGraphicID = ObjPic_Launcher_Gun;
+    const bool tornieActive = ModManager::instance().isInitialized()
+        && ModManager::instance().getActiveModName() == "Tornie";
+    gunGraphicID = tornieActive ? ObjPic_DeviatorGunTornie : ObjPic_Launcher_Gun;
     graphic = pGFXManager->getObjPic(graphicID,getOwner()->getHouseID());
-    turretGraphic = pGFXManager->getObjPic(gunGraphicID,getOwner()->getHouseID());
-
-    // Use Tornie custom sprite only when Tornie mod is active
-    if (ModManager::instance().getActiveModName() == "Tornie") {
-        auto customGraphic = pGFXManager->getObjPic(ObjPic_DeviatorCustom, getOwner()->getHouseID());
-        if(customGraphic[0] != nullptr) {
-            graphicID = ObjPic_DeviatorCustom;
-            graphic = customGraphic;
-        }
-    }
+    turretGraphic = pGFXManager->getObjPic(gunGraphicID, tornieActive ? HOUSE_HARKONNEN : getOwner()->getHouseID());
 
     numImagesX = NUM_ANGLES;
     numImagesY = 1;
@@ -78,6 +72,13 @@ void Deviator::blitToScreen()
     SDL_Rect dest1 = calcSpriteDrawingRect( pUnitGraphic, x1, y1, numImagesX, 1, HAlign::Center, VAlign::Center);
 
     SDL_RenderCopy(renderer, pUnitGraphic, &source1, &dest1);
+
+    if(usesFullSprite) {
+        if(isBadlyDamaged()) {
+            drawSmoke(x1, y1);
+        }
+        return;
+    }
 
     const Coord deviatorTurretOffset[] =    {   Coord(0, -12),
                                                 Coord(0, -8),

@@ -26,6 +26,7 @@
 #include <Explosion.h>
 #include <ScreenBorder.h>
 #include <SoundPlayer.h>
+#include <mod/ModManager.h>
 
 
 FlameTank::FlameTank(House* newOwner) : TrackedUnit(newOwner) {
@@ -45,14 +46,52 @@ void FlameTank::init() {
     numWeapons = 1;
     bulletType = Bullet_Flame;
 
-    graphicID = ObjPic_FlameTank;
+    graphicID = ObjPic_Tank_Base;
+    const bool tornieActive = ModManager::instance().isInitialized()
+        && ModManager::instance().getActiveModName() == "Tornie";
+    gunGraphicID = tornieActive ? ObjPic_FlameTankGunTornie : ObjPic_Launcher_Gun;
     graphic = pGFXManager->getObjPic(graphicID, getOwner()->getHouseID());
+    turretGraphic = pGFXManager->getObjPic(gunGraphicID, tornieActive ? HOUSE_HARKONNEN : getOwner()->getHouseID());
 
     numImagesX = NUM_ANGLES;
     numImagesY = 1;
 }
 
 FlameTank::~FlameTank() = default;
+
+void FlameTank::blitToScreen() {
+    int x1 = screenborder->world2screenX(realX);
+    int y1 = screenborder->world2screenY(realY);
+
+    SDL_Texture* pUnitGraphic = graphic[currentZoomlevel];
+    SDL_Rect source1 = calcSpriteSourceRect(pUnitGraphic, drawnAngle, numImagesX);
+    SDL_Rect dest1 = calcSpriteDrawingRect(pUnitGraphic, x1, y1, numImagesX, 1, HAlign::Center, VAlign::Center);
+
+    SDL_RenderCopy(renderer, pUnitGraphic, &source1, &dest1);
+
+    const Coord launcherTurretOffset[] =    {   Coord(0, -12),
+                                                Coord(0, -8),
+                                                Coord(0, -8),
+                                                Coord(0, -8),
+                                                Coord(0, -12),
+                                                Coord(0, -8),
+                                                Coord(0, -8),
+                                                Coord(0, -8)
+                                            };
+
+    SDL_Texture* pTurretGraphic = turretGraphic[currentZoomlevel];
+    SDL_Rect source2 = calcSpriteSourceRect(pTurretGraphic, drawnAngle, numImagesX);
+    SDL_Rect dest2 = calcSpriteDrawingRect( pTurretGraphic,
+                                            screenborder->world2screenX(realX + launcherTurretOffset[drawnAngle].x),
+                                            screenborder->world2screenY(realY + launcherTurretOffset[drawnAngle].y),
+                                            numImagesX, 1, HAlign::Center, VAlign::Center);
+
+    SDL_RenderCopy(renderer, pTurretGraphic, &source2, &dest2);
+
+    if(isBadlyDamaged()) {
+        drawSmoke(x1, y1);
+    }
+}
 
 void FlameTank::destroy() {
     if(currentGameMap->tileExists(location) && isVisible()) {
@@ -78,5 +117,5 @@ void FlameTank::destroy() {
 }
 
 void FlameTank::playAttackSound() {
-    soundPlayer->playSoundAt(Sound_Sonic, location);
+    soundPlayer->playSoundAt(Sound_Rocket, location);
 }

@@ -196,11 +196,24 @@ void MainMenu::refreshModVersionLabel()
     ModManager& modManager = ModManager::instance();
     if (modManager.isInitialized()) {
         activeModName = modManager.getActiveModName();
-        ModInfo info = modManager.getModInfo(activeModName);
-        if (!info.displayName.empty()) {
-            modDisplayName = info.displayName;
-        } else if (!info.name.empty()) {
-            modDisplayName = info.name;
+        // v1.0.510: defensive null guard. Tornie's ModInfo.displayName was
+        // observed empty on some mod bundles (Tornie was registered but
+        // the ModInfo was never populated past init). Reading an empty
+        // string then concatenating with "\nv" was crashing in some
+        // label rendering paths downstream. Fall back to the raw mod
+        // name in that case.
+        try {
+            ModInfo info = modManager.getModInfo(activeModName);
+            if (!info.displayName.empty()) {
+                modDisplayName = info.displayName;
+            } else if (!info.name.empty()) {
+                modDisplayName = info.name;
+            } else if (!activeModName.empty()) {
+                modDisplayName = activeModName;
+            }
+        } catch (const std::exception& e) {
+            SDL_Log("MainMenu: refreshModVersionLabel failed: %s — using raw mod name", e.what());
+            modDisplayName = activeModName.empty() ? "Unknown" : activeModName;
         }
     }
 
@@ -208,34 +221,45 @@ void MainMenu::refreshModVersionLabel()
         return;
     }
     lastShownModName = activeModName;
-    modVersionLabel.setText(modDisplayName + "\nv" + std::string(VERSION));
+    try {
+        modVersionLabel.setText(modDisplayName + "\nv" + std::string(VERSION));
+    } catch (const std::exception& e) {
+        SDL_Log("MainMenu: setText failed: %s", e.what());
+    }
 }
 
 MainMenu::~MainMenu() = default;
 
 int MainMenu::showMenu()
 {
-    // Re-enable cursor in case a game or cutscene left it hidden
-    SDL_ShowCursor(SDL_ENABLE);
+    int menuResult = -1;
+    try {
+        musicPlayer->changeMusic(MUSIC_MENU);
 
-    musicPlayer->changeMusic(MUSIC_MENU);
+        // Start version check in background (only once)
+        if(!bVersionCheckStarted) {
+            bVersionCheckStarted = true;
 
-    // Start version check in background (only once)
-    if(!bVersionCheckStarted) {
-        bVersionCheckStarted = true;
+            pVersionChecker = std::make_unique<VersionChecker>(settings.network.metaServer);
+            pVersionChecker->setOnVersionCheckComplete([this](const VersionInfo& info) {
+                if(info.updateAvailable && !bUpdateDialogShown) {
+                    latestVersion = info.latestVersion;
+                    downloadURL = info.downloadURL;
+                    // Show dialog in update() when safe (not during callback)
+                }
+            });
+            pVersionChecker->checkForUpdates();
+        }
 
-        pVersionChecker = std::make_unique<VersionChecker>(settings.network.metaServer);
-        pVersionChecker->setOnVersionCheckComplete([this](const VersionInfo& info) {
-            if(info.updateAvailable && !bUpdateDialogShown) {
-                latestVersion = info.latestVersion;
-                downloadURL = info.downloadURL;
-                // Show dialog in update() when safe (not during callback)
-            }
-        });
-        pVersionChecker->checkForUpdates();
+        menuResult = MenuBase::showMenu();
+    } catch(const std::exception& e) {
+        SDL_LogCritical(SDL_LOG_CATEGORY_APPLICATION,
+            "MainMenu::showMenu failed: %s — returning to caller with code -1", e.what());
+    } catch(...) {
+        SDL_LogCritical(SDL_LOG_CATEGORY_APPLICATION,
+            "MainMenu::showMenu failed: unknown exception — returning to caller with code -1");
     }
-
-    return MenuBase::showMenu();
+    return menuResult;
 }
 
 void MainMenu::update()

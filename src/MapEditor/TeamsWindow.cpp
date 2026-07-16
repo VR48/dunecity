@@ -34,7 +34,7 @@
 TeamsWindow::TeamsWindow(MapEditor* pMapEditor, HOUSETYPE currentHouse)
  : Window(0,0,0,0), pMapEditor(pMapEditor), house(currentHouse), aiteams(pMapEditor->getAITeams()) {
 
-    color = SDL2RGB(getHouseSDLColor(house));
+    color = getHouseInterfaceColor(house);
 
     // set up window
     SDL_Texture *pBackground = pGFXManager->getUIGraphic(UI_NewMapWindow);

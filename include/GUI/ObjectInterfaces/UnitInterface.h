@@ -33,6 +33,7 @@
 #include <units/UnitBase.h>
 #include <units/MCV.h>
 #include <units/Harvester.h>
+#include <units/HarvesterHelpers.h>
 #include <units/Devastator.h>
 
 class UnitInterface : public DefaultObjectInterface {
@@ -45,7 +46,7 @@ public:
 
 protected:
     explicit UnitInterface(int objectID) : DefaultObjectInterface(objectID) {
-        Uint32 color = SDL2RGB(palette[houseToPaletteIndex[pLocalHouse->getHouseID()]+3]);
+        Uint32 color = getHouseColorRGB(getHouseVisualHouse(pLocalHouse->getHouseID()), 3);
 
         mainHBox.addWidget(HSpacer::create(4));
 
@@ -88,7 +89,7 @@ protected:
 
         returnButton.setSymbol(pGFXManager->getUIGraphicSurface(UI_ReturnIcon));
         returnButton.setTooltipText(_("Return harvester to refinery (Hotkey: H)"));
-        returnButton.setVisible( (itemID == Unit_Harvester) );
+        returnButton.setVisible(isHarvesterLikeUnit(itemID));
         returnButton.setOnClick(std::bind(&UnitInterface::onReturn, this));
         commandHBox.addWidget(&returnButton);
 
@@ -207,9 +208,8 @@ protected:
 
     void onReturn() {
         ObjectBase* pObject = currentGame->getObjectManager().getObject(objectID);
-        Harvester* pHarvester = dynamic_cast<Harvester*>(pObject);
-        if(pHarvester != nullptr) {
-            pHarvester->handleReturnClick();
+        if(isHarvesterLikeObject(pObject)) {
+            harvesterHandleReturnClick(pObject);
         }
     }
 

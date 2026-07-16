@@ -30,6 +30,7 @@
 #include <GUI/PictureLabel.h>
 #include <GUI/DropDownBox.h>
 #include <GUI/Label.h>
+#include <GUI/ScrollView.h>
 
 #include <DataTypes.h>
 
@@ -160,6 +161,7 @@ private:
     DropDownBox         houseDropDownBox;
 
     VBox                editorModeTerrainVBox;
+    ScrollView          editorModeTerrain_ScrollView;
 
     VBox                editorModeTerrain_VBox;
 
@@ -167,17 +169,20 @@ private:
     HBox                editorModeTerrain_HBox2;
     HBox                editorModeTerrain_HBox3;
     HBox                editorModeTerrain_HBox4;
+    HBox                editorModeTerrain_HBox5;
 
     SymbolButton        editorModeTerrain_Sand;
     SymbolButton        editorModeTerrain_Dunes;
     SymbolButton        editorModeTerrain_SpecialBloom;
     SymbolButton        editorModeTerrain_Spice;
     SymbolButton        editorModeTerrain_ThickSpice;
-    SymbolButton        editorModeTerrain_SpiceBloom;
-    SymbolButton        editorModeTerrain_RedSpice;
     SymbolButton        editorModeTerrain_GreenSpice;
-    SymbolButton        editorModeTerrain_RedSpiceBloom;
+    SymbolButton        editorModeTerrain_ThickGreenSpice;
     SymbolButton        editorModeTerrain_GreenSpiceBloom;
+    SymbolButton        editorModeTerrain_RedSpice;
+    SymbolButton        editorModeTerrain_ThickRedSpice;
+    SymbolButton        editorModeTerrain_RedSpiceBloom;
+    SymbolButton        editorModeTerrain_SpiceBloom;
     SymbolButton        editorModeTerrain_Rock;
     SymbolButton        editorModeTerrain_Mountain;
 
@@ -199,6 +204,7 @@ private:
     TextButton          editorModeClassicTerrain_SetTacticalPos;
 
     VBox                editorModeStructs_MainVBox;
+    ScrollView          editorModeStructs_ScrollView;
 
     VBox                editorModeStructs_VBox;
 
@@ -212,6 +218,12 @@ private:
     HBox                editorModeStructs_HBox1;
     SymbolButton        editorModeStructs_ConstructionYard;
     SymbolButton        editorModeStructs_Windtrap;
+    HBox                editorModeStructs_HBoxAdvancedWindTrap;
+    HBox                editorModeStructs_HBoxAdvancedWindTrapMK2;
+    HBox                editorModeStructs_HBoxAdvancedWindTrapMK3;
+    SymbolButton        editorModeStructs_AdvancedWindTrap;   ///< Tornie: 3x3 high-output power building
+    SymbolButton        editorModeStructs_AdvancedWindTrapMK2; ///< Tornie: 2x3 high-output power building
+    SymbolButton        editorModeStructs_AdvancedWindTrapMK3; ///< Tornie: 3x2 high-output power building
     HBox                editorModeStructs_HBox2;
     SymbolButton        editorModeStructs_Radar;
     SymbolButton        editorModeStructs_Silo;
@@ -219,6 +231,8 @@ private:
     HBox                editorModeStructs_HBox3;
     SymbolButton        editorModeStructs_Barracks;
     SymbolButton        editorModeStructs_WOR;
+    HBox                editorModeStructs_HBoxWorfinery;
+    SymbolButton        editorModeStructs_Worfinery;            ///< Tornie: WOR + Refinery combo
     SymbolButton        editorModeStructs_LightFactory;
     HBox                editorModeStructs_HBox4;
     SymbolButton        editorModeStructs_Refinery;
@@ -229,8 +243,10 @@ private:
     HBox                editorModeStructs_HBox6;
     SymbolButton        editorModeStructs_Starport;
     SymbolButton        editorModeStructs_Palace;
-    HBox                editorModeStructs_HBox7;
-    SymbolButton        editorModeStructs_AdvancedWindTrap;
+    HBox                editorModeStructs_HBoxTechCenter;
+    SymbolButton        editorModeStructs_TechCenter;   ///< Tornie: Palace-equivalent that spawns vehicles
+    HBox                editorModeStructs_HBoxScoutpost;
+    SymbolButton        editorModeStructs_Scoutpost;     ///< Tornie: power/defense/recon post
     // DuneCity: SimCity-style buildings, only added to the picker when the
     // dune city mod is active. Buttons are always declared so the shared
     // setHouse symbol-wiring and onStructButton toggle reset can address
@@ -245,6 +261,7 @@ private:
     SymbolButton        editorModeStructs_Road;
     SymbolButton        editorModeStructs_NuclearPlant;
     bool                cityStructsVisible_ = false;
+    bool                tornieContentVisible_ = false;
 
 
     VBox                editorModeUnits_MainVBox;
@@ -255,6 +272,7 @@ private:
     SymbolButton        editorModeUnits_Soldier;
     SymbolButton        editorModeUnits_Trooper;
     SymbolButton        editorModeUnits_Harvester;
+    SymbolButton        editorModeUnits_RebelHarvester;   ///< Tornie: Rebel-only Harvester
     HBox                editorModeUnits_HBox2;
     SymbolButton        editorModeUnits_Infantry;
     SymbolButton        editorModeUnits_Troopers;
@@ -263,11 +281,13 @@ private:
     SymbolButton        editorModeUnits_Trike;
     SymbolButton        editorModeUnits_Raider;
     SymbolButton        editorModeUnits_Quad;
-    HBox                editorModeUnits_HBoxRocketTrike;
+    HBox                editorModeUnits_HBoxTornie;            ///< Tornie: RocketTrike / FlameTank row
     SymbolButton        editorModeUnits_RocketTrike;
+    SymbolButton        editorModeUnits_FlameTank;
+    HBox                editorModeUnits_HBoxTornieElite;       ///< Tornie: SonicTrike / EliteLauncher / EliteSiegeTank row
+    SymbolButton        editorModeUnits_SonicTrike;
     SymbolButton        editorModeUnits_EliteLauncher;
     SymbolButton        editorModeUnits_EliteSiegeTank;
-    SymbolButton        editorModeUnits_FlameTank;
     HBox                editorModeUnits_HBox4;
     SymbolButton        editorModeUnits_Tank;
     SymbolButton        editorModeUnits_SiegeTank;

@@ -51,14 +51,14 @@ public:
     inline int getTeamID() const { return teamID; }
 
     inline bool isAI() const { return ai; }
-    inline bool isAlive() const { return (teamID == 0) || !(((numStructures - numItem[Structure_Wall]) <= 0) && (((numUnits - numItem[Unit_Carryall] - numItem[Unit_Harvester] - numItem[Unit_Frigate] - numItem[Unit_Sandworm] - numItem[Unit_AmbientAirplane] - numItem[Unit_AmbientHelicopter]) <= 0))); }
+    inline bool isAlive() const { return (teamID == 0) || !(((numStructures - numItem[Structure_Wall]) <= 0) && (((numUnits - numItem[Unit_Carryall] - numItem[Unit_Harvester] - numItem[Unit_RebelHarvester] - numItem[Unit_Frigate] - numItem[Unit_Sandworm] - numItem[Unit_AmbientAirplane] - numItem[Unit_AmbientHelicopter]) <= 0))); }
 
     inline bool hasCarryalls() const { return (numItem[Unit_Carryall] > 0); }
     inline bool hasBarracks() const { return (numItem[Structure_Barracks] > 0); }
     inline bool hasIX() const { return (numItem[Structure_IX] > 0); }
     inline bool hasLightFactory() const { return (numItem[Structure_LightFactory] > 0); }
     inline bool hasHeavyFactory() const { return (numItem[Structure_HeavyFactory] > 0); }
-    inline bool hasRefinery() const { return (numItem[Structure_Refinery] > 0); }
+    inline bool hasRefinery() const { return (numItem[Structure_Refinery] + numItem[Structure_Worfinery] > 0); }
     inline bool hasRepairYard() const { return (numItem[Structure_RepairYard] > 0); }
     inline bool hasStarPort() const { return (numItem[Structure_StarPort] > 0); }
     inline bool hasWindTrap() const { return (numItem[Structure_WindTrap] > 0); }
@@ -160,7 +160,7 @@ public:
     */
     inline bool isHarvesterLimitReached() const {
         if (maxHarvesters == 0) return false;  // 0 = unlimited harvesters
-        return (numItem[Unit_Harvester] >= maxHarvesters);
+        return ((numItem[Unit_Harvester] + numItem[Unit_RebelHarvester]) >= maxHarvesters);
     }
 
     inline Choam& getChoam() { return choam; };
@@ -169,11 +169,8 @@ public:
 
     inline FixPoint getStartingCredits() const { return startingCredits; }
     inline FixPoint getStoredCredits() const { return storedCredits; }
-    inline FixPoint getCityCredits() const { return cityCredits; }
-    static constexpr int MAX_GAME_CREDITS = 999999;
-    inline int getCredits() const { return lround(storedCredits+startingCredits+cityCredits); }
+    inline int getCredits() const { return lround(storedCredits+startingCredits); }
     void addCredits(FixPoint newCredits, bool wasRefined = false);
-    void addCityCredits(FixPoint amount);
     void returnCredits(FixPoint newCredits);
     FixPoint takeCredits(FixPoint amount);
 
@@ -244,7 +241,6 @@ protected:
 
     FixPoint storedCredits;   ///< current number of credits that are stored in refineries/silos
     FixPoint startingCredits; ///< number of starting credits this player still has
-    FixPoint cityCredits;     ///< credits from SimCity tax income (spendable but not counted toward spice quota)
     int oldCredits;           ///< amount of credits in the last game cycle (used for playing the credits tick sound)
 
     int maxUnits;             ///< maximum number of units this house is allowed to build

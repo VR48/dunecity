@@ -60,9 +60,6 @@ public:
         }
 
         SDL_Texture* tex = pAnim->getFrameTexture();
-        if(tex == nullptr) {
-            return;  // no frame yet (empty animation or texture creation failed)
-        }
 
         if(isVisible()) {
             SDL_Rect dest = calcDrawingRect(tex, position.x, position.y);
@@ -77,9 +74,6 @@ public:
     */
     Point getMinimumSize() const override
     {
-        if(pAnim == nullptr) {
-            return Point(0,0);
-        }
         SDL_Surface* surface = pAnim->getFrame();
         if(surface != nullptr) {
             return Point((Sint32) surface->w, (Sint32) surface->h);

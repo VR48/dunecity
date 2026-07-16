@@ -30,10 +30,12 @@
 #include <units/Devastator.h>
 #include <units/MCV.h>
 #include <units/Harvester.h>
+#include <units/HarvesterHelpers.h>
 #include <units/InfantryBase.h>
 #include <structures/BuilderBase.h>
 #include <structures/TurretBase.h>
 #include <structures/Palace.h>
+#include <structures/TechCenter.h>
 #include <structures/StarPort.h>
 #include <structures/ConstructionYard.h>
 
@@ -240,11 +242,11 @@ void Command::executeCommand() const {
             if(parameter.size() != 1) {
                 THROW(std::invalid_argument, "Command::executeCommand(): CMD_HARVESTER_RETURN needs 1 Parameter!");
             }
-            Harvester* pHarvester = dynamic_cast<Harvester*>(currentGame->getObjectManager().getObject(parameter[0]));
-            if(pHarvester == nullptr) {
+            ObjectBase* pHarvester = currentGame->getObjectManager().getObject(parameter[0]);
+            if(!isHarvesterLikeObject(pHarvester)) {
                 return;
             }
-            pHarvester->doReturn();
+            harvesterDoReturn(pHarvester);
         } break;
 
         case CMD_STRUCTURE_SETDEPLOYPOSITION: {
@@ -366,6 +368,17 @@ void Command::executeCommand() const {
                 return;
             }
             pTurret->doAttackObject((int) parameter[1]);
+        } break;
+
+        case CMD_TECHCENTER_SPAWN: {
+            if(parameter.size() != 1) {
+                THROW(std::invalid_argument, "Command::executeCommand(): CMD_TECHCENTER_SPAWN needs 1 Parameter!");
+            }
+            TechCenter* pTechCenter = dynamic_cast<TechCenter*>(currentGame->getObjectManager().getObject(parameter[0]));
+            if(pTechCenter == nullptr) {
+                return;
+            }
+            pTechCenter->doSpawnVehicles();
         } break;
         
         case CMD_PLAYER_PAUSE: {

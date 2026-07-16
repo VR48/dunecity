@@ -24,15 +24,12 @@
 #include <DataTypes.h>
 
 #include <globals.h>
-#include <mod/ModManager.h>
 
 #include <misc/string_util.h>
 #include <misc/SDL2pp.h>
 
 #include <string>
 #include <memory>
-
-#include <filesystem>
 
 
 class INIMap {
@@ -46,20 +43,9 @@ public:
 
     INIMap(GameType gameType, const std::string& mapname, const std::string& mapdata = "") : mapname(mapname) {
 
-        if(gameType == GameType::Campaign || gameType == GameType::Skirmish) {
-            // DuneCity: prefer mod campaign override if available
-            std::string campaignDir = ModManager::instance().getActiveCampaignDir();
-            if (!campaignDir.empty()) {
-                std::string modPath = campaignDir + "/" + this->mapname;
-                if (std::filesystem::exists(modPath)) {
-                    SDL_RWops* rw = SDL_RWFromFile(modPath.c_str(), "rb");
-                    if (rw) {
-                        inifile = std::make_unique<INIFile>(rw);
-                        SDL_RWclose(rw);
-                        return;
-                    }
-                }
-            }
+        if(gameType == GameType::Campaign) {
+            inifile = std::make_unique<INIFile>(pFileManager->openCampaignFile(this->mapname).get());
+        } else if(gameType == GameType::Skirmish) {
             // load from PAK-File
             inifile = std::make_unique<INIFile>(pFileManager->openFile(this->mapname).get());
         } else if(gameType == GameType::CustomGame || gameType == GameType::CustomMultiplayer) {

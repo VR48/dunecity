@@ -25,7 +25,9 @@
 #include <Map.h>
 
 #include <units/UnitBase.h>
+#include <units/GroundUnit.h>
 #include <units/Harvester.h>
+#include <units/HarvesterHelpers.h>
 #include <units/Carryall.h>
 
 #include <GUI/ObjectInterfaces/RefineryAndSiloInterface.h>
@@ -104,7 +106,7 @@ ObjectInterface* Refinery::getInterfaceContainer() {
     }
 }
 
-void Refinery::assignHarvester(Harvester* newHarvester) {
+void Refinery::assignHarvester(TrackedUnit* newHarvester) {
     extractingSpice = true;
     harvester.pointTo(newHarvester);
     drawnAngle = 1;
@@ -126,19 +128,11 @@ void Refinery::deployHarvester(Carryall* pCarryall) {
 
     firstRun = false;
 
-    Harvester* pHarvester = static_cast<Harvester*>(harvester.getObjPointer());
+    UnitBase* pHarvester = harvester.getUnitPointer();
     if(pHarvester == nullptr) {
-        // The assigned harvester no longer exists (destroyed before this deploy
-        // ran). Nothing to hand off — leave the refinery in a clean, free state
-        // instead of dereferencing nullptr.
-        harvester.pointTo(NONE_ID);
-        if(bookings == 0) {
-            stopAnimate();
-        } else {
-            startAnimate();
-        }
         return;
     }
+
     if((pCarryall != nullptr) && pHarvester->getGuardPoint().isValid()) {
         pCarryall->giveCargo(pHarvester);
         pCarryall->setTarget(nullptr);
@@ -173,23 +167,12 @@ void Refinery::stopAnimate() {
 
 void Refinery::updateStructureSpecificStuff() {
     if(extractingSpice) {
-        Harvester* pHarvester = static_cast<Harvester*>(harvester.getObjPointer());
-
+        UnitBase* pHarvester = harvester.getUnitPointer();
         if(pHarvester == nullptr) {
-            // The harvester we were extracting from has been destroyed. Drop the
-            // extracting state so we neither dereference nullptr nor stay stuck
-            // (and thus permanently "occupied") forever.
-            extractingSpice = false;
-            harvester.pointTo(NONE_ID);
-            if(bookings == 0) {
-                stopAnimate();
-            } else {
-                startAnimate();
-            }
             return;
         }
 
-        if(pHarvester->getAmountOfSpice() > 0) {
+        if(harvesterGetAmountOfSpice(pHarvester) > 0) {
             FixPoint extractionSpeed = MAXIMUMHARVESTEREXTRACTSPEED;
 
             int scale = floor(5*getHealth()/getMaxHealth());
@@ -198,15 +181,10 @@ void Refinery::updateStructureSpecificStuff() {
             }
 
             extractionSpeed = (extractionSpeed * scale) / 5;
-
-
-            FixPoint extracted = pHarvester->extractSpice(extractionSpeed);
-            // Tornie: red spice yields +25% credits
-            if (pHarvester->getSpiceColor() == Harvester::SpiceColor::Red) {
-                extracted = extracted * (1.25_fix);
-            }
-            owner->addCredits(extracted, true);
-        } else if((pHarvester->isAwaitingPickup() == false) && (pHarvester->getGuardPoint().isValid())) {
+            owner->addCredits(harvesterExtractSpice(pHarvester, extractionSpeed), true);
+        } else {
+            GroundUnit* pGroundHarvester = static_cast<GroundUnit*>(pHarvester);
+            if((pGroundHarvester->isAwaitingPickup() == false) && (pHarvester->getGuardPoint().isValid())) {
             // find carryall
             Carryall* pCarryall = nullptr;
             if((pHarvester->getGuardPoint().isValid()) && getOwner()->hasCarryalls())   {
@@ -224,14 +202,15 @@ void Refinery::updateStructureSpecificStuff() {
             if(pCarryall != nullptr) {
                 pCarryall->setTarget(this);
                 pCarryall->clearPath();
-                pHarvester->bookCarrier(pCarryall);
+                pGroundHarvester->bookCarrier(pCarryall);
                 pHarvester->setTarget(nullptr);
                 pHarvester->setDestination(pHarvester->getGuardPoint());
             } else {
                 deployHarvester();
             }
-        } else if(!pHarvester->hasBookedCarrier()) {
-            deployHarvester();
+            } else if(!pGroundHarvester->hasBookedCarrier()) {
+                deployHarvester();
+            }
         }
     }
 }

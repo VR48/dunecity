@@ -28,6 +28,7 @@
 
 #include <MapEditor/MapGenerator.h>
 #include <MapSeed.h>
+#include <mod/ModManager.h>
 
 #include <misc/draw_util.h>
 
@@ -39,7 +40,7 @@
 
 NewMapWindow::NewMapWindow(HOUSETYPE currentHouse) : Window(0,0,0,0), house(currentHouse), mapSeed(INVALID), loadMapSingleplayer(false) {
 
-    color = SDL2RGB(getHouseSDLColor(house));
+    color = getHouseInterfaceColor(house);
 
     // set up window
     SDL_Texture *pBackground = pGFXManager->getUIGraphic(UI_NewMapWindow);
@@ -163,6 +164,30 @@ NewMapWindow::NewMapWindow(HOUSETYPE currentHouse) : Window(0,0,0,0), house(curr
     rngHBox.addWidget(Spacer::create(),3.0);
 
     centralVBox.addWidget(&basicMapPropertiesHBox);
+
+    greenSpiceCheckbox.setText(_("Green spice"));
+    greenSpiceCheckbox.setTextColor(color);
+    greenSpiceCheckbox.setOnClick(std::bind(&NewMapWindow::onMapPropertiesChanged,this));
+    tornieSpiceHBox.addWidget(&greenSpiceCheckbox, 120);
+    greenSpiceDigitsTextBox.setMinMax(0, 99);
+    greenSpiceDigitsTextBox.setValue(0);
+    greenSpiceDigitsTextBox.setColor(house, color);
+    greenSpiceDigitsTextBox.setOnValueChange(std::bind(&NewMapWindow::onMapPropertiesChanged,this));
+    tornieSpiceHBox.addWidget(&greenSpiceDigitsTextBox, 45);
+
+    tornieSpiceHBox.addWidget(HSpacer::create(18));
+
+    redSpiceCheckbox.setText(_("Red spice"));
+    redSpiceCheckbox.setTextColor(color);
+    redSpiceCheckbox.setOnClick(std::bind(&NewMapWindow::onMapPropertiesChanged,this));
+    tornieSpiceHBox.addWidget(&redSpiceCheckbox, 110);
+    redSpiceDigitsTextBox.setMinMax(0, 99);
+    redSpiceDigitsTextBox.setValue(0);
+    redSpiceDigitsTextBox.setColor(house, color);
+    redSpiceDigitsTextBox.setOnValueChange(std::bind(&NewMapWindow::onMapPropertiesChanged,this));
+    tornieSpiceHBox.addWidget(&redSpiceDigitsTextBox, 45);
+    tornieSpiceHBox.addWidget(Spacer::create(), 5.0);
+    centralVBox.addWidget(&tornieSpiceHBox, 28);
 
     centralVBox.addWidget(VSpacer::create(10));
 
@@ -299,6 +324,10 @@ void NewMapWindow::onMapTypeChanged(int buttonID) {
     rockDigitsTextBox.setVisible( (buttonID == 1) );
     spiceLabel.setVisible( (buttonID == 1) );
     spiceDigitsTextBox.setVisible( (buttonID == 1) );
+    const bool showTornieSpice = (buttonID == 1) && (ModManager::instance().getActiveModName() == "Tornie");
+    tornieSpiceHBox.setVisible(showTornieSpice);
+    greenSpiceDigitsTextBox.setEnabled(showTornieSpice && greenSpiceCheckbox.isChecked());
+    redSpiceDigitsTextBox.setEnabled(showTornieSpice && redSpiceCheckbox.isChecked());
 
     mirrorModeLabel.setVisible( (buttonID == 1) );
     mirrorModeDropDownBox.setVisible( (buttonID == 1) );
@@ -307,6 +336,9 @@ void NewMapWindow::onMapTypeChanged(int buttonID) {
 }
 
 void NewMapWindow::onMapPropertiesChanged() {
+    const bool showTornieSpice = randomMapRadioButton.isChecked() && (ModManager::instance().getActiveModName() == "Tornie");
+    greenSpiceDigitsTextBox.setEnabled(showTornieSpice && greenSpiceCheckbox.isChecked());
+    redSpiceDigitsTextBox.setEnabled(showTornieSpice && redSpiceCheckbox.isChecked());
 
     if(emptyMapRadioButton.isChecked()) {
         int sizeX = mapSizeXDropDownBox.getSelectedEntryIntData();
@@ -321,11 +353,17 @@ void NewMapWindow::onMapPropertiesChanged() {
         int seed = rngSeedTextBox.getValue();
         int rock = rockDigitsTextBox.getValue();
         int spice = spiceDigitsTextBox.getValue();
+        int greenSpice = greenSpiceCheckbox.isChecked() ? greenSpiceDigitsTextBox.getValue() : 0;
+        int redSpice = redSpiceCheckbox.isChecked() ? redSpiceDigitsTextBox.getValue() : 0;
+        if(ModManager::instance().getActiveModName() != "Tornie") {
+            greenSpice = 0;
+            redSpice = 0;
+        }
 
         MirrorMode mirrorMode = (MirrorMode) mirrorModeDropDownBox.getSelectedEntryIntData();
 
         mapSeed = INVALID;
-        mapdata = generateRandomMap(sizeX, sizeY, seed, rock, spice, mirrorMode);
+        mapdata = generateRandomMap(sizeX, sizeY, seed, rock, spice, mirrorMode, greenSpice, redSpice);
 
     } else if(seedMapRadioButton.isChecked()) {
         int seed = rngSeedTextBox.getValue();

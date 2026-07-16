@@ -27,6 +27,7 @@
 #include <units/Carryall.h>
 #include <units/GroundUnit.h>
 #include <units/Harvester.h>
+#include <units/HarvesterHelpers.h>
 
 #include <GUI/ObjectInterfaces/RepairYardInterface.h>
 
@@ -92,12 +93,6 @@ void RepairYard::deployRepairUnit(Carryall* pCarryall) {
     lastAnimFrame = 3;
 
     UnitBase* pRepairUnit = repairUnit.getUnitPointer();
-    if(pRepairUnit == nullptr) {
-        // The unit being repaired no longer exists. Don't dereference nullptr;
-        // just clear the slot so the repair yard frees up.
-        repairUnit.pointTo(NONE_ID);
-        return;
-    }
     if(pCarryall != nullptr) {
         pCarryall->giveCargo(pRepairUnit);
         pCarryall->setTarget(nullptr);
@@ -106,7 +101,7 @@ void RepairYard::deployRepairUnit(Carryall* pCarryall) {
         Coord deployPos = currentGameMap->findDeploySpot(pRepairUnit, location, currentGame->randomGen, destination, structureSize);
 
         pRepairUnit->setForced(false);
-        pRepairUnit->doSetAttackMode((pRepairUnit->getItemID() == Unit_Harvester) ? HARVEST : GUARD);
+        pRepairUnit->doSetAttackMode(isHarvesterLikeUnit(pRepairUnit->getItemID()) ? HARVEST : GUARD);
         pRepairUnit->deploy(deployPos);
         pRepairUnit->setTarget(nullptr);
         pRepairUnit->setDestination(pRepairUnit->getLocation());
@@ -136,14 +131,6 @@ void RepairYard::updateStructureSpecificStuff() {
 
     if (repairingAUnit == true) {
         GroundUnit* pRepairUnit = static_cast<GroundUnit*>(repairUnit.getUnitPointer());
-
-        if (pRepairUnit == nullptr) {
-            // The unit being repaired has been destroyed. Clear the slot so we
-            // neither dereference nullptr nor stay permanently "occupied".
-            repairingAUnit = false;
-            repairUnit.pointTo(NONE_ID);
-            return;
-        }
 
         if (pRepairUnit->getHealth() * 100 / pRepairUnit->getMaxHealth() < 100) {
             if (owner->takeCredits(UNIT_REPAIRCOST) > 0) {

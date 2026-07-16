@@ -52,6 +52,68 @@
 #define PLAYER_OPEN         -1
 #define PLAYER_CLOSED       -2
 
+namespace {
+Uint32 getMenuColorForHouse(int house) {
+    if(house == HOUSE_REBELS) {
+        return COLOR_RGB(58, 58, 62);
+    }
+
+    if(isValidHouseColorSlot(house)) {
+        return getHouseColorRGB(house, 3);
+    }
+
+    return COLOR_RGB(20, 20, 40);
+}
+
+const char* getCustomColorName(int colorSlot) {
+    switch(colorSlot) {
+        case HOUSECOLOR_CUSTOM_DARK_VIOLET:   return "Dark Violet";
+        case HOUSECOLOR_CUSTOM_FUCHSIA:       return "Fuchsia";
+        case HOUSECOLOR_CUSTOM_TEAL:          return "Teal";
+        case HOUSECOLOR_CUSTOM_BRIGHT_YELLOW: return "Bright Yellow";
+        case HOUSECOLOR_CUSTOM_APPLE_GREEN:   return "Dark Green";
+        case HOUSECOLOR_CUSTOM_LIGHT_PINK:    return "Light Pink";
+        default:                              return "Custom";
+    }
+}
+
+void addColorDropDownEntries(DropDownBox& colorDropDown, int selectedColor, bool bonusColors) {
+    colorDropDown.clearAllEntries();
+    colorDropDown.addEntry(_("Original"), HOUSE_INVALID);
+
+    if(bonusColors) {
+        for(int h = NUM_HOUSES; h < NUM_HOUSE_COLOR_SLOTS; h++) {
+            colorDropDown.addEntry(getCustomColorName(h), h);
+        }
+    } else {
+        for(int h = 0; h < NUM_HOUSES; h++) {
+            colorDropDown.addEntry(getHouseNameByNumber(static_cast<HOUSETYPE>(h)), h);
+        }
+    }
+
+    for(int i = 0; i < colorDropDown.getNumEntries(); i++) {
+        if(colorDropDown.getEntryIntData(i) == selectedColor) {
+            colorDropDown.setSelectedItem(i);
+            return;
+        }
+    }
+
+    colorDropDown.setSelectedItem(0);
+}
+
+int resolveSelectedColorSlot(int selectedColor, int selectedHouse) {
+    if(!isValidHouseColorSlot(selectedColor)) {
+        selectedColor = selectedHouse;
+    }
+
+    if(isValidHouseColorSlot(selectedColor)) {
+        return selectedColor;
+    }
+
+    return HOUSE_INVALID;
+}
+}
+
 
 CustomGamePlayers::CustomGamePlayers(const GameInitSettings& newGameInitSettings, bool server, bool LANServer)
  : MenuBase(), gameInitSettings(newGameInitSettings), bServer(server), bLANServer(LANServer), startGameTime(0), bConfigMismatchDetected(false), bModDownloadInProgress(false), bWaitingForModAcks(false), brainEqHumanSlot(-1) {
@@ -134,6 +196,14 @@ CustomGamePlayers::CustomGamePlayers(const GameInitSettings& newGameInitSettings
         extractMapInfo(&inimap);
     }
 
+    // House and color uniqueness is enforced when starting a game. Keep the
+    // lobby consistent with that rule instead of exposing an unusable second
+    // player slot. Loaded multiplayer saves retain their recorded layout.
+    if(gameInitSettings.getGameType() == GameType::CustomGame
+       || gameInitSettings.getGameType() == GameType::CustomMultiplayer) {
+        gameInitSettings.setMultiplePlayersPerHouse(false);
+    }
+
     rightVBox.addWidget(VSpacer::create(10));
     rightVBox.addWidget(&mapPropertiesHBox, 0.01);
     mapPropertiesHBox.addWidget(&mapPropertyNamesVBox, 75);
@@ -183,6 +253,8 @@ CustomGamePlayers::CustomGamePlayers(const GameInitSettings& newGameInitSettings
     }
 
     bool bLoadMultiplayer = (gameInitSettings.getGameType() == GameType::LoadMultiplayer);
+    const bool bBonusHouseColorsAvailable = bLoadMultiplayer
+        || ModManager::instance().getActiveModName() == "Tornie";
 
     buttonHBox.addWidget(Spacer::create(), 0.0625);
 
@@ -245,7 +317,7 @@ CustomGamePlayers::CustomGamePlayers(const GameInitSettings& newGameInitSettings
             curHouseInfo.teamDropDown.setEnabled(false);
             curHouseInfo.teamDropDown.setOnClickEnabled(false);
         } else {
-            for(int team = 0 ; team<numHouses ; team++) {
+            for(int team = 0 ; team < NUM_TEAMS ; team++) {
                 curHouseInfo.teamDropDown.addEntry(_("Team") + " " + std::to_string(team+1), team+1);
             }
             curHouseInfo.teamDropDown.setSelectedItem(slotToTeam[i]);
@@ -254,6 +326,32 @@ CustomGamePlayers::CustomGamePlayers(const GameInitSettings& newGameInitSettings
         curHouseInfo.teamDropDown.setOnSelectionChange(std::bind(&CustomGamePlayers::onChangeTeamDropDownBoxes, this, std::placeholders::_1, i));
         curHouseInfo.houseHBox.addWidget(HSpacer::create(10));
         curHouseInfo.houseHBox.addWidget(&curHouseInfo.teamDropDown, 85);
+
+        int selectedColor = HOUSE_INVALID;
+        if(bLoadMultiplayer) {
+            if(i < (int) houseInfoListSetup.size()) {
+                selectedColor = houseInfoListSetup.at(i).colorOfHouse;
+            }
+            curHouseInfo.bonusColorCheckbox.setText(_("Bonus"));
+            curHouseInfo.bonusColorCheckbox.setChecked(isCustomHouseColorSlot(selectedColor));
+            addColorDropDownEntries(curHouseInfo.colorDropDown, selectedColor, curHouseInfo.bonusColorCheckbox.isChecked());
+            curHouseInfo.bonusColorCheckbox.setEnabled(false);
+            curHouseInfo.colorDropDown.setEnabled(false);
+            curHouseInfo.colorDropDown.setOnClickEnabled(false);
+        } else {
+            curHouseInfo.bonusColorCheckbox.setText(_("Bonus"));
+            curHouseInfo.bonusColorCheckbox.setChecked(false);
+            addColorDropDownEntries(curHouseInfo.colorDropDown, HOUSE_INVALID, false);
+            curHouseInfo.bonusColorCheckbox.setEnabled(bServer && bBonusHouseColorsAvailable);
+            curHouseInfo.bonusColorCheckbox.setVisible(bBonusHouseColorsAvailable);
+            curHouseInfo.colorDropDown.setEnabled(bServer);
+        }
+        curHouseInfo.bonusColorCheckbox.setOnClick(std::bind(&CustomGamePlayers::onBonusColorCheckbox, this, i));
+        curHouseInfo.colorDropDown.setOnSelectionChange(std::bind(&CustomGamePlayers::onChangeColorDropDownBoxes, this, std::placeholders::_1, i));
+        curHouseInfo.houseHBox.addWidget(HSpacer::create(10));
+        curHouseInfo.houseHBox.addWidget(&curHouseInfo.bonusColorCheckbox, 75);
+        curHouseInfo.houseHBox.addWidget(HSpacer::create(6));
+        curHouseInfo.houseHBox.addWidget(&curHouseInfo.colorDropDown, 95);
 
         curHouseInfo.houseInfoVBox.addWidget(&curHouseInfo.houseHBox);
 
@@ -560,6 +658,25 @@ void CustomGamePlayers::onReceiveChangeEventList(const ChangeEventList& changeEv
                 }
             } break;
 
+            case ChangeEventList::ChangeEvent::EventType::ChangeColor: {
+                int newColor = (int) changeEvent.newValue;
+
+                HouseInfo& curHouseInfo = houseInfo[changeEvent.slot];
+
+                if(curHouseInfo.bonusColorCheckbox.isChecked() != isCustomHouseColorSlot(newColor)) {
+                    curHouseInfo.bonusColorCheckbox.setChecked(isCustomHouseColorSlot(newColor));
+                    addColorDropDownEntries(curHouseInfo.colorDropDown, newColor, curHouseInfo.bonusColorCheckbox.isChecked());
+                }
+
+                for(int i=0;i<curHouseInfo.colorDropDown.getNumEntries();i++) {
+                    if(curHouseInfo.colorDropDown.getEntryIntData(i) == newColor) {
+                        curHouseInfo.colorDropDown.setSelectedItem(i);
+                        break;
+                    }
+                }
+                onChangeHousesDropDownBoxes(false, changeEvent.slot);
+            } break;
+
             case ChangeEventList::ChangeEvent::EventType::ChangePlayer: {
                 int newPlayer = (int) changeEvent.newValue;
 
@@ -617,11 +734,13 @@ ChangeEventList CustomGamePlayers::getChangeEventList()
 
         int houseID = curHouseInfo.houseDropDown.getSelectedEntryIntData();
         int team = curHouseInfo.teamDropDown.getSelectedEntryIntData();
+        int color = curHouseInfo.colorDropDown.getSelectedEntryIntData();
         int player1 = curHouseInfo.player1DropDown.getSelectedEntryIntData();
         int player2 = curHouseInfo.player2DropDown.getSelectedEntryIntData();
 
         changeEventList.changeEventList.push_back(ChangeEventList::ChangeEvent(ChangeEventList::ChangeEvent::EventType::ChangeHouse, i, houseID));
         changeEventList.changeEventList.push_back(ChangeEventList::ChangeEvent(ChangeEventList::ChangeEvent::EventType::ChangeTeam, i, team));
+        changeEventList.changeEventList.push_back(ChangeEventList::ChangeEvent(ChangeEventList::ChangeEvent::EventType::ChangeColor, i, color));
 
         if(player1 == PLAYER_HUMAN) {
             std::string playername = curHouseInfo.player1DropDown.getSelectedEntry();
@@ -1080,14 +1199,46 @@ void CustomGamePlayers::onNext()
     // check if we have at least two houses on the map and if we have more than one team
     int numUsedHouses = 0;
     int numTeams = 0;
+    bool houseAlreadyUsed[NUM_HOUSES] = {};
+    bool colorAlreadyUsed[NUM_HOUSE_COLOR_SLOTS] = {};
+    bool bTwoPlayersInSameHouse = false;
+    bool bDuplicateHouse = false;
+    bool bDuplicateColor = false;
+
     for(int i=0;i<NUM_HOUSES;i++) {
         HouseInfo& curHouseInfo = houseInfo[i];
 
         int currentPlayer1 = curHouseInfo.player1DropDown.getSelectedEntryIntData();
         int currentPlayer2 = curHouseInfo.player2DropDown.getSelectedEntryIntData();
+        const bool bPlayer1Active = (currentPlayer1 != PLAYER_OPEN && currentPlayer1 != PLAYER_CLOSED);
+        const bool bPlayer2Active = gameInitSettings.isMultiplePlayersPerHouse()
+            && (currentPlayer2 != PLAYER_OPEN && currentPlayer2 != PLAYER_CLOSED);
 
-        if((currentPlayer1 != PLAYER_OPEN && currentPlayer1 != PLAYER_CLOSED) || (currentPlayer2 != PLAYER_OPEN && currentPlayer2 != PLAYER_CLOSED)) {
+        if(bPlayer1Active || bPlayer2Active) {
             numUsedHouses++;
+
+            if(bPlayer1Active && bPlayer2Active) {
+                bTwoPlayersInSameHouse = true;
+            }
+
+            const int selectedHouse = curHouseInfo.houseDropDown.getSelectedEntryIntData();
+            if(selectedHouse >= 0 && selectedHouse < NUM_HOUSES) {
+                if(houseAlreadyUsed[selectedHouse]) {
+                    bDuplicateHouse = true;
+                } else {
+                    houseAlreadyUsed[selectedHouse] = true;
+                }
+            }
+
+            int selectedColor = curHouseInfo.colorDropDown.getSelectedEntryIntData();
+            selectedColor = resolveSelectedColorSlot(selectedColor, selectedHouse);
+            if(isValidHouseColorSlot(selectedColor)) {
+                if(colorAlreadyUsed[selectedColor]) {
+                    bDuplicateColor = true;
+                } else {
+                    colorAlreadyUsed[selectedColor] = true;
+                }
+            }
 
             int currentTeam = curHouseInfo.teamDropDown.getSelectedEntryIntData();
             bool bTeamFound = false;
@@ -1095,7 +1246,9 @@ void CustomGamePlayers::onNext()
                 int player1 = houseInfo[j].player1DropDown.getSelectedEntryIntData();
                 int player2 = houseInfo[j].player2DropDown.getSelectedEntryIntData();
 
-                if((player1 != PLAYER_OPEN && player1 != PLAYER_CLOSED) || (player2 != PLAYER_OPEN && player2 != PLAYER_CLOSED)) {
+                const bool bPreviousPlayer2Active = gameInitSettings.isMultiplePlayersPerHouse()
+                    && (player2 != PLAYER_OPEN && player2 != PLAYER_CLOSED);
+                if((player1 != PLAYER_OPEN && player1 != PLAYER_CLOSED) || bPreviousPlayer2Active) {
 
                     int team = houseInfo[j].teamDropDown.getSelectedEntryIntData();
                     if(currentTeam == team) {
@@ -1113,6 +1266,12 @@ void CustomGamePlayers::onNext()
     if(numUsedHouses < 2) {
         // No game possible with only 1 house
         openWindow(MsgBox::create(_("At least 2 houses must be controlled\nby a human player or an AI player!")));
+    } else if(bTwoPlayersInSameHouse) {
+        openWindow(MsgBox::create(_("Each player must use a different house/color.")));
+    } else if(bDuplicateHouse) {
+        openWindow(MsgBox::create(_("The same house cannot be used twice.")));
+    } else if(bDuplicateColor) {
+        openWindow(MsgBox::create(_("The same color cannot be used twice.")));
     } else if(numTeams < 2) {
         // No game possible with only 1 team
         openWindow(MsgBox::create(_("There must be at least two different teams!")));
@@ -1175,16 +1334,23 @@ void CustomGamePlayers::addAllPlayersToGameInitSettings()
 
         int houseID = curHouseInfo.houseDropDown.getSelectedEntryIntData();
         int team = curHouseInfo.teamDropDown.getSelectedEntryIntData();
+        int colorOfHouse = curHouseInfo.colorDropDown.getSelectedEntryIntData();
         int player1 = curHouseInfo.player1DropDown.getSelectedEntryIntData();
         std::string player1name = curHouseInfo.player1DropDown.getSelectedEntry();
         int player2 = curHouseInfo.player2DropDown.getSelectedEntryIntData();
         std::string player2name = curHouseInfo.player2DropDown.getSelectedEntry();
 
         GameInitSettings::HouseInfo newHouseInfo((HOUSETYPE) houseID, team);
+        colorOfHouse = resolveSelectedColorSlot(colorOfHouse, houseID);
+        if(isValidHouseColorSlot(colorOfHouse)) {
+            newHouseInfo.colorOfHouse = colorOfHouse;
+        }
 
         bool bAdded = false;
         bAdded |= addPlayerToHouseInfo(newHouseInfo, player1, player1name);
-        bAdded |= addPlayerToHouseInfo(newHouseInfo, player2, player2name);
+        if(gameInitSettings.isMultiplePlayersPerHouse()) {
+            bAdded |= addPlayerToHouseInfo(newHouseInfo, player2, player2name);
+        }
 
         if(bAdded == true) {
             gameInitSettings.addHouseInfo(newHouseInfo);
@@ -1314,24 +1480,19 @@ void CustomGamePlayers::extractMapInfo(INIFile* pMap)
 
 
     boundHousesOnMap.clear();
-    if(pMap->hasSection("Harkonnen")) boundHousesOnMap.push_back(HOUSE_HARKONNEN);
-    if(pMap->hasSection("Atreides"))  boundHousesOnMap.push_back(HOUSE_ATREIDES);
-    if(pMap->hasSection("Ordos"))     boundHousesOnMap.push_back(HOUSE_ORDOS);
-    if(pMap->hasSection("Fremen"))    boundHousesOnMap.push_back(HOUSE_FREMEN);
-    if(pMap->hasSection("Sardaukar")) boundHousesOnMap.push_back(HOUSE_SARDAUKAR);
-    if(pMap->hasSection("Mercenary")) boundHousesOnMap.push_back(HOUSE_MERCENARY);
-    if(pMap->hasSection("Neutral"))    boundHousesOnMap.push_back(HOUSE_NEUTRAL);
-    if(pMap->hasSection("Rebels"))     boundHousesOnMap.push_back(HOUSE_REBELS);
+    for(int h = 0; h < NUM_HOUSES; h++) {
+        const HOUSETYPE house = static_cast<HOUSETYPE>(h);
+        if(pMap->hasSection(getHouseNameByNumber(house))) {
+            boundHousesOnMap.push_back(house);
+        }
+    }
 
     numHouses = boundHousesOnMap.size();
-    if(pMap->hasSection("Player1"))   numHouses++;
-    if(pMap->hasSection("Player2"))   numHouses++;
-    if(pMap->hasSection("Player3"))   numHouses++;
-    if(pMap->hasSection("Player4"))   numHouses++;
-    if(pMap->hasSection("Player5"))   numHouses++;
-    if(pMap->hasSection("Player6"))   numHouses++;
-    if(pMap->hasSection("Player7"))   numHouses++;  // DuneCity: 7-team support (Neutral as Team7)
-    if(pMap->hasSection("Player8"))   numHouses++;  // DuneCity: 8-team support (Rebels as Team8)
+    for(int p = 1; p <= NUM_HOUSES; p++) {
+        if(pMap->hasSection("Player" + std::to_string(p))) {
+            numHouses++;
+        }
+    }
 
     mapPropertyPlayers.setText(std::to_string(numHouses));
 
@@ -1432,10 +1593,13 @@ void CustomGamePlayers::onChangeHousesDropDownBoxes(bool bInteractive, int house
 
         if(houseInfoNum == -1 || houseInfoNum == i) {
 
-            Uint32 color = (house == HOUSE_INVALID) ? COLOR_RGB(20,20,40) : SDL2RGB(palette[houseToPaletteIndex[house] + 3]);
+            int colorHouse = curHouseInfo.colorDropDown.getSelectedEntryIntData();
+            colorHouse = resolveSelectedColorSlot(colorHouse, house);
+            Uint32 color = getMenuColorForHouse(colorHouse);
             curHouseInfo.houseLabel.setTextColor(color);
             curHouseInfo.houseDropDown.setColor(color);
             curHouseInfo.teamDropDown.setColor(color);
+            curHouseInfo.colorDropDown.setColor(color);
             curHouseInfo.player1Label.setTextColor(color);
             curHouseInfo.player1DropDown.setColor(color);
             curHouseInfo.player2Label.setTextColor(color);
@@ -1456,12 +1620,6 @@ void CustomGamePlayers::onChangeHousesDropDownBoxes(bool bInteractive, int house
         addToHouseDropDown(curHouseInfo.houseDropDown, HOUSE_INVALID);
 
         for(int h=0;h<NUM_HOUSES;h++) {
-            // DuneCity 1.0.344: drop the AI-only skip. HOUSE_REBELS is
-            // a fully playable 8th faction selectable in any custom
-            // game. Tornie's instruction: 'no longer AI-only or enemy
-            // from everyone'.
-            // if (h == HOUSE_REBELS) continue; // removed in 1.0.344
-
             bool bAddHouse;
 
             bool bCheck;
@@ -1528,6 +1686,32 @@ void CustomGamePlayers::onChangeTeamDropDownBoxes(bool bInteractive, int houseIn
 
         pNetworkManager->sendChangeEventList(changeEventList);
     }
+}
+
+void CustomGamePlayers::onChangeColorDropDownBoxes(bool bInteractive, int houseInfoNum) {
+    if(houseInfoNum >= 0) {
+        onChangeHousesDropDownBoxes(false, houseInfoNum);
+    }
+
+    if(bInteractive && houseInfoNum >= 0 && pNetworkManager != nullptr) {
+        int selectedColor = houseInfo[houseInfoNum].colorDropDown.getSelectedEntryIntData();
+
+        ChangeEventList changeEventList;
+        changeEventList.changeEventList.emplace_back(ChangeEventList::ChangeEvent::EventType::ChangeColor, houseInfoNum, selectedColor);
+
+        pNetworkManager->sendChangeEventList(changeEventList);
+    }
+}
+
+void CustomGamePlayers::onBonusColorCheckbox(int houseInfoNum) {
+    if(houseInfoNum < 0 || houseInfoNum >= NUM_HOUSES) {
+        return;
+    }
+
+    HouseInfo& curHouseInfo = houseInfo[houseInfoNum];
+    const int oldColor = curHouseInfo.colorDropDown.getSelectedEntryIntData();
+    addColorDropDownEntries(curHouseInfo.colorDropDown, oldColor, curHouseInfo.bonusColorCheckbox.isChecked());
+    onChangeColorDropDownBoxes(true, houseInfoNum);
 }
 
 void CustomGamePlayers::onChangePlayerDropDownBoxes(bool bInteractive, int boxnum) {
@@ -1617,6 +1801,8 @@ void CustomGamePlayers::onPeerDisconnected(const std::string& playername, bool b
                 houseInfo[i].player2DropDown.setEnabled(bIsThisPlayer);
                 houseInfo[i].houseDropDown.setEnabled(bIsThisPlayer);
                 houseInfo[i].teamDropDown.setEnabled(bIsThisPlayer);
+                houseInfo[i].bonusColorCheckbox.setEnabled(bIsThisPlayer);
+                houseInfo[i].colorDropDown.setEnabled(bIsThisPlayer);
             }
         }
 
@@ -1722,6 +1908,8 @@ void CustomGamePlayers::setPlayer2Slot(const std::string& playername, int slot) 
             houseInfo[i].player2DropDown.setEnabled(bIsThisPlayer);
             houseInfo[i].houseDropDown.setEnabled(bIsThisPlayer);
             houseInfo[i].teamDropDown.setEnabled(bIsThisPlayer);
+            houseInfo[i].bonusColorCheckbox.setEnabled(bIsThisPlayer);
+            houseInfo[i].colorDropDown.setEnabled(bIsThisPlayer);
         }
     }
 
@@ -1859,6 +2047,9 @@ void CustomGamePlayers::disableAllDropDownBoxes() {
         curHouseInfo.houseDropDown.setOnClickEnabled(false);
         curHouseInfo.teamDropDown.setEnabled(false);
         curHouseInfo.teamDropDown.setOnClickEnabled(false);
+        curHouseInfo.bonusColorCheckbox.setEnabled(false);
+        curHouseInfo.colorDropDown.setEnabled(false);
+        curHouseInfo.colorDropDown.setOnClickEnabled(false);
         curHouseInfo.player1DropDown.setEnabled(false);
         curHouseInfo.player1DropDown.setOnClickEnabled(false);
         curHouseInfo.player2DropDown.setEnabled(false);

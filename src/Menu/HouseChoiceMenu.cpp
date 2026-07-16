@@ -25,12 +25,24 @@
 #include <GUI/dune/GameOptionsWindow.h>
 #include <Menu/HouseChoiceInfoMenu.h>
 #include <SoundPlayer.h>
-#include <cstddef>
 
-
-static const int houseOrder[] = { HOUSE_ATREIDES, HOUSE_ORDOS, HOUSE_HARKONNEN, HOUSE_MERCENARY, HOUSE_FREMEN, HOUSE_SARDAUKAR, HOUSE_NEUTRAL, HOUSE_REBELS };
 
 namespace {
+const int houseOrder[] = {
+    HOUSE_ATREIDES,
+    HOUSE_ORDOS,
+    HOUSE_HARKONNEN,
+    HOUSE_MERCENARY,
+    HOUSE_FREMEN,
+    HOUSE_SARDAUKAR,
+    HOUSE_NEUTRAL,
+    HOUSE_REBELS
+};
+
+constexpr int kVisibleHouseButtons = 3;
+constexpr int kHouseChoiceCount = sizeof(houseOrder) / sizeof(houseOrder[0]);
+constexpr int kMaxHouseScrollPos = kHouseChoiceCount - kVisibleHouseButtons;
+
 const char* const kSupportPlayerClasses[] = {
     "",
     "qBotSupportEasy",
@@ -177,7 +189,11 @@ void HouseChoiceMenu::onHouseButton(int button) {
         case HOUSE_HARKONNEN:   soundPlayer->playVoice(HouseHarkonnen, selectedHouse);     break;
         case HOUSE_ATREIDES:    soundPlayer->playVoice(HouseAtreides, selectedHouse);      break;
         case HOUSE_ORDOS:       soundPlayer->playVoice(HouseOrdos, selectedHouse);         break;
-        case HOUSE_NEUTRAL:     soundPlayer->playVoice(HouseNeutral, selectedHouse);       break;
+        case HOUSE_FREMEN:      soundPlayer->playVoice(HouseAtreides, selectedHouse);      break;
+        case HOUSE_SARDAUKAR:   soundPlayer->playVoice(HouseHarkonnen, selectedHouse);     break;
+        case HOUSE_MERCENARY:   soundPlayer->playVoice(HouseOrdos, selectedHouse);         break;
+        case HOUSE_NEUTRAL:     soundPlayer->playVoice(HouseAtreides, selectedHouse);      break;
+        case HOUSE_REBELS:      soundPlayer->playVoice(HouseHarkonnen, selectedHouse);     break;
         default:                /* no sounds for the other houses avail.*/  break;
 
     }
@@ -208,12 +224,7 @@ void HouseChoiceMenu::onHouseLeft()
 
 void HouseChoiceMenu::onHouseRight()
 {
-    // House-order list has NUM_HOUSES (8) entries: [A,O,H,M,F,S,N,R].
-    // Carousel shows 3 at a time, so the rightmost valid scroll position is
-    // (NUM_HOUSES - 3) so the 3rd button is houseOrder[NUM_HOUSES-1] (Rebels).
-    // Previous bound (< 4) capped at pos 4 and hid Rebels (index 7).
-    constexpr int kMaxScrollPos = (sizeof(houseOrder) / sizeof(houseOrder[0])) - 3;
-    if(currentHouseChoiceScrollPos < kMaxScrollPos) {
+    if(currentHouseChoiceScrollPos < kMaxHouseScrollPos) {
         currentHouseChoiceScrollPos++;
         updateHouseChoice();
     }

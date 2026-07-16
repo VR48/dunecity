@@ -52,7 +52,7 @@ TEST_CASE("NeutralHouse: HOUSE_NEUTRAL is after HOUSE_MERCENARY",
 TEST_CASE("NeutralHouse: savegame version includes HOUSE_NEUTRAL",
           "[neutral][savegame]") {
     // SAVEGAMEVERSION 9818 persists all kMaxCityHouses houseState[] slots (9817 added House::cityCredits, 9816 added Unit_EliteSiegeTank=55, 9813 added HOUSE_NEUTRAL).
-    REQUIRE(SAVEGAMEVERSION == 9818);
+    REQUIRE(SAVEGAMEVERSION == 9820);
 }
 
 // =============================================================================
@@ -157,7 +157,12 @@ TEST_CASE("NeutralHouse: ObjectData.ini has Neutral-specific Launcher prerequisi
     std::string ini = readSourceFile("config/ObjectData.ini.default");
     REQUIRE_FALSE(ini.empty());
 
-    // [Launcher] must have Prerequisite(N) = House IX
+    // [Launcher] must NOT have any (N) override per Tornie spec
+    // v1.0.377 'Rebels and Neutral house need to have same
+    // prerequistes of fremens in vanilla mods only' - Fremen
+    // has zero overrides in vanilla so Neutral should also
+    // have zero overrides. The default Launcher prereq applies
+    // to Neutral via the same fall-through that Fremen uses.
     auto launcherPos = ini.find("[Launcher]");
     INFO("ObjectData.ini must have a [Launcher] section");
     REQUIRE(launcherPos != std::string::npos);
@@ -167,6 +172,10 @@ TEST_CASE("NeutralHouse: ObjectData.ini has Neutral-specific Launcher prerequisi
     std::string launcherBlock = ini.substr(launcherPos,
         nextSection != std::string::npos ? nextSection - launcherPos : std::string::npos);
 
-    INFO("Launcher section must have Prerequisite(N) = House IX for Neutral");
-    REQUIRE(launcherBlock.find("Prerequisite(N) = House IX") != std::string::npos);
+    // No (N) override lines inside the Launcher block.
+    INFO("Launcher section must not have any (N) override lines for Neutral (vanilla mods spec)");
+    REQUIRE(launcherBlock.find("(N) =") == std::string::npos);
+    // No (R) override lines inside the Launcher block either.
+    INFO("Launcher section must not have any (R) override lines for Rebels (vanilla mods spec)");
+    REQUIRE(launcherBlock.find("(R) =") == std::string::npos);
 }

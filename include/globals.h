@@ -28,6 +28,7 @@
 
 #include <misc/SDL2pp.h>
 
+#include <array>
 #include <memory>
 
 #define _(msgid) pTextManager->getLocalized(msgid)
@@ -63,8 +64,9 @@ class Bullet;
 EXTERN SDL_Window*          window;                     ///< the window
 EXTERN SDL_Renderer*        renderer;                   ///< the renderer
 EXTERN SDL_Texture*         screenTexture;              ///< the texture
-EXTERN Palette              palette;                    ///< the palette for the screen (may include mod overrides)
-EXTERN Palette              ibmPalette;                 ///< vanilla IBM.PAL before any mod overrides (used for Fremen colours)
+EXTERN Palette              palette;                    ///< the palette for the screen
+EXTERN Palette              customPalette;              ///< optional Custom_IBM.PAL for extra visual color ramps
+EXTERN bool                 customPaletteLoaded;        ///< true when Custom_IBM.PAL is available
 EXTERN int                  drawnMouseX;                ///< the current mouse position (x coordinate)
 EXTERN int                  drawnMouseY;                ///< the current mouse position (y coordinate)
 EXTERN int                  currentZoomlevel;           ///< 0 = the smallest zoom level, 1 = medium zoom level, 2 = maximum zoom level
@@ -98,22 +100,76 @@ EXTERN SettingsClass    settings;                       ///< the settings read f
 EXTERN SettingsClass::GameOptionsClass effectiveGameOptions;  ///< effective game options (settings + mod overrides)
 
 EXTERN bool debug;                                      ///< is set for debugging purposes
+EXTERN std::array<int, NUM_HOUSES> houseToVisualHouse;  ///< runtime visual color slot for each house
 
 
 // constants
 static const int houseToPaletteIndex[NUM_HOUSES] = { PALCOLOR_HARKONNEN, PALCOLOR_ATREIDES, PALCOLOR_ORDOS, PALCOLOR_FREMEN, PALCOLOR_SARDAUKAR, PALCOLOR_MERCENARY, PALCOLOR_NEUTRAL, PALCOLOR_REBELS };    ///< the base colors for the different houses
+static const int houseColorToPaletteIndex[NUM_HOUSE_COLOR_SLOTS] = {
+    PALCOLOR_HARKONNEN, PALCOLOR_ATREIDES, PALCOLOR_ORDOS, PALCOLOR_FREMEN,
+    PALCOLOR_SARDAUKAR, PALCOLOR_MERCENARY, PALCOLOR_NEUTRAL, PALCOLOR_REBELS,
+    PALCOLOR_HARKONNEN, PALCOLOR_ATREIDES, PALCOLOR_ORDOS, PALCOLOR_FREMEN,
+    PALCOLOR_SARDAUKAR, PALCOLOR_MERCENARY
+};    ///< palette ramp used by house colors, including custom visual-only colors
 static const char houseChar[] = { 'H', 'A', 'O', 'F', 'S', 'M', 'N', 'R' };   ///< character for each house
 
-/// Returns the SDL_Color for the given house at palette offset.
-/// Returns the SDL_Color for the given house at palette offset.
-/// Houses 1..7 use the vanilla ibmPalette so the editor shows the
-/// correct vanilla colour.  The 8th house (HOUSE_REBELS) reads from
-/// the runtime 'palette' which has been overridden by Custom_IBM.pal
-/// at indices 192-199 with a dark-grey/black ramp. Fremen keeps
-/// using ibmPalette so the orange vanilla colour shows through.
-inline SDL_Color getHouseSDLColor(int house, int offset = 3) {
-    const Palette& pal = (house == HOUSE_FREMEN) ? ibmPalette : palette;
-    return pal[houseToPaletteIndex[house] + offset];
+inline bool isValidHouseColorSlot(int colorSlot) {
+    return colorSlot >= 0 && colorSlot < NUM_HOUSE_COLOR_SLOTS;
 }
+
+inline bool isCustomHouseColorSlot(int colorSlot) {
+    return colorSlot >= NUM_HOUSES && colorSlot < NUM_HOUSE_COLOR_SLOTS;
+}
+
+inline int getHouseVisualHouse(int house) {
+    if(house >= 0 && house < NUM_HOUSES) {
+        const int visualHouse = houseToVisualHouse[house];
+        if(isValidHouseColorSlot(visualHouse)) {
+            return visualHouse;
+        }
+    }
+
+    return house;
+}
+
+inline int getHouseColorPaletteIndex(int house) {
+    const int visualHouse = getHouseVisualHouse(house);
+    if(isValidHouseColorSlot(visualHouse)) {
+        return houseColorToPaletteIndex[visualHouse];
+    }
+
+    return PALCOLOR_HARKONNEN;
+}
+
+inline int getHouseColorPaletteIndexFromSlot(int colorSlot) {
+    if(isValidHouseColorSlot(colorSlot)) {
+        return houseColorToPaletteIndex[colorSlot];
+    }
+
+    return PALCOLOR_HARKONNEN;
+}
+
+inline const Palette& getPaletteForHouseColorSlot(int colorSlot) {
+    return isCustomHouseColorSlot(colorSlot) && customPaletteLoaded ? customPalette : palette;
+}
+
+inline SDL_Color getHouseColorSDL(int colorSlot, int shadeOffset = 3) {
+    const Palette& sourcePalette = getPaletteForHouseColorSlot(colorSlot);
+    const int paletteIndex = getHouseColorPaletteIndexFromSlot(colorSlot) + shadeOffset;
+    if(paletteIndex >= 0 && paletteIndex < sourcePalette.getNumColors()) {
+        return sourcePalette[paletteIndex];
+    }
+
+    return SDL_Color{ 0, 0, 0, 255 };
+}
+
+inline Uint32 getHouseColorRGB(int colorSlot, int shadeOffset = 3) {
+    return SDL2RGB(getHouseColorSDL(colorSlot, shadeOffset));
+}
+
+void loadCustomPalette();
+void applyCustomPaletteRuntimeHouseRamps();
+void resetHouseVisualHouseMapping();
+void setHouseVisualHouse(HOUSETYPE house, int visualHouse);
 
 #endif //GLOBALS_H

@@ -20,9 +20,9 @@
 
 #include <units/TrackedUnit.h>
 
-/// Flame Tank (Tornie mod) — sonic-line flame weapon, Heavy Factory TechLevel 9 UpgradeLevel 4.
-/// Fires Bullet_Flame: line propagation from unit like Sonic Tank, visual flame explosions on path.
-/// Instant-kills light infantry, 2x damage to Troopers, no aircraft damage.
+/// Flame Tank (Tornie mod) - Rebels Heavy Factory unit unlocked by House IX.
+/// Fires Bullet_Flame: launcher-like projectile with flame impact and area damage.
+/// Anti-infantry focused, no deviation effect, no aircraft damage.
 class FlameTank final : public TrackedUnit
 {
 public:
@@ -31,8 +31,13 @@ public:
     void init();
     virtual ~FlameTank();
 
+    void blitToScreen() override;
     void destroy() override;
     void playAttackSound() override;
+
+private:
+    zoomable_texture turretGraphic{};
+    int              gunGraphicID;
 };
 
 #endif // FLAMETANK_H

@@ -31,6 +31,8 @@
 #include <structures/Refinery.h>
 #include <structures/RepairYard.h>
 #include <units/Harvester.h>
+#include <units/HarvesterHelpers.h>
+#include <units/TrackedUnit.h>
 
 // the position on the tile
 Coord tilePositionOffset[5] = { Coord(0,0), Coord(-TILESIZE/4,-TILESIZE/4), Coord(TILESIZE/4,-TILESIZE/4), Coord(-TILESIZE/4,TILESIZE/4), Coord(TILESIZE/4,TILESIZE/4)};
@@ -186,10 +188,6 @@ void InfantryBase::checkPos() {
             if(!isImmortal) {
                 setHealth(0);
             }
-        } else if(currentGameMap->getTile(location)->isRedSpiceBloom()) {
-            currentGameMap->getTile(location)->triggerRedSpiceBloom(getOwner());
-        } else if(currentGameMap->getTile(location)->isGreenSpiceBloom()) {
-            currentGameMap->getTile(location)->triggerGreenSpiceBloom(getOwner());
         } else if(currentGameMap->getTile(location)->isSpecialBloom()){
             currentGameMap->getTile(location)->triggerSpecialBloom(getOwner());
         }
@@ -225,7 +223,7 @@ void InfantryBase::checkPos() {
                         capturedSpice = currentGame->objectData.data[Structure_Silo][originalHouseID].capacity * (pOwner->getStoredCredits() / pOwner->getCapacity());
                         Refinery* pRefinery = static_cast<Refinery*>(pCapturedStructure);
                         if(pRefinery->isFree() == false) {
-                            pContainedUnit = pRefinery->getHarvester();
+                            pContainedUnit = pRefinery->getContainedHarvester();
                         }
                     } else if(pCapturedStructure->getItemID() == Structure_RepairYard) {
                         RepairYard* pRepairYard = static_cast<RepairYard*>(pCapturedStructure);
@@ -240,8 +238,8 @@ void InfantryBase::checkPos() {
                     if(pContainedUnit != nullptr) {
                         containedUnitID = pContainedUnit->getItemID();
                         containedUnitHealth = pContainedUnit->getHealth();
-                        if(containedUnitID == Unit_Harvester) {
-                            containedHarvesterSpice = static_cast<Harvester*>(pContainedUnit)->getAmountOfSpice();
+                        if(isHarvesterLikeUnit(containedUnitID)) {
+                            containedHarvesterSpice = harvesterGetAmountOfSpice(pContainedUnit);
                         }
 
                         // will be destroyed by the captured structure
@@ -305,14 +303,14 @@ void InfantryBase::checkPos() {
                         pNewUnit->setVisible(VIS_ALL, false);
                         pNewUnit->setHealth(containedUnitHealth);
 
-                        if(pNewUnit->getItemID() == Unit_Harvester) {
-                            static_cast<Harvester*>(pNewUnit)->setAmountOfSpice(containedHarvesterSpice);
+                        if(isHarvesterLikeUnit(pNewUnit->getItemID())) {
+                            harvesterSetAmountOfSpice(pNewUnit, containedHarvesterSpice);
                         }
 
                         if(pNewStructure->getItemID() == Structure_Refinery) {
                             Refinery* pRefinery = static_cast<Refinery*>(pNewStructure);
                             pRefinery->book();
-                            pRefinery->assignHarvester(static_cast<Harvester*>(pNewUnit));
+                            pRefinery->assignHarvester(static_cast<TrackedUnit*>(pNewUnit));
                         } else if(pNewStructure->getItemID() == Structure_RepairYard) {
                             RepairYard* pRepairYard = static_cast<RepairYard*>(pNewStructure);
                             pRepairYard->book();

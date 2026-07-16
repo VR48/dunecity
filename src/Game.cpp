@@ -77,7 +77,9 @@ std::mutex Game::performanceLogMutex;
 #include <structures/BuilderBase.h>
 #include <structures/Palace.h>
 #include <units/Harvester.h>
+#include <units/HarvesterHelpers.h>
 #include <units/InfantryBase.h>
+#include <units/GroundUnit.h>
 #include <units/AmbientAirplane.h>
 #include <units/AmbientHelicopter.h>
 #include <structures/Airport.h>
@@ -88,6 +90,8 @@ std::mutex Game::performanceLogMutex;
 #include <iomanip>
 
 namespace {
+
+constexpr Uint32 SAVE_SETUP_COLOR_MARKER = 0x53434F4C; // "SCOL"
 
 DuneCity::CityTilePlacementState makeCityTilePlacementState(const Tile& tile) {
     return DuneCity::makeCityTilePlacementState(
@@ -117,6 +121,67 @@ bool hasVisibleRoadNeighbor(int x, int y) {
     }
 
     return false;
+}
+
+struct StructurePlacementPreview {
+    unsigned int objectPic = NUM_OBJPICS;
+    int framesX = 1;
+    int framesY = 1;
+    int frame = 0;
+    int overlayFrame = -1;
+};
+
+constexpr int TornieStructureFrame_BuildSite = 0;
+constexpr int TornieStructureFrame_Destroyed = 1;
+constexpr int TornieStructureFrame_Active = 2;
+
+bool getTornieStructurePlacementPreview(int itemID, StructurePlacementPreview& preview) {
+    switch(itemID) {
+        case Structure_AdvancedWindTrap:
+            preview = {
+                ObjPic_AdvancedWindTrap,
+                4,
+                1,
+                TornieStructureFrame_BuildSite,
+                -1
+            };
+            return true;
+
+        case Structure_AdvancedWindTrapMK2:
+            preview = {
+                ObjPic_AdvancedWindTrap2x3,
+                4,
+                1,
+                TornieStructureFrame_BuildSite,
+                -1
+            };
+            return true;
+
+        case Structure_AdvancedWindTrapMK3:
+            preview = {
+                ObjPic_AdvancedWindTrap3x2,
+                4,
+                1,
+                TornieStructureFrame_BuildSite,
+                -1
+            };
+            return true;
+
+        case Structure_Worfinery:
+            preview = { ObjPic_Worfinery, 4, 1, TornieStructureFrame_BuildSite, -1 };
+            return true;
+
+        case Structure_TechCenter:
+            preview = { ObjPic_TechCenter, 4, 1, TornieStructureFrame_BuildSite, -1 };
+            return true;
+
+        case Structure_Scoutpost:
+            preview = { ObjPic_Scoutpost, 4, 1, TornieStructureFrame_BuildSite, -1 };
+            return true;
+
+        default:
+            return false;
+    }
 }
 
 } // namespace
@@ -295,6 +360,14 @@ void Game::logPerformance(const char* format, ...) {
 void Game::initGame(const GameInitSettings& newGameInitSettings) {
     gameInitSettings = newGameInitSettings;
 
+    applyCustomPaletteRuntimeHouseRamps();
+
+    // DuneCity 1.0.487: invalidate sprite texture cache to fix
+    // the first-launch invisibility bug. Preserves uiGraphic.
+    if(pGFXManager) {
+        pGFXManager->invalidateAllSpriteTextures();
+    }
+
     // The host's mod choice is the source of truth for whether the
     // city-sim feature flag is on — not whatever mod the local player
     // happens to have active in their main menu. This matters most for
@@ -348,7 +421,7 @@ void Game::initGame(const GameInitSettings& newGameInitSettings) {
             gameType = gameInitSettings.getGameType();
             randomGen.setSeed(gameInitSettings.getRandomSeed());
 
-            objectData.loadFromINIFile("config/ObjectData.ini");
+            objectData.loadFromINIFile(ModManager::instance().getActiveObjectDataPath(), false);
 
             // City zones must not be buildable when the active mod doesn't
             // opt into DuneCity city-sim features. Force-disable them in the
@@ -369,26 +442,7 @@ void Game::initGame(const GameInitSettings& newGameInitSettings) {
                 techLevel = ((gameInitSettings.getMission() + 1)/3) + 1 ;
             }
 
-            // Defensive: scenario/INI loading can throw std::runtime_error
-            // for malformed scenario data (e.g. an unplaceable unit position
-            // on a save-game load). Without this guard, an uncaught throw
-            // becomes 0xE06D7363 / heap corruption (0xC0000374) on Windows
-            // and kills the process. Log and continue with an empty map
-            // rather than abort.
-            try {
-                INIMapLoader(this, gameInitSettings.getFilename(), gameInitSettings.getFiledata());
-            } catch(const std::exception& e) {
-                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                    "Game::init: scenario load failed (gameType=%d, mission=%d): %s",
-                    (int)gameInitSettings.getGameType(),
-                    gameInitSettings.getMission(), e.what());
-            }
-
-            // Reset city simulation for the new map so lastProcessedDay_ and
-            // other per-map state don't carry over from a previous mission.
-            if (citySimEnabled_ && currentGameMap != nullptr) {
-                citySimulation_.reset();
-            }
+            INIMapLoader(this, gameInitSettings.getFilename(), gameInitSettings.getFiledata());
 
             if(bReplay == false && gameInitSettings.getGameType() != GameType::CustomGame && gameInitSettings.getGameType() != GameType::CustomMultiplayer) {
                 /* do briefing */
@@ -1415,9 +1469,6 @@ void Game::drawScreen()
                 screenborder->world2screenY(t.getLocation().y*TILESIZE));
         });
 
-    /* draw corner flags */
-    // drawCornerFlags();
-
     /* draw underground units */
     currentGameMap->for_each(x1, y1, x2, y2,
         [](Tile& t) {
@@ -1555,6 +1606,21 @@ void Game::drawScreen()
                 if(pBuilder) {
                     int placeItem = pBuilder->getCurrentProducedItem();
                     Coord structuresize = getStructureSize(placeItem);
+                    static int loggedPlacementStateCount = 0;
+                    StructurePlacementPreview placementPreviewForLog;
+                    if(loggedPlacementStateCount < 12 && getTornieStructurePlacementPreview(placeItem, placementPreviewForLog)) {
+                        loggedPlacementStateCount++;
+                        SDL_Log("TornieGFX: placing-state item=%d objectPic=%u house=%d zoom=%d selected=%u tile=(%d,%d) size=%dx%d",
+                                placeItem,
+                                placementPreviewForLog.objectPic,
+                                pBuilder->getOwner()->getHouseID(),
+                                currentZoomlevel,
+                                static_cast<unsigned int>(selectedList.size()),
+                                xPos,
+                                yPos,
+                                structuresize.x,
+                                structuresize.y);
+                    }
 
                     bool withinRange = false;
                     for (int i = xPos; i < (xPos + structuresize.x); i++) {
@@ -1565,26 +1631,8 @@ void Game::drawScreen()
                         }
                     }
 
-                    // DuneCity 1.0.349: green grid removed. Tornie asked
-                    // for 'a normal vision from game not glitched like
-                    // now' - the green/red placement overlay kept
-                    // rendering in zones the player did not own,
-                    // looking like a glitched field-of-view effect.
-                    // We compute withinRange above for compatibility
-                    // with the placement path but no longer draw the
-                    // per-tile texture. Players still see the standard
-                    // vanilla cursor and click-to-place semantics.
-                    (void)withinRange;
-
                     SDL_Texture* validPlace = nullptr;
                     SDL_Texture* invalidPlace = nullptr;
-
-                    // DuneCity 1.0.351: Rebels get a dark-grey valid
-                    // grid instead of green. We override validPlace
-                    // AFTER the switch so the texture selection logic
-                    // stays linear.
-                    const bool placingRebelsForGrid = (pBuilder->getOwner()
-                                                       && pBuilder->getOwner()->getHouseID() == HOUSE_REBELS);
 
                     switch(currentZoomlevel) {
                         case 0: {
@@ -1605,52 +1653,13 @@ void Game::drawScreen()
 
                     }
 
-                    if (placingRebelsForGrid) {
-                        switch(currentZoomlevel) {
-                            case 0:  validPlace = pGFXManager->getUIGraphic(UI_GreyPlace_Zoomlevel0); break;
-                            case 1:  validPlace = pGFXManager->getUIGraphic(UI_GreyPlace_Zoomlevel1); break;
-                            default: validPlace = pGFXManager->getUIGraphic(UI_GreyPlace_Zoomlevel2); break;
-                        }
-                    }
-
-                    // DuneCity 1.0.350: green/red placement grid restored, but
-                    // only when the local player has selected a Builder
-                    // unit AND is actively trying to place a building
-                    // (i.e. the player has a structure queued in the
-                    // build list and is hovering over the map).
-                    //
-                    // Tornie's instruction: 'the grid should only be
-                    // displayed when selecting buildings'.
-                    //
-                    // We restore the per-tile UI_ValidPlace /
-                    // UI_InvalidPlace texture render. The grid only
-                    // renders green on tiles owned by the placing
-                    // house (no cross-zone bleed for any house,
-                    // including the 8th).
-                    //
-                    // DuneCity 1.0.351: for the 8th house (Rebels),
-                    // the valid grid uses the dark-grey UI_GreyPlace
-                    // palette to match the Rebels faction colour
-                    // (96,96,96 / 110,110,110). The invalid grid
-                    // stays red so the player still gets a clear
-                    // 'cannot place here' signal. Vanilla houses 1..7
-                    // keep the standard green/red pair.
                     for(int i = xPos; i < (xPos + structuresize.x); i++) {
                         for(int j = yPos; j < (yPos + structuresize.y); j++) {
                             SDL_Texture* image;
+
                             bool tileValid = false;
                             if(withinRange && currentGameMap->tileExists(i,j)) {
                                 Tile* pTile = currentGameMap->getTile(i,j);
-                                const int placingOwnerID = pBuilder->getOwner()
-                                                            ? pBuilder->getOwner()->getHouseID()
-                                                            : -1;
-                                const int tileOwnerByte = pTile->getOwner();
-                                if(tileOwnerByte != placingOwnerID) {
-                                    image = invalidPlace;
-                                    SDL_Rect drawLocationSkip = calcDrawingRect(image, screenborder->world2screenX(i*TILESIZE), screenborder->world2screenY(j*TILESIZE));
-                                    SDL_RenderCopy(renderer, image, nullptr, &drawLocationSkip);
-                                    continue;
-                                }
                                 if(isZoneStructure(placeItem)) {
                                     tileValid = !pTile->isMountain() && !pTile->hasAGroundObject();
                                 } else {
@@ -1659,8 +1668,91 @@ void Game::drawScreen()
                                 }
                             }
                             image = tileValid ? validPlace : invalidPlace;
+
                             SDL_Rect drawLocation = calcDrawingRect(image, screenborder->world2screenX(i*TILESIZE), screenborder->world2screenY(j*TILESIZE));
                             SDL_RenderCopy(renderer, image, nullptr, &drawLocation);
+                        }
+                    }
+
+                    StructurePlacementPreview preview;
+                    if(getTornieStructurePlacementPreview(placeItem, preview)) {
+                        const int ownerHouse = pBuilder->getOwner()->getHouseID();
+                        static int loggedPlacementPreviewCandidateCount = 0;
+                        if(loggedPlacementPreviewCandidateCount < 12) {
+                            loggedPlacementPreviewCandidateCount++;
+                            SDL_Log("TornieGFX: placement-preview candidate item=%d objectPic=%u house=%d zoom=%d size=%dx%d tile=(%d,%d)",
+                                    placeItem,
+                                    preview.objectPic,
+                                    ownerHouse,
+                                    currentZoomlevel,
+                                    structuresize.x,
+                                    structuresize.y,
+                                    xPos,
+                                    yPos);
+                        }
+                        if(SDL_Texture* previewTexture = pGFXManager->getZoomedObjPic(preview.objectPic,
+                                                                                       ownerHouse,
+                                                                                       currentZoomlevel)) {
+                            Uint8 previousAlpha = SDL_ALPHA_OPAQUE;
+                            SDL_BlendMode previousBlendMode = SDL_BLENDMODE_NONE;
+                            SDL_GetTextureAlphaMod(previewTexture, &previousAlpha);
+                            SDL_GetTextureBlendMode(previewTexture, &previousBlendMode);
+                            SDL_SetTextureBlendMode(previewTexture, SDL_BLENDMODE_BLEND);
+
+                            const auto drawPreviewFrame = [&](int frame, Uint8 alpha) {
+                                const int numFrames = preview.framesX * preview.framesY;
+                                if((frame < 0) || (frame >= numFrames)) {
+                                    return;
+                                }
+
+                                const int frameX = frame % preview.framesX;
+                                const int frameY = frame / preview.framesX;
+                                SDL_Rect source = calcSpriteSourceRect(previewTexture, frameX, preview.framesX, frameY, preview.framesY);
+                                SDL_Rect dest = calcSpriteDrawingRect(previewTexture,
+                                                                      screenborder->world2screenX(xPos * TILESIZE),
+                                                                      screenborder->world2screenY(yPos * TILESIZE),
+                                                                      preview.framesX,
+                                                                      preview.framesY);
+
+                                SDL_SetTextureAlphaMod(previewTexture, alpha);
+                                SDL_RenderCopy(renderer, previewTexture, &source, &dest);
+
+                                static int loggedPlacementPreviewCount = 0;
+                                if(loggedPlacementPreviewCount < 12) {
+                                    loggedPlacementPreviewCount++;
+                                    SDL_Log("TornieGFX: placement-preview item=%d objectPic=%u house=%d zoom=%d frame=%d alpha=%u source=(%d,%d %dx%d) dest=(%d,%d %dx%d)",
+                                            placeItem,
+                                            preview.objectPic,
+                                            ownerHouse,
+                                            currentZoomlevel,
+                                            frame,
+                                            static_cast<unsigned int>(alpha),
+                                            source.x,
+                                            source.y,
+                                            source.w,
+                                            source.h,
+                                            dest.x,
+                                            dest.y,
+                                            dest.w,
+                                            dest.h);
+                                }
+                            };
+
+                            drawPreviewFrame(preview.frame, 96);
+                            drawPreviewFrame(preview.overlayFrame, 255);
+
+                            SDL_SetTextureAlphaMod(previewTexture, previousAlpha);
+                            SDL_SetTextureBlendMode(previewTexture, previousBlendMode);
+                        } else {
+                            static int loggedMissingPlacementPreviewCount = 0;
+                            if(loggedMissingPlacementPreviewCount < 12) {
+                                loggedMissingPlacementPreviewCount++;
+                                SDL_Log("TornieGFX: placement-preview texture missing item=%d objectPic=%u house=%d zoom=%d",
+                                        placeItem,
+                                        preview.objectPic,
+                                        ownerHouse,
+                                        currentZoomlevel);
+                            }
                         }
                     }
                 }
@@ -1813,6 +1905,27 @@ void Game::doInput()
             SDL_MouseMotionEvent* mouse = &event.motion;
             drawnMouseX = std::max(0, std::min(mouse->x, settings.video.width-1));
             drawnMouseY = std::max(0, std::min(mouse->y, settings.video.height-1));
+
+            static Uint32 lastCursorLog = 0;
+            // Cursor debug logging disabled
+            /*const Uint32 now = SDL_GetTicks();
+            if(now - lastCursorLog >= 500) {
+                bool insideMap = (screenborder != nullptr) && screenborder->isScreenCoordInsideMap(drawnMouseX, drawnMouseY);
+                int mapX = insideMap ? screenborder->screen2MapX(drawnMouseX) : -1;
+                int mapY = insideMap ? screenborder->screen2MapY(drawnMouseY) : -1;
+                SDL_LogVerbose(SDL_LOG_CATEGORY_APPLICATION,
+                               "CursorDebug: raw=(%d,%d) drawn=(%d,%d) mapInside=%s map=(%d,%d) cursorMode=%d hardware=%s",
+                               mouse->x,
+                               mouse->y,
+                               drawnMouseX,
+                               drawnMouseY,
+                               insideMap ? "yes" : "no",
+                               mapX,
+                               mapY,
+                               static_cast<int>(currentCursorMode),
+                               cursorManager.isInitialized() ? "yes" : "no");
+                lastCursorLog = now;
+            }*/
         }
 
         if(pInGameMenu != nullptr) {
@@ -2030,18 +2143,18 @@ void Game::doInput()
 
                         if(selectedList.size() == 1) {
                             ObjectBase* pObject = objectManager.getObject( *selectedList.begin());
-                            if(pObject != nullptr && pObject->getOwner() == pLocalHouse && pObject->getItemID() == Unit_Harvester) {
-                                Harvester* pHarvester = static_cast<Harvester*>(pObject);
+                            if(pObject != nullptr && pObject->getOwner() == pLocalHouse && isHarvesterLikeObject(pObject)) {
+                                GroundUnit* pHarvester = static_cast<GroundUnit*>(pObject);
 
-                                std::string harvesterMessage = _("@DUNE.ENG|226#Harvester");
+                                std::string harvesterMessage = resolveItemName(pObject->getItemID());
 
-                                int percent = lround(100 * pHarvester->getAmountOfSpice() / HARVESTERMAXSPICE);
+                                int percent = lround(100 * harvesterGetAmountOfSpice(pObject) / HARVESTERMAXSPICE);
                                 if(percent > 0) {
                                     if(pHarvester->isAwaitingPickup()) {
                                         harvesterMessage += fmt::sprintf(_("@DUNE.ENG|124#full and awaiting pickup"), percent);
-                                    } else if(pHarvester->isReturning()) {
+                                    } else if(harvesterIsReturning(pObject)) {
                                         harvesterMessage += fmt::sprintf(_("@DUNE.ENG|123#full and returning"), percent);
-                                    } else if(pHarvester->isHarvesting()) {
+                                    } else if(harvesterIsHarvesting(pObject)) {
                                         harvesterMessage += fmt::sprintf(_("@DUNE.ENG|122#full and harvesting"), percent);
                                     } else {
                                         harvesterMessage += fmt::sprintf(_("@DUNE.ENG|121#full"), percent);
@@ -2050,9 +2163,9 @@ void Game::doInput()
                                 } else {
                                     if(pHarvester->isAwaitingPickup()) {
                                         harvesterMessage += _("@DUNE.ENG|128#empty and awaiting pickup");
-                                    } else if(pHarvester->isReturning()) {
+                                    } else if(harvesterIsReturning(pObject)) {
                                         harvesterMessage += _("@DUNE.ENG|127#empty and returning");
-                                    } else if(pHarvester->isHarvesting()) {
+                                    } else if(harvesterIsHarvesting(pObject)) {
                                         harvesterMessage += _("@DUNE.ENG|126#empty and harvesting");
                                     } else {
                                         harvesterMessage += _("@DUNE.ENG|125#empty");
@@ -2645,29 +2758,14 @@ void Game::updateGameState() {
 
     // DuneCity: advance one phase of the city simulation
     if (citySimEnabled_ && citySimulation_) {
-        try {
-            const Uint64 citySimStart = SDL_GetPerformanceCounter();
-            citySimulation_->advancePhase(gameCycleCount);
-            const Uint64 citySimEnd = SDL_GetPerformanceCounter();
-            const double citySimMs = getElapsedMs(citySimStart, citySimEnd);
-            frameTiming.citySimMsThisFrame += citySimMs;
-            if(citySimMs > 10.0) {
-                logPerformance("[CITYSIM SPIKE] Cycle %u advancePhase=%.1fms",
-                    gameCycleCount, citySimMs);
-            }
-        } catch(const std::exception& e) {
-            // City-sim math can throw on loaded games where prevResPop /
-            // computed-resPop diverge (R/C/I 0 bug, save-load migration, etc).
-            // Without this guard an uncaught throw becomes 0xE06D7363 on
-            // Windows and kills the process. Log and continue — the rest of
-            // the game (RTS, units, structures) is unaffected.
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                "Game::updateGameState: citySim advancePhase threw (%s) at cycle=%u",
-                e.what(), gameCycleCount);
-        } catch(...) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                "Game::updateGameState: citySim advancePhase threw unknown exception at cycle=%u",
-                gameCycleCount);
+        const Uint64 citySimStart = SDL_GetPerformanceCounter();
+        citySimulation_->advancePhase(gameCycleCount);
+        const Uint64 citySimEnd = SDL_GetPerformanceCounter();
+        const double citySimMs = getElapsedMs(citySimStart, citySimEnd);
+        frameTiming.citySimMsThisFrame += citySimMs;
+        if(citySimMs > 10.0) {
+            logPerformance("[CITYSIM SPIKE] Cycle %u advancePhase=%.1fms",
+                gameCycleCount, citySimMs);
         }
 
         // Power shortage warning: notify player when zones lose power
@@ -3090,7 +3188,7 @@ void Game::onOptions()
         // don't show menu
         quitGame();
     } else {
-        Uint32 color = SDL2RGB(palette[houseToPaletteIndex[pLocalHouse->getHouseID()] + 3]);
+        Uint32 color = getHouseColorRGB(getHouseVisualHouse(pLocalHouse->getHouseID()), 3);
         pInGameMenu = std::make_unique<InGameMenu>((gameType == GameType::CustomMultiplayer), color);
         bMenu = true;
         pauseGame();
@@ -3304,6 +3402,40 @@ bool Game::loadSaveGame(InputStream& stream) {
         houseInfoListSetup.push_back(GameInitSettings::HouseInfo(stream));
     }
 
+    if(savegameVersion >= 9814) {
+        const Uint32 setupColorMarker = stream.readUint32();
+        if(setupColorMarker != SAVE_SETUP_COLOR_MARKER) {
+            SDL_Log("Game::loadSaveGame(): custom color marker missing");
+            return false;
+        }
+
+        const Uint32 numHouseColors = stream.readUint32();
+        for(Uint32 i=0; i<numHouseColors; i++) {
+            const int colorOfHouse = stream.readSint32();
+            if(i < houseInfoListSetup.size()) {
+                houseInfoListSetup[i].colorOfHouse = colorOfHouse;
+            }
+        }
+    }
+
+    resetHouseVisualHouseMapping();
+    for(const GameInitSettings::HouseInfo& setupHouseInfo : houseInfoListSetup) {
+        int colorOfHouse = setupHouseInfo.colorOfHouse;
+        if(!isValidHouseColorSlot(colorOfHouse)) {
+            for(const GameInitSettings::HouseInfo& initHouseInfo : gameInitSettings.getHouseInfoList()) {
+                if(initHouseInfo.houseID == setupHouseInfo.houseID
+                   && isValidHouseColorSlot(initHouseInfo.colorOfHouse)) {
+                    colorOfHouse = initHouseInfo.colorOfHouse;
+                    break;
+                }
+            }
+        }
+        if(!isValidHouseColorSlot(colorOfHouse)) {
+            colorOfHouse = setupHouseInfo.houseID;
+        }
+        setHouseVisualHouse(setupHouseInfo.houseID, colorOfHouse);
+    }
+
     //read map size
     short mapSizeX = stream.readUint32();
     short mapSizeY = stream.readUint32();
@@ -3485,6 +3617,19 @@ bool Game::saveGame(const std::string& filename)
         houseInfo.save(fs);
     }
 
+    fs.writeUint32(SAVE_SETUP_COLOR_MARKER);
+    fs.writeUint32(houseInfoListSetup.size());
+    for(const GameInitSettings::HouseInfo& houseInfo : houseInfoListSetup) {
+        int visualHouse = getHouseVisualHouse(houseInfo.houseID);
+        if(!isValidHouseColorSlot(visualHouse)) {
+            visualHouse = houseInfo.colorOfHouse;
+        }
+        if(!isValidHouseColorSlot(visualHouse)) {
+            visualHouse = houseInfo.houseID;
+        }
+        fs.writeSint32(visualHouse);
+    }
+
     //write the map size
     fs.writeUint32(currentGameMap->getSizeX());
     fs.writeUint32(currentGameMap->getSizeY());
@@ -3580,14 +3725,7 @@ ObjectBase* Game::loadObject(InputStream& stream, Uint32 objectID)
 
     ObjectBase* newObject = ObjectBase::loadObject(stream, itemID, objectID);
     if(newObject == nullptr) {
-        // Was: THROW(std::runtime_error, "Error while loading an object!");
-        // Defensive: log and return nullptr instead of throwing. The caller
-        // (ObjectManager::load) now checks for nullptr and skips. Without
-        // this, an uncaught std::runtime_error escapes Game::loadSaveGame and
-        // becomes 0xE06D7363 / heap corruption (0xC0000374) on Windows.
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-            "Game::loadObject(): failed to load objectID=%u itemID=%u (corrupt or unknown object in savegame)",
-            objectID, itemID);
+        THROW(std::runtime_error, "Error while loading an object!");
     }
 
     return newObject;
@@ -4159,8 +4297,8 @@ void Game::handleKeyInput(SDL_KeyboardEvent& keyboardEvent) {
         case SDLK_h: {
             for(Uint32 objectID : selectedList) {
                 ObjectBase* pObject = objectManager.getObject(objectID);
-                if(pObject->getItemID() == Unit_Harvester) {
-                    static_cast<Harvester*>(pObject)->handleReturnClick();
+                if(isHarvesterLikeObject(pObject)) {
+                    harvesterHandleReturnClick(pObject);
                 }
             }
         } break;
@@ -4825,36 +4963,6 @@ void Game::drawCityPlacementHint() {
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
 }
 
-
-void Game::drawCornerFlags() {
-    if (!currentGameMap) return;
-
-    SDL_Texture* flagTex = pGFXManager->getZoomedObjPic(ObjPic_CornerFlag, currentZoomlevel);
-    if (!flagTex) return;
-
-    const int zoomedTileSize = world2zoomedWorld(TILESIZE);
-    // Advance through 2 animation frames at ~8 game cycles each.
-    const int frame = (gameCycleCount / 8) % 2;
-
-    const int mapW = currentGameMap->getSizeX();
-    const int mapH = currentGameMap->getSizeY();
-
-    const int corners[4][2] = {
-        {0,        0       },
-        {mapW - 1, 0       },
-        {0,        mapH - 1},
-        {mapW - 1, mapH - 1}
-    };
-
-    for (const auto& c : corners) {
-        const int screenX = screenborder->world2screenX(c[0] * TILESIZE);
-        const int screenY = screenborder->world2screenY(c[1] * TILESIZE);
-        const int flagPx = 7 * (currentZoomlevel + 1);
-        SDL_Rect src = { frame * flagPx, 0, flagPx, flagPx };
-        SDL_Rect dst = { screenX, screenY, flagPx, flagPx };
-        SDL_RenderCopy(renderer, flagTex, &src, &dst);
-    }
-}
 
 void Game::takeScreenshot() const {
     std::string screenshotFilename;

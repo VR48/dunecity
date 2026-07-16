@@ -275,8 +275,12 @@ void CampaignAIPlayer::onDamage(const ObjectBase* pObject, int damage, Uint32 da
         scrambleUnitsAndDefend(pDamager);
     }
     
+    // The target ID may still be set after the target object was destroyed.
+    // Resolve it once so a stale ObjectPointer cannot be dereferenced below.
+    const ObjectBase* pCurrentTarget = pUnit->hasATarget() ? pUnit->getTarget() : nullptr;
+
     // Optional immediate retaliation if capable
-    if(pUnit->canAttack(pDamager) && (!pUnit->hasATarget() || pUnit->getTarget()->getTarget() != pUnit)) {
+    if(pUnit->canAttack(pDamager) && (pCurrentTarget == nullptr || pCurrentTarget->getTarget() != pUnit)) {
         doAttackObject(pUnit, pDamager, true);
     }
 }

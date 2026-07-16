@@ -4,6 +4,9 @@ depcomp
 autom4te.cache
 bin/
 build/
+build_ci_test/
+compile
+test-driver
 build-*/
 build_release/
 vcpkg/

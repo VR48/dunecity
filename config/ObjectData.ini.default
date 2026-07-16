@@ -142,7 +142,6 @@ InfSpawnProp = 50
 Builder = Construction Yard
 Builder(H) = Invalid
 TechLevel = 2
-TechLevel(N) = 2
 Prerequisite = Windtrap, Radar
 
 [Construction Yard]
@@ -205,7 +204,6 @@ BuildTime = 120
 InfSpawnProp = 75
 Builder = Construction Yard
 TechLevel = 7
-TechLevel(N) = 7
 Prerequisite = Windtrap, Refinery, Starport
 
 [Light Factory]
@@ -220,7 +218,6 @@ Builder = Construction Yard
 TechLevel = 2
 TechLevel(H) = 3
 TechLevel(S) = 3
-TechLevel(N) = 3
 Prerequisite = Windtrap, Refinery
 
 [Palace]
@@ -286,6 +283,22 @@ BuildTime = 96
 InfSpawnProp = 25
 Builder = Construction Yard
 TechLevel = 6
+Prerequisite = Windtrap, Radar
+UpgradeLevel = 2
+
+[Scoutpost]
+Enabled = false
+HitPoints = 160
+Price = 300
+Power = -25
+ViewRange = 7
+WeaponDamage = 5
+WeaponRange = 5
+WeaponReloadTime = 150
+BuildTime = 72
+InfSpawnProp = 25
+Builder = Invalid
+TechLevel = 5
 Prerequisite = Windtrap, Radar
 UpgradeLevel = 2
 
@@ -426,14 +439,38 @@ TechLevel = 6
 Prerequisite = Windtrap
 
 [Advanced Windtrap]
-Enabled = true
+Enabled = false
 HitPoints = 500
 Price = 500
 Power = -300		# 3x WindTrap output
 ViewRange = 3
 BuildTime = 96
 InfSpawnProp = 25
-Builder = Construction Yard
+Builder = Invalid
+TechLevel = 6
+Prerequisite = Windtrap, Radar, Hightech Factory
+
+[Advanced Windtrap 2x3]
+Enabled = false
+HitPoints = 500
+Price = 500
+Power = -300		# 3x WindTrap output
+ViewRange = 3
+BuildTime = 96
+InfSpawnProp = 25
+Builder = Invalid
+TechLevel = 6
+Prerequisite = Windtrap, Radar, Hightech Factory
+
+[Advanced Windtrap 3x2]
+Enabled = false
+HitPoints = 500
+Price = 500
+Power = -300		# 3x WindTrap output
+ViewRange = 3
+BuildTime = 96
+InfSpawnProp = 25
+Builder = Invalid
 TechLevel = 6
 Prerequisite = Windtrap, Radar, Hightech Factory
 
@@ -493,7 +530,6 @@ Builder = Construction Yard
 Builder(A) = Invalid
 TechLevel = 5
 TechLevel(H) = 2
-TechLevel(N) = 2
 Prerequisite = Windtrap, Radar, Barracks
 Prerequisite(H) = Windtrap, Radar
 
@@ -544,7 +580,6 @@ InfSpawnProp = 25
 Builder = Heavy Factory
 Builder(A) = Invalid
 Builder(O) = Invalid
-Builder(N) = Invalid
 Prerequisite = House IX
 
 [Deviator]
@@ -565,7 +600,6 @@ Builder(S) = Invalid
 Builder(M) = Invalid
 Builder(F) = Invalid
 Builder(O) = Heavy Factory
-Builder(N) = Heavy Factory
 TechLevel = 1
 Prerequisite = House IX
 
@@ -600,8 +634,6 @@ MaxSpeed = 3.8400
 BuildTime = 72
 InfSpawnProp = 25
 Builder = Heavy Factory
-Builder(N) = Invalid
-Prerequisite(N) = House IX
 TechLevel = 5
 UpgradeLevel = 2
 
@@ -617,9 +649,7 @@ MaxSpeed = 3.8400
 BuildTime = 72
 InfSpawnProp = 25
 Builder = Invalid
-Builder(N) = Heavy Factory
 TechLevel = 1
-Prerequisite(N) = House IX
 UpgradeLevel = 0
 
 [MCV]
@@ -666,10 +696,8 @@ InfSpawnProp = 25
 Builder = Light Factory
 TechLevel = 3
 TechLevel(H) = 1
-TechLevel(N) = 4
 UpgradeLevel = 1
 UpgradeLevel(H) = 0
-UpgradeLevel(N) = 1
 
 [Raider Trike]
 Enabled = true
@@ -685,7 +713,6 @@ InfSpawnProp = 25
 Builder = Light Factory
 Builder(A) = Invalid
 Builder(H) = Invalid
-Builder(N) = Invalid
 
 [Rocket Trike]
 Enabled = true
@@ -700,8 +727,6 @@ BuildTime = 40
 InfSpawnProp = 25
 Builder = Invalid
 UpgradeLevel = 0
-Builder(N) = Light Factory
-TechLevel(N) = 3
 
 [Saboteur]
 Enabled = true
@@ -739,10 +764,8 @@ InfSpawnProp = 25
 Builder = Heavy Factory
 TechLevel = 6
 TechLevel(O) = 7
-TechLevel(N) = 6
 UpgradeLevel = 3
 UpgradeLevel(O) = 2
-UpgradeLevel(N) = 2
 
 [Soldier]
 Enabled = true
@@ -771,25 +794,20 @@ InfSpawnProp = 25
 Builder = Heavy Factory
 Builder(O) = Invalid
 Builder(H) = Invalid
-Builder(N) = Invalid
 Prerequisite = House IX
 
 [Tank]
 Enabled = true
 HitPoints = 200
 Price = 300
-Price(N) = 325
 ViewRange = 3
 WeaponDamage = 25
-WeaponDamage(N) = 28
 WeaponRange = 4
-WeaponRange(N) = 5
 WeaponReloadTime = 240
 MaxSpeed = 4.0
 BuildTime = 64
 InfSpawnProp = 25
 Builder = Heavy Factory
-TechLevel(N) = 5
 
 [Trike]
 Enabled = true
@@ -805,7 +823,6 @@ InfSpawnProp = 25
 Builder = Light Factory
 Builder(O) = Invalid
 Builder(H) = Invalid
-Builder(N) = Invalid
 
 [Trooper]
 Enabled = true

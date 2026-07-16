@@ -31,17 +31,18 @@
 static const ItemID_enum choamUnits[] = { Unit_Carryall,  Unit_Ornithopter,
                                            Unit_Harvester, Unit_MCV,
                                            Unit_Trike,     Unit_RaiderTrike,
-                                           Unit_RocketTrike, Unit_Quad,
-                                           Unit_Tank,
-                                           Unit_Launcher,  Unit_EliteLauncher,
-                                           Unit_SiegeTank, Unit_EliteSiegeTank, Unit_FlameTank,
+                                           Unit_Quad,      Unit_Tank,
+                                           Unit_Launcher,  Unit_SiegeTank,
                                            Unit_Devastator,Unit_Deviator,
-                                           Unit_SonicTank, ItemID_Invalid
+                                           Unit_SonicTank, Unit_RocketTrike, Unit_SonicTrike,
+                                           Unit_FlameTank, Unit_EliteLauncher,
+                                           Unit_EliteSiegeTank, Unit_RebelHarvester,
+                                           ItemID_Invalid
                                           };
 
 ChoamWindow::ChoamWindow(MapEditor* pMapEditor, HOUSETYPE currentHouse) : Window(0,0,0,0), pMapEditor(pMapEditor), house(currentHouse) {
 
-    color = SDL2RGB(getHouseSDLColor(house));
+    color = getHouseInterfaceColor(house);
 
     // set up window
     SDL_Texture *pBackground = pGFXManager->getUIGraphic(UI_NewMapWindow);
@@ -73,7 +74,9 @@ ChoamWindow::ChoamWindow(MapEditor* pMapEditor, HOUSETYPE currentHouse) : Window
 
     std::map<int,int>& choam = pMapEditor->getChoam();
 
-    for(int i=0;i<7;i++) {
+    const int numChoamItems = static_cast<int>(sizeof(choamUnits) / sizeof(choamUnits[0])) - 1;
+    const int numChoamRows = (numChoamItems + 1) / 2;
+    for(int i=0;i<numChoamRows;i++) {
 
         ItemID_enum unit1 = choamUnits[i*2];
         ItemID_enum unit2 = choamUnits[i*2+1];
