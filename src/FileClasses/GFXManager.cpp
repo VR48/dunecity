@@ -3107,9 +3107,19 @@ GFXManager::GFXManager() {
     uiGraphic[UI_MapEditor_Launcher][HOUSE_HARKONNEN] = combinePictures(getSubFrame(objPic[ObjPic_Tank_Base][HOUSE_HARKONNEN][0].get(),0,0,8,1).get(), getSubFrame(objPic[ObjPic_Launcher_Gun][HOUSE_HARKONNEN][0].get(),0,0,8,1).get(), 3, 0);
     uiGraphic[UI_MapEditor_Devastator][HOUSE_HARKONNEN] = combinePictures(getSubFrame(objPic[ObjPic_Devastator_Base][HOUSE_HARKONNEN][0].get(),0,0,8,1).get(), getSubFrame(objPic[ObjPic_Devastator_Gun][HOUSE_HARKONNEN][0].get(),0,0,8,1).get(), 2, -4);
     uiGraphic[UI_MapEditor_SonicTank][HOUSE_HARKONNEN] = combinePictures(getSubFrame(objPic[ObjPic_Tank_Base][HOUSE_HARKONNEN][0].get(),0,0,8,1).get(), getSubFrame(objPic[ObjPic_Sonictank_Gun][HOUSE_HARKONNEN][0].get(),0,0,8,1).get(), 3, 1);
-    const unsigned int deviatorEditorGun = tornieActive ? ObjPic_DeviatorGunTornie : ObjPic_Launcher_Gun;
-    const unsigned int flameTankEditorGun = tornieActive ? ObjPic_FlameTankGunTornie : ObjPic_Launcher_Gun;
-    const unsigned int eliteLauncherEditorGun = tornieActive ? ObjPic_EliteLauncherGunTornie : ObjPic_Launcher_Gun;
+    auto selectEditorSprite = [&](unsigned int customSprite, unsigned int fallbackSprite) {
+        return tornieActive && objPic[customSprite][HOUSE_HARKONNEN][0]
+            ? customSprite
+            : fallbackSprite;
+    };
+    const unsigned int deviatorEditorGun =
+        selectEditorSprite(ObjPic_DeviatorGunTornie, ObjPic_Launcher_Gun);
+    const unsigned int flameTankEditorGun =
+        selectEditorSprite(ObjPic_FlameTankGunTornie, ObjPic_Launcher_Gun);
+    const unsigned int eliteLauncherEditorGun =
+        selectEditorSprite(ObjPic_EliteLauncherGunTornie, ObjPic_Launcher_Gun);
+    const unsigned int eliteSiegeTankEditorGun =
+        selectEditorSprite(ObjPic_EliteSiegeTankGunTornie, ObjPic_Siegetank_Gun);
     uiGraphic[UI_MapEditor_Deviator][HOUSE_HARKONNEN] = combinePictures(getSubFrame(objPic[ObjPic_Tank_Base][HOUSE_HARKONNEN][0].get(),0,0,8,1).get(), getSubFrame(objPic[deviatorEditorGun][HOUSE_HARKONNEN][0].get(),0,0,8,1).get(), 3, 0);
     addMapEditorStar(UI_MapEditor_Deviator);
     // Tornie: dedicated sprites for the 3 mod units with their own .png sheets.
@@ -3128,7 +3138,7 @@ GFXManager::GFXManager() {
     addMapEditorStar(UI_MapEditor_FlameTank, true);
     uiGraphic[UI_MapEditor_EliteLauncher][HOUSE_HARKONNEN] = combinePictures(getSubFrame(objPic[ObjPic_Tank_Base][HOUSE_HARKONNEN][0].get(),0,0,8,1).get(), getSubFrame(objPic[eliteLauncherEditorGun][HOUSE_HARKONNEN][0].get(),0,0,8,1).get(), 3, 0);
     addMapEditorStar(UI_MapEditor_EliteLauncher, true);
-    uiGraphic[UI_MapEditor_EliteSiegeTank][HOUSE_HARKONNEN] = combinePictures(getSubFrame(objPic[ObjPic_Siegetank_Base][HOUSE_HARKONNEN][0].get(),0,0,8,1).get(), getSubFrame(objPic[ObjPic_EliteSiegeTankGunTornie][HOUSE_HARKONNEN][0].get(),0,0,8,1).get(), 2, -4);
+    uiGraphic[UI_MapEditor_EliteSiegeTank][HOUSE_HARKONNEN] = combinePictures(getSubFrame(objPic[ObjPic_Siegetank_Base][HOUSE_HARKONNEN][0].get(),0,0,8,1).get(), getSubFrame(objPic[eliteSiegeTankEditorGun][HOUSE_HARKONNEN][0].get(),0,0,8,1).get(), 2, -4);
     addMapEditorStar(UI_MapEditor_EliteSiegeTank, true);
 
     // Compose custom vehicle previews one part at a time for every visual

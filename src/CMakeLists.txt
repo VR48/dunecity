@@ -482,28 +482,17 @@ target_compile_options(dunecity
 
 # Data directory handling
 set(DATA_DIR "${CMAKE_SOURCE_DIR}/data")
-set(TORNIE_MOD_DIR "${CMAKE_SOURCE_DIR}/mods/Tornie")
-set(TORNIE_MOD_REFERENCE_FILES
-    "${TORNIE_MOD_DIR}/mod.ini"
-    "${TORNIE_MOD_DIR}/ObjectData.ini"
-    "${TORNIE_MOD_DIR}/QuantBot Config.ini"
-    "${TORNIE_MOD_DIR}/GameOptions.ini"
-)
+set(MODS_DIR "${CMAKE_SOURCE_DIR}/mods")
 
-function(add_copy_tornie_mod_reference DEST_DIR)
-    if(EXISTS "${TORNIE_MOD_DIR}")
+function(add_copy_mods DEST_DIR)
+    if(EXISTS "${MODS_DIR}")
         add_custom_command(
             TARGET dunecity
             POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E make_directory
-                "${DEST_DIR}/mods/Tornie"
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                ${TORNIE_MOD_REFERENCE_FILES}
-                "${DEST_DIR}/mods/Tornie/"
             COMMAND ${CMAKE_COMMAND} -E copy_directory
-                "${TORNIE_MOD_DIR}/campaign"
-                "${DEST_DIR}/mods/Tornie/campaign"
-            COMMENT "Copying Tornie mod reference files"
+                "${MODS_DIR}"
+                "${DEST_DIR}/mods"
+            COMMENT "Copying selectable mods"
         )
     endif()
 endfunction()
@@ -532,7 +521,7 @@ if(APPLE)
         COMMENT "Copying data and config files into app bundle Resources"
     )
 
-    add_copy_tornie_mod_reference("${BUNDLE_RESOURCES_DIR}")
+    add_copy_mods("${BUNDLE_RESOURCES_DIR}")
 
     # Copy imported Micropolis-derived zone sprites into the bundle so they
     # are found by getDuneLegacyDataDir() + "imported_sprites/..." at runtime.
@@ -558,8 +547,12 @@ if(APPLE)
         COMMENT "Code signing app bundle with ad-hoc signature"
     )
 else()
-    # For other platforms, copy to build/data directory
-    set(BUILD_DATA_DIR "${CMAKE_BINARY_DIR}/data")
+    if(WIN32)
+        set(BUILD_RUNTIME_DIR "$<TARGET_FILE_DIR:dunecity>")
+    else()
+        set(BUILD_RUNTIME_DIR "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+    endif()
+    set(BUILD_DATA_DIR "${BUILD_RUNTIME_DIR}/data")
     add_custom_command(
         TARGET dunecity
         POST_BUILD
@@ -576,16 +569,16 @@ else()
     add_custom_command(
         TARGET dunecity
         POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/config"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${BUILD_RUNTIME_DIR}/config"
         COMMAND ${CMAKE_COMMAND} -E copy
             "${CMAKE_SOURCE_DIR}/config/ObjectData.ini.default"
             "${CMAKE_SOURCE_DIR}/config/QuantBot Config.ini.default"
             "${CMAKE_SOURCE_DIR}/config/Dune City.ini"
-            "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/config/"
+            "${BUILD_RUNTIME_DIR}/config/"
         COMMENT "Copying config template files to build output"
     )
 
-    add_copy_tornie_mod_reference("${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+    add_copy_mods("${BUILD_RUNTIME_DIR}")
 
     # Copy imported zone sprites next to the binary for non-bundle builds
     set(IMPORTED_SPRITES_SRC "${CMAKE_SOURCE_DIR}/imported_sprites")
@@ -595,7 +588,7 @@ else()
             POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_directory
                 "${IMPORTED_SPRITES_SRC}"
-                "${CMAKE_BINARY_DIR}/bin/imported_sprites"
+                "${BUILD_RUNTIME_DIR}/imported_sprites"
             COMMENT "Copying imported sprites to build output"
         )
     endif()
@@ -667,23 +660,17 @@ if(EXISTS "${IMPORTED_SPRITES_SRC}")
     endif()
 endif()
 
-if(EXISTS "${TORNIE_MOD_DIR}")
+if(EXISTS "${MODS_DIR}" AND NOT APPLE)
     if(WIN32)
-        set(TORNIE_INSTALL_BASE ".")
-    elseif(NOT APPLE)
-        set(TORNIE_INSTALL_BASE "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}")
+        set(MODS_INSTALL_BASE ".")
+    else()
+        set(MODS_INSTALL_BASE "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}")
     endif()
 
-    if(WIN32 OR NOT APPLE)
-        install(
-            FILES ${TORNIE_MOD_REFERENCE_FILES}
-            DESTINATION "${TORNIE_INSTALL_BASE}/mods/Tornie"
-        )
-        install(
-            DIRECTORY "${TORNIE_MOD_DIR}/campaign/"
-            DESTINATION "${TORNIE_INSTALL_BASE}/mods/Tornie/campaign"
-        )
-    endif()
+    install(
+        DIRECTORY "${MODS_DIR}/"
+        DESTINATION "${MODS_INSTALL_BASE}/mods"
+    )
 endif()
 
 # Install executable
