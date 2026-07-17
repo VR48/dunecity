@@ -112,6 +112,15 @@ runtime adaptations are the only layers maintained by this fork. Do not copy
 payload files from a separate desktop installation or keep a second Android-
 specific copy of Stefan's files.
 
+## Android TLS Trust
+
+The Android package includes `data/cacert.pem`, curl's Mozilla-derived CA
+bundle, because the statically linked OpenSSL backend cannot reliably consume
+Android's legacy hash-named certificate directories. Refresh it from
+`https://curl.se/ca/cacert.pem` and verify it against
+`https://curl.se/ca/cacert.pem.sha256`. The certificate bundle is distributed
+under Mozilla Public License 2.0, as documented by curl.
+
 Verified runtime behavior:
 
 ```text

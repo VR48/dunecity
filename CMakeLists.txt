@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.15)
 
 # Project name and version
-project(DuneCity VERSION 1.0.520 LANGUAGES C CXX)
+project(DuneCity VERSION 1.0.522 LANGUAGES C CXX)
 
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
@@ -111,16 +111,6 @@ else()
     add_compile_options(-Wno-expansion-to-defined)  # Silences "define FMT_HAS_FEATURE(x) __has_feature(x) may not be portable" warnings.
 endif()
 
-# Windows-specific file operations (before adding subdirectories)
-if(WIN32)
-    # Copy all .PAK files
-    file(GLOB PAK_FILES "${CMAKE_SOURCE_DIR}/data/*.PAK")
-    foreach(PAK_FILE ${PAK_FILES})
-        get_filename_component(PAK_FILENAME ${PAK_FILE} NAME)
-        file(COPY "${PAK_FILE}" DESTINATION "${CMAKE_BINARY_DIR}/bin/data/")
-    endforeach()
-endif()
-
 # Add subdirectories
 add_subdirectory(src)
 if(DUNECITY_BUILD_TESTS)
@@ -134,7 +124,7 @@ if(NOT APPLE)
     add_custom_target(copy_data ALL
         COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_SOURCE_DIR}/data/"
-        "${CMAKE_BINARY_DIR}/bin/data/"
+        "$<TARGET_FILE_DIR:dunecity>/data/"
         COMMENT "Copying data files to bin/data directory"
     )
     

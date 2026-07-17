@@ -2,6 +2,7 @@
 #define DUNECITY_CITYCONSTANTS_H
 
 #include <Command.h>
+#include <data.h>
 
 #include <cstdint>
 
@@ -23,6 +24,10 @@ enum CityToolType : uint32_t {
     CityTool_Road      = 1,
     CityTool_PowerLine = 2
 };
+
+inline bool usesInstantCityProduction(int itemID) {
+    return itemID == Structure_Road;
+}
 
 struct CityTilePlacementState {
     bool supportedTerrain = false;

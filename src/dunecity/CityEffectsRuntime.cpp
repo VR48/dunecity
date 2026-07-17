@@ -1196,11 +1196,7 @@ void CitySimulation::runDailyBudget() {
         const FixPoint tickPaid    = FixPoint(annualPaid)    / kBudgetTicksPerYear;
         const FixPoint net = tickRevenue - tickPaid;
 
-        if (net > FixPoint(0)) {
-            house->returnCredits(net);
-        } else if (net < FixPoint(0)) {
-            house->takeCredits(-net);
-        }
+        house->addCityCredits(net);
 
         // Store per-house budget figures
         if (hID >= 0 && hID < kMaxCityHouses) {

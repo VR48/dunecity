@@ -58,7 +58,8 @@ House::House(int newHouse, int newCredits, int maxUnits, int maxHarvesters, Uint
 
     storedCredits = 0;
     startingCredits = newCredits;
-    oldCredits = lround(storedCredits+startingCredits);
+    cityCredits = 0;
+    oldCredits = lround(storedCredits+startingCredits+cityCredits);
 
     this->maxUnits = maxUnits;
     this->maxHarvesters = maxHarvesters;
@@ -95,7 +96,12 @@ House::House(InputStream& stream) : choam(this) {
 
     storedCredits = stream.readFixPoint();
     startingCredits = stream.readFixPoint();
-    oldCredits = lround(storedCredits+startingCredits);
+    if (currentGame && currentGame->getLoadedSavegameVersion() >= 9817) {
+        cityCredits = stream.readFixPoint();
+    } else {
+        cityCredits = 0;
+    }
+    oldCredits = lround(storedCredits+startingCredits+cityCredits);
     maxUnits = stream.readSint32();
     maxHarvesters = stream.readSint32();
     quota = stream.readSint32();
@@ -182,6 +188,7 @@ void House::save(OutputStream& stream) const {
 
     stream.writeFixPoint(storedCredits);
     stream.writeFixPoint(startingCredits);
+    stream.writeFixPoint(cityCredits);
     stream.writeSint32(maxUnits);
     stream.writeSint32(maxHarvesters);
     stream.writeSint32(quota);
@@ -262,6 +269,25 @@ void House::addCredits(FixPoint newCredits, bool wasRefined) {
 
 
 
+void House::addCityCredits(FixPoint amount) {
+    cityCredits += amount;
+
+    if(cityCredits < 0) {
+        cityCredits = 0;
+    }
+
+    const FixPoint totalCredits = storedCredits + startingCredits + cityCredits;
+    if(totalCredits > MAX_GAME_CREDITS) {
+        cityCredits -= totalCredits - MAX_GAME_CREDITS;
+        if(cityCredits < 0) {
+            cityCredits = 0;
+        }
+    }
+}
+
+
+
+
 void House::returnCredits(FixPoint newCredits) {
     if(newCredits > 0) {
         FixPoint leftCapacity = capacity - storedCredits;
@@ -281,16 +307,26 @@ FixPoint House::takeCredits(FixPoint amount) {
     FixPoint taken = 0;
 
     if(getCredits() >= 1) {
-        if(storedCredits > amount) {
-            taken = amount;
+        if(cityCredits >= amount) {
+            cityCredits -= amount;
+            return amount;
+        }
+
+        taken = cityCredits;
+        amount -= cityCredits;
+        cityCredits = 0;
+
+        if(storedCredits >= amount) {
+            taken += amount;
             storedCredits -= amount;
         } else {
-            taken = storedCredits;
+            taken += storedCredits;
+            amount -= storedCredits;
             storedCredits = 0;
 
-            if(startingCredits > (amount - taken)) {
-                startingCredits -= (amount - taken);
-                taken = amount;
+            if(startingCredits >= amount) {
+                startingCredits -= amount;
+                taken += amount;
             } else {
                 taken += startingCredits;
                 startingCredits = 0;

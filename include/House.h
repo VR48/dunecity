@@ -169,8 +169,11 @@ public:
 
     inline FixPoint getStartingCredits() const { return startingCredits; }
     inline FixPoint getStoredCredits() const { return storedCredits; }
-    inline int getCredits() const { return lround(storedCredits+startingCredits); }
+    inline FixPoint getCityCredits() const { return cityCredits; }
+    static constexpr int MAX_GAME_CREDITS = 999999;
+    inline int getCredits() const { return lround(storedCredits+startingCredits+cityCredits); }
     void addCredits(FixPoint newCredits, bool wasRefined = false);
+    void addCityCredits(FixPoint amount);
     void returnCredits(FixPoint newCredits);
     FixPoint takeCredits(FixPoint amount);
 
@@ -241,6 +244,7 @@ protected:
 
     FixPoint storedCredits;   ///< current number of credits that are stored in refineries/silos
     FixPoint startingCredits; ///< number of starting credits this player still has
+    FixPoint cityCredits;     ///< spendable city tax income, excluded from the harvested-spice quota
     int oldCredits;           ///< amount of credits in the last game cycle (used for playing the credits tick sound)
 
     int maxUnits;             ///< maximum number of units this house is allowed to build

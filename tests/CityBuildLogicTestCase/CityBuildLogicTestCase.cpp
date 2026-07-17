@@ -13,6 +13,20 @@ TEST_CASE("CityBuildLogic: road placement uses the city tool road command", "[ci
     REQUIRE(command.parameter == static_cast<uint32_t>(DuneCity::CityTool_Road));
 }
 
+TEST_CASE("CityBuildLogic: only roads bypass normal production timing", "[city][roads][concrete]") {
+    REQUIRE(DuneCity::usesInstantCityProduction(Structure_Road));
+    REQUIRE_FALSE(DuneCity::usesInstantCityProduction(Structure_Slab1));
+    REQUIRE_FALSE(DuneCity::usesInstantCityProduction(Structure_Slab4));
+}
+
+TEST_CASE("CityBuildLogic: road placement accepts concrete terrain", "[city][roads][concrete]") {
+    // Tile::isRock() includes Terrain_Slab, so concrete reaches this helper as
+    // supported terrain and the road flag replaces the slab visually.
+    const auto concreteState = DuneCity::makeCityTilePlacementState(
+        true, false, false, false, false);
+    REQUIRE(DuneCity::canPlaceRoad(concreteState));
+}
+
 TEST_CASE("CityBuildLogic: valid road placement marks tile as road", "[city][roads][placement]") {
     auto state = DuneCity::makeCityTilePlacementState(
         true,   // isRock

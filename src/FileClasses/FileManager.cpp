@@ -50,6 +50,30 @@ bool isTornieModActive() {
     return ModManager::instance().isInitialized() && strToUpper(ModManager::instance().getActiveModName()) == "TORNIE";
 }
 
+std::vector<std::string> getActiveModDataPaths() {
+    if(!ModManager::instance().isInitialized()) {
+        return {};
+    }
+
+    const auto& modManager = ModManager::instance();
+    const std::string activeMod = modManager.getActiveModName();
+    if(activeMod.empty() || strToUpper(activeMod) == "VANILLA") {
+        return {};
+    }
+
+    std::vector<std::string> paths{
+        modManager.getModPath(activeMod) + "/data"
+    };
+    const std::string installRoot = getDuneLegacyDataDir();
+    for(const std::string& relativePrefix : {"", "/..", "/../..", "/../../.."}) {
+        const std::string candidate = installRoot + relativePrefix + "/mods/" + activeMod + "/data";
+        if(std::find(paths.begin(), paths.end(), candidate) == paths.end()) {
+            paths.push_back(candidate);
+        }
+    }
+    return paths;
+}
+
 bool isPakEnabledForFallbackLookup(const Pakfile& pakFile) {
     const auto pakName = getBaseFilenameUpper(pakFile.getPakFilename());
     return pakName != "TORNIE.PAK" || isTornieModActive();
@@ -300,6 +324,21 @@ std::vector<std::string> FileManager::getMissingFiles() {
 sdl2::RWops_ptr FileManager::openFile(const std::string& filename) {
     sdl2::RWops_ptr ret;
 
+    // Active mod assets override the base payload, but assets from inactive
+    // mods are never visible. User-installed mod data is checked first, then
+    // the bundled mod directory beside the executable.
+    for(const auto& modDataPath : getActiveModDataPaths()) {
+        auto modFilename = modDataPath + "/" + filename;
+        if(auto modFile = openExternalFileIfPresent(modFilename)) {
+            if(isTinyVocPlaceholder(filename, modFile.get())) {
+                SDL_Log("FileManager: ignoring tiny active-mod VOC placeholder '%s'", modFilename.c_str());
+                continue;
+            }
+            SDL_Log("FileManager: using active-mod asset '%s'", modFilename.c_str());
+            return modFile;
+        }
+    }
+
     // try loading external file
     for(const auto& searchPath : getSearchPath()) {
         auto externalFilename = searchPath + "/";
@@ -443,6 +482,13 @@ sdl2::RWops_ptr FileManager::openFileFromNamedPak(const std::string& filename, c
 }
 
 bool FileManager::exists(const std::string& filename) const {
+
+    for(const auto& modDataPath : getActiveModDataPaths()) {
+        auto modFilename = modDataPath + "/" + filename;
+        if(getCaseInsensitiveFilename(modFilename)) {
+            return true;
+        }
+    }
 
     // try finding external file
     for(const std::string& searchPath : getSearchPath()) {

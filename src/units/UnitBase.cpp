@@ -144,6 +144,7 @@ void UnitBase::init() {
     turreted = false;
     numWeapons = 0;
     bulletType = Bullet_DRocket;
+    lastFiredBulletType = Bullet_DRocket;
 
     drawnFrame = 0;
 
@@ -250,6 +251,7 @@ bool UnitBase::attack() {
                 if(pObject != nullptr) {
                     currentGameMap->viewMap(pObject->getOwner()->getHouseID(), location, 2);
                 }
+                lastFiredBulletType = currentBulletType;
                 playAttackSound();
                 primaryWeaponTimer = getWeaponReloadTime();
 
@@ -279,6 +281,7 @@ bool UnitBase::attack() {
                 if(pObject != nullptr) {
                     currentGameMap->viewMap(pObject->getOwner()->getHouseID(), location, 2);
                 }
+                lastFiredBulletType = currentBulletType;
                 playAttackSound();
                 secondaryWeaponTimer = -1;
 

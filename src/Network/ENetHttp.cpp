@@ -22,9 +22,52 @@
 #include <misc/exceptions.h>
 
 #include <algorithm>
+#include <array>
 #include <stdio.h>
 #include <curl/curl.h>
 #include <enet/enet.h>
+
+#ifdef __ANDROID__
+#include <SDL_system.h>
+#include <unistd.h>
+#endif
+
+namespace {
+
+#ifdef __ANDROID__
+const char* getAndroidCertificateBundle() {
+    const char* storagePath = SDL_AndroidGetExternalStoragePath();
+    if(storagePath == nullptr || storagePath[0] == '\0') {
+        storagePath = SDL_AndroidGetInternalStoragePath();
+    }
+    if(storagePath == nullptr || storagePath[0] == '\0') {
+        return nullptr;
+    }
+
+    static std::string certificateBundle;
+    certificateBundle = std::string(storagePath) + "/data/cacert.pem";
+    return access(certificateBundle.c_str(), R_OK) == 0
+               ? certificateBundle.c_str()
+               : nullptr;
+}
+
+const char* getAndroidCertificatePath() {
+    constexpr std::array<const char*, 2> certificatePaths = {
+        "/apex/com.android.conscrypt/cacerts",
+        "/system/etc/security/cacerts"
+    };
+
+    for(const char* path : certificatePaths) {
+        if(access(path, R_OK) == 0) {
+            return path;
+        }
+    }
+
+    return nullptr;
+}
+#endif
+
+} // namespace
 
 std::string getDomainFromURL(const std::string& url) {
     size_t domainStart = 0;
@@ -129,9 +172,11 @@ std::string loadFromHttp(const std::string& url, const std::map<std::string, std
     }
     
     std::string responseData;
+    std::array<char, CURL_ERROR_SIZE> errorBuffer{};
     
     // Set curl options
     curl_easy_setopt(curl, CURLOPT_URL, fullUrl.c_str());
+    curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errorBuffer.data());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curlWriteCallback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &responseData);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L); // Follow redirects (HTTP -> HTTPS)
@@ -140,12 +185,25 @@ std::string loadFromHttp(const std::string& url, const std::map<std::string, std
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "DuneLegacy/1.0");
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L); // Verify SSL certificates
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L); // Verify hostname
+
+#ifdef __ANDROID__
+    // Android's trust store uses legacy hash names that OpenSSL 3 may not
+    // resolve through CURLOPT_CAPATH. Prefer the packaged Mozilla CA bundle
+    // and retain the platform directory as a fallback.
+    if(const char* certificateBundle = getAndroidCertificateBundle()) {
+        curl_easy_setopt(curl, CURLOPT_CAINFO, certificateBundle);
+    } else if(const char* certificatePath = getAndroidCertificatePath()) {
+        curl_easy_setopt(curl, CURLOPT_CAPATH, certificatePath);
+    }
+#endif
     
     // Perform the request
     CURLcode res = curl_easy_perform(curl);
     
     if(res != CURLE_OK) {
-        std::string error = curl_easy_strerror(res);
+        std::string error = errorBuffer[0] != '\0'
+                                ? errorBuffer.data()
+                                : curl_easy_strerror(res);
         curl_easy_cleanup(curl);
         THROW(std::runtime_error, "HTTP request failed: " + error);
     }
