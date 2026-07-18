@@ -104,6 +104,7 @@ public:
 
     Mix_Chunk*      getVoice(Voice_enum id, int house);
     Mix_Chunk*      getSound(Sound_enum id);
+    void            reloadVoices();
 
 private:
     sdl2::mix_chunk_ptr loadMixFromADL(const std::string& adlFile, int index, int volume = MIX_MAX_VOLUME/2) const;

@@ -2,6 +2,7 @@
 
 #include <INIMap/MapPlayerSectionUtils.h>
 #include <mod/CustomHouseConfig.h>
+#include <mod/ModInfo.h>
 #include <mod/ModMentatConfig.h>
 
 #include <array>
@@ -100,4 +101,45 @@ TEST_CASE("Invalid optional Mentat fields disable the override safely",
     ModMentatInfo invalidPath = valid;
     invalidPath.backgroundAsset = "../leaked.png";
     REQUIRE_FALSE(ModMentatConfig::isValid(invalidPath));
+}
+
+TEST_CASE("Custom-house presentation numbers parse safely and remain bounded",
+          "[custom-house][presentation][config]") {
+    double value = 1.0;
+    REQUIRE(CustomHouseConfig::parseDouble("1.15", value));
+    REQUIRE(value == Catch::Approx(1.15));
+    REQUIRE(CustomHouseConfig::isValidVoicePlaybackRate(1.06));
+    REQUIRE(CustomHouseConfig::isValidVoiceGain(1.15));
+    REQUIRE_FALSE(CustomHouseConfig::isValidVoicePlaybackRate(0.0));
+    REQUIRE_FALSE(CustomHouseConfig::isValidVoiceGain(5.0));
+
+    const std::array<std::string, 5> malformedValues = {
+        "", "not-a-number", "1.0trailing", "nan", "1e9999"
+    };
+    for(const std::string& malformedValue : malformedValues) {
+        CAPTURE(malformedValue);
+        double destination = 1.0;
+        REQUIRE_FALSE(CustomHouseConfig::parseDouble(malformedValue, destination));
+        REQUIRE(destination == Catch::Approx(1.0));
+    }
+}
+
+TEST_CASE("Custom-house presentation assets use portable mod-relative paths",
+          "[custom-house][presentation][config][security]") {
+    REQUIRE(CustomHouseConfig::isSafeAssetPath("presentation/herald.png"));
+    REQUIRE(CustomHouseConfig::isSafeAssetPath("HouseName.VOC"));
+    REQUIRE(CustomHouseConfig::isSafeAssetPath(""));
+    REQUIRE_FALSE(CustomHouseConfig::isSafeAssetPath("../other-mod/herald.png"));
+    REQUIRE_FALSE(CustomHouseConfig::isSafeAssetPath("presentation/../herald.png"));
+    REQUIRE_FALSE(CustomHouseConfig::isSafeAssetPath("C:/local/voice.voc"));
+    REQUIRE_FALSE(CustomHouseConfig::isSafeAssetPath("presentation\\voice.voc"));
+}
+
+TEST_CASE("Custom-house presentation defaults request safe fallbacks",
+          "[custom-house][presentation][fallback]") {
+    const CustomHouseInfo info;
+    REQUIRE(info.heraldAsset.empty());
+    REQUIRE(info.houseNameVoiceAsset.empty());
+    REQUIRE(info.voicePlaybackRate == Catch::Approx(1.0));
+    REQUIRE(info.voiceGain == Catch::Approx(1.0));
 }

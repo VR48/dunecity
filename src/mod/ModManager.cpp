@@ -19,6 +19,7 @@
 #include <mod/CustomHouseConfig.h>
 #include <mod/ModMentatConfig.h>
 #include <FileClasses/GFXManager.h>
+#include <FileClasses/SFXManager.h>
 #include <FileClasses/TextManager.h>
 #include <misc/fnkdat.h>
 #include <misc/FileSystem.h>
@@ -201,6 +202,9 @@ bool ModManager::setActiveMod(const std::string& name) {
     if(pGFXManager != nullptr) {
         pGFXManager->invalidateAllSpriteTextures();
         pGFXManager->reloadModDependentUiGraphics();
+    }
+    if(pSFXManager != nullptr) {
+        pSFXManager->reloadVoices();
     }
     
     SDL_Log("ModManager: Activated mod '%s'", name.c_str());
@@ -1342,6 +1346,35 @@ ModInfo ModManager::readModIni(const std::string& modPath) const {
             } else if(customKey == "Fallback House") {
                 if(!CustomHouseConfig::parseInteger(customValue, info.customHouse.fallbackHouse)) {
                     numericFieldsValid = false;
+                }
+            } else if(customKey == "Herald") {
+                if(CustomHouseConfig::isSafeAssetPath(customValue)) {
+                    info.customHouse.heraldAsset = customValue;
+                } else {
+                    SDL_Log("ModManager: Ignoring unsafe custom-house herald path in %s", modPath.c_str());
+                }
+            } else if(customKey == "House Name Voice") {
+                if(CustomHouseConfig::isSafeAssetPath(customValue)) {
+                    info.customHouse.houseNameVoiceAsset = customValue;
+                } else {
+                    SDL_Log("ModManager: Ignoring unsafe custom-house voice path in %s", modPath.c_str());
+                }
+            } else if(customKey == "Voice Playback Rate") {
+                double parsedValue = info.customHouse.voicePlaybackRate;
+                if(CustomHouseConfig::parseDouble(customValue, parsedValue)
+                   && CustomHouseConfig::isValidVoicePlaybackRate(parsedValue)) {
+                    info.customHouse.voicePlaybackRate = parsedValue;
+                } else {
+                    SDL_Log("ModManager: Ignoring invalid custom-house voice playback rate in %s",
+                            modPath.c_str());
+                }
+            } else if(customKey == "Voice Gain") {
+                double parsedValue = info.customHouse.voiceGain;
+                if(CustomHouseConfig::parseDouble(customValue, parsedValue)
+                   && CustomHouseConfig::isValidVoiceGain(parsedValue)) {
+                    info.customHouse.voiceGain = parsedValue;
+                } else {
+                    SDL_Log("ModManager: Ignoring invalid custom-house voice gain in %s", modPath.c_str());
                 }
             }
         }

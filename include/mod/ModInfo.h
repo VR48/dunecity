@@ -34,6 +34,10 @@ struct CustomHouseInfo {
     std::string regionPrefix;
     int paletteIndex = 0;
     int fallbackHouse = 0;
+    std::string heraldAsset;
+    std::string houseNameVoiceAsset;
+    double voicePlaybackRate = 1.0;
+    double voiceGain = 1.0;
 };
 
 /**

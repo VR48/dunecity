@@ -2756,6 +2756,8 @@ GFXManager::GFXManager() {
     uiGraphic[UI_Herald_Grey][HOUSE_NEUTRAL] = PicFactory->createGreyHouseChoice(uiGraphic[UI_Herald_Colored][HOUSE_NEUTRAL].get());
     uiGraphic[UI_Herald_Grey][HOUSE_REBELS] = PicFactory->createGreyHouseChoice(uiGraphic[UI_Herald_Colored][HOUSE_REBELS].get());
 
+    loadCustomHouseHerald();
+
     uiGraphic[UI_Herald_ArrowLeft][HOUSE_HARKONNEN] = LoadPNG_RW(pFileManager->openFile("ArrowLeft.png").get());
     uiGraphic[UI_Herald_ArrowLeftLarge][HOUSE_HARKONNEN] = Scaler::defaultDoubleSurface(uiGraphic[UI_Herald_ArrowLeft][HOUSE_HARKONNEN].get());
     uiGraphic[UI_Herald_ArrowLeftHighlight][HOUSE_HARKONNEN] = LoadPNG_RW(pFileManager->openFile("ArrowLeftHighlight.png").get());
@@ -4414,8 +4416,62 @@ void GFXManager::loadMentatGraphics() {
     }
 }
 
+void GFXManager::loadCustomHouseHerald() {
+    constexpr unsigned int presentationIds[] = {
+        UI_Herald_Colored,
+        UI_Herald_ColoredLarge,
+        UI_Herald_Grey
+    };
+    for(const unsigned int id : presentationIds) {
+        uiGraphic[id][HOUSE_CUSTOM].reset();
+        uiGraphicTex[id][HOUSE_CUSTOM].reset();
+    }
+
+    ModManager& modManager = ModManager::instance();
+    if(!modManager.isCustomHouseRegistered()) {
+        return;
+    }
+
+    const CustomHouseInfo& info = modManager.getActiveCustomHouseInfo();
+    SDL_Surface* fallback = uiGraphic[UI_Herald_Colored][info.fallbackHouse].get();
+    sdl2::surface_ptr herald;
+
+    if(!info.heraldAsset.empty()) {
+        try {
+            if(pFileManager->exists(info.heraldAsset)) {
+                herald = LoadPNG_RW(pFileManager->openFile(info.heraldAsset).get());
+                if(herald != nullptr) {
+                    SDL_SetColorKey(herald.get(), SDL_TRUE, 0);
+                }
+            } else {
+                SDL_Log("GFXManager: Custom-house herald '%s' unavailable; using fallback",
+                        info.heraldAsset.c_str());
+            }
+        } catch(const std::exception& e) {
+            SDL_Log("GFXManager: Custom-house herald '%s' failed (%s); using fallback",
+                    info.heraldAsset.c_str(), e.what());
+        }
+    }
+
+    if(herald == nullptr && fallback != nullptr) {
+        herald = copySurface(fallback);
+    }
+    if(herald == nullptr) {
+        SDL_Log("GFXManager: No custom-house herald or fallback is available");
+        return;
+    }
+
+    uiGraphic[UI_Herald_Colored][HOUSE_CUSTOM] = std::move(herald);
+    uiGraphic[UI_Herald_ColoredLarge][HOUSE_CUSTOM] =
+        Scaler::defaultDoubleSurface(uiGraphic[UI_Herald_Colored][HOUSE_CUSTOM].get());
+    auto pictureFactory = std::make_unique<PictureFactory>();
+    uiGraphic[UI_Herald_Grey][HOUSE_CUSTOM] =
+        pictureFactory->createGreyHouseChoice(uiGraphic[UI_Herald_Colored][HOUSE_CUSTOM].get());
+}
+
 void GFXManager::reloadModDependentUiGraphics() {
-    SDL_Log("GFXManager::reloadModDependentUiGraphics(): reloading active-mod Mentat presentation");
+    SDL_Log("GFXManager::reloadModDependentUiGraphics(): reloading active-mod presentation");
+    loadCustomHouseHerald();
     loadMentatGraphics();
 }
 

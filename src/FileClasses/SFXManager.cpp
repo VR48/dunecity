@@ -37,14 +37,7 @@
 // - POPPA.VOC
 
 SFXManager::SFXManager() {
-    // load voice and language specific sounds
-    if(settings.general.language == "de") {
-        loadNonEnglishVoice("G");
-    } else if(settings.general.language == "fr") {
-        loadNonEnglishVoice("F");
-    } else {
-        loadEnglishVoice();
-    }
+    reloadVoices();
 
     loadSoundEffects();
 
@@ -56,6 +49,18 @@ SFXManager::SFXManager() {
 }
 
 SFXManager::~SFXManager() = default;
+
+void SFXManager::reloadVoices() {
+    // Reload language-specific voices after an active-mod switch so optional
+    // mod assets cannot leak into another mod.
+    if(settings.general.language == "de") {
+        loadNonEnglishVoice("G");
+    } else if(settings.general.language == "fr") {
+        loadNonEnglishVoice("F");
+    } else {
+        loadEnglishVoice();
+    }
+}
 
 Mix_Chunk* SFXManager::getVoice(Voice_enum id, int house) {
     if(settings.general.language == "de" || settings.general.language == "fr") {
@@ -89,6 +94,9 @@ void SFXManager::loadEnglishVoice() {
     const bool tornieVoiceFx = ModManager::instance().isInitialized()
         && (ModManager::instance().getActiveModName() == "Tornie");
 
+    const CustomHouseInfo& customHouse = ModManager::instance().getActiveCustomHouseInfo();
+    const bool customHouseActive = ModManager::instance().isCustomHouseRegistered();
+
     // now we can load
     for(auto house = 0; house < NUM_HOUSES; house++) {
         sdl2::mix_chunk_ptr HouseNameChunk;
@@ -96,6 +104,24 @@ void SFXManager::loadEnglishVoice() {
         std::string HouseString;
         const int VoiceNum = house;
         const HOUSETYPE contentHouse = getHouseFallbackHouse(static_cast<HOUSETYPE>(house));
+        auto loadConfiguredCustomHouseName = [&]() -> sdl2::mix_chunk_ptr {
+            if(house != HOUSE_CUSTOM || !customHouseActive || customHouse.houseNameVoiceAsset.empty()) {
+                return nullptr;
+            }
+
+            try {
+                if(pFileManager->exists(customHouse.houseNameVoiceAsset)) {
+                    return getChunkFromFile(customHouse.houseNameVoiceAsset);
+                }
+                SDL_Log("SFXManager: Custom-house name voice '%s' unavailable; using fallback",
+                        customHouse.houseNameVoiceAsset.c_str());
+            } catch(const std::exception& e) {
+                SDL_Log("SFXManager: Custom-house name voice '%s' failed (%s); using fallback",
+                        customHouse.houseNameVoiceAsset.c_str(), e.what());
+            }
+            return nullptr;
+        };
+
         switch(contentHouse) {
             case HOUSE_HARKONNEN:
                 HouseString = "H";
@@ -131,6 +157,10 @@ void SFXManager::loadEnglishVoice() {
                 break;
             default:
                 break;
+        }
+
+        if(auto configuredName = loadConfiguredCustomHouseName()) {
+            HouseNameChunk = std::move(configuredName);
         }
 
         { // Scope
@@ -234,7 +264,7 @@ void SFXManager::loadEnglishVoice() {
         // "House Ordos"
         lngVoice[HouseOrdos*NUM_HOUSES+VoiceNum] = getChunkFromFile("MORDOS.VOC");
 
-        switch(house) {
+        switch(contentHouse) {
             case HOUSE_FREMEN:
                 lngVoice[HouseAtreides*NUM_HOUSES+VoiceNum] = getChunkFromFile("AFREMEN.VOC", "MATRE.VOC");
                 break;
@@ -254,9 +284,40 @@ void SFXManager::loadEnglishVoice() {
                 break;
         }
 
+        if(auto configuredName = loadConfiguredCustomHouseName()) {
+            Voice_enum houseNameVoice = HouseHarkonnen;
+            switch(contentHouse) {
+                case HOUSE_ATREIDES:
+                case HOUSE_FREMEN:
+                case HOUSE_NEUTRAL:
+                    houseNameVoice = HouseAtreides;
+                    break;
+                case HOUSE_ORDOS:
+                case HOUSE_MERCENARY:
+                    houseNameVoice = HouseOrdos;
+                    break;
+                default:
+                    houseNameVoice = HouseHarkonnen;
+                    break;
+            }
+            lngVoice[houseNameVoice*NUM_HOUSES+VoiceNum] = std::move(configuredName);
+        }
+
+        double playbackRate = 1.0;
+        double gain = 1.0;
+        bool applyVoiceEffect = false;
         if(tornieVoiceFx && (house == HOUSE_SARDAUKAR || house == HOUSE_REBELS || house == HOUSE_NEUTRAL)) {
-            const double playbackRate = (house == HOUSE_SARDAUKAR) ? 0.86 : (house == HOUSE_REBELS ? 0.90 : 1.07);
-            const double gain = (house == HOUSE_SARDAUKAR) ? 1.08 : (house == HOUSE_REBELS ? 1.05 : 0.98);
+            playbackRate = (house == HOUSE_SARDAUKAR) ? 0.86 : (house == HOUSE_REBELS ? 0.90 : 1.07);
+            gain = (house == HOUSE_SARDAUKAR) ? 1.08 : (house == HOUSE_REBELS ? 1.05 : 0.98);
+            applyVoiceEffect = true;
+        }
+        if(house == HOUSE_CUSTOM && customHouseActive) {
+            playbackRate = customHouse.voicePlaybackRate;
+            gain = customHouse.voiceGain;
+            applyVoiceEffect = playbackRate != 1.0 || gain != 1.0;
+        }
+
+        if(applyVoiceEffect) {
             for(auto voice = 0; voice < NUM_VOICE; ++voice) {
                 const int voiceIndex = voice*NUM_HOUSES + VoiceNum;
                 if(lngVoice[voiceIndex] != nullptr) {
