@@ -3411,7 +3411,7 @@ static void applyRebelsTint(SDL_Surface* surface) {
 }
 
 static void applyCustomVisualColorRamp(SDL_Surface* surface, int colorSlot) {
-    if(!isCustomHouseColorSlot(colorSlot) || !customPaletteLoaded || !surface || !surface->format || !surface->format->palette) {
+    if((colorSlot != HOUSE_CUSTOM && !isCustomHouseColorSlot(colorSlot)) || !customPaletteLoaded || !surface || !surface->format || !surface->format->palette) {
         return;
     }
 
