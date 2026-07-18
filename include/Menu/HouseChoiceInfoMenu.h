@@ -23,6 +23,8 @@
 #include <GUI/PictureLabel.h>
 #include <GUI/dune/AnimationLabel.h>
 
+#include <memory>
+
 #define MENU_QUIT_HOUSECHOICE_YES   (1)
 
 class HouseChoiceInfoMenu : public MentatMenu {
@@ -37,6 +39,7 @@ private:
     void onYes();
     void onNo();
 
+    std::unique_ptr<Animation> customPlanetAnimation;
     AnimationLabel  planetAnimation;
     PictureLabel    questionLabel;
     PictureButton   yesButton;
