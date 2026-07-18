@@ -17,3 +17,8 @@
 
 - Register the Tharpique herald and processed house-name voice through the generic mod-scoped custom-house hooks.
 - Require the generic custom-house palette routing and editor Team9 correction.
+
+## 1.0.523 intro and sprite-colour follow-up
+
+- Removed all CPU-owned structures from the nine Tornie opening scenarios while preserving enemy units, player Construction Yard and WOR, credits, objectives, seeds, start screens, and unit placement.
+- Require the generic HOUSE_CUSTOM sprite-palette correction so only the Harkonnen colour ramp is remapped to the active mod palette on units and buildings.
