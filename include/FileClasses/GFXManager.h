@@ -359,7 +359,6 @@ typedef enum {
     UI_NewMapWindow,
     UI_GameMenu,
     UI_MentatBackground,
-    UI_MentatBackgroundPaul,
     UI_MentatBackgroundBene,
     UI_MentatHouseChoiceInfoQuestion,
     UI_MentatYes,
@@ -506,8 +505,6 @@ typedef enum {
     Anim_AtreidesMouth,
     Anim_AtreidesShoulder,
     Anim_AtreidesBook,
-    Anim_PaulAtreidesEyes,
-    Anim_PaulAtreidesMouth,
     Anim_OrdosEyes,
     Anim_OrdosMouth,
     Anim_OrdosShoulder,
@@ -523,8 +520,6 @@ typedef enum {
     Anim_MercenaryMouth,
     Anim_MercenaryShoulder,
     Anim_MercenaryRing,
-    Anim_ChaniEyes,
-    Anim_ChaniMouth,
     Anim_BeneEyes,
     Anim_BeneMouth,
     Anim_HarkonnenPlanet,
@@ -606,6 +601,8 @@ public:
     // Tornie's OOB 'ajouter ces fonctions aussi'.
     void invalidateAllSpriteTextures();
     void reloadModDependentUiGraphics();
+    Animation* getMentatEyesAnimation(int house);
+    Animation* getMentatMouthAnimation(int house);
 
     SDL_Texture*     getSmallDetailPic(unsigned int id);
     SDL_Texture*     getTinyPicture(unsigned int id);
@@ -634,6 +631,7 @@ private:
     sdl2::surface_ptr   generateTripledObjPic(unsigned int id, int h) const;
     void                loadCompactObjPicOverrides();
     bool                loadHDObjPicOverride(unsigned int id);
+    void                loadMentatGraphics();
 
     struct HDObjPicOverride {
         std::array<sdl2::texture_ptr, NUM_HOUSES> texture;
@@ -653,6 +651,8 @@ private:
     std::array<std::array<sdl2::surface_ptr, NUM_HOUSE_COLOR_SLOTS>, NUM_UIGRAPHICS> uiGraphic;
     std::array<std::array<sdl2::surface_ptr, NUM_HOUSE_COLOR_SLOTS>, NUM_MAPCHOICEPIECES> mapChoicePieces;
     std::array<std::unique_ptr<Animation>, NUM_ANIMATION> animation{};
+    std::array<std::unique_ptr<Animation>, NUM_HOUSE_COLOR_SLOTS> modMentatEyes{};
+    std::array<std::unique_ptr<Animation>, NUM_HOUSE_COLOR_SLOTS> modMentatMouth{};
 
     // 32-bit surfaces
     sdl2::surface_ptr    pBackgroundSurface;

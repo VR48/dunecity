@@ -41,10 +41,6 @@ MentatMenu::MentatMenu(int newHouse)
     SDL_Texture *pBackground;
     if(house == HOUSE_INVALID) {
         pBackground = pGFXManager->getUIGraphic(UI_MentatBackgroundBene);
-    } else if(house == HOUSE_ATREIDES
-              && ModManager::instance().isInitialized()
-              && ModManager::instance().getActiveModName() == "Tornie") {
-        pBackground = pGFXManager->getUIGraphic(UI_MentatBackgroundPaul, house);
     } else {
         pBackground = pGFXManager->getUIGraphic(UI_MentatBackground,house);
     }
@@ -55,137 +51,85 @@ MentatMenu::MentatMenu(int newHouse)
 
     setWindowWidget(&windowWidget);
 
-    switch(house) {
-        case HOUSE_HARKONNEN: {
-            anim = pGFXManager->getAnimation(Anim_HarkonnenEyes);
-            eyesAnim.setAnimation(anim);
-            windowWidget.addWidget(&eyesAnim,Point(64,176),eyesAnim.getMinimumSize());
+    if(house == HOUSE_INVALID) {
+        anim = pGFXManager->getAnimation(Anim_BeneEyes);
+        eyesAnim.setAnimation(anim);
+        windowWidget.addWidget(&eyesAnim, Point(128,160), eyesAnim.getMinimumSize());
 
-            anim = pGFXManager->getAnimation(Anim_HarkonnenMouth);
-            mouthAnim.setAnimation(anim);
-            windowWidget.addWidget(&mouthAnim,Point(64,208),mouthAnim.getMinimumSize());
+        anim = pGFXManager->getAnimation(Anim_BeneMouth);
+        mouthAnim.setAnimation(anim);
+        windowWidget.addWidget(&mouthAnim, Point(112,192), mouthAnim.getMinimumSize());
+    } else {
+        ModManager& modManager = ModManager::instance();
+        const ModMentatInfo& info = modManager.getActiveMentatInfo(house);
+        const int identity = modManager.getEffectiveMentatIdentity(house);
 
-            anim = pGFXManager->getAnimation(Anim_HarkonnenShoulder);
-            shoulderAnim.setAnimation(anim);
-            // don't add shoulderAnim, draw it in DrawSpecificStuff
-        } break;
+        Point eyesPosition;
+        Point mouthPosition;
+        switch(identity) {
+            case HOUSE_HARKONNEN:
+            case HOUSE_SARDAUKAR:
+                eyesPosition = Point(64,176);
+                mouthPosition = Point(64,208);
+                break;
+            case HOUSE_ORDOS:
+            case HOUSE_MERCENARY:
+                eyesPosition = Point(32,160);
+                mouthPosition = Point(32,192);
+                break;
+            default:
+                eyesPosition = Point(80,160);
+                mouthPosition = Point(80,192);
+                break;
+        }
+        if(info.enabled) {
+            if(info.eyesX >= 0) eyesPosition.x = info.eyesX;
+            if(info.eyesY >= 0) eyesPosition.y = info.eyesY;
+            if(info.mouthX >= 0) mouthPosition.x = info.mouthX;
+            if(info.mouthY >= 0) mouthPosition.y = info.mouthY;
+        }
 
-        case HOUSE_ATREIDES: {
-            const bool usePaulMentat = ModManager::instance().isInitialized()
-                && (ModManager::instance().getActiveModName() == "Tornie");
+        eyesAnim.setAnimation(pGFXManager->getMentatEyesAnimation(house));
+        windowWidget.addWidget(&eyesAnim, eyesPosition, eyesAnim.getMinimumSize());
+        mouthAnim.setAnimation(pGFXManager->getMentatMouthAnimation(house));
+        windowWidget.addWidget(&mouthAnim, mouthPosition, mouthAnim.getMinimumSize());
 
-            anim = pGFXManager->getAnimation(usePaulMentat ? Anim_PaulAtreidesEyes : Anim_AtreidesEyes);
-            eyesAnim.setAnimation(anim);
-            windowWidget.addWidget(&eyesAnim, usePaulMentat ? Point(120,116) : Point(80,160), eyesAnim.getMinimumSize());
-
-            anim = pGFXManager->getAnimation(usePaulMentat ? Anim_PaulAtreidesMouth : Anim_AtreidesMouth);
-            mouthAnim.setAnimation(anim);
-            windowWidget.addWidget(&mouthAnim, usePaulMentat ? Point(119,171) : Point(80,192), mouthAnim.getMinimumSize());
-
-            if(!usePaulMentat) {
-                anim = pGFXManager->getAnimation(Anim_AtreidesBook);
-                specialAnim.setAnimation(anim);
-                windowWidget.addWidget(&specialAnim,Point(145,305),specialAnim.getMinimumSize());
-
-                anim = pGFXManager->getAnimation(Anim_AtreidesShoulder);
-                shoulderAnim.setAnimation(anim);
+        const bool useBaseExtras = !info.enabled || info.useBaseExtras;
+        if(useBaseExtras) {
+            switch(identity) {
+                case HOUSE_HARKONNEN:
+                    shoulderAnim.setAnimation(pGFXManager->getAnimation(Anim_HarkonnenShoulder));
+                    break;
+                case HOUSE_ATREIDES:
+                    specialAnim.setAnimation(pGFXManager->getAnimation(Anim_AtreidesBook));
+                    windowWidget.addWidget(&specialAnim, Point(145,305), specialAnim.getMinimumSize());
+                    shoulderAnim.setAnimation(pGFXManager->getAnimation(Anim_AtreidesShoulder));
+                    break;
+                case HOUSE_FREMEN:
+                    specialAnim.setAnimation(pGFXManager->getAnimation(Anim_FremenBook));
+                    windowWidget.addWidget(&specialAnim, Point(145,305), specialAnim.getMinimumSize());
+                    shoulderAnim.setAnimation(pGFXManager->getAnimation(Anim_FremenShoulder));
+                    break;
+                case HOUSE_SARDAUKAR:
+                    shoulderAnim.setAnimation(pGFXManager->getAnimation(Anim_SardaukarShoulder));
+                    break;
+                case HOUSE_ORDOS:
+                    specialAnim.setAnimation(pGFXManager->getAnimation(Anim_OrdosRing));
+                    specialAnim.getAnimation()->setCurrentFrameNumber(specialAnim.getAnimation()->getNumberOfFrames()-1);
+                    windowWidget.addWidget(&specialAnim, Point(178,289), specialAnim.getMinimumSize());
+                    shoulderAnim.setAnimation(pGFXManager->getAnimation(Anim_OrdosShoulder));
+                    break;
+                case HOUSE_MERCENARY:
+                    specialAnim.setAnimation(pGFXManager->getAnimation(Anim_MercenaryRing));
+                    specialAnim.getAnimation()->setCurrentFrameNumber(specialAnim.getAnimation()->getNumberOfFrames()-1);
+                    windowWidget.addWidget(&specialAnim, Point(178,289), specialAnim.getMinimumSize());
+                    shoulderAnim.setAnimation(pGFXManager->getAnimation(Anim_MercenaryShoulder));
+                    break;
+                default:
+                    break;
             }
-            // don't add shoulderAnim, draw it in DrawSpecificStuff
-        } break;
-
-        case HOUSE_NEUTRAL:
-        case HOUSE_REBELS: {
-            anim = pGFXManager->getAnimation(Anim_ChaniEyes);
-            eyesAnim.setAnimation(anim);
-            windowWidget.addWidget(&eyesAnim,Point(128,160),eyesAnim.getMinimumSize());
-
-            anim = pGFXManager->getAnimation(Anim_ChaniMouth);
-            mouthAnim.setAnimation(anim);
-            windowWidget.addWidget(&mouthAnim,Point(112,192),mouthAnim.getMinimumSize());
-        } break;
-
-        case HOUSE_ORDOS: {
-            anim = pGFXManager->getAnimation(Anim_OrdosEyes);
-            eyesAnim.setAnimation(anim);
-            windowWidget.addWidget(&eyesAnim,Point(32,160),eyesAnim.getMinimumSize());
-
-            anim = pGFXManager->getAnimation(Anim_OrdosMouth);
-            mouthAnim.setAnimation(anim);
-            windowWidget.addWidget(&mouthAnim,Point(32,192),mouthAnim.getMinimumSize());
-
-            anim = pGFXManager->getAnimation(Anim_OrdosRing);
-            specialAnim.setAnimation(anim);
-            specialAnim.getAnimation()->setCurrentFrameNumber(specialAnim.getAnimation()->getNumberOfFrames()-1);
-            windowWidget.addWidget(&specialAnim,Point(178,289),specialAnim.getMinimumSize());
-
-            anim = pGFXManager->getAnimation(Anim_OrdosShoulder);
-            shoulderAnim.setAnimation(anim);
-            // don't add shoulderAnim, draw it in DrawSpecificStuff
-        } break;
-
-        case HOUSE_FREMEN: {
-            anim = pGFXManager->getAnimation(Anim_FremenEyes);
-            eyesAnim.setAnimation(anim);
-            windowWidget.addWidget(&eyesAnim,Point(80,160),eyesAnim.getMinimumSize());
-
-            anim = pGFXManager->getAnimation(Anim_FremenMouth);
-            mouthAnim.setAnimation(anim);
-            windowWidget.addWidget(&mouthAnim,Point(80,192),mouthAnim.getMinimumSize());
-
-            anim = pGFXManager->getAnimation(Anim_FremenBook);
-            specialAnim.setAnimation(anim);
-            windowWidget.addWidget(&specialAnim,Point(145,305),specialAnim.getMinimumSize());
-
-            anim = pGFXManager->getAnimation(Anim_FremenShoulder);
-            shoulderAnim.setAnimation(anim);
-            // don't add shoulderAnim, draw it in DrawSpecificStuff
-        } break;
-
-        case HOUSE_SARDAUKAR: {
-            anim = pGFXManager->getAnimation(Anim_SardaukarEyes);
-            eyesAnim.setAnimation(anim);
-            windowWidget.addWidget(&eyesAnim,Point(64,176),eyesAnim.getMinimumSize());
-
-            anim = pGFXManager->getAnimation(Anim_SardaukarMouth);
-            mouthAnim.setAnimation(anim);
-            windowWidget.addWidget(&mouthAnim,Point(64,208),mouthAnim.getMinimumSize());
-
-            anim = pGFXManager->getAnimation(Anim_SardaukarShoulder);
-            shoulderAnim.setAnimation(anim);
-            // don't add shoulderAnim, draw it in DrawSpecificStuff
-        } break;
-
-        case HOUSE_MERCENARY: {
-            anim = pGFXManager->getAnimation(Anim_MercenaryEyes);
-            eyesAnim.setAnimation(anim);
-            windowWidget.addWidget(&eyesAnim,Point(32,160),eyesAnim.getMinimumSize());
-
-            anim = pGFXManager->getAnimation(Anim_MercenaryMouth);
-            mouthAnim.setAnimation(anim);
-            windowWidget.addWidget(&mouthAnim,Point(32,192),mouthAnim.getMinimumSize());
-
-            anim = pGFXManager->getAnimation(Anim_MercenaryRing);
-            specialAnim.setAnimation(anim);
-            specialAnim.getAnimation()->setCurrentFrameNumber(specialAnim.getAnimation()->getNumberOfFrames()-1);
-            windowWidget.addWidget(&specialAnim,Point(178,289),specialAnim.getMinimumSize());
-
-            anim = pGFXManager->getAnimation(Anim_MercenaryShoulder);
-            shoulderAnim.setAnimation(anim);
-            // don't add shoulderAnim, draw it in DrawSpecificStuff
-        } break;
-
-        default: {
-            // bene gese
-            anim = pGFXManager->getAnimation(Anim_BeneEyes);
-            eyesAnim.setAnimation(anim);
-            windowWidget.addWidget(&eyesAnim,Point(128,160),eyesAnim.getMinimumSize());
-
-            anim = pGFXManager->getAnimation(Anim_BeneMouth);
-            mouthAnim.setAnimation(anim);
-            windowWidget.addWidget(&mouthAnim,Point(112,192),mouthAnim.getMinimumSize());
-        } break;
+        }
     }
-
     textLabel.setTextColor(COLOR_WHITE, COLOR_TRANSPARENT);
     textLabel.setAlignment((Alignment_Enum) (Alignment_Left | Alignment_Top));
     textLabel.setVisible(false);
@@ -290,7 +234,9 @@ void MentatMenu::update() {
 
 void MentatMenu::drawSpecificStuff() {
     Point shoulderPos;
-    switch(house) {
+    const int shoulderIdentity = house == HOUSE_INVALID ? HOUSE_INVALID
+        : ModManager::instance().getEffectiveMentatIdentity(house);
+    switch(shoulderIdentity) {
         case HOUSE_HARKONNEN:
         case HOUSE_SARDAUKAR: {
             shoulderPos = Point(256,209) + getPosition();

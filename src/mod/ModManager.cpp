@@ -17,6 +17,7 @@
 
 #include <mod/ModManager.h>
 #include <mod/CustomHouseConfig.h>
+#include <mod/ModMentatConfig.h>
 #include <FileClasses/GFXManager.h>
 #include <FileClasses/TextManager.h>
 #include <misc/fnkdat.h>
@@ -118,7 +119,9 @@ void ModManager::initialize() {
         saveActiveMod();
     }
     
-    activeCustomHouse = readModIni(getModPath(activeMod)).customHouse;
+    const ModInfo activeInfo = readModIni(getModPath(activeMod));
+    activeCustomHouse = activeInfo.customHouse;
+    activeMentats = activeInfo.mentats;
     initialized = true;
     SDL_Log("ModManager: Initialized with active mod '%s'", activeMod.c_str());
 }
@@ -133,6 +136,41 @@ const CustomHouseInfo& ModManager::getActiveCustomHouseInfo() const {
 
 bool ModManager::isCustomHouseRegistered() const {
     return initialized && activeCustomHouse.enabled;
+}
+
+const ModMentatInfo& ModManager::getActiveMentatInfo(int house) const {
+    static const ModMentatInfo noOverride;
+    if(!initialized || house < 0 || static_cast<std::size_t>(house) >= activeMentats.size()) {
+        return noOverride;
+    }
+    return activeMentats[house];
+}
+
+int ModManager::getEffectiveMentatIdentity(int house) const {
+    const ModMentatInfo& overrideInfo = getActiveMentatInfo(house);
+    int identity = overrideInfo.enabled && overrideInfo.identityHouse >= 0
+        ? overrideInfo.identityHouse
+        : house;
+
+    if(identity == HOUSE_CUSTOM) {
+        identity = activeCustomHouse.enabled ? activeCustomHouse.fallbackHouse : HOUSE_HARKONNEN;
+    }
+
+    switch(identity) {
+        case HOUSE_HARKONNEN:
+        case HOUSE_ATREIDES:
+        case HOUSE_ORDOS:
+        case HOUSE_FREMEN:
+        case HOUSE_SARDAUKAR:
+        case HOUSE_MERCENARY:
+            return identity;
+        case HOUSE_NEUTRAL:
+            return HOUSE_HARKONNEN;
+        case HOUSE_REBELS:
+            return HOUSE_ATREIDES;
+        default:
+            return HOUSE_HARKONNEN;
+    }
 }
 
 bool ModManager::isCityModeActive() const {
@@ -152,7 +190,9 @@ bool ModManager::setActiveMod(const std::string& name) {
     }
     
     activeMod = name;
-    activeCustomHouse = readModIni(getModPath(activeMod)).customHouse;
+    const ModInfo activeInfo = readModIni(getModPath(activeMod));
+    activeCustomHouse = activeInfo.customHouse;
+    activeMentats = activeInfo.mentats;
     checksumsDirty = true;
     saveActiveMod();
     if(pTextManager != nullptr) {
@@ -1171,6 +1211,95 @@ ModInfo ModManager::readModIni(const std::string& modPath) const {
     }
     
     file.close();
+
+    info.mentats.resize(NUM_HOUSE_COLOR_SLOTS);
+    std::vector<bool> requestedMentatEnabled(NUM_HOUSE_COLOR_SLOTS, false);
+    std::vector<bool> mentatFieldsValid(NUM_HOUSE_COLOR_SLOTS, true);
+    std::ifstream mentatFile(iniPath);
+    if(mentatFile.is_open()) {
+        int mentatHouse = -1;
+        while(std::getline(mentatFile, line)) {
+            trim(line);
+            if(line.empty() || line[0] == '#' || line[0] == ';') continue;
+
+            if(line.front() == '[' && line.back() == ']') {
+                std::string section = line.substr(1, line.size() - 2);
+                trim(section);
+                mentatHouse = -1;
+                const std::string prefix = "Mentat ";
+                if(section.rfind(prefix, 0) == 0) {
+                    int parsedHouse = -1;
+                    if(CustomHouseConfig::parseInteger(section.substr(prefix.size()), parsedHouse)
+                       && parsedHouse >= 0 && parsedHouse < NUM_HOUSE_COLOR_SLOTS) {
+                        mentatHouse = parsedHouse;
+                    }
+                }
+                continue;
+            }
+
+            if(mentatHouse < 0) continue;
+            const size_t mentatEqualsPos = line.find('=');
+            if(mentatEqualsPos == std::string::npos) continue;
+
+            std::string mentatKey = line.substr(0, mentatEqualsPos);
+            std::string mentatValue = line.substr(mentatEqualsPos + 1);
+            trim(mentatKey);
+            trim(mentatValue);
+            ModMentatInfo& mentat = info.mentats[mentatHouse];
+
+            auto parseIntegerField = [&](int& destination) {
+                if(!CustomHouseConfig::parseInteger(mentatValue, destination)) {
+                    mentatFieldsValid[mentatHouse] = false;
+                }
+            };
+            auto parseDoubleField = [&](double& destination) {
+                if(!ModMentatConfig::parseDouble(mentatValue, destination)) {
+                    mentatFieldsValid[mentatHouse] = false;
+                }
+            };
+            auto parseBooleanField = [&](bool& destination) {
+                if(!ModMentatConfig::parseBoolean(mentatValue, destination)) {
+                    mentatFieldsValid[mentatHouse] = false;
+                }
+            };
+
+            if(mentatKey == "Enabled") {
+                bool requestedEnabled = false;
+                if(ModMentatConfig::parseBoolean(mentatValue, requestedEnabled)) {
+                    requestedMentatEnabled[mentatHouse] = requestedEnabled;
+                } else {
+                    mentatFieldsValid[mentatHouse] = false;
+                }
+            }
+            else if(mentatKey == "Identity House") parseIntegerField(mentat.identityHouse);
+            else if(mentatKey == "Background") mentat.backgroundAsset = mentatValue;
+            else if(mentatKey == "Eyes") mentat.eyesAsset = mentatValue;
+            else if(mentatKey == "Eyes Frames") parseIntegerField(mentat.eyesFrames);
+            else if(mentatKey == "Eyes Frame Rate") parseDoubleField(mentat.eyesFrameRate);
+            else if(mentatKey == "Eyes Double") parseBooleanField(mentat.doubleEyes);
+            else if(mentatKey == "Eyes Transparent Color") parseIntegerField(mentat.eyesTransparentColor);
+            else if(mentatKey == "Eyes X") parseIntegerField(mentat.eyesX);
+            else if(mentatKey == "Eyes Y") parseIntegerField(mentat.eyesY);
+            else if(mentatKey == "Mouth") mentat.mouthAsset = mentatValue;
+            else if(mentatKey == "Mouth Frames") parseIntegerField(mentat.mouthFrames);
+            else if(mentatKey == "Mouth Frame Rate") parseDoubleField(mentat.mouthFrameRate);
+            else if(mentatKey == "Mouth Double") parseBooleanField(mentat.doubleMouth);
+            else if(mentatKey == "Mouth Transparent Color") parseIntegerField(mentat.mouthTransparentColor);
+            else if(mentatKey == "Mouth X") parseIntegerField(mentat.mouthX);
+            else if(mentatKey == "Mouth Y") parseIntegerField(mentat.mouthY);
+            else if(mentatKey == "Use Base Extras") parseBooleanField(mentat.useBaseExtras);
+        }
+    }
+
+    for(int house = 0; house < NUM_HOUSE_COLOR_SLOTS; ++house) {
+        ModMentatInfo& mentat = info.mentats[house];
+        mentat.enabled = requestedMentatEnabled[house]
+            && mentatFieldsValid[house]
+            && ModMentatConfig::isValid(mentat);
+        if(requestedMentatEnabled[house] && !mentat.enabled) {
+            SDL_Log("ModManager: Ignoring invalid Mentat %d configuration in %s", house, modPath.c_str());
+        }
+    }
 
     std::ifstream customFile(modPath + "/" + CUSTOM_HOUSE_CONFIG);
     if(customFile.is_open()) {

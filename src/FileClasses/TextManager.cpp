@@ -16,6 +16,7 @@
  */
 
 #include <FileClasses/TextManager.h>
+#include <mod/ModManager.h>
 
 #include <globals.h>
 
@@ -544,7 +545,9 @@ std::string TextManager::getBriefingText(unsigned int mission, unsigned int text
 std::vector<MentatTextFile::MentatEntry> TextManager::getAllMentatEntries(int house, unsigned int techLevel) const {
     std::vector<MentatTextFile::MentatEntry> mentatEntries;
 
-    switch(house) {
+    const int identity = ModManager::instance().isInitialized()
+        ? ModManager::instance().getEffectiveMentatIdentity(house) : house;
+    switch(identity) {
         case HOUSE_HARKONNEN:
         case HOUSE_SARDAUKAR:
         default: {

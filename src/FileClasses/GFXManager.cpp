@@ -2669,43 +2669,7 @@ GFXManager::GFXManager() {
 
     const bool tornieActive = ModManager::instance().isInitialized()
         && (ModManager::instance().getActiveModName() == "Tornie");
-    auto loadMentatBackgroundPng = [&](const char* filename) -> sdl2::surface_ptr {
-        if(!pFileManager->exists(filename)) {
-            return nullptr;
-        }
-
-        auto png = LoadPNG_RW(pFileManager->openFile(filename).get());
-        if(!png) {
-            return nullptr;
-        }
-
-        if(png->w <= SCREEN_MIN_WIDTH/2 && png->h <= SCREEN_MIN_HEIGHT/2) {
-            return Scaler::defaultDoubleSurface(png.get());
-        }
-
-        return png;
-    };
-
-    uiGraphic[UI_MentatBackground][HOUSE_HARKONNEN] = Scaler::defaultDoubleSurface(LoadCPS_RW(pFileManager->openFile("MENTATH.CPS").get()).get());
-    auto vanillaAtreidesMentat = Scaler::defaultDoubleSurface(LoadCPS_RW(pFileManager->openFile("MENTATA.CPS").get()).get());
-    uiGraphic[UI_MentatBackgroundPaul][HOUSE_ATREIDES] = tornieActive ? loadMentatBackgroundPng("PaulAtreidesMentat.png") : nullptr;
-    if(uiGraphic[UI_MentatBackground][HOUSE_ATREIDES] == nullptr) {
-        uiGraphic[UI_MentatBackground][HOUSE_ATREIDES] = copySurface(vanillaAtreidesMentat.get());
-    }
-    if(uiGraphic[UI_MentatBackgroundPaul][HOUSE_ATREIDES] == nullptr) {
-        uiGraphic[UI_MentatBackgroundPaul][HOUSE_ATREIDES] = copySurface(vanillaAtreidesMentat.get());
-    }
-    uiGraphic[UI_MentatBackground][HOUSE_ORDOS] = Scaler::defaultDoubleSurface(LoadCPS_RW(pFileManager->openFile("MENTATO.CPS").get()).get());
-    uiGraphic[UI_MentatBackground][HOUSE_FREMEN] = PictureFactory::mapMentatSurfaceToFremen(vanillaAtreidesMentat.get());
-    uiGraphic[UI_MentatBackground][HOUSE_SARDAUKAR] = PictureFactory::mapMentatSurfaceToSardaukar(uiGraphic[UI_MentatBackground][HOUSE_HARKONNEN].get());
-    uiGraphic[UI_MentatBackground][HOUSE_MERCENARY] = PictureFactory::mapMentatSurfaceToMercenary(uiGraphic[UI_MentatBackground][HOUSE_ORDOS].get());
-    if(auto chaniMentat = loadMentatBackgroundPng("ChaniMentat.png")) {
-        uiGraphic[UI_MentatBackground][HOUSE_NEUTRAL] = std::move(chaniMentat);
-        uiGraphic[UI_MentatBackground][HOUSE_REBELS] = loadMentatBackgroundPng("ChaniMentat.png");
-    } else {
-        uiGraphic[UI_MentatBackground][HOUSE_NEUTRAL] = mapSurfaceColorRange(uiGraphic[UI_MentatBackground][HOUSE_HARKONNEN].get(), PALCOLOR_HARKONNEN, houseToPaletteIndex[HOUSE_NEUTRAL]);
-        uiGraphic[UI_MentatBackground][HOUSE_REBELS] = mapSurfaceColorRange(uiGraphic[UI_MentatBackground][HOUSE_ATREIDES].get(), PALCOLOR_ATREIDES, houseToPaletteIndex[HOUSE_REBELS]);
-    }
+    loadMentatGraphics();
 
     uiGraphic[UI_MentatBackgroundBene][HOUSE_HARKONNEN] = Scaler::defaultDoubleSurface(LoadCPS_RW(pFileManager->openFile("MENTATM.CPS").get()).get());
     if(uiGraphic[UI_MentatBackgroundBene][HOUSE_HARKONNEN] != nullptr) {
@@ -3347,10 +3311,6 @@ GFXManager::GFXManager() {
     animation[Anim_AtreidesBook] = menshpa->getAnimation(11,12,true,true,true);
     animation[Anim_AtreidesBook]->setNumLoops(1);
     animation[Anim_AtreidesBook]->setFrameRate(0.2);
-    if(tornieActive) {
-        animation[Anim_PaulAtreidesEyes] = loadPngStripAnimation("PaulAtreidesEyes.png", 5, 0.5, false, 196);
-        animation[Anim_PaulAtreidesMouth] = loadPngStripAnimation("PaulAtreidesMouth.png", 5, 5.0, false, 18);
-    }
     animation[Anim_OrdosEyes] = menshpo->getAnimation(0,4,true,true);
     animation[Anim_OrdosEyes]->setFrameRate(0.5);
     animation[Anim_OrdosMouth] = menshpo->getAnimation(5,9,true,true,true);
@@ -3371,15 +3331,6 @@ GFXManager::GFXManager() {
     animation[Anim_MercenaryMouth] = PictureFactory::mapMentatAnimationToMercenary(animation[Anim_OrdosMouth].get());
     animation[Anim_MercenaryShoulder] = PictureFactory::mapMentatAnimationToMercenary(animation[Anim_OrdosShoulder].get());
     animation[Anim_MercenaryRing] = PictureFactory::mapMentatAnimationToMercenary(animation[Anim_OrdosRing].get());
-
-    animation[Anim_ChaniEyes] = loadPngStripAnimation("ChaniMentatEyes.png", 5, 0.5);
-    if(animation[Anim_ChaniEyes] == nullptr) {
-        animation[Anim_ChaniEyes] = PictureFactory::mapMentatAnimationToFremen(animation[Anim_AtreidesEyes].get());
-    }
-    animation[Anim_ChaniMouth] = loadPngStripAnimation("ChaniMentatMouth.png", 5, 5.0);
-    if(animation[Anim_ChaniMouth] == nullptr) {
-        animation[Anim_ChaniMouth] = PictureFactory::mapMentatAnimationToFremen(animation[Anim_AtreidesMouth].get());
-    }
 
     animation[Anim_BeneEyes] = menshpm->getAnimation(0,4,true,true);
     if(animation[Anim_BeneEyes] != nullptr) {
@@ -4378,19 +4329,15 @@ void GFXManager::invalidateAllSpriteTextures() {
     }
 }
 
-void GFXManager::reloadModDependentUiGraphics() {
-    SDL_Log("GFXManager::reloadModDependentUiGraphics(): reloading mentat backgrounds for active mod");
-
+void GFXManager::loadMentatGraphics() {
     for(int house = 0; house < NUM_HOUSE_COLOR_SLOTS; house++) {
         uiGraphic[UI_MentatBackground][house].reset();
-        uiGraphic[UI_MentatBackgroundPaul][house].reset();
         uiGraphicTex[UI_MentatBackground][house].reset();
-        uiGraphicTex[UI_MentatBackgroundPaul][house].reset();
+        modMentatEyes[house].reset();
+        modMentatMouth[house].reset();
     }
 
-    const bool tornieActive = ModManager::instance().isInitialized()
-        && (ModManager::instance().getActiveModName() == "Tornie");
-    auto loadMentatBackgroundPng = [&](const char* filename) -> sdl2::surface_ptr {
+    auto loadMentatBackgroundPng = [&](const std::string& filename) -> sdl2::surface_ptr {
         if(!pFileManager->exists(filename)) {
             return nullptr;
         }
@@ -4410,27 +4357,97 @@ void GFXManager::reloadModDependentUiGraphics() {
     uiGraphic[UI_MentatBackground][HOUSE_HARKONNEN] = Scaler::defaultDoubleSurface(LoadCPS_RW(pFileManager->openFile("MENTATH.CPS").get()).get());
     auto vanillaAtreidesMentat = Scaler::defaultDoubleSurface(LoadCPS_RW(pFileManager->openFile("MENTATA.CPS").get()).get());
     uiGraphic[UI_MentatBackground][HOUSE_ATREIDES] = copySurface(vanillaAtreidesMentat.get());
-    uiGraphic[UI_MentatBackgroundPaul][HOUSE_ATREIDES] = tornieActive ? loadMentatBackgroundPng("PaulAtreidesMentat.png") : nullptr;
-    if(uiGraphic[UI_MentatBackgroundPaul][HOUSE_ATREIDES] == nullptr) {
-        uiGraphic[UI_MentatBackgroundPaul][HOUSE_ATREIDES] = copySurface(vanillaAtreidesMentat.get());
-    }
-
     uiGraphic[UI_MentatBackground][HOUSE_ORDOS] = Scaler::defaultDoubleSurface(LoadCPS_RW(pFileManager->openFile("MENTATO.CPS").get()).get());
     uiGraphic[UI_MentatBackground][HOUSE_FREMEN] = PictureFactory::mapMentatSurfaceToFremen(vanillaAtreidesMentat.get());
     uiGraphic[UI_MentatBackground][HOUSE_SARDAUKAR] = PictureFactory::mapMentatSurfaceToSardaukar(uiGraphic[UI_MentatBackground][HOUSE_HARKONNEN].get());
     uiGraphic[UI_MentatBackground][HOUSE_MERCENARY] = PictureFactory::mapMentatSurfaceToMercenary(uiGraphic[UI_MentatBackground][HOUSE_ORDOS].get());
+    uiGraphic[UI_MentatBackground][HOUSE_NEUTRAL] = mapSurfaceColorRange(uiGraphic[UI_MentatBackground][HOUSE_HARKONNEN].get(), PALCOLOR_HARKONNEN, houseToPaletteIndex[HOUSE_NEUTRAL]);
+    uiGraphic[UI_MentatBackground][HOUSE_REBELS] = mapSurfaceColorRange(uiGraphic[UI_MentatBackground][HOUSE_ATREIDES].get(), PALCOLOR_ATREIDES, houseToPaletteIndex[HOUSE_REBELS]);
 
-    if(auto chaniMentat = loadMentatBackgroundPng("ChaniMentat.png")) {
-        uiGraphic[UI_MentatBackground][HOUSE_NEUTRAL] = std::move(chaniMentat);
-        auto rebelsChani = loadMentatBackgroundPng("ChaniMentat.png");
-        uiGraphic[UI_MentatBackground][HOUSE_REBELS] = rebelsChani ? std::move(rebelsChani)
-                                                                  : copySurface(uiGraphic[UI_MentatBackground][HOUSE_NEUTRAL].get());
-    } else {
-        uiGraphic[UI_MentatBackground][HOUSE_NEUTRAL] = mapSurfaceColorRange(uiGraphic[UI_MentatBackground][HOUSE_HARKONNEN].get(), PALCOLOR_HARKONNEN, houseToPaletteIndex[HOUSE_NEUTRAL]);
-        uiGraphic[UI_MentatBackground][HOUSE_REBELS] = mapSurfaceColorRange(uiGraphic[UI_MentatBackground][HOUSE_ATREIDES].get(), PALCOLOR_ATREIDES, houseToPaletteIndex[HOUSE_REBELS]);
+    ModManager& modManager = ModManager::instance();
+    const int customFallback = modManager.isCustomHouseRegistered()
+        ? modManager.getActiveCustomHouseInfo().fallbackHouse
+        : HOUSE_HARKONNEN;
+    uiGraphic[UI_MentatBackground][HOUSE_CUSTOM] = copySurface(uiGraphic[UI_MentatBackground][customFallback].get());
+
+    for(int house = 0; house < NUM_HOUSE_COLOR_SLOTS; ++house) {
+        const ModMentatInfo& info = modManager.getActiveMentatInfo(house);
+        if(!info.enabled) continue;
+        const int identity = modManager.getEffectiveMentatIdentity(house);
+        if(identity >= 0 && identity < NUM_HOUSE_COLOR_SLOTS
+           && uiGraphic[UI_MentatBackground][identity] != nullptr) {
+            uiGraphic[UI_MentatBackground][house] = copySurface(uiGraphic[UI_MentatBackground][identity].get());
+        }
+    }
+
+    for(int house = 0; house < NUM_HOUSE_COLOR_SLOTS; ++house) {
+        const ModMentatInfo& info = modManager.getActiveMentatInfo(house);
+        if(!info.enabled) continue;
+
+        if(!info.backgroundAsset.empty()) {
+            auto background = loadMentatBackgroundPng(info.backgroundAsset);
+            if(background != nullptr) {
+                uiGraphic[UI_MentatBackground][house] = std::move(background);
+            } else {
+                SDL_Log("GFXManager: Mentat %d background '%s' unavailable; using fallback",
+                        house, info.backgroundAsset.c_str());
+            }
+        }
+        if(!info.eyesAsset.empty()) {
+            modMentatEyes[house] = loadPngStripAnimation(
+                info.eyesAsset, info.eyesFrames, info.eyesFrameRate,
+                info.doubleEyes, info.eyesTransparentColor);
+            if(modMentatEyes[house] == nullptr) {
+                SDL_Log("GFXManager: Mentat %d eyes '%s' unavailable; using fallback",
+                        house, info.eyesAsset.c_str());
+            }
+        }
+        if(!info.mouthAsset.empty()) {
+            modMentatMouth[house] = loadPngStripAnimation(
+                info.mouthAsset, info.mouthFrames, info.mouthFrameRate,
+                info.doubleMouth, info.mouthTransparentColor);
+            if(modMentatMouth[house] == nullptr) {
+                SDL_Log("GFXManager: Mentat %d mouth '%s' unavailable; using fallback",
+                        house, info.mouthAsset.c_str());
+            }
+        }
     }
 }
 
+void GFXManager::reloadModDependentUiGraphics() {
+    SDL_Log("GFXManager::reloadModDependentUiGraphics(): reloading active-mod Mentat presentation");
+    loadMentatGraphics();
+}
+
+Animation* GFXManager::getMentatEyesAnimation(int house) {
+    if(house >= 0 && house < NUM_HOUSE_COLOR_SLOTS && modMentatEyes[house] != nullptr) {
+        return modMentatEyes[house].get();
+    }
+
+    switch(ModManager::instance().getEffectiveMentatIdentity(house)) {
+        case HOUSE_ATREIDES: return getAnimation(Anim_AtreidesEyes);
+        case HOUSE_ORDOS: return getAnimation(Anim_OrdosEyes);
+        case HOUSE_FREMEN: return getAnimation(Anim_FremenEyes);
+        case HOUSE_SARDAUKAR: return getAnimation(Anim_SardaukarEyes);
+        case HOUSE_MERCENARY: return getAnimation(Anim_MercenaryEyes);
+        default: return getAnimation(Anim_HarkonnenEyes);
+    }
+}
+
+Animation* GFXManager::getMentatMouthAnimation(int house) {
+    if(house >= 0 && house < NUM_HOUSE_COLOR_SLOTS && modMentatMouth[house] != nullptr) {
+        return modMentatMouth[house].get();
+    }
+
+    switch(ModManager::instance().getEffectiveMentatIdentity(house)) {
+        case HOUSE_ATREIDES: return getAnimation(Anim_AtreidesMouth);
+        case HOUSE_ORDOS: return getAnimation(Anim_OrdosMouth);
+        case HOUSE_FREMEN: return getAnimation(Anim_FremenMouth);
+        case HOUSE_SARDAUKAR: return getAnimation(Anim_SardaukarMouth);
+        case HOUSE_MERCENARY: return getAnimation(Anim_MercenaryMouth);
+        default: return getAnimation(Anim_HarkonnenMouth);
+    }
+}
 
 bool GFXManager::hasObjPic(unsigned int id, int house, unsigned int z) const {
     if(id >= NUM_OBJPICS || z >= NUM_ZOOMLEVEL) {
