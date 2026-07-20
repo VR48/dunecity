@@ -934,56 +934,24 @@ void ModManager::seedTornieFromDefaults() {
     }
     SDL_Log("ModManager: Tornie install source: %s", installModsPath.c_str());
 
-    createDir(torniePath);
-
-    // Copy mod.ini (the [Mod] section is required for the mod
-    // to appear in the Mods menu)
-    std::string srcModIni = installModsPath + "/" + MOD_INI_FILE;
-    std::string dstModIni = torniePath + "/" + MOD_INI_FILE;
-    if (existsFile(srcModIni)) {
-        copyFile(srcModIni, dstModIni);
-        SDL_Log("ModManager: Copied %s (Tornie)", MOD_INI_FILE);
-    } else {
-        SDL_Log("ModManager: Warning - %s not found at %s", MOD_INI_FILE, srcModIni.c_str());
+    if(!std::filesystem::is_directory(installModsPath)) {
+        SDL_Log("ModManager: Warning - bundled Tornie mod not found at %s", installModsPath.c_str());
+        return;
     }
 
-    // Copy ObjectData.ini (units + structures config for the mod)
-    std::string srcObjectData = installModsPath + "/" + OBJECT_DATA_FILE;
-    std::string dstObjectData = torniePath + "/" + OBJECT_DATA_FILE;
-    if (existsFile(srcObjectData)) {
-        copyFile(srcObjectData, dstObjectData);
-        SDL_Log("ModManager: Copied %s (Tornie)", OBJECT_DATA_FILE);
-    } else {
-        SDL_Log("ModManager: Warning - %s not found at %s", OBJECT_DATA_FILE, srcObjectData.c_str());
+    try {
+        // Tornie is a bundled, selectable payload. Copy the complete directory:
+        // campaigns, custom-house registration, Mentat declarations, graphics,
+        // sounds, and integrity metadata are all required for the mod to work.
+        // Preserve the bundled mod.ini verbatim instead of rewriting it and
+        // discarding its version and [Mentat] sections.
+        std::filesystem::copy(installModsPath, torniePath,
+            std::filesystem::copy_options::recursive |
+            std::filesystem::copy_options::overwrite_existing);
+        SDL_Log("ModManager: Tornie mod seeded successfully from %s", installModsPath.c_str());
+    } catch(const std::exception& e) {
+        SDL_Log("ModManager: Warning - Tornie mod seed failed: %s", e.what());
     }
-
-    // Copy QuantBot Config.ini
-    std::string srcQuantBot = installModsPath + "/" + QUANTBOT_CONFIG_FILE;
-    std::string dstQuantBot = torniePath + "/" + QUANTBOT_CONFIG_FILE;
-    if (existsFile(srcQuantBot)) {
-        copyFile(srcQuantBot, dstQuantBot);
-        SDL_Log("ModManager: Copied %s (Tornie)", QUANTBOT_CONFIG_FILE);
-    }
-
-    // Copy GameOptions.ini
-    std::string srcGameOptions = installModsPath + "/" + GAME_OPTIONS_FILE;
-    std::string dstGameOptions = torniePath + "/" + GAME_OPTIONS_FILE;
-    if (existsFile(srcGameOptions)) {
-        copyFile(srcGameOptions, dstGameOptions);
-        SDL_Log("ModManager: Copied %s (Tornie)", GAME_OPTIONS_FILE);
-    }
-
-    // Register the mod in the mod list
-    ModInfo info;
-    info.name = TORNIE_MOD_NAME;
-    info.displayName = "Tornie";
-    info.author = "Tornie_Panther";
-    info.description = "Tornie Mod: New units, new building, 2 additional campaigns with two custom factions, extra features in the editor. Special vehicles reviewed for sub-factions and the two new houses.";
-    info.gameVersion = VERSION;
-    info.enablesCityMode = false;
-    writeModInfo(torniePath, info);
-
-    SDL_Log("ModManager: Tornie mod seeded successfully");
 }
 
 void ModManager::seedDune2RFromDefaults() {
@@ -1066,6 +1034,9 @@ bool ModManager::tornieNeedsReseed() const {
     std::string modIniPath = torniePath + "/" + MOD_INI_FILE;
     std::string objectDataPath = torniePath + "/" + OBJECT_DATA_FILE;
     std::string gameOptionsPath = torniePath + "/" + GAME_OPTIONS_FILE;
+    std::string customHousePath = torniePath + "/" + CUSTOM_HOUSE_CONFIG;
+    std::string manifestPath = torniePath + "/manifest.json";
+    std::string checksumsPath = torniePath + "/checksums.sha256";
 
     if (!existsFile(modIniPath)) {
         SDL_Log("ModManager: Tornie missing %s, needs reseed", MOD_INI_FILE);
@@ -1078,6 +1049,30 @@ bool ModManager::tornieNeedsReseed() const {
     if (!existsFile(gameOptionsPath)) {
         SDL_Log("ModManager: Tornie missing %s, needs reseed", GAME_OPTIONS_FILE);
         return true;
+    }
+    if (!existsFile(customHousePath) || !existsFile(manifestPath) || !existsFile(checksumsPath)
+        || !std::filesystem::is_directory(std::filesystem::path(torniePath) / "campaign")
+        || !std::filesystem::is_directory(std::filesystem::path(torniePath) / "data")) {
+        SDL_Log("ModManager: Tornie payload is incomplete, needs reseed");
+        return true;
+    }
+
+    const std::string candidatePaths[] = {
+        getDuneLegacyDataDir() + "/mods/" + TORNIE_MOD_NAME,
+        getDuneLegacyDataDir() + "/../mods/" + TORNIE_MOD_NAME,
+        getDuneLegacyDataDir() + "/../../mods/" + TORNIE_MOD_NAME,
+        getDuneLegacyDataDir() + "/../../../mods/" + TORNIE_MOD_NAME
+    };
+    for(const std::string& candidatePath : candidatePaths) {
+        const std::string bundledChecksums = candidatePath + "/checksums.sha256";
+        if(existsFile(bundledChecksums)
+           && hashFileCanonical(checksumsPath) != hashFileCanonical(bundledChecksums)) {
+            SDL_Log("ModManager: Tornie bundled payload changed, needs reseed");
+            return true;
+        }
+        if(existsFile(bundledChecksums)) {
+            break;
+        }
     }
 
     // Check if installed Tornie ObjectData.ini differs from defaults
