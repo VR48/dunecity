@@ -893,16 +893,14 @@ ObjectBase* ObjectBase::createObject(int itemID, House* Owner, bool byScenario) 
             const int houseID = Owner->getHouseID();
             std::vector<int> objectDataIxCandidates;
             if(houseID == HOUSE_CUSTOM) {
-                for(int candidate = ItemID_FirstID; candidate <= ItemID_LastID; ++candidate) {
-                    if(!isUnit(candidate)) {
-                        continue;
-                    }
-
+                objectDataIxCandidates = discoverCustomHouseSpecialVehicleCandidates([&](int candidate) {
                     const auto& data = currentGame->objectData.data[candidate][houseID];
-                    if(data.enabled && data.prerequisiteStructuresSet[Structure_IX]) {
-                        objectDataIxCandidates.push_back(candidate);
-                    }
-                }
+                    return CustomHouseSpecialVehicleCandidateData{
+                        data.enabled,
+                        data.builder,
+                        data.prerequisiteStructuresSet[Structure_IX]
+                    };
+                });
             }
 
             const auto pool = resolveSpecialVehiclePoolForHouse(

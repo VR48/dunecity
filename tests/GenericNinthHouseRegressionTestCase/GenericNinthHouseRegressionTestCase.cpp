@@ -149,14 +149,39 @@ TEST_CASE("Custom-house presentation defaults request safe fallbacks",
 
 TEST_CASE("Tornie custom house prefers its ObjectData IX vehicles",
           "[custom-house][special-vehicle][tornie]") {
-    const std::vector<int> tornieIxCandidates = {
+    std::vector<CustomHouseSpecialVehicleCandidateData> objectData(ItemID_LastID + 1);
+    const CustomHouseSpecialVehicleCandidateData enabledIxVehicle{
+        true,
+        Structure_HeavyFactory,
+        true
+    };
+
+    objectData[Unit_Deviator] = enabledIxVehicle;
+    objectData[Unit_EliteLauncher] = enabledIxVehicle;
+    objectData[Unit_Ornithopter] = enabledIxVehicle;
+    objectData[Unit_Devastator] = { true, ItemID_Invalid, true };
+    objectData[Unit_Trooper] = enabledIxVehicle;
+    objectData[Unit_Harvester] = enabledIxVehicle;
+    objectData[Unit_FlameTank] = { true, Structure_HeavyFactory, false };
+
+    const auto tornieIxCandidates = discoverCustomHouseSpecialVehicleCandidates(
+        [&](int itemID) { return objectData[itemID]; });
+    const std::vector<int> expectedCandidates = {
         Unit_Deviator,
         Unit_EliteLauncher
     };
 
     REQUIRE(resolveSpecialVehiclePoolForHouse(
                 HOUSE_CUSTOM, true, tornieIxCandidates)
-            == tornieIxCandidates);
+            == expectedCandidates);
+    REQUIRE_FALSE(isCustomHouseSpecialVehicleCandidate(
+        Unit_Ornithopter, objectData[Unit_Ornithopter]));
+    REQUIRE_FALSE(isCustomHouseSpecialVehicleCandidate(
+        Unit_Devastator, objectData[Unit_Devastator]));
+    REQUIRE_FALSE(isCustomHouseSpecialVehicleCandidate(
+        Unit_Trooper, objectData[Unit_Trooper]));
+    REQUIRE_FALSE(isCustomHouseSpecialVehicleCandidate(
+        Unit_Harvester, objectData[Unit_Harvester]));
 }
 
 TEST_CASE("Custom house uses the generic special-vehicle fallback only when needed",

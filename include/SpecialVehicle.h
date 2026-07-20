@@ -12,7 +12,40 @@
 
 #include <data.h>
 
+#include <units/HarvesterHelpers.h>
+
 #include <vector>
+
+struct CustomHouseSpecialVehicleCandidateData {
+    bool enabled = false;
+    int builder = ItemID_Invalid;
+    bool requiresHouseIx = false;
+};
+
+inline bool isCustomHouseSpecialVehicleCandidate(
+        int itemID,
+        const CustomHouseSpecialVehicleCandidateData& candidateData) {
+    return candidateData.enabled
+        && isUnit(itemID)
+        && !isFlyingUnit(itemID)
+        && !isInfantryUnit(itemID)
+        && !isHarvesterLikeUnit(itemID)
+        && candidateData.builder != ItemID_Invalid
+        && candidateData.requiresHouseIx;
+}
+
+template<typename CandidateDataProvider>
+inline std::vector<int> discoverCustomHouseSpecialVehicleCandidates(
+        CandidateDataProvider&& candidateDataProvider) {
+    std::vector<int> candidates;
+    for(int itemID = ItemID_FirstID; itemID <= ItemID_LastID; ++itemID) {
+        if(isCustomHouseSpecialVehicleCandidate(itemID, candidateDataProvider(itemID))) {
+            candidates.push_back(itemID);
+        }
+    }
+
+    return candidates;
+}
 
 inline std::vector<int> getSpecialVehicleFallbackPoolForHouse(int house, bool tornieActive) {
     if(tornieActive) {

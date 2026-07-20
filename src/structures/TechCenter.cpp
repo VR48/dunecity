@@ -151,11 +151,14 @@ int TechCenter::spawnRandomVehicles(int count) {
         && ModManager::instance().getActiveModName() == "Tornie";
     std::vector<int> objectDataIxCandidates;
     if(originalHouseID == HOUSE_CUSTOM) {
-        for(int candidate = ItemID_FirstID; candidate <= ItemID_LastID; ++candidate) {
-            if(isTechCenterSpawnCandidate(candidate, originalHouseID)) {
-                objectDataIxCandidates.push_back(candidate);
-            }
-        }
+        objectDataIxCandidates = discoverCustomHouseSpecialVehicleCandidates([&](int candidate) {
+            const auto& data = currentGame->objectData.data[candidate][originalHouseID];
+            return CustomHouseSpecialVehicleCandidateData{
+                data.enabled,
+                data.builder,
+                data.prerequisiteStructuresSet[Structure_IX]
+            };
+        });
     }
 
     const auto specialVehiclePool = resolveSpecialVehiclePoolForHouse(
