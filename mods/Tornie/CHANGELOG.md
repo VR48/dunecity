@@ -29,3 +29,10 @@
 - Preserved per-house team colours while cycling only the intended Windtrap energy index.
 - Aligned Tornie Unit_Special and Tech Center pools with the approved nine-house IX plan.
 - Added a safe ObjectData fallback only when a house has no explicit special-vehicle pool.
+
+## 1.0.523 review correction
+
+- Prioritize HOUSE_CUSTOM IX vehicles discovered from ObjectData before the generic Sonic Tank and Devastator fallback.
+- Confirm Tornie Tharpique resolves to Deviator and Elite Launcher through its mod-owned ObjectData entries.
+- Regenerate the Tornie manifest checksums and normalize branch-reported trailing whitespace.
+- Add focused regression coverage for Tornie selection and the generic custom-house fallback.

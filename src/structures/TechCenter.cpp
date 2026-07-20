@@ -40,13 +40,13 @@
 
 namespace {
 
-bool isTechCenterSpawnCandidate(int itemID, int house) {
+bool isEnabledTechCenterVehicle(int itemID, int house) {
     if(currentGame == nullptr || !isUnit(itemID) || isFlyingUnit(itemID) || isInfantryUnit(itemID) || isHarvesterLikeUnit(itemID)) {
         return false;
     }
 
     const auto& data = currentGame->objectData.data[itemID][house];
-    if(!data.enabled || data.builder == ItemID_Invalid) {
+    if(!data.enabled) {
         return false;
     }
 
@@ -54,7 +54,12 @@ bool isTechCenterSpawnCandidate(int itemID, int house) {
         return false;
     }
 
-    return data.prerequisiteStructuresSet[Structure_IX];
+    return true;
+}
+
+bool isTechCenterSpawnCandidate(int itemID, int house) {
+    return isEnabledTechCenterVehicle(itemID, house)
+        && currentGame->objectData.data[itemID][house].prerequisiteStructuresSet[Structure_IX];
 }
 
 } // namespace
@@ -144,22 +149,26 @@ int TechCenter::spawnRandomVehicles(int count) {
     // Keep Tech Center spawns aligned with Unit_Special scenario entries.
     const bool tornieActive = ModManager::instance().isInitialized()
         && ModManager::instance().getActiveModName() == "Tornie";
-    const auto specialVehiclePool = getSpecialVehiclePoolForHouse(originalHouseID, tornieActive);
-    std::vector<int> vehiclePool;
-    for(const auto candidate : specialVehiclePool) {
-        if(isTechCenterSpawnCandidate(candidate, originalHouseID)) {
-            vehiclePool.push_back(candidate);
+    std::vector<int> objectDataIxCandidates;
+    if(originalHouseID == HOUSE_CUSTOM) {
+        for(int candidate = ItemID_FirstID; candidate <= ItemID_LastID; ++candidate) {
+            if(isTechCenterSpawnCandidate(candidate, originalHouseID)) {
+                objectDataIxCandidates.push_back(candidate);
+            }
         }
     }
 
-    // A registered custom house owns its IX choices through ObjectData rather
-    // than a hard-coded engine table. This also provides a safe generic
-    // fallback for future mods whose special-vehicle pool is not registered.
-    if(specialVehiclePool.empty()) {
-        for(int candidate = ItemID_FirstID; candidate <= ItemID_LastID; ++candidate) {
-            if(isTechCenterSpawnCandidate(candidate, originalHouseID)) {
-                vehiclePool.push_back(candidate);
-            }
+    const auto specialVehiclePool = resolveSpecialVehiclePoolForHouse(
+        originalHouseID, tornieActive, objectDataIxCandidates);
+    const bool useGenericCustomFallback =
+        originalHouseID == HOUSE_CUSTOM && objectDataIxCandidates.empty();
+    std::vector<int> vehiclePool;
+    for(const auto candidate : specialVehiclePool) {
+        const bool candidateEnabled = useGenericCustomFallback
+            ? isEnabledTechCenterVehicle(candidate, originalHouseID)
+            : isTechCenterSpawnCandidate(candidate, originalHouseID);
+        if(candidateEnabled) {
+            vehiclePool.push_back(candidate);
         }
     }
 

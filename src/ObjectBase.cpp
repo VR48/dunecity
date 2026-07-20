@@ -890,10 +890,26 @@ ObjectBase* ObjectBase::createObject(int itemID, House* Owner, bool byScenario) 
         case Unit_Special: {
             const bool tornieActive = ModManager::instance().isInitialized()
                 && ModManager::instance().getActiveModName() == "Tornie";
-            const auto pool = getSpecialVehiclePoolForHouse(Owner->getHouseID(), tornieActive);
+            const int houseID = Owner->getHouseID();
+            std::vector<int> objectDataIxCandidates;
+            if(houseID == HOUSE_CUSTOM) {
+                for(int candidate = ItemID_FirstID; candidate <= ItemID_LastID; ++candidate) {
+                    if(!isUnit(candidate)) {
+                        continue;
+                    }
+
+                    const auto& data = currentGame->objectData.data[candidate][houseID];
+                    if(data.enabled && data.prerequisiteStructuresSet[Structure_IX]) {
+                        objectDataIxCandidates.push_back(candidate);
+                    }
+                }
+            }
+
+            const auto pool = resolveSpecialVehiclePoolForHouse(
+                houseID, tornieActive, objectDataIxCandidates);
             std::vector<int> enabledPool;
             for(const int candidate : pool) {
-                if(currentGame->objectData.data[candidate][Owner->getHouseID()].enabled) {
+                if(currentGame->objectData.data[candidate][houseID].enabled) {
                     enabledPool.push_back(candidate);
                 }
             }

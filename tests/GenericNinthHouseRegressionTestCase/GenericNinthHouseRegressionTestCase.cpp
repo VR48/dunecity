@@ -4,9 +4,12 @@
 #include <mod/CustomHouseConfig.h>
 #include <mod/ModInfo.h>
 #include <mod/ModMentatConfig.h>
+#include <globals.h>
+#include <SpecialVehicle.h>
 
 #include <array>
 #include <string>
+#include <vector>
 
 TEST_CASE("CustomHouse config: valid numeric fields parse without throwing",
           "[custom-house][config]") {
@@ -142,4 +145,32 @@ TEST_CASE("Custom-house presentation defaults request safe fallbacks",
     REQUIRE(info.houseNameVoiceAsset.empty());
     REQUIRE(info.voicePlaybackRate == Catch::Approx(1.0));
     REQUIRE(info.voiceGain == Catch::Approx(1.0));
+}
+
+TEST_CASE("Tornie custom house prefers its ObjectData IX vehicles",
+          "[custom-house][special-vehicle][tornie]") {
+    const std::vector<int> tornieIxCandidates = {
+        Unit_Deviator,
+        Unit_EliteLauncher
+    };
+
+    REQUIRE(resolveSpecialVehiclePoolForHouse(
+                HOUSE_CUSTOM, true, tornieIxCandidates)
+            == tornieIxCandidates);
+}
+
+TEST_CASE("Custom house uses the generic special-vehicle fallback only when needed",
+          "[custom-house][special-vehicle][fallback]") {
+    const std::vector<int> noModOwnedCandidates;
+    const std::vector<int> genericFallback = {
+        Unit_SonicTank,
+        Unit_Devastator
+    };
+
+    REQUIRE(resolveSpecialVehiclePoolForHouse(
+                HOUSE_CUSTOM, false, noModOwnedCandidates)
+            == genericFallback);
+    REQUIRE(resolveSpecialVehiclePoolForHouse(
+                HOUSE_CUSTOM, true, noModOwnedCandidates)
+            == genericFallback);
 }
