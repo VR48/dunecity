@@ -99,3 +99,4 @@ imported_sprites/micropolis/composites_special/*.broken
 # Local-only scratch / editor files
 tmp/
 *.code-workspace
+/Tornie Files
