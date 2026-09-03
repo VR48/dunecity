@@ -437,6 +437,12 @@ void Tile::blitGround(int xPos, int yPos) {
             terrainSprite = pGFXManager->getZoomedObjPic(terrainObjPic, currentZoomlevel);
         }
         SDL_RenderCopy(renderer, terrainSprite, &source, &drawLocation);
+
+        if(type == Terrain_Rock) {
+            const int topology = static_cast<int>(getTerrainTile())
+                                 - static_cast<int>(TerrainTile_Rock);
+            pGFXManager->drawEnhancedTerrain(type, topology, drawLocation);
+        }
     }
 
     // DuneCity: overlay an auto-tiled road sprite when the tile carries a

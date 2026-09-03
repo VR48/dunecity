@@ -264,9 +264,78 @@ void StructureBase::blitToScreen() {
         }
     }
 
-    SDL_RenderCopy(renderer, structureTexture, &source, &dest);
+    const Uint8 dune2rBlend = pGFXManager->getDune2RVisualBlend();
+    bool classicDrawn = false;
+    if(dune2rBlend < SDL_ALPHA_OPAQUE || fogged) {
+        SDL_RenderCopy(renderer, structureTexture, &source, &dest);
+        classicDrawn = true;
+    }
 
-    if(!fogged) {
+    bool enhancedDrawn = false;
+    if(!fogged && dune2rBlend > 0 && owner != nullptr) {
+        const Uint32 nowMs = currentGame->getGameTime();
+        auto visualState = GFXManager::EnhancedBuildingState::Idle;
+        Uint32 elapsedMs = nowMs + getObjectID() * 97u;
+        bool transitionTiming = false;
+
+        if(enhancedPlacementStartMs != std::numeric_limits<Uint32>::max()) {
+            const Uint32 placementDuration = pGFXManager->getEnhancedBuildingAnimationDuration(
+                itemID, owner->getHouseID(), GFXManager::EnhancedBuildingState::Placement);
+            const Uint32 constructionDuration = pGFXManager->getEnhancedBuildingAnimationDuration(
+                itemID, owner->getHouseID(), GFXManager::EnhancedBuildingState::Construction);
+            const Uint32 placementElapsed = nowMs - enhancedPlacementStartMs;
+            if(placementDuration > 0 && placementElapsed < placementDuration) {
+                visualState = GFXManager::EnhancedBuildingState::Placement;
+                elapsedMs = placementElapsed;
+                transitionTiming = true;
+            } else if(constructionDuration > 0
+                      && placementElapsed < placementDuration + constructionDuration) {
+                visualState = GFXManager::EnhancedBuildingState::Construction;
+                elapsedMs = placementElapsed - placementDuration;
+                transitionTiming = true;
+            } else {
+                enhancedPlacementStartMs = std::numeric_limits<Uint32>::max();
+            }
+        }
+
+        if(!transitionTiming) {
+            if(repairing && getHealth() < getMaxHealth()) {
+                visualState = GFXManager::EnhancedBuildingState::Repair;
+                transitionTiming = true;
+            } else if(isBadlyDamaged()) {
+                visualState = GFXManager::EnhancedBuildingState::Damaged;
+                transitionTiming = true;
+            } else if(itemID == Structure_Refinery && curAnimFrame >= 8) {
+                visualState = GFXManager::EnhancedBuildingState::Working;
+            }
+
+            const int stateIndex = static_cast<int>(visualState);
+            if(stateIndex != enhancedVisualState) {
+                enhancedVisualState = stateIndex;
+                enhancedVisualStateStartMs = nowMs;
+            }
+            if(transitionTiming) {
+                elapsedMs = nowMs - enhancedVisualStateStartMs;
+            }
+        } else {
+            enhancedVisualState = static_cast<int>(visualState);
+        }
+
+        const int anchorX = screenborder->world2screenX(
+            lround(realX) + structureSize.x * TILESIZE / 2);
+        const int anchorY = screenborder->world2screenY(
+            lround(realY) + structureSize.y * TILESIZE);
+        enhancedDrawn = pGFXManager->drawEnhancedBuilding(
+            itemID, owner->getHouseID(), currentZoomlevel,
+            visualState, elapsedMs, anchorX, anchorY);
+    }
+
+    if(!classicDrawn && !enhancedDrawn) {
+        SDL_RenderCopy(renderer, structureTexture, &source, &dest);
+        classicDrawn = true;
+    }
+
+    if(!fogged && (dune2rBlend < SDL_ALPHA_OPAQUE || !enhancedDrawn)) {
         SDL_Texture* pSmokeTex = pGFXManager->getZoomedObjPic(ObjPic_Smoke, getOwner()->getHouseID(), currentZoomlevel);
         SDL_Rect smokeSource = calcSpriteSourceRect(pSmokeTex, 0, 3);
         for(const StructureSmoke& structureSmoke : smoke) {
@@ -447,6 +516,10 @@ void StructureBase::setJustPlaced() {
     justPlacedTimer = 6;
     curAnimFrame = 0;
     animationCounter = -STRUCTURE_ANIMATIONTIMER; // make first build animation double as long
+    enhancedPlacementStartMs = currentGame != nullptr
+        ? currentGame->getGameTime()
+        : 0;
+    enhancedVisualState = -1;
 }
 
 bool StructureBase::update() {

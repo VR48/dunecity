@@ -2,11 +2,18 @@
 
 Place high-resolution anchored graphics here.
 
-## Animated units
+## Runtime packs
 
-Enhanced unit animations are complete-unit atlases under `units/`. They are
-selected by stable game item ID and, optionally, house ID. This avoids changing
-shared classic chassis/turret sprites used by other vehicles.
+Enhanced assets are stored as independently downloadable directories under
+`units/`. Despite the historical directory name, a pack may describe a moving
+unit (`unit.ini`), a footprint-anchored structure (`building.ini`), or terrain
+topologies (`tile.ini`).
+
+### Animated units
+
+Unit animations are complete-unit atlases selected by stable game item ID and,
+optionally, house ID. This avoids changing shared classic chassis/turret
+sprites used by other vehicles.
 
 The packager prefers Oathkeeper's optional `full_unit_idle`,
 `full_unit_movement`, `full_unit_combat`, and directional full-unit damage
@@ -72,6 +79,26 @@ only rendering and camera coverage; simulation, multiplayer synchronization,
 and save data are unaffected. The control is hidden for every other mod. The
 mouse wheel changes view while it is over the map; scrollable interface widgets
 retain priority and continue consuming wheel input normally.
+
+The adjacent `Classic` / `Dune2R` button crossfades all available enhanced
+terrain, building, HD objpic, and complete-unit art over the classic renderer.
+The target mode is saved locally in `Dune City.ini`; it is not simulation or
+network state.
+
+### Buildings and terrain
+
+Building source frames are normalized to `192` authored pixels per footprint
+tile and split into atlases no larger than `4096x4096`. Placement,
+construction, damage, repair, and destruction play once; idle and working
+states loop. If processed frames are absent, the category's Sprite Image is
+packaged as a one-frame fallback. The engine anchors every state at the bottom
+center of the fixed collision footprint, allowing smoke and effects to extend
+above it without changing gameplay bounds.
+
+Terrain packs contain all 16 north/east/south/west topology variants. Each
+enhanced tile is `192x192`, remains opaque and padding-free, and is rendered
+into the same logical tile rectangle as classic terrain. Compact `16x16`
+products travel in the same pack for later compact-mode support.
 
 Package numbered Oathkeeper PNG frames with:
 

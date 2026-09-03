@@ -25,6 +25,7 @@
 #include <misc/draw_util.h>
 #include <misc/DiscordManager.h>
 #include <misc/TouchInput.h>
+#include <misc/WebRuntime.h>
 #include <CursorManager.h>
 
 #include <globals.h>
@@ -94,6 +95,8 @@ int MenuBase::showMenu() {
                 break;
             }
         }
+
+        WebRuntime::yieldToBrowser();
 
         // VSync is controlled via SDL_HINT_RENDER_VSYNC in main.cpp
         // No software frame limiting needed in menus

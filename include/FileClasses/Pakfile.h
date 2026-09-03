@@ -86,6 +86,9 @@ private:
     char* writeOutData;
     int numWriteOutData;
     std::vector<PakFileEntry> fileEntries;
+#ifdef __EMSCRIPTEN__
+    std::vector<uint8_t> webPakData;
+#endif
 };
 
 #endif // PAKFILE_H

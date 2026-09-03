@@ -7,6 +7,7 @@ import argparse
 import configparser
 import json
 import math
+import shutil
 from pathlib import Path
 
 from PIL import Image, ImageOps
@@ -41,6 +42,23 @@ COMPOSITE_STATES = {
     "movement": (("chassis_movement", "chassis_idle"), ("turret_idle",)),
     "combat": (("chassis_movement", "chassis_idle"), ("turret_fire",)),
 }
+
+TILE_VARIANTS = (
+    "island", "up", "right", "up_right", "down", "up_down", "down_right", "not_left",
+    "left", "up_left", "left_right", "not_down", "down_left", "not_right", "not_up", "full",
+)
+
+BUILDING_STATES = {
+    "building_placement": ("Placement", False),
+    "building_construction": ("Construction", False),
+    "building_idle": ("Idle", True),
+    "building_active": ("Working", True),
+    "building_damaged": ("Damaged", False),
+    "building_repair": ("Repair", False),
+    "building_destroyed": ("Destroyed", False),
+}
+
+MAX_ATLAS_SIZE = 4096
 
 
 def load_frames(frames_dir: Path, frame_size: int) -> list[Image.Image]:
@@ -172,6 +190,144 @@ def write_atlas(frames: list[Image.Image], destination: Path, columns: int) -> t
     return columns, rows
 
 
+def fit_frames_to_width(frames: list[Image.Image], target_width: int) -> list[Image.Image]:
+    if not frames:
+        return []
+    target_height = max(1, round(frames[0].height * target_width / frames[0].width))
+    for index, frame in enumerate(frames):
+        resized = frame.resize((target_width, target_height), Image.Resampling.LANCZOS)
+        frame.close()
+        frames[index] = resized
+    return frames
+
+
+def write_chunked_atlases(frames: list[Image.Image], output: Path,
+                          relative_dir: Path) -> list[dict[str, int | str]]:
+    frame_width, frame_height = frames[0].size
+    columns = max(1, MAX_ATLAS_SIZE // frame_width)
+    rows = max(1, MAX_ATLAS_SIZE // frame_height)
+    frames_per_atlas = columns * rows
+    chunks: list[dict[str, int | str]] = []
+    for chunk_index, first in enumerate(range(0, len(frames), frames_per_atlas)):
+        chunk = frames[first:first + frames_per_atlas]
+        chunk_columns = min(columns, len(chunk))
+        relative_path = relative_dir / f"{chunk_index:02d}.png"
+        atlas_columns, atlas_rows = write_atlas(chunk, output / relative_path, chunk_columns)
+        chunks.append({
+            "path": relative_path.as_posix(),
+            "first": first,
+            "frames": len(chunk),
+            "columns": atlas_columns,
+            "rows": atlas_rows,
+        })
+    return chunks
+
+
+def package_tile(metadata: dict[str, object], asset_root: Path, output: Path,
+                 args: argparse.Namespace) -> int:
+    manifest = configparser.ConfigParser()
+    manifest.optionxform = str
+    manifest["Tile"] = {
+        "TerrainType": str(args.item_id),
+        "SourceUnit": str(metadata.get("slug", args.source_unit.name)),
+        "Variants": str(len(TILE_VARIANTS)),
+    }
+    manifest["Render"] = {"PixelsPerTile": str(args.frame_size)}
+
+    states = metadata.get("categories", {}).get("tile_base", {}).get("states", {})
+    packaged = 0
+    for index, variant in enumerate(TILE_VARIANTS):
+        assets = states.get(variant, {}).get("assets", {})
+        sprite_value = assets.get("sprite", {}).get("file", "")
+        sprite_path = asset_root / sprite_value
+        if not sprite_path.is_file():
+            print(f"skip tile_base/{variant}: no enhanced sprite")
+            continue
+        with Image.open(sprite_path) as source:
+            tile = source.convert("RGBA").resize(
+                (args.frame_size, args.frame_size), Image.Resampling.LANCZOS)
+        relative_image = Path("tiles") / f"{variant}.png"
+        (output / relative_image).parent.mkdir(parents=True, exist_ok=True)
+        tile.save(output / relative_image, optimize=True)
+
+        section = f"Variant.{index}"
+        manifest[section] = {"Name": variant, "Image": relative_image.as_posix()}
+        compact_value = assets.get("processed", {}).get("file", "")
+        compact_path = asset_root / compact_value
+        if compact_path.is_file():
+            relative_compact = Path("compact") / f"{variant}.png"
+            (output / relative_compact).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(compact_path, output / relative_compact)
+            manifest[section]["Compact"] = relative_compact.as_posix()
+        packaged += 1
+
+    if packaged != len(TILE_VARIANTS):
+        raise SystemExit(f"Tile package needs all {len(TILE_VARIANTS)} topology sprites; found {packaged}")
+    with (output / "tile.ini").open("w", encoding="ascii", newline="\n") as handle:
+        manifest.write(handle, space_around_delimiters=False)
+    print(f"wrote {output / 'tile.ini'} with {packaged} topology sprites")
+    return packaged
+
+
+def package_building(metadata: dict[str, object], asset_root: Path, output: Path,
+                     args: argparse.Namespace) -> int:
+    profile = metadata.get("render_profile", {})
+    footprint = profile.get("logical_footprint_tiles", [1, 1])
+    footprint_width = max(1, int(footprint[0]))
+    footprint_height = max(1, int(footprint[1]))
+    target_width = footprint_width * args.frame_size
+
+    manifest = configparser.ConfigParser()
+    manifest.optionxform = str
+    manifest["Building"] = {
+        "ItemID": str(args.item_id),
+        "HouseID": str(args.house_id),
+        "SourceUnit": str(metadata.get("slug", args.source_unit.name)),
+        "FootprintWidth": str(footprint_width),
+        "FootprintHeight": str(footprint_height),
+    }
+    manifest["Render"] = {"PixelsPerTile": str(args.frame_size)}
+
+    packaged = 0
+    for category_name, (state_name, loops) in BUILDING_STATES.items():
+        category = metadata.get("categories", {}).get(category_name, {})
+        state = category.get("states", {}).get("default", {})
+        assets = state.get("assets", {})
+        frames, frame_ms = load_source_frames(asset_root, assets)
+        if not frames:
+            print(f"skip {category_name}/default: no processed frames or sprite fallback")
+            continue
+        frames = fit_frames_to_width(frames, target_width)
+        chunks = write_chunked_atlases(
+            frames, output, Path("atlases") / state_name.lower())
+        section = f"State.{state_name}"
+        manifest[section] = {
+            "Frames": str(len(frames)),
+            "FrameMs": str(frame_ms),
+            "FrameWidth": str(frames[0].width),
+            "FrameHeight": str(frames[0].height),
+            "AnchorX": str(frames[0].width // 2),
+            "AnchorY": str(frames[0].height),
+            "Loop": "true" if loops else "false",
+            "AtlasCount": str(len(chunks)),
+        }
+        for index, chunk in enumerate(chunks):
+            manifest[section][f"Atlas.{index}"] = str(chunk["path"])
+            manifest[section][f"FirstFrame.{index}"] = str(chunk["first"])
+            manifest[section][f"ChunkFrames.{index}"] = str(chunk["frames"])
+            manifest[section][f"Columns.{index}"] = str(chunk["columns"])
+            manifest[section][f"Rows.{index}"] = str(chunk["rows"])
+        packaged += 1
+        print(f"packaged {category_name}/default: {len(frames)} frame(s) in {len(chunks)} atlas chunk(s)")
+
+    if packaged == 0:
+        raise SystemExit("No enhanced building frames or sprite fallbacks were eligible for packaging")
+    with (output / "building.ini").open("w", encoding="ascii", newline="\n") as handle:
+        manifest.write(handle, space_around_delimiters=False)
+    print(f"wrote {output / 'building.ini'} with {packaged} visual state(s)")
+    return packaged
+
+
 def package_unit(args: argparse.Namespace) -> int:
     source_unit = args.source_unit.resolve()
     metadata_path = source_unit / "unit.json"
@@ -179,6 +335,14 @@ def package_unit(args: argparse.Namespace) -> int:
     asset_root = source_unit.parent.parent
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
+
+    unit_type = str(metadata.get("unit_type", "ground")).lower()
+    if unit_type == "tile":
+        package_tile(metadata, asset_root, output, args)
+        return 0
+    if unit_type == "building":
+        package_building(metadata, asset_root, output, args)
+        return 0
 
     manifest = configparser.ConfigParser()
     manifest.optionxform = str

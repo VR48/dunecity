@@ -21,7 +21,7 @@
 #include "Animation.h"
 #include <misc/SDL2pp.h>
 
-#include <stdarg.h>
+#include <initializer_list>
 
 /// A class for loading a *.WSA-File.
 /**
@@ -34,7 +34,6 @@ public:
     Wsafile(SDL_RWops* rwop0, SDL_RWops* rwop1);
     Wsafile(SDL_RWops* rwop0, SDL_RWops* rwop1, SDL_RWops* rwop2);
     Wsafile(SDL_RWops* rwop0, SDL_RWops* rwop1, SDL_RWops* rwop2, SDL_RWops* rwop3);
-    Wsafile(int num,...);
     Wsafile(const Wsafile& wsafile) = delete;
     Wsafile(Wsafile&& wsafile) = delete;
     Wsafile& operator=(const Wsafile& wsafile) = delete;
@@ -74,8 +73,7 @@ public:
 private:
     void decodeFrames(const unsigned char* pFiledata, Uint32* index, int numberOfFrames, unsigned char* pDecodedFrames, int x, int y) const;
     std::unique_ptr<unsigned char[]> readfile(SDL_RWops* rwop, int* filesize) const;
-    void readdata(int numFiles, ...);
-    void readdata(int numFiles, va_list args);
+    void readdata(std::initializer_list<SDL_RWops*> files);
     std::vector<unsigned char> decodedFrames;
 
     Uint16 numFrames = 0;

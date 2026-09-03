@@ -107,7 +107,22 @@ function Assert-UnderRoot([string]$Path, [string]$Root) {
 function Reset-Directory([string]$Path, [string]$Root) {
     Assert-UnderRoot $Path $Root
     if (Test-Path -LiteralPath $Path) {
-        Remove-Item -LiteralPath $Path -Recurse -Force
+        for ($attempt = 1; $attempt -le 3 -and (Test-Path -LiteralPath $Path); $attempt++) {
+            try {
+                Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop
+            } catch {
+                Write-Verbose "Directory reset attempt $attempt failed for '$Path': $($_.Exception.Message)"
+            }
+            if (Test-Path -LiteralPath $Path) {
+                Start-Sleep -Milliseconds (250 * $attempt)
+            }
+        }
+        if (Test-Path -LiteralPath $Path) {
+            $stalePath = "$Path.stale-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+            Assert-UnderRoot $stalePath $Root
+            Move-Item -LiteralPath $Path -Destination $stalePath -ErrorAction Stop
+            Write-Warning "Windows kept files open under '$Path'; moved the old directory to '$stalePath'."
+        }
     }
     New-Item -ItemType Directory -Force -Path $Path | Out-Null
 }
@@ -506,8 +521,9 @@ $manifest = @'
             android:label="@string/app_name"
             android:alwaysRetainTaskState="true"
             android:launchMode="singleInstance"
-            android:screenOrientation="landscape"
-            android:configChanges="layoutDirection|locale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
+            android:screenOrientation="sensorLandscape"
+            android:resizeableActivity="true"
+            android:configChanges="colorMode|density|layoutDirection|locale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|touchscreen|keyboard|keyboardHidden|navigation"
             android:preferMinimalPostProcessing="true"
             android:exported="true">
             <intent-filter>
@@ -530,7 +546,12 @@ $activity = @'
 package net.dunecity.dune2r;
 
 import android.content.res.AssetManager;
+import android.content.res.Configuration;
+import android.graphics.Rect;
+import android.os.Build;
 import android.os.Bundle;
+import android.util.DisplayMetrics;
+import android.util.Log;
 
 import org.libsdl.app.SDLActivity;
 
@@ -541,6 +562,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 
 public class Dune2RActivity extends SDLActivity {
+    private static final String TAG = "Dune2RActivity";
     private static final String PAYLOAD_ROOT = "dune2r_payload";
     private static final String PAYLOAD_MARKER = ".dune2r_payload___PAYLOAD_VERSION__";
 
@@ -553,6 +575,36 @@ public class Dune2RActivity extends SDLActivity {
     protected void onCreate(Bundle savedInstanceState) {
         copyBundledPayload();
         super.onCreate(savedInstanceState);
+        logWindowConfiguration("created");
+    }
+
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        // SDLActivity updates its SurfaceView and calls nativeSetScreenResolution.
+        // Keep that behavior, then record enough window data to diagnose OEM
+        // fold, unfold, DeX, and multi-window behavior from an ADB log.
+        super.onConfigurationChanged(newConfig);
+        logWindowConfiguration("changed");
+    }
+
+    private void logWindowConfiguration(String event) {
+        int width;
+        int height;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Rect bounds = getWindowManager().getCurrentWindowMetrics().getBounds();
+            width = bounds.width();
+            height = bounds.height();
+        } else {
+            DisplayMetrics metrics = getResources().getDisplayMetrics();
+            width = metrics.widthPixels;
+            height = metrics.heightPixels;
+        }
+        Configuration config = getResources().getConfiguration();
+        Log.i(TAG, event + " window=" + width + "x" + height
+                + " dp=" + config.screenWidthDp + "x" + config.screenHeightDp
+                + " smallestDp=" + config.smallestScreenWidthDp
+                + " densityDpi=" + config.densityDpi
+                + " orientation=" + config.orientation);
     }
 
     private void copyBundledPayload() {

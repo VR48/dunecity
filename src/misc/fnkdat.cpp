@@ -462,6 +462,8 @@ int fnkdat(const char* target, char* buffer, int len, int flags) {
          FNKDAT_S(strncpy(buffer, prefPath, len));
          SDL_free(prefPath);
       }
+#elif defined(__EMSCRIPTEN__)
+      FNKDAT_S(strncpy(buffer, "/home/web_user/.config/DuneCity", len));
 #else
       {
          char* xdg_config = getenv("XDG_CONFIG_HOME");

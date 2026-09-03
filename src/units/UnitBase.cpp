@@ -390,9 +390,17 @@ void UnitBase::blitToScreen() {
     SDL_Rect source = calcSpriteSourceRect(pUnitGraphic, drawnAngle, numImagesX, drawnFrame, numImagesY);
     SDL_Rect dest = calcSpriteDrawingRect( pUnitGraphic, x, y, numImagesX, numImagesY, HAlign::Center, VAlign::Center);
 
+    const Uint8 dune2rBlend = pGFXManager->getDune2RVisualBlend();
+    bool classicDrawn = false;
+    if(dune2rBlend > 0 && dune2rBlend < SDL_ALPHA_OPAQUE) {
+        SDL_RenderCopy(renderer, pUnitGraphic, &source, &dest);
+        classicDrawn = true;
+    }
+
     if(!drawEnhancedUnitSprite(x, y)
        && !pGFXManager->drawHDObjPic(graphicID, getOwner()->getHouseID(), currentZoomlevel,
-                                  drawnAngle, numImagesX, drawnFrame, numImagesY, x, y)) {
+                                  drawnAngle, numImagesX, drawnFrame, numImagesY, x, y)
+       && !classicDrawn) {
         SDL_RenderCopy(renderer, pUnitGraphic, &source, &dest);
     }
 

@@ -107,6 +107,13 @@ GameInterface::GameInterface() : Window(0,0,0,0) {
 
     topBarHBox.addWidget(Spacer::create());
 
+    dune2rVisualButton.setText(_("Dune2R"));
+    dune2rVisualButton.setTooltipText(_("Crossfade between classic and Dune2R visuals"));
+    dune2rVisualButton.setOnClick(std::bind(&Game::toggleDune2RVisuals, currentGame));
+    topBarHBox.addWidget(&dune2rVisualButton);
+
+    topBarHBox.addWidget(Spacer::create());
+
     // add radar
     const Point radarOrigin(getRendererWidth() - sideBar.getSize().x + SIDEBAR_COLUMN_WIDTH, 0);
     const Point radarSize = radarView.getMinimumSize();
@@ -214,6 +221,12 @@ void GameInterface::draw(Point position) {
     const bool dune2rActive = ModManager::instance().isInitialized()
         && ModManager::instance().getActiveModName() == "Dune2R";
     dune2rZoomButton.setVisible(dune2rActive);
+    dune2rVisualButton.setVisible(dune2rActive);
+    if(dune2rActive) {
+        dune2rVisualButton.setText(
+            pGFXManager->isDune2RVisualsEnabled() ? _("Dune2R") : _("Classic"));
+        pGFXManager->getDune2RVisualBlend();
+    }
 
     // Refresh the population pill from the live city sim. We only show the
     // label when city sim is active; outside city mode it would just be

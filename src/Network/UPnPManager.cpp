@@ -18,6 +18,32 @@
 #include <Network/UPnPManager.h>
 #include <SDL2/SDL_log.h>
 
+#ifdef __EMSCRIPTEN__
+
+struct UPnPManager::UPnPData {};
+
+UPnPManager::UPnPManager() : data(new UPnPData()) {}
+UPnPManager::~UPnPManager() { delete data; }
+
+bool UPnPManager::discover(int) {
+    status = Status::Unavailable;
+    lastError = "UPnP is unavailable in a web browser";
+    return false;
+}
+
+bool UPnPManager::addPortMapping(uint16_t, uint16_t, const std::string&,
+                                 const std::string&, int) {
+    status = Status::Unavailable;
+    lastError = "UPnP is unavailable in a web browser";
+    return false;
+}
+
+bool UPnPManager::removePortMapping(uint16_t, const std::string&) { return false; }
+std::string UPnPManager::getExternalIPAddress() { return {}; }
+std::string UPnPManager::getStatusString() const { return "Unavailable in browser"; }
+
+#else
+
 #include <miniupnpc/miniupnpc.h>
 #include <miniupnpc/upnpcommands.h>
 #include <miniupnpc/upnperrors.h>
@@ -204,4 +230,6 @@ std::string UPnPManager::getStatusString() const {
     }
     return "Unknown";
 }
+
+#endif
 

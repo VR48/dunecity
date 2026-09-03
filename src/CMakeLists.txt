@@ -3,7 +3,9 @@
 # GFXManager's imported_sprites paths). Windows and macOS leave it unset so
 # getDuneLegacyDataDir() falls through to SDL_GetBasePath() at runtime,
 # making the install relocatable.
-if(NOT WIN32 AND NOT APPLE)
+if(EMSCRIPTEN)
+    set(DUNELEGACY_DATADIR "/")
+elseif(NOT WIN32 AND NOT APPLE)
     set(DUNELEGACY_DATADIR "${CMAKE_INSTALL_FULL_DATADIR}/${PROJECT_NAME}/")
 endif()
 
@@ -366,6 +368,7 @@ target_sources(dunecity
         misc/string_util.cpp
         misc/Scaler.cpp
         misc/TouchInput.cpp
+        misc/WebRuntime.cpp
 )
 
 # C source files
@@ -425,40 +428,70 @@ if(APPLE)
     )
 endif()
 
-# Find miniupnpc for UPnP support
-find_package(miniupnpc CONFIG QUIET)
-if(NOT miniupnpc_FOUND)
-    find_library(MINIUPNPC_LIBRARY miniupnpc PATHS ${CMAKE_PREFIX_PATH}/lib)
-    find_path(MINIUPNPC_INCLUDE_DIR miniupnpc/miniupnpc.h PATHS ${CMAKE_PREFIX_PATH}/include)
-    if(MINIUPNPC_LIBRARY AND MINIUPNPC_INCLUDE_DIR)
-        add_library(miniupnpc::miniupnpc UNKNOWN IMPORTED)
-        set_target_properties(miniupnpc::miniupnpc PROPERTIES
-            IMPORTED_LOCATION "${MINIUPNPC_LIBRARY}"
-            INTERFACE_INCLUDE_DIRECTORIES "${MINIUPNPC_INCLUDE_DIR}")
+# Find native-only integrations. Browser builds use Fetch and cannot configure
+# a viewer's router through UPnP.
+if(NOT EMSCRIPTEN)
+    find_package(miniupnpc CONFIG QUIET)
+    if(NOT miniupnpc_FOUND)
+        find_library(MINIUPNPC_LIBRARY miniupnpc PATHS ${CMAKE_PREFIX_PATH}/lib)
+        find_path(MINIUPNPC_INCLUDE_DIR miniupnpc/miniupnpc.h PATHS ${CMAKE_PREFIX_PATH}/include)
+        if(MINIUPNPC_LIBRARY AND MINIUPNPC_INCLUDE_DIR)
+            add_library(miniupnpc::miniupnpc UNKNOWN IMPORTED)
+            set_target_properties(miniupnpc::miniupnpc PROPERTIES
+                IMPORTED_LOCATION "${MINIUPNPC_LIBRARY}"
+                INTERFACE_INCLUDE_DIRECTORIES "${MINIUPNPC_INCLUDE_DIR}")
+        endif()
+    endif()
 
+    find_library(DISCORD_RPC_LIBRARY discord-rpc PATHS ${CMAKE_PREFIX_PATH}/lib)
+    if(DISCORD_RPC_LIBRARY)
+        target_sources(dunecity PRIVATE misc/DiscordManager.cpp)
+        target_compile_definitions(dunecity PRIVATE HAS_DISCORD_RPC)
     endif()
 endif()
 
-# Find discord-rpc for Discord Rich Presence (optional)
-find_library(DISCORD_RPC_LIBRARY discord-rpc PATHS ${CMAKE_PREFIX_PATH}/lib)
-if(DISCORD_RPC_LIBRARY)
-    target_sources(dunecity PRIVATE misc/DiscordManager.cpp)
-    target_compile_definitions(dunecity PRIVATE HAS_DISCORD_RPC)
-endif()
-
 # Link libraries
-# vcpkg provides modern CMake targets for SDL2
-target_link_libraries(dunecity
-    PRIVATE
-        $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main>
-        $<IF:$<TARGET_EXISTS:SDL2_mixer::SDL2_mixer>,SDL2_mixer::SDL2_mixer,SDL2_mixer::SDL2_mixer-static>
-        $<IF:$<TARGET_EXISTS:SDL2_ttf::SDL2_ttf>,SDL2_ttf::SDL2_ttf,SDL2_ttf::SDL2_ttf-static>
-        $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>
-        CURL::libcurl
-        $<IF:$<TARGET_EXISTS:miniupnpc::miniupnpc>,miniupnpc::miniupnpc,${MINIUPNPC_LIBRARY}>
-        $<$<BOOL:${DISCORD_RPC_LIBRARY}>:${DISCORD_RPC_LIBRARY}>
-        $<$<PLATFORM_ID:Android>:c++_shared>
-)
+if(EMSCRIPTEN)
+    set_target_properties(dunecity PROPERTIES SUFFIX ".html")
+    set_property(TARGET dunecity APPEND PROPERTY LINK_DEPENDS
+        "${CMAKE_SOURCE_DIR}/web/shell.html")
+    target_compile_options(dunecity PRIVATE
+        "SHELL:-sUSE_SDL=2"
+        "SHELL:-sUSE_SDL_MIXER=2"
+        "SHELL:-sUSE_SDL_TTF=2"
+    )
+    target_link_options(dunecity PRIVATE
+        "SHELL:-sUSE_SDL=2"
+        "SHELL:-sUSE_SDL_MIXER=2"
+        "SHELL:-sUSE_SDL_TTF=2"
+        "SHELL:-sASYNCIFY=1"
+        "SHELL:-sALLOW_MEMORY_GROWTH=1"
+        "SHELL:-sINITIAL_MEMORY=268435456"
+        "SHELL:-sMAXIMUM_MEMORY=2147483648"
+        "SHELL:-sSTACK_SIZE=5242880"
+        "SHELL:-sFORCE_FILESYSTEM=1"
+        "SHELL:-sEXIT_RUNTIME=0"
+        "SHELL:-sEXPORTED_RUNTIME_METHODS=['FS']"
+        "SHELL:-lidbfs.js"
+        "SHELL:--shell-file ${CMAKE_SOURCE_DIR}/web/shell.html"
+        "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/data@/"
+        "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/config@/config"
+        "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/imported_sprites@/imported_sprites"
+    )
+else()
+    # vcpkg provides modern CMake targets for SDL2.
+    target_link_libraries(dunecity
+        PRIVATE
+            $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main>
+            $<IF:$<TARGET_EXISTS:SDL2_mixer::SDL2_mixer>,SDL2_mixer::SDL2_mixer,SDL2_mixer::SDL2_mixer-static>
+            $<IF:$<TARGET_EXISTS:SDL2_ttf::SDL2_ttf>,SDL2_ttf::SDL2_ttf,SDL2_ttf::SDL2_ttf-static>
+            $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>
+            CURL::libcurl
+            $<IF:$<TARGET_EXISTS:miniupnpc::miniupnpc>,miniupnpc::miniupnpc,${MINIUPNPC_LIBRARY}>
+            $<$<BOOL:${DISCORD_RPC_LIBRARY}>:${DISCORD_RPC_LIBRARY}>
+            $<$<PLATFORM_ID:Android>:c++_shared>
+    )
+endif()
 
 if(WIN32)
     target_link_libraries(dunecity
@@ -562,7 +595,7 @@ if(APPLE)
         COMMAND codesign --force --deep --sign - "$<TARGET_BUNDLE_DIR:dunecity>"
         COMMENT "Code signing app bundle with ad-hoc signature"
     )
-else()
+elseif(NOT EMSCRIPTEN)
     if(WIN32)
         set(BUILD_RUNTIME_DIR "$<TARGET_FILE_DIR:dunecity>")
     else()
@@ -612,6 +645,7 @@ endif()
 
 # Install data directory
 # For macOS bundles, data files are already inside the .app via POST_BUILD commands
+if(NOT EMSCRIPTEN)
 if(WIN32)
     # Windows: install PAK files and data to share/DuneLegacy where game expects them
     # Use data directory which has all PAK files
@@ -801,3 +835,4 @@ endif()
 
 # DUNELEGACY_DATADIR is set at the top of this file (before configure_file)
 # only for Linux. Windows and macOS use SDL_GetBasePath() at runtime.
+endif()

@@ -54,12 +54,14 @@ option(DUNECITY_BUILD_TESTS "Build test suite" OFF)
 option(DUNECITY_ENABLE_PCH "Enable precompiled headers" ON)
 option(DUNECITY_STATIC_RUNTIME "Use static runtime libraries" OFF)
 
-# Find required packages
-# When using vcpkg, these will be automatically found via CMAKE_TOOLCHAIN_FILE
-find_package(SDL2 CONFIG REQUIRED)
-find_package(SDL2_mixer CONFIG REQUIRED)
-find_package(SDL2_ttf CONFIG REQUIRED)
-find_package(CURL REQUIRED)
+# Native dependencies come from vcpkg. Emscripten supplies browser ports for
+# SDL and HTTP is handled through the browser fetch layer.
+if(NOT EMSCRIPTEN)
+    find_package(SDL2 CONFIG REQUIRED)
+    find_package(SDL2_mixer CONFIG REQUIRED)
+    find_package(SDL2_ttf CONFIG REQUIRED)
+    find_package(CURL REQUIRED)
+endif()
 
 # Platform-specific settings
 if(WIN32)
@@ -85,7 +87,7 @@ if(WIN32)
             set(PCH_HEADER "${CMAKE_SOURCE_DIR}/IDE/VC/stdafx.h")
         endif()
     endif()
-else()
+elseif(NOT EMSCRIPTEN)
     # Unix-like systems
     find_package(Threads REQUIRED)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
@@ -120,7 +122,7 @@ endif()
 
 # Create a custom target for copying data files (non-macOS platforms)
 # macOS bundles handle data copying in src/CMakeLists.txt
-if(NOT APPLE)
+if(NOT APPLE AND NOT EMSCRIPTEN)
     add_custom_target(copy_data ALL
         COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_SOURCE_DIR}/data/"
@@ -132,6 +134,10 @@ if(NOT APPLE)
     add_dependencies(copy_data dunecity)
 endif()
 
+
+# Browser builds are copied directly into the website by package-web.ps1 and
+# do not use the native install or CPack rules below.
+if(NOT EMSCRIPTEN)
 
 # Platform-specific install configuration
 if(WIN32)
@@ -369,3 +375,5 @@ else()
 endif()
 
 include(CPack) 
+
+endif()

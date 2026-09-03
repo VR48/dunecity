@@ -20,6 +20,7 @@
 #include <misc/SDL2pp.h>
 
 #include <stdlib.h>
+#include <limits>
 #include <string>
 
 
@@ -42,6 +43,18 @@ Pakfile::Pakfile(const std::string& pakfilename, bool write)
 
         try {
             readIndex();
+#ifdef __EMSCRIPTEN__
+            const Sint64 pakSize = SDL_RWsize(fPakFile);
+            if(pakSize <= 0 || static_cast<uint64_t>(pakSize) > std::numeric_limits<size_t>::max()) {
+                THROW(io_error, "Pakfile::Pakfile(): Invalid size for %s!", pakfilename.c_str());
+            }
+
+            webPakData.resize(static_cast<size_t>(pakSize));
+            if(SDL_RWseek(fPakFile, 0, RW_SEEK_SET) < 0
+                || SDL_RWread(fPakFile, webPakData.data(), 1, webPakData.size()) != webPakData.size()) {
+                THROW(io_error, "Pakfile::Pakfile(): Cannot cache %s for browser access!", pakfilename.c_str());
+            }
+#endif
         } catch (std::exception&) {
             SDL_RWclose(fPakFile);
             throw;
@@ -188,6 +201,21 @@ sdl2::RWops_ptr Pakfile::openFile(const std::string& filename) {
         THROW(io_error, "Pakfile::openFile(): Cannot find file with name '%s' in this PAK file!", filename.c_str());
     }
 
+#ifdef __EMSCRIPTEN__
+    const PakFileEntry& entry = fileEntries[static_cast<size_t>(index)];
+    const uint64_t entryLength = static_cast<uint64_t>(entry.endOffset) - entry.startOffset + 1;
+    if(entry.endOffset < entry.startOffset
+        || entry.endOffset >= webPakData.size()
+        || entryLength > static_cast<uint64_t>(std::numeric_limits<int>::max())) {
+        THROW(io_error, "Pakfile::openFile(): Invalid browser entry for '%s'!", filename.c_str());
+    }
+
+    SDL_RWops* pRWop = SDL_RWFromConstMem(webPakData.data() + entry.startOffset, static_cast<int>(entryLength));
+    if(pRWop == nullptr) {
+        THROW(io_error, "Pakfile::openFile(): Cannot open browser memory stream for '%s'!", filename.c_str());
+    }
+    return sdl2::RWops_ptr{ pRWop };
+#else
     // alloc RWop
     SDL_RWops *pRWop;
     if((pRWop = SDL_AllocRW()) == nullptr) {
@@ -210,6 +238,7 @@ sdl2::RWops_ptr Pakfile::openFile(const std::string& filename) {
     pRWop->hidden.unknown.data1 = (void*) pRWopData;
 
     return sdl2::RWops_ptr{ pRWop };
+#endif
 }
 
 bool Pakfile::exists(const std::string& filename) const {

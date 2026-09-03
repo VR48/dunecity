@@ -61,6 +61,13 @@ const std::array<const char*, static_cast<size_t>(GFXManager::EnhancedUnitState:
     "DamageExploded", "DamageAftermath", "DamageDissipation"
 };
 
+const std::array<const char*, static_cast<size_t>(GFXManager::EnhancedBuildingState::Count)>
+kEnhancedBuildingStateNames = {
+    "Placement", "Construction", "Idle", "Working", "Damaged", "Repair", "Destroyed"
+};
+
+constexpr Uint32 kDune2RVisualFadeMs = 350;
+
 int enhancedAnimationKey(GFXManager::EnhancedUnitState state, int direction) {
     return static_cast<int>(state) * kEnhancedDirectionCount + direction;
 }
@@ -6927,6 +6934,15 @@ bool GFXManager::drawHDObjPic(unsigned int id, int house, unsigned int z,
         return false;
     }
 
+    Uint8 blend = SDL_ALPHA_OPAQUE;
+    if(ModManager::instance().isInitialized()
+       && ModManager::instance().getActiveModName() == "Dune2R") {
+        blend = getDune2RVisualBlend();
+        if(blend == 0) {
+            return false;
+        }
+    }
+
     if(!loadHDObjPicOverride(id)) {
         return false;
     }
@@ -6979,8 +6995,88 @@ bool GFXManager::drawHDObjPic(unsigned int id, int house, unsigned int z,
         destH
     };
 
+    SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+    SDL_SetTextureAlphaMod(texture, blend);
     SDL_RenderCopy(renderer, texture, &source, &dest);
+    SDL_SetTextureAlphaMod(texture, SDL_ALPHA_OPAQUE);
     return true;
+}
+
+void GFXManager::loadDune2RVisualPreference() {
+    if(dune2rVisualPreferenceLoaded) {
+        return;
+    }
+    dune2rVisualPreferenceLoaded = true;
+    dune2rVisualTargetEnabled = true;
+    try {
+        INIFile config(getConfigFilepath());
+        dune2rVisualTargetEnabled = config.getBoolValue(
+            "Dune2R", "Enhanced Visuals", true);
+    } catch(const std::exception& e) {
+        SDL_Log("GFXManager: Could not load Dune2R visual preference: %s", e.what());
+    }
+    dune2rVisualBlend = dune2rVisualTargetEnabled ? SDL_ALPHA_OPAQUE : 0;
+}
+
+Uint8 GFXManager::getDune2RVisualBlend() {
+    if(!ModManager::instance().isInitialized()
+       || ModManager::instance().getActiveModName() != "Dune2R") {
+        return 0;
+    }
+    loadDune2RVisualPreference();
+    if(!dune2rVisualTransitionActive) {
+        return dune2rVisualBlend;
+    }
+
+    const Uint32 elapsed = SDL_GetTicks() - dune2rVisualTransitionStartTicks;
+    if(elapsed >= kDune2RVisualFadeMs) {
+        dune2rVisualBlend = dune2rVisualTargetEnabled ? SDL_ALPHA_OPAQUE : 0;
+        dune2rVisualTransitionActive = false;
+        return dune2rVisualBlend;
+    }
+
+    const int target = dune2rVisualTargetEnabled ? SDL_ALPHA_OPAQUE : 0;
+    const int start = dune2rVisualTransitionStartBlend;
+    dune2rVisualBlend = static_cast<Uint8>(std::clamp(
+        start + (target - start) * static_cast<int>(elapsed)
+                    / static_cast<int>(kDune2RVisualFadeMs),
+        0, static_cast<int>(SDL_ALPHA_OPAQUE)));
+    return dune2rVisualBlend;
+}
+
+bool GFXManager::isDune2RVisualsEnabled() {
+    loadDune2RVisualPreference();
+    return dune2rVisualTargetEnabled;
+}
+
+void GFXManager::setDune2RVisualsEnabled(bool enabled) {
+    if(!ModManager::instance().isInitialized()
+       || ModManager::instance().getActiveModName() != "Dune2R") {
+        return;
+    }
+    const Uint8 currentBlend = getDune2RVisualBlend();
+    if(enabled == dune2rVisualTargetEnabled && !dune2rVisualTransitionActive) {
+        return;
+    }
+    dune2rVisualTargetEnabled = enabled;
+    dune2rVisualTransitionStartBlend = currentBlend;
+    dune2rVisualTransitionStartTicks = SDL_GetTicks();
+    dune2rVisualTransitionActive = true;
+
+    try {
+        const std::string path = getConfigFilepath();
+        INIFile config(path);
+        config.setBoolValue("Dune2R", "Enhanced Visuals", enabled);
+        if(!config.saveChangesTo(path)) {
+            SDL_Log("GFXManager: Could not save Dune2R visual preference to %s", path.c_str());
+        }
+    } catch(const std::exception& e) {
+        SDL_Log("GFXManager: Could not save Dune2R visual preference: %s", e.what());
+    }
+}
+
+void GFXManager::toggleDune2RVisuals() {
+    setDune2RVisualsEnabled(!isDune2RVisualsEnabled());
 }
 
 void GFXManager::loadEnhancedUnitManifests() {
@@ -7089,6 +7185,162 @@ void GFXManager::loadEnhancedUnitManifests() {
         } catch(const std::exception& e) {
             SDL_Log("GFXManager: Failed to read enhanced unit manifest %s: %s",
                     manifestPath.string().c_str(), e.what());
+        }
+    }
+}
+
+void GFXManager::loadEnhancedWorldManifests() {
+    invalidateEnhancedUnitMountsIfChanged();
+    if(enhancedWorldManifestsLoaded) {
+        return;
+    }
+    enhancedWorldManifestsLoaded = true;
+    enhancedBuildingDefinitions.clear();
+    enhancedTerrainDefinitions.clear();
+
+    if(!ModManager::instance().isInitialized()
+       || ModManager::instance().getActiveModName() != "Dune2R") {
+        return;
+    }
+
+    const std::filesystem::path unitsRoot =
+        std::filesystem::path(ModManager::instance().getModPath("Dune2R"))
+        / "graphics_hd" / "units";
+    if(!std::filesystem::is_directory(unitsRoot)) {
+        return;
+    }
+
+    for(const auto& entry : std::filesystem::directory_iterator(unitsRoot)) {
+        if(!entry.is_directory()) {
+            continue;
+        }
+
+        const std::filesystem::path tileManifestPath = entry.path() / "tile.ini";
+        if(std::filesystem::is_regular_file(tileManifestPath)) {
+            try {
+                INIFile manifest(tileManifestPath.string());
+                EnhancedTerrainDefinition definition;
+                definition.terrainType = manifest.getIntValue("Tile", "TerrainType", -1);
+                definition.sourceUnit = manifest.getStringValue(
+                    "Tile", "SourceUnit", entry.path().filename().string());
+                const int variants = manifest.getIntValue("Tile", "Variants", 0);
+                if(definition.terrainType < 0 || variants != 16) {
+                    SDL_Log("GFXManager: Skipping invalid terrain manifest %s",
+                            tileManifestPath.string().c_str());
+                } else {
+                    bool complete = true;
+                    for(int variant = 0; variant < 16; ++variant) {
+                        const std::string section = "Variant." + std::to_string(variant);
+                        const std::string imageName = manifest.getStringValue(section, "Image", "");
+                        const std::filesystem::path imagePath =
+                            std::filesystem::weakly_canonical(entry.path() / imageName);
+                        if(imageName.empty() || !isPathInside(imagePath, unitsRoot)
+                           || !std::filesystem::is_regular_file(imagePath)) {
+                            complete = false;
+                            break;
+                        }
+                        definition.variants[variant].imagePath = imagePath.string();
+                    }
+                    if(complete) {
+                        enhancedTerrainDefinitions.push_back(std::move(definition));
+                        SDL_Log("GFXManager: Registered enhanced terrain type %d from %s",
+                                enhancedTerrainDefinitions.back().terrainType,
+                                tileManifestPath.string().c_str());
+                    } else {
+                        SDL_Log("GFXManager: Terrain manifest %s is missing a topology image",
+                                tileManifestPath.string().c_str());
+                    }
+                }
+            } catch(const std::exception& e) {
+                SDL_Log("GFXManager: Failed to read terrain manifest %s: %s",
+                        tileManifestPath.string().c_str(), e.what());
+            }
+        }
+
+        const std::filesystem::path buildingManifestPath = entry.path() / "building.ini";
+        if(!std::filesystem::is_regular_file(buildingManifestPath)) {
+            continue;
+        }
+        try {
+            INIFile manifest(buildingManifestPath.string());
+            EnhancedBuildingDefinition definition;
+            definition.itemID = manifest.getIntValue("Building", "ItemID", -1);
+            definition.houseID = manifest.getIntValue("Building", "HouseID", -1);
+            definition.sourceUnit = manifest.getStringValue(
+                "Building", "SourceUnit", entry.path().filename().string());
+            definition.footprintWidth = manifest.getIntValue("Building", "FootprintWidth", 0);
+            definition.footprintHeight = manifest.getIntValue("Building", "FootprintHeight", 0);
+            if(definition.itemID < 0 || definition.houseID < -1
+               || definition.houseID >= static_cast<int>(NUM_HOUSES)
+               || definition.footprintWidth <= 0 || definition.footprintHeight <= 0) {
+                SDL_Log("GFXManager: Skipping invalid building manifest %s",
+                        buildingManifestPath.string().c_str());
+                continue;
+            }
+
+            for(int stateIndex = 0;
+                stateIndex < static_cast<int>(kEnhancedBuildingStateNames.size());
+                ++stateIndex) {
+                const std::string section = std::string("State.")
+                                            + kEnhancedBuildingStateNames[stateIndex];
+                const int frameCount = manifest.getIntValue(section, "Frames", 0);
+                const int atlasCount = manifest.getIntValue(section, "AtlasCount", 0);
+                if(frameCount <= 0 || atlasCount <= 0 || atlasCount > 64) {
+                    continue;
+                }
+
+                EnhancedBuildingAnimation animation;
+                animation.frameCount = frameCount;
+                animation.frameMs = std::max(1, manifest.getIntValue(section, "FrameMs", 100));
+                animation.frameWidth = manifest.getIntValue(section, "FrameWidth", 0);
+                animation.frameHeight = manifest.getIntValue(section, "FrameHeight", 0);
+                animation.anchorX = manifest.getIntValue(section, "AnchorX", animation.frameWidth / 2);
+                animation.anchorY = manifest.getIntValue(section, "AnchorY", animation.frameHeight);
+                animation.loop = manifest.getBoolValue(section, "Loop", true);
+                bool valid = animation.frameWidth > 0 && animation.frameHeight > 0;
+                int coveredFrames = 0;
+                for(int chunkIndex = 0; valid && chunkIndex < atlasCount; ++chunkIndex) {
+                    EnhancedAtlasChunk chunk;
+                    const std::string suffix = std::to_string(chunkIndex);
+                    const std::string atlasName = manifest.getStringValue(
+                        section, "Atlas." + suffix, "");
+                    const std::filesystem::path atlasPath =
+                        std::filesystem::weakly_canonical(entry.path() / atlasName);
+                    chunk.firstFrame = manifest.getIntValue(
+                        section, "FirstFrame." + suffix, -1);
+                    chunk.frameCount = manifest.getIntValue(
+                        section, "ChunkFrames." + suffix, 0);
+                    chunk.columns = manifest.getIntValue(section, "Columns." + suffix, 0);
+                    chunk.rows = manifest.getIntValue(section, "Rows." + suffix, 0);
+                    if(atlasName.empty() || !isPathInside(atlasPath, unitsRoot)
+                       || !std::filesystem::is_regular_file(atlasPath)
+                       || chunk.firstFrame != coveredFrames || chunk.frameCount <= 0
+                       || chunk.columns <= 0 || chunk.rows <= 0
+                       || chunk.frameCount > chunk.columns * chunk.rows) {
+                        valid = false;
+                        break;
+                    }
+                    chunk.atlasPath = atlasPath.string();
+                    coveredFrames += chunk.frameCount;
+                    animation.chunks.push_back(std::move(chunk));
+                }
+                if(valid && coveredFrames == frameCount) {
+                    definition.animations.emplace(stateIndex, std::move(animation));
+                } else {
+                    SDL_Log("GFXManager: Skipping invalid %s section in %s",
+                            section.c_str(), buildingManifestPath.string().c_str());
+                }
+            }
+
+            if(!definition.animations.empty()) {
+                SDL_Log("GFXManager: Registered enhanced building ItemID=%d HouseID=%d from %s",
+                        definition.itemID, definition.houseID,
+                        buildingManifestPath.string().c_str());
+                enhancedBuildingDefinitions.push_back(std::move(definition));
+            }
+        } catch(const std::exception& e) {
+            SDL_Log("GFXManager: Failed to read building manifest %s: %s",
+                    buildingManifestPath.string().c_str(), e.what());
         }
     }
 }
@@ -7262,6 +7514,9 @@ void GFXManager::invalidateEnhancedUnitMountsIfChanged(bool force) {
     enhancedUnitMountRevision = revision;
     enhancedUnitDefinitions.clear();
     enhancedUnitManifestsLoaded = false;
+    enhancedBuildingDefinitions.clear();
+    enhancedTerrainDefinitions.clear();
+    enhancedWorldManifestsLoaded = false;
     enhancedUnitRenderModes.clear();
     enhancedRenderModesLoaded = false;
     SDL_Log("GFXManager: Dune2R mounted-unit cache invalidated (%s)",
@@ -7271,6 +7526,7 @@ void GFXManager::invalidateEnhancedUnitMountsIfChanged(bool force) {
 void GFXManager::reloadEnhancedUnitMounts() {
     invalidateEnhancedUnitMountsIfChanged(true);
     loadEnhancedUnitManifests();
+    loadEnhancedWorldManifests();
 }
 
 Uint32 GFXManager::getEnhancedUnitAnimationDuration(int itemID, int house,
@@ -7297,13 +7553,180 @@ Uint32 GFXManager::getEnhancedUnitAnimationDuration(int itemID, int house,
     return 0;
 }
 
+bool GFXManager::drawEnhancedTerrain(int terrainType, int variant,
+                                     const SDL_Rect& destination) {
+    const Uint8 blend = getDune2RVisualBlend();
+    if(blend == 0 || variant < 0 || variant >= 16) {
+        return false;
+    }
+    loadEnhancedWorldManifests();
+    for(auto& definition : enhancedTerrainDefinitions) {
+        if(definition.terrainType != terrainType) {
+            continue;
+        }
+        auto& visual = definition.variants[variant];
+        if(visual.texture == nullptr) {
+            if(visual.loadAttempted) {
+                return false;
+            }
+            visual.loadAttempted = true;
+            auto rwops = sdl2::RWops_ptr{ SDL_RWFromFile(visual.imagePath.c_str(), "rb") };
+            auto surface = rwops ? LoadPNG_RW(rwops.get()) : nullptr;
+            if(!surface) {
+                SDL_Log("GFXManager: Failed to load enhanced terrain image %s",
+                        visual.imagePath.c_str());
+                return false;
+            }
+            visual.texture = convertSurfaceToTexture(surface.get());
+            if(visual.texture == nullptr) {
+                return false;
+            }
+        }
+        SDL_Texture* texture = visual.texture.get();
+        SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+        SDL_SetTextureAlphaMod(texture, blend);
+        SDL_RenderCopy(renderer, texture, nullptr, &destination);
+        SDL_SetTextureAlphaMod(texture, SDL_ALPHA_OPAQUE);
+        return true;
+    }
+    return false;
+}
+
+Uint32 GFXManager::getEnhancedBuildingAnimationDuration(
+    int itemID, int house, EnhancedBuildingState state) {
+    loadEnhancedWorldManifests();
+    for(const int requestedHouse : {house, -1}) {
+        for(const auto& definition : enhancedBuildingDefinitions) {
+            if(definition.itemID != itemID || definition.houseID != requestedHouse) {
+                continue;
+            }
+            const auto found = definition.animations.find(static_cast<int>(state));
+            if(found != definition.animations.end()) {
+                return static_cast<Uint32>(found->second.frameCount)
+                       * static_cast<Uint32>(found->second.frameMs);
+            }
+        }
+    }
+    return 0;
+}
+
+bool GFXManager::drawEnhancedBuilding(int itemID, int house, unsigned int z,
+                                      EnhancedBuildingState state,
+                                      Uint32 elapsedMs, int anchorX, int anchorY) {
+    const Uint8 blend = getDune2RVisualBlend();
+    if(blend == 0 || z >= NUM_ZOOMLEVEL) {
+        return false;
+    }
+    loadEnhancedWorldManifests();
+
+    EnhancedBuildingDefinition* selectedDefinition = nullptr;
+    EnhancedBuildingAnimation* selectedAnimation = nullptr;
+    const std::array<EnhancedBuildingState, 4> fallbacks = {
+        state,
+        state == EnhancedBuildingState::Working ? EnhancedBuildingState::Idle : state,
+        state == EnhancedBuildingState::Repair ? EnhancedBuildingState::Idle : state,
+        EnhancedBuildingState::Idle,
+    };
+    for(const int requestedHouse : {house, -1}) {
+        for(auto& definition : enhancedBuildingDefinitions) {
+            if(definition.itemID != itemID || definition.houseID != requestedHouse) {
+                continue;
+            }
+            for(const auto candidate : fallbacks) {
+                const auto found = definition.animations.find(static_cast<int>(candidate));
+                if(found != definition.animations.end()) {
+                    selectedDefinition = &definition;
+                    selectedAnimation = &found->second;
+                    break;
+                }
+            }
+            if(selectedAnimation != nullptr) {
+                break;
+            }
+        }
+        if(selectedAnimation != nullptr) {
+            break;
+        }
+    }
+    if(selectedDefinition == nullptr || selectedAnimation == nullptr) {
+        return false;
+    }
+
+    Uint32 frame = elapsedMs / static_cast<Uint32>(selectedAnimation->frameMs);
+    if(selectedAnimation->loop) {
+        frame %= static_cast<Uint32>(selectedAnimation->frameCount);
+    } else {
+        frame = std::min(frame, static_cast<Uint32>(selectedAnimation->frameCount - 1));
+    }
+
+    EnhancedAtlasChunk* selectedChunk = nullptr;
+    for(auto& chunk : selectedAnimation->chunks) {
+        if(static_cast<int>(frame) >= chunk.firstFrame
+           && static_cast<int>(frame) < chunk.firstFrame + chunk.frameCount) {
+            selectedChunk = &chunk;
+            break;
+        }
+    }
+    if(selectedChunk == nullptr) {
+        return false;
+    }
+    if(selectedChunk->texture == nullptr) {
+        if(selectedChunk->loadAttempted) {
+            return false;
+        }
+        selectedChunk->loadAttempted = true;
+        auto rwops = sdl2::RWops_ptr{ SDL_RWFromFile(selectedChunk->atlasPath.c_str(), "rb") };
+        auto surface = rwops ? LoadPNG_RW(rwops.get()) : nullptr;
+        if(!surface
+           || surface->w != selectedChunk->columns * selectedAnimation->frameWidth
+           || surface->h != selectedChunk->rows * selectedAnimation->frameHeight) {
+            SDL_Log("GFXManager: Failed to load enhanced building atlas %s",
+                    selectedChunk->atlasPath.c_str());
+            return false;
+        }
+        selectedChunk->texture = convertSurfaceToTexture(surface.get());
+        if(selectedChunk->texture == nullptr) {
+            return false;
+        }
+    }
+
+    const int localFrame = static_cast<int>(frame) - selectedChunk->firstFrame;
+    SDL_Rect source = {
+        (localFrame % selectedChunk->columns) * selectedAnimation->frameWidth,
+        (localFrame / selectedChunk->columns) * selectedAnimation->frameHeight,
+        selectedAnimation->frameWidth,
+        selectedAnimation->frameHeight,
+    };
+    const int footprintWidth = selectedDefinition->footprintWidth * TILESIZE
+                               * static_cast<int>(z + 1);
+    const double scale = static_cast<double>(footprintWidth)
+                         / static_cast<double>(selectedAnimation->frameWidth);
+    const int destinationWidth = std::max(1, footprintWidth);
+    const int destinationHeight = std::max(
+        1, static_cast<int>(lround(selectedAnimation->frameHeight * scale)));
+    SDL_Rect destination = {
+        anchorX - static_cast<int>(lround(selectedAnimation->anchorX * scale)),
+        anchorY - static_cast<int>(lround(selectedAnimation->anchorY * scale)),
+        destinationWidth,
+        destinationHeight,
+    };
+    SDL_Texture* texture = selectedChunk->texture.get();
+    SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+    SDL_SetTextureAlphaMod(texture, blend);
+    SDL_RenderCopy(renderer, texture, &source, &destination);
+    SDL_SetTextureAlphaMod(texture, SDL_ALPHA_OPAQUE);
+    return true;
+}
+
 bool GFXManager::drawEnhancedUnit(int itemID, int house, unsigned int z,
                                   EnhancedUnitState state, int direction,
                                   Uint32 elapsedMs, int x, int y) {
-    loadEnhancedUnitManifests();
-    if(z >= NUM_ZOOMLEVEL || direction < 0 || direction >= kEnhancedDirectionCount) {
+    const Uint8 blend = getDune2RVisualBlend();
+    if(blend == 0 || z >= NUM_ZOOMLEVEL
+       || direction < 0 || direction >= kEnhancedDirectionCount) {
         return false;
     }
+    loadEnhancedUnitManifests();
 
     EnhancedUnitDefinition* selectedDefinition = nullptr;
     EnhancedUnitAnimation* selectedAnimation = nullptr;
@@ -7383,7 +7806,10 @@ bool GFXManager::drawEnhancedUnit(int itemID, int house, unsigned int z,
         destW,
         destH
     };
+    SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+    SDL_SetTextureAlphaMod(texture, blend);
     SDL_RenderCopy(renderer, texture, &source, &dest);
+    SDL_SetTextureAlphaMod(texture, SDL_ALPHA_OPAQUE);
     return true;
 }
 

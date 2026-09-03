@@ -27,7 +27,11 @@
 #include <cstdlib>
 #include <cstdio>
 #include <filesystem>
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#else
 #include <curl/curl.h>
+#endif
 #include <enet/enet.h>
 
 #ifdef __ANDROID__
@@ -35,6 +39,7 @@
 #include <unistd.h>
 #endif
 
+#ifndef __EMSCRIPTEN__
 namespace {
 
 const char* getBundledCertificateBundle() {
@@ -171,6 +176,7 @@ int curlDownloadProgressCallback(void* userdata, curl_off_t downloadTotal,
 }
 
 } // namespace
+#endif
 
 std::string getDomainFromURL(const std::string& url) {
     size_t domainStart = 0;
@@ -246,6 +252,7 @@ std::string percentEncode(const std::string & s) {
 }
 
 
+#ifndef __EMSCRIPTEN__
 // Callback function for libcurl to write data
 static size_t curlWriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
     size_t totalSize = size * nmemb;
@@ -253,6 +260,7 @@ static size_t curlWriteCallback(void* contents, size_t size, size_t nmemb, void*
     str->append(static_cast<char*>(contents), totalSize);
     return totalSize;
 }
+#endif
 
 std::string loadFromHttp(const std::string& url, const std::map<std::string, std::string>& parameters) {
     // Build URL with parameters
@@ -268,6 +276,21 @@ std::string loadFromHttp(const std::string& url, const std::map<std::string, std
         fullUrl += percentEncode(param.first) + "=" + percentEncode(param.second);
     }
     
+#ifdef __EMSCRIPTEN__
+    void* responseBuffer = nullptr;
+    int responseSize = 0;
+    int requestError = 0;
+    emscripten_wget_data(fullUrl.c_str(), &responseBuffer, &responseSize, &requestError);
+    if(requestError != 0 || responseBuffer == nullptr) {
+        std::free(responseBuffer);
+        THROW(std::runtime_error, "Browser HTTP request failed");
+    }
+
+    const std::string responseData(static_cast<const char*>(responseBuffer),
+                                   static_cast<size_t>(responseSize));
+    std::free(responseBuffer);
+    return responseData;
+#else
     // Initialize curl
     CURL* curl = curl_easy_init();
     if(!curl) {
@@ -313,6 +336,7 @@ std::string loadFromHttp(const std::string& url, const std::map<std::string, std
     }
     
     return responseData;
+#endif
 }
 
 std::string loadFromHttp(const std::string& domain, const std::string& filepath, unsigned short port) {
@@ -348,6 +372,21 @@ void downloadHttpFile(const std::string& url, const std::string& filename,
         }
     }
 
+#ifdef __EMSCRIPTEN__
+    if(progress && !progress(0, 0)) {
+        THROW(std::runtime_error, "Download cancelled");
+    }
+    if(emscripten_wget(url.c_str(), filename.c_str()) != 0) {
+        THROW(std::runtime_error, "Browser HTTP download failed");
+    }
+    uint64_t size = 0;
+    if(std::filesystem::is_regular_file(output, error)) {
+        size = std::filesystem::file_size(output, error);
+    }
+    if(progress && !progress(size, size)) {
+        THROW(std::runtime_error, "Download cancelled");
+    }
+#else
     FileDownloadContext context;
     context.filename = output;
     context.progress = progress;
@@ -411,6 +450,7 @@ void downloadHttpFile(const std::string& url, const std::string& filename,
     if(status != 200 && status != 206) {
         THROW(std::runtime_error, "Server Error: Received HTTP status code " + std::to_string(status));
     }
+#endif
 }
 
 

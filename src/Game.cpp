@@ -41,6 +41,7 @@ std::mutex Game::performanceLogMutex;
 #include <misc/IMemoryStream.h>
 #include <misc/FileSystem.h>
 #include <misc/fnkdat.h>
+#include <misc/WebRuntime.h>
 #include <misc/draw_util.h>
 #include <misc/md5.h>
 #include <misc/exceptions.h>
@@ -2665,6 +2666,7 @@ void Game::runMainLoop() {
             lastTimingLogMs = now;
         }
 
+        WebRuntime::yieldToBrowser();
     } while (!bQuitGame && !finishedLevel);
 }
 
@@ -3274,6 +3276,17 @@ void Game::cycleDune2RZoom() {
                             : currentZoomlevel == 1 ? 0
                             : 2;
     applyDune2RZoom(nextZoomLevel);
+}
+
+void Game::toggleDune2RVisuals() {
+    if(!ModManager::instance().isInitialized()
+       || ModManager::instance().getActiveModName() != "Dune2R") {
+        return;
+    }
+    pGFXManager->toggleDune2RVisuals();
+    addToNewsTicker(pGFXManager->isDune2RVisualsEnabled()
+        ? "Dune2R visuals enabled"
+        : "Classic visuals enabled");
 }
 
 void Game::applyDune2RZoom(int zoomLevel) {

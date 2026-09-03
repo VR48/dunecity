@@ -49,6 +49,7 @@
 #include <misc/format.h>
 #include <misc/SDL2pp.h>
 #include <misc/md5.h>
+#include <misc/WebRuntime.h>
 
 #include <players/QuantBotConfig.h>
 #include <mod/ModManager.h>
@@ -133,9 +134,23 @@ void setVideoMode(int displayIndex)
 {
     int videoFlags = 0;
 
+#ifdef __EMSCRIPTEN__
+    // Keep SDL's logical surface independent from the browser viewport. CSS
+    // owns presentation size and fullscreen so the website toolbar remains
+    // available and the game keeps its native 4:3 coordinate system.
+    videoFlags = SDL_WINDOW_RESIZABLE;
+    settings.video.fullscreen = false;
+    settings.video.physicalWidth = 640;
+    settings.video.physicalHeight = 480;
+    settings.video.width = 640;
+    settings.video.height = 480;
+#else
     if(settings.video.fullscreen) {
         videoFlags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
     }
+#ifdef __ANDROID__
+    videoFlags |= SDL_WINDOW_RESIZABLE;
+#endif
 
     SDL_DisplayMode targetDisplayMode = { 0, settings.video.physicalWidth, settings.video.physicalHeight, 0, nullptr};
     SDL_DisplayMode closestDisplayMode;
@@ -170,6 +185,14 @@ void setVideoMode(int displayIndex)
         if(settings.video.height < 480) settings.video.height = 480;
     }
 
+#ifdef __ANDROID__
+    // Keep the game UI stable while Android replaces the physical surface
+    // during fold, unfold, rotation, DeX, and multi-window transitions.
+    settings.video.width = 640;
+    settings.video.height = 480;
+#endif
+#endif
+
     // Prefer Direct3D on Windows, let SDL choose best renderer on other platforms
 #ifdef _WIN32
     SDL_SetHint(SDL_HINT_RENDER_DRIVER, "direct3d11");
@@ -196,7 +219,27 @@ void setVideoMode(int displayIndex)
         fprintf(stderr, "SDL_CreateRenderer failed: %s\n", SDL_GetError());
         exit(EXIT_FAILURE);
     }
+
+#ifdef __ANDROID__
+    // The Android display mode can describe the complete panel while the SDL
+    // surface is a foldable, split-screen, or desktop-mode window. The renderer
+    // output is the authoritative size after SDLActivity creates that surface.
+    int outputWidth = 0;
+    int outputHeight = 0;
+    if(SDL_GetRendererOutputSize(renderer, &outputWidth, &outputHeight) == 0 &&
+       outputWidth > 0 && outputHeight > 0) {
+        settings.video.physicalWidth = outputWidth;
+        settings.video.physicalHeight = outputHeight;
+        SDL_Log("Android SDL window: %dx%d physical, %dx%d fixed logical",
+                settings.video.physicalWidth, settings.video.physicalHeight,
+                settings.video.width, settings.video.height);
+    }
+#endif
     
+    // Browser frames are paced by the explicit Asyncify yield below. SDL's
+    // web VSync hook expects emscripten_set_main_loop(), which this legacy
+    // synchronous loop intentionally does not use.
+#ifndef __EMSCRIPTEN__
     // Set VSync after renderer creation (works better on macOS Metal)
     if(settings.video.frameLimit) {
         SDL_RenderSetVSync(renderer, 1);
@@ -205,6 +248,7 @@ void setVideoMode(int displayIndex)
         SDL_RenderSetVSync(renderer, 0);
         SDL_Log("VSync disabled");
     }
+#endif
     SDL_RenderSetLogicalSize(renderer, settings.video.width, settings.video.height);
     screenTexture = SDL_CreateTexture(renderer, SCREEN_FORMAT, SDL_TEXTUREACCESS_TARGET, settings.video.width, settings.video.height);
 
@@ -708,6 +752,7 @@ int main(int argc, char *argv[]) {
     SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "0");
 #ifdef __ANDROID__
     SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1");
+    SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
 #endif
 
     // v1.0.512: build-stamp log so Stefan can verify the binary on disk
@@ -725,7 +770,7 @@ int main(int argc, char *argv[]) {
     // Discord connected and there was no log entry to diagnose why. With
     // this handler, the crash dump is written before exit so the cause
     // can be inspected post-mortem.
-    #ifndef _WIN32
+    #if !defined(_WIN32) && !defined(__EMSCRIPTEN__)
     {
         struct sigaction sa {};
         sa.sa_sigaction = [](int sig, siginfo_t* info, void* /*ucontext*/) {
@@ -1077,30 +1122,26 @@ int main(int argc, char *argv[]) {
                 SDL_DisplayMode displayMode;
                 SDL_GetDesktopDisplayMode(currentDisplayIndex, &displayMode);
 
-                if(displayMode.w > 0 && displayMode.h > 0 &&
-                   (settings.video.physicalHeight > settings.video.physicalWidth ||
-                    settings.video.physicalWidth != displayMode.w ||
-                    settings.video.physicalHeight != displayMode.h)) {
-                    int factor = getLogicalToPhysicalResolutionFactor(displayMode.w, displayMode.h);
+                if(displayMode.w > 0 && displayMode.h > 0) {
                     settings.video.physicalWidth = displayMode.w;
                     settings.video.physicalHeight = displayMode.h;
-                    settings.video.width = std::max(640, displayMode.w / factor);
-                    settings.video.height = std::max(480, displayMode.h / factor);
-                    settings.video.fullscreen = true;
-                    settings.video.preferredZoomLevel = 1;
-
-                    SDL_Log("Android display config updated to %dx%d physical, %dx%d logical",
-                            settings.video.physicalWidth, settings.video.physicalHeight,
-                            settings.video.width, settings.video.height);
-
-                    myINIFile.setIntValue("Video","Width",settings.video.width);
-                    myINIFile.setIntValue("Video","Height",settings.video.height);
-                    myINIFile.setIntValue("Video","Physical Width",settings.video.physicalWidth);
-                    myINIFile.setIntValue("Video","Physical Height",settings.video.physicalHeight);
-                    myINIFile.setBoolValue("Video","Fullscreen",settings.video.fullscreen);
-                    myINIFile.setIntValue("Video","Preferred Zoom Level",settings.video.preferredZoomLevel);
-                    myINIFile.saveChangesTo(getConfigFilepath());
                 }
+                settings.video.width = 640;
+                settings.video.height = 480;
+                settings.video.fullscreen = true;
+                settings.video.preferredZoomLevel = 1;
+
+                SDL_Log("Android display config updated to %dx%d physical, %dx%d fixed logical",
+                        settings.video.physicalWidth, settings.video.physicalHeight,
+                        settings.video.width, settings.video.height);
+
+                myINIFile.setIntValue("Video","Width",settings.video.width);
+                myINIFile.setIntValue("Video","Height",settings.video.height);
+                myINIFile.setIntValue("Video","Physical Width",settings.video.physicalWidth);
+                myINIFile.setIntValue("Video","Physical Height",settings.video.physicalHeight);
+                myINIFile.setBoolValue("Video","Fullscreen",settings.video.fullscreen);
+                myINIFile.setIntValue("Video","Preferred Zoom Level",settings.video.preferredZoomLevel);
+                myINIFile.saveChangesTo(getConfigFilepath());
             }
 #endif
 
@@ -1192,8 +1233,10 @@ int main(int argc, char *argv[]) {
                 SDL_Log("Setting video mode...");
                 setVideoMode(currentDisplayIndex);
                 
-                // Give the renderer time to fully initialize
+                // Native renderers benefit from a short initialization pause.
+#ifndef __EMSCRIPTEN__
                 SDL_Delay(100);
+#endif
                 
                 SDL_RendererInfo rendererInfo;
                 SDL_GetRendererInfo(renderer, &rendererInfo);
@@ -1273,8 +1316,17 @@ int main(int argc, char *argv[]) {
                     //musicPlayer->changeMusic(MUSIC_INTRO);
                 }
 
+                WebRuntime::markGameReady();
+
+                // Browser visitors enter the playable menu immediately on first
+                // launch. They can still enable the original intro in Options.
+                bool shouldPlayIntro = (bFirstGamestart == true) || (settings.general.playIntro == true);
+#ifdef __EMSCRIPTEN__
+                shouldPlayIntro = settings.general.playIntro;
+#endif
+
                 // Playing intro
-                if(((bFirstGamestart == true) || (settings.general.playIntro == true)) && (bFirstInit==true)) {
+                if(shouldPlayIntro && (bFirstInit==true)) {
                     SDL_Log("Playing intro...");
                     Intro().run();
                 }

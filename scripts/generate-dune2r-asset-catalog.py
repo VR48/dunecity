@@ -10,8 +10,10 @@ from pathlib import Path
 
 
 DISPLAY_NAMES = {
+    "gravel": "Gravel Terrain Remastered",
     "harkonnendevastator": "Harkonnen Devastator Remastered",
     "ordostank": "Ordos Tank Remastered",
+    "refinery": "Atreides Refinery Remastered",
 }
 
 

@@ -35,11 +35,13 @@ The long-term vision is a toggleable graphics layer: classic art, compact
 replacement art, or enhanced animated art, with graceful fallback when a given
 unit or direction has not yet been remastered.
 
-Enhanced unit delivery uses mod-local manifests under
-`mods/Dune2R/graphics_hd/units/**`. A manifest identifies the stable unit and
-house IDs and maps idle, movement, and combat directions to transparent PNG
-atlases. The engine does not inspect the Oathkeeper Compact products for this
-path, and it never replaces base-game asset files.
+Enhanced delivery uses independently downloadable packs under
+`mods/Dune2R/graphics_hd/units/**`. A pack may contain `unit.ini`,
+`building.ini`, or `tile.ini`: units map directional states, buildings map
+footprint-anchored phase states, and terrain maps all 16 cardinal-neighbor
+topologies. The engine never replaces base-game asset files. Missing states,
+animations, or complete packs fall through to an authored still and then to
+the classic renderer.
 
 Oathkeeper keeps editable source sprites, animations, alignment, and timing in
 its own `dune2/units/<unit>` authoring cache. `~dune2mount <UnitName>` converts
@@ -50,7 +52,10 @@ rebuild. Runtime mounts are committed to Git for collaborators and release-pack
 generation, but the large atlases are excluded from the base Windows, Linux,
 and Android packages. Raw authoring material is not shipped.
 
-When Dune2R is active, the main menu exposes `Dune2R EditoR`. It lists only
+When Dune2R is active, the in-game `Classic` / `Dune2R` control crossfades the
+classic world and the enhanced world. The preference and its fade timing are
+local presentation state only; they do not enter saves or the multiplayer
+protocol. The main menu also exposes `Dune2R EditoR`. It lists only
 units and directional motion slots that have packaged Dune2R assets. Each slot
 can use the independent layered renderer, its packaged complete-unit animation,
 or a deterministic random choice refreshed on movement, facing, stop, and

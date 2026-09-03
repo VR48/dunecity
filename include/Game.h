@@ -303,6 +303,11 @@ public:
     void cycleDune2RZoom();
 
     /**
+        Crossfades local presentation between classic and Dune2R visuals.
+    */
+    void toggleDune2RVisuals();
+
+    /**
         This method selects all units/structures in the list aList.
         \param aList the list containing all the units/structures to be selected
     */

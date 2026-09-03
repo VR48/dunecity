@@ -13,7 +13,7 @@
     #pragma comment(lib, "dbghelp.lib")
     #pragma comment(lib, "shlwapi.lib")
     #pragma comment(lib, "shell32.lib")
-#elif !defined(__ANDROID__)
+#elif !defined(__ANDROID__) && !defined(__EMSCRIPTEN__)
     #include <execinfo.h>  // For backtrace (POSIX)
     #include <unistd.h>
 #else
@@ -155,7 +155,7 @@ static void signalHandler(int sig) {
     
     SymCleanup(process);
     
-#elif !defined(__ANDROID__)
+#elif !defined(__ANDROID__) && !defined(__EMSCRIPTEN__)
     // POSIX (macOS/Linux): Get stack trace using backtrace
     writeCrashLog("Stack Trace:\n");
 
@@ -173,7 +173,7 @@ static void signalHandler(int sig) {
     }
 #else
     writeCrashLog("Stack Trace:\n");
-    writeCrashLog("  (Unavailable on Android NDK build)\n");
+    writeCrashLog("  (Unavailable on this platform)\n");
 #endif
     
     writeCrashLog("\n");
@@ -219,6 +219,11 @@ static void signalHandler(int sig) {
  * Install crash handlers for all common crash signals
  */
 void installCrashHandlers(const char* logPath) {
+#ifdef __EMSCRIPTEN__
+    (void)logPath;
+    SDL_Log("Native crash signal handlers are unavailable in a web browser");
+    return;
+#else
     if(!logPath) {
         fprintf(stderr, "Warning: installCrashHandlers called with NULL logPath\n");
         return;
@@ -248,6 +253,7 @@ void installCrashHandlers(const char* logPath) {
 #endif
     
     SDL_Log("Crash handlers installed (log: %s)", logPath);
+#endif
 }
 
 /**

@@ -61,11 +61,34 @@ void Tank::blitToScreen() {
     int x = screenborder->world2screenX(realX);
     int y = screenborder->world2screenY(realY);
 
+    const Uint8 dune2rBlend = pGFXManager->getDune2RVisualBlend();
+    const bool crossfading = dune2rBlend > 0 && dune2rBlend < SDL_ALPHA_OPAQUE;
+    if(crossfading) {
+        SDL_Texture* classicBase = graphic[currentZoomlevel];
+        SDL_Rect classicBaseSource = calcSpriteSourceRect(classicBase, drawnAngle, numImagesX);
+        SDL_Rect classicBaseDest = calcSpriteDrawingRect(
+            classicBase, x, y, numImagesX, 1, HAlign::Center, VAlign::Center);
+        SDL_RenderCopy(renderer, classicBase, &classicBaseSource, &classicBaseDest);
+
+        SDL_Texture* classicTurret = turretGraphic[currentZoomlevel];
+        SDL_Rect classicTurretSource = calcSpriteSourceRect(
+            classicTurret, drawnTurretAngle, NUM_ANGLES);
+        SDL_Rect classicTurretDest = calcSpriteDrawingRect(
+            classicTurret, x, y, NUM_ANGLES, 1, HAlign::Center, VAlign::Center);
+        SDL_RenderCopy(renderer, classicTurret, &classicTurretSource, &classicTurretDest);
+    }
+
     // Enhanced unit animations are complete vehicle frames, so a successful
     // draw replaces both the shared classic chassis and turret layers.
     // Dune2R treats the complete tank as a rigid sprite: movement follows the
     // chassis while stationary aiming and combat follow the weapon direction.
     if(drawEnhancedUnitSprite(x, y, drawnTurretAngle, drawnTurretAngle)) {
+        if(isBadlyDamaged()) {
+            drawSmoke(x, y);
+        }
+        return;
+    }
+    if(crossfading) {
         if(isBadlyDamaged()) {
             drawSmoke(x, y);
         }

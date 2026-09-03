@@ -26,9 +26,8 @@
 #include <GUI/Spacer.h>
 #include <GUI/PictureButton.h>
 
-/// City budget mini-window. Player can adjust the tax rate and the
-/// police-funding share; both feed back into the city budget. Underfunding
-/// police scales coverage proportionally.
+/// City budget window. Player can adjust the tax rate and police-funding
+/// share, review the resulting forecast, and confirm both changes together.
 class CityBudgetWindow : public Window
 {
 public:
@@ -37,12 +36,12 @@ public:
 
     void draw(Point position) override;
 
-    void onClose();
+    void onCancel();
     void onTaxIncrease();
     void onTaxDecrease();
     void onPoliceIncrease();
     void onPoliceDecrease();
-    void onApply();
+    void onConfirm();
 
     static CityBudgetWindow* create() {
         CityBudgetWindow* dlg = new CityBudgetWindow();
@@ -54,16 +53,15 @@ private:
     void updateDisplay();
     void updateAllocationLabels();
 
+    HBox rootHBox;
     VBox mainVBox;
     Label titleLabel;
 
+    HBox summaryHBox;
     Label yearLabel;
     Label treasuryLabel;
-    Label incomeLabel;
-    Label policeCostLabel;
-    Label netLabel;
-    Label perSecondLabel;
 
+    Label allocationsHeadingLabel;
     HBox taxHBox;
     Label taxLabel;
     PictureButton taxMinus;
@@ -76,17 +74,27 @@ private:
     Label policeValueLabel;
     PictureButton policePlus;
 
+    Label forecastHeadingLabel;
+    HBox forecastPrimaryHBox;
+    Label incomeLabel;
+    Label policeCostLabel;
+    HBox forecastSecondaryHBox;
+    Label netLabel;
+    Label perSecondLabel;
+
+    Label cityStatusHeadingLabel;
+    HBox populationHBox;
+    Label totalPopLabel;
+    Label unemploymentLabel;
+    HBox zoningHBox;
     Label resPopLabel;
     Label comPopLabel;
     Label indPopLabel;
-    Label totalPopLabel;
-    Label unemploymentLabel;
-    Label hospitalLabel;
-    Label churchLabel;
+    Label servicesLabel;
 
     HBox buttonsHBox;
-    TextButton applyButton;
-    TextButton closeButton;
+    TextButton confirmButton;
+    TextButton cancelButton;
 
     int pendingPolicePercent = 100;
     int pendingTaxRate = 7;

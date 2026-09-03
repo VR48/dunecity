@@ -125,6 +125,7 @@ private:
     PictureButton       mentatButton;           ///< Button for accessing the mentat menu
     TextButton          budgetButton;           ///< City sim mode only: opens the budget mini-window
     TextButton          dune2rZoomButton;       ///< Dune2R only: cycles local presentation zoom
+    TextButton          dune2rVisualButton;     ///< Dune2R only: crossfades classic/enhanced visuals
     PictureLabel        topBar;                 ///< The background of the top bar
 
     PictureLabel        sideBar;                ///< The background of the side bar
