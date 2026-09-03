@@ -690,6 +690,19 @@ if (-not (Test-Path -LiteralPath $libcxx)) {
 }
 Copy-Item -LiteralPath $libcxx -Destination (Join-Path $jniLibsArm64 "libc++_shared.so") -Force
 
+# Gradle can miss the selected NDK and silently package unstripped libraries.
+# Strip only the staged copies; keep the native build's symbols for crash reports.
+$llvmStrip = Join-Path $AndroidNdk "toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-strip.exe"
+if (-not (Test-Path -LiteralPath $llvmStrip)) {
+    throw "Missing Android native library stripper: $llvmStrip"
+}
+foreach ($runtimeLibrary in @("libmain.so", "libc++_shared.so")) {
+    & $llvmStrip --strip-unneeded (Join-Path $jniLibsArm64 $runtimeLibrary)
+    if ($LASTEXITCODE -ne 0) {
+        throw "Stripping staged $runtimeLibrary failed with exit code $LASTEXITCODE"
+    }
+}
+
 Set-Content -LiteralPath (Join-Path $stageDir "local.properties") -Value ("sdk.dir=" + (Convert-ToPropertiesPath $AndroidSdk)) -Encoding ASCII
 
 Copy-Item -LiteralPath (Join-Path $RepoRoot "data") -Destination (Join-Path $payloadDir "data") -Recurse -Force

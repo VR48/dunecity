@@ -15,6 +15,10 @@
 - Verification covers rectangular frame round trips, actual PNG geometry,
   all seven states, cache reload/eviction, malformed files, and native GPU
   playback with changing pixel output and no misses on the warmed second loop.
+- Android test version 0.2.18-refinery-test (1000538) includes the new renderer
+  and catalog, with remastered packs still downloaded separately. Packaging
+  explicitly strips staged native libraries using the selected NDK, retaining
+  the original native build's debug symbols locally for crash diagnostics.
 
 ## Reproduce Checks
 
