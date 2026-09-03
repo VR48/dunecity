@@ -7,6 +7,7 @@ import argparse
 import configparser
 import json
 import math
+import io
 import shutil
 from pathlib import Path
 
@@ -58,7 +59,7 @@ BUILDING_STATES = {
     "building_destroyed": ("Destroyed", False),
 }
 
-MAX_ATLAS_SIZE = 4096
+MAX_ATLAS_SIZE = 2048
 
 
 def load_frames(frames_dir: Path, frame_size: int) -> list[Image.Image]:
@@ -180,11 +181,15 @@ def load_composite_frames(metadata: dict[str, object], asset_root: Path,
 
 
 def write_atlas(frames: list[Image.Image], destination: Path, columns: int) -> tuple[int, int]:
+    if not frames or columns < 1:
+        raise ValueError("An atlas needs frames and at least one column")
     rows = math.ceil(len(frames) / columns)
-    frame_size = frames[0].width
-    atlas = Image.new("RGBA", (columns * frame_size, rows * frame_size))
+    frame_width, frame_height = frames[0].size
+    if any(frame.size != (frame_width, frame_height) for frame in frames):
+        raise ValueError("All frames in an atlas must have matching dimensions")
+    atlas = Image.new("RGBA", (columns * frame_width, rows * frame_height))
     for index, frame in enumerate(frames):
-        atlas.alpha_composite(frame, ((index % columns) * frame_size, (index // columns) * frame_size))
+        atlas.alpha_composite(frame, ((index % columns) * frame_width, (index // columns) * frame_height))
     destination.parent.mkdir(parents=True, exist_ok=True)
     atlas.save(destination, optimize=True)
     return columns, rows
@@ -204,6 +209,8 @@ def fit_frames_to_width(frames: list[Image.Image], target_width: int) -> list[Im
 def write_chunked_atlases(frames: list[Image.Image], output: Path,
                           relative_dir: Path) -> list[dict[str, int | str]]:
     frame_width, frame_height = frames[0].size
+    if frame_width > MAX_ATLAS_SIZE or frame_height > MAX_ATLAS_SIZE:
+        raise ValueError(f"Frame {frame_width}x{frame_height} exceeds the atlas page limit")
     columns = max(1, MAX_ATLAS_SIZE // frame_width)
     rows = max(1, MAX_ATLAS_SIZE // frame_height)
     frames_per_atlas = columns * rows
@@ -311,6 +318,22 @@ def package_building(metadata: dict[str, object], asset_root: Path, output: Path
             "Loop": "true" if loops else "false",
             "AtlasCount": str(len(chunks)),
         }
+        # Keep the authored still available if animation pages are pending or invalid.
+        sprite_path = asset_root / str(assets.get("sprite", {}).get("file", ""))
+        if sprite_path.is_file():
+            with Image.open(sprite_path) as source:
+                still = fit_frames_to_width([source.convert("RGBA")], target_width)[0]
+        else:
+            still = frames[0].copy()
+        relative_still = Path("stills") / f"{state_name.lower()}.png"
+        (output / relative_still).parent.mkdir(parents=True, exist_ok=True)
+        still.save(output / relative_still, optimize=True)
+        manifest[section]["Still"] = relative_still.as_posix()
+        manifest[section]["StillWidth"] = str(still.width)
+        manifest[section]["StillHeight"] = str(still.height)
+        manifest[section]["StillAnchorX"] = str(still.width // 2)
+        manifest[section]["StillAnchorY"] = str(still.height)
+        still.close()
         for index, chunk in enumerate(chunks):
             manifest[section][f"Atlas.{index}"] = str(chunk["path"])
             manifest[section][f"FirstFrame.{index}"] = str(chunk["first"])
@@ -322,8 +345,9 @@ def package_building(metadata: dict[str, object], asset_root: Path, output: Path
 
     if packaged == 0:
         raise SystemExit("No enhanced building frames or sprite fallbacks were eligible for packaging")
-    with (output / "building.ini").open("w", encoding="ascii", newline="\n") as handle:
-        manifest.write(handle, space_around_delimiters=False)
+    text = io.StringIO()
+    manifest.write(text, space_around_delimiters=False)
+    (output / "building.ini").write_text(text.getvalue().rstrip() + "\n", encoding="ascii", newline="\n")
     print(f"wrote {output / 'building.ini'} with {packaged} visual state(s)")
     return packaged
 

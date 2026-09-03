@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <algorithm>
 
 TEST_CASE("Dune2R asset paths reject traversal", "[Dune2RAssets]") {
     CHECK(Dune2RAssetManager::isSafeRelativeAssetPath("atlases/idle/east.png"));
@@ -32,10 +33,18 @@ TEST_CASE("Dune2R source catalog loads immutable packs", "[Dune2RAssets]") {
     REQUIRE(source != nullptr);
     const auto modPath = std::filesystem::path(source) / "mods" / "Dune2R";
     Dune2RAssetManager manager(modPath.string());
-    REQUIRE(manager.getRevision() == "1275ed1036828b8f3365395c66ca4499cd2d266a");
-    REQUIRE(manager.getPacks().size() == 2);
-    CHECK(manager.getPacks()[0].variant == "remastered");
-    CHECK(manager.getPacks()[0].totalBytes() > 0);
+    REQUIRE(manager.getRevision().size() == 40);
+    REQUIRE(manager.getRevision().find_first_not_of("0123456789abcdef") == std::string::npos);
+    for(const auto* id : {"gravel", "refinery", "harkonnendevastator", "ordostank"}) {
+        const auto& packs = manager.getPacks();
+        const auto found = std::find_if(packs.begin(), packs.end(), [&](const auto& pack) { return pack.id == id; });
+        REQUIRE(found != packs.end());
+        CHECK(found->variant == "remastered");
+        CHECK(found->totalBytes() > 0);
+        if(found->id == "refinery") {
+            CHECK(found->displayName == "Atreides Refinery Remastered");
+        }
+    }
 }
 
 TEST_CASE("Dune2R downloader resumes and verifies a live asset", "[Dune2RAssets][network]") {

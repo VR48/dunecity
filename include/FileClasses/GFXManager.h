@@ -31,6 +31,8 @@
 #include <memory>
 #include <vector>
 
+class EnhancedAtlasCache;
+
 #define NUM_TERRAIN_TILES_X 11
 #define NUM_TERRAIN_TILES_Y 8
 #define NUM_MAPCHOICEPIECES 28
@@ -788,12 +790,10 @@ private:
         EnhancedAtlasChunk& operator=(EnhancedAtlasChunk&&) noexcept = default;
 
         std::string atlasPath;
-        sdl2::texture_ptr texture;
         int firstFrame = 0;
         int frameCount = 0;
         int columns = 1;
         int rows = 1;
-        bool loadAttempted = false;
     };
 
     struct EnhancedBuildingAnimation {
@@ -804,6 +804,13 @@ private:
         EnhancedBuildingAnimation& operator=(EnhancedBuildingAnimation&&) noexcept = default;
 
         std::vector<EnhancedAtlasChunk> chunks;
+        std::string stillPath;
+        sdl2::texture_ptr stillTexture;
+        int stillWidth = 0;
+        int stillHeight = 0;
+        int stillAnchorX = 0;
+        int stillAnchorY = 0;
+        bool stillAttempted = false;
         int frameCount = 1;
         int frameMs = 100;
         int frameWidth = 1;
@@ -871,6 +878,7 @@ private:
     std::array<HDObjPicOverride, NUM_OBJPICS> hdObjPicOverrides;
     std::vector<EnhancedUnitDefinition> enhancedUnitDefinitions;
     std::vector<EnhancedBuildingDefinition> enhancedBuildingDefinitions;
+    std::unique_ptr<EnhancedAtlasCache> enhancedBuildingAtlasCache;
     std::vector<EnhancedTerrainDefinition> enhancedTerrainDefinitions;
     bool enhancedUnitManifestsLoaded = false;
     bool enhancedWorldManifestsLoaded = false;

@@ -88,12 +88,23 @@ network state.
 ### Buildings and terrain
 
 Building source frames are normalized to `192` authored pixels per footprint
-tile and split into atlases no larger than `4096x4096`. Placement,
+tile and split into atlases no larger than `2048x2048`. Rectangular cells keep
+their own width and height; atlas rows never assume square building frames. Placement,
 construction, damage, repair, and destruction play once; idle and working
 states loop. If processed frames are absent, the category's Sprite Image is
-packaged as a one-frame fallback. The engine anchors every state at the bottom
+packaged as a one-frame fallback. Each state also carries a separate `Still`
+PNG (the authored Sprite Image, or first processed frame when no sprite exists).
+Native builds decode one animation page at a time on a worker, prefetch the next
+page, and retain at most 192 MiB of building atlas textures in an LRU cache.
+PNG dimensions are checked before decoding. While a page loads or after a
+failed page, the state still takes priority over classic graphics. Single-threaded
+WebAssembly builds use deferred page decoding instead of native worker threads.
+The engine anchors every state at the bottom
 center of the fixed collision footprint, allowing smoke and effects to extend
 above it without changing gameplay bounds.
+
+The `refinery` pack is Atreides-only (`ItemID=10`, `HouseID=1`). Other houses
+retain their classic Refinery visuals.
 
 Terrain packs contain all 16 north/east/south/west topology variants. Each
 enhanced tile is `192x192`, remains opaque and padding-free, and is rendered

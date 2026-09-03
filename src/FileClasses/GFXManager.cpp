@@ -16,6 +16,7 @@
  */
 
 #include <FileClasses/GFXManager.h>
+#include <FileClasses/EnhancedAtlasCache.h>
 
 #include <globals.h>
 
@@ -5064,6 +5065,12 @@ void GFXManager::invalidateAllSpriteTextures() {
     }
     enhancedUnitDefinitions.clear();
     enhancedUnitManifestsLoaded = false;
+    enhancedBuildingDefinitions.clear();
+    enhancedTerrainDefinitions.clear();
+    enhancedWorldManifestsLoaded = false;
+    if(enhancedBuildingAtlasCache) {
+        enhancedBuildingAtlasCache->clear();
+    }
     enhancedUnitRenderModes.clear();
     enhancedRenderModesLoaded = false;
 }
@@ -7297,6 +7304,18 @@ void GFXManager::loadEnhancedWorldManifests() {
                 animation.anchorX = manifest.getIntValue(section, "AnchorX", animation.frameWidth / 2);
                 animation.anchorY = manifest.getIntValue(section, "AnchorY", animation.frameHeight);
                 animation.loop = manifest.getBoolValue(section, "Loop", true);
+                const std::string stillName = manifest.getStringValue(section, "Still", "");
+                const auto stillPath = std::filesystem::weakly_canonical(entry.path() / stillName);
+                animation.stillWidth = manifest.getIntValue(section, "StillWidth", animation.frameWidth);
+                animation.stillHeight = manifest.getIntValue(section, "StillHeight", animation.frameHeight);
+                animation.stillAnchorX = manifest.getIntValue(section, "StillAnchorX", animation.anchorX);
+                animation.stillAnchorY = manifest.getIntValue(section, "StillAnchorY", animation.anchorY);
+                if(!stillName.empty() && isPathInside(stillPath, unitsRoot)
+                   && std::filesystem::is_regular_file(stillPath)
+                   && animation.stillWidth > 0 && animation.stillWidth <= 2048
+                   && animation.stillHeight > 0 && animation.stillHeight <= 2048) {
+                    animation.stillPath = stillPath.string();
+                }
                 bool valid = animation.frameWidth > 0 && animation.frameHeight > 0;
                 int coveredFrames = 0;
                 for(int chunkIndex = 0; valid && chunkIndex < atlasCount; ++chunkIndex) {
@@ -7324,7 +7343,10 @@ void GFXManager::loadEnhancedWorldManifests() {
                     coveredFrames += chunk.frameCount;
                     animation.chunks.push_back(std::move(chunk));
                 }
-                if(valid && coveredFrames == frameCount) {
+                if((valid && coveredFrames == frameCount) || !animation.stillPath.empty()) {
+                    if(!valid || coveredFrames != frameCount) {
+                        animation.chunks.clear();
+                    }
                     definition.animations.emplace(stateIndex, std::move(animation));
                 } else {
                     SDL_Log("GFXManager: Skipping invalid %s section in %s",
@@ -7512,6 +7534,9 @@ void GFXManager::invalidateEnhancedUnitMountsIfChanged(bool force) {
         return;
     }
     enhancedUnitMountRevision = revision;
+    if(enhancedBuildingAtlasCache) {
+        enhancedBuildingAtlasCache->clear();
+    }
     enhancedUnitDefinitions.clear();
     enhancedUnitManifestsLoaded = false;
     enhancedBuildingDefinitions.clear();
@@ -7667,54 +7692,74 @@ bool GFXManager::drawEnhancedBuilding(int itemID, int house, unsigned int z,
             break;
         }
     }
-    if(selectedChunk == nullptr) {
-        return false;
+    if(!enhancedBuildingAtlasCache) {
+        enhancedBuildingAtlasCache = std::make_unique<EnhancedAtlasCache>(renderer);
     }
-    if(selectedChunk->texture == nullptr) {
-        if(selectedChunk->loadAttempted) {
+    SDL_Texture* texture = selectedChunk ? enhancedBuildingAtlasCache->request(
+        selectedChunk->atlasPath,
+        selectedChunk->columns * selectedAnimation->frameWidth,
+        selectedChunk->rows * selectedAnimation->frameHeight) : nullptr;
+    int frameWidth = selectedAnimation->frameWidth;
+    int frameHeight = selectedAnimation->frameHeight;
+    int imageAnchorX = selectedAnimation->anchorX;
+    int imageAnchorY = selectedAnimation->anchorY;
+    SDL_Rect source{0, 0, frameWidth, frameHeight};
+    const bool animated = texture != nullptr;
+    if(animated) {
+        const int localFrame = static_cast<int>(frame) - selectedChunk->firstFrame;
+        source.x = (localFrame % selectedChunk->columns) * frameWidth;
+        source.y = (localFrame / selectedChunk->columns) * frameHeight;
+    } else {
+        if(!selectedAnimation->stillAttempted && !selectedAnimation->stillPath.empty()) {
+            selectedAnimation->stillAttempted = true;
+            auto input = sdl2::RWops_ptr{SDL_RWFromFile(selectedAnimation->stillPath.c_str(), "rb")};
+            auto surface = input ? LoadPNG_RW(input.get()) : nullptr;
+            if(surface && surface->w == selectedAnimation->stillWidth
+               && surface->h == selectedAnimation->stillHeight) {
+                selectedAnimation->stillTexture = convertSurfaceToTexture(surface.get());
+            } else {
+                SDL_Log("Dune2R building still failed: %s", selectedAnimation->stillPath.c_str());
+            }
+        }
+        texture = selectedAnimation->stillTexture.get();
+        if(!texture) {
             return false;
         }
-        selectedChunk->loadAttempted = true;
-        auto rwops = sdl2::RWops_ptr{ SDL_RWFromFile(selectedChunk->atlasPath.c_str(), "rb") };
-        auto surface = rwops ? LoadPNG_RW(rwops.get()) : nullptr;
-        if(!surface
-           || surface->w != selectedChunk->columns * selectedAnimation->frameWidth
-           || surface->h != selectedChunk->rows * selectedAnimation->frameHeight) {
-            SDL_Log("GFXManager: Failed to load enhanced building atlas %s",
-                    selectedChunk->atlasPath.c_str());
-            return false;
-        }
-        selectedChunk->texture = convertSurfaceToTexture(surface.get());
-        if(selectedChunk->texture == nullptr) {
-            return false;
-        }
+        frameWidth = selectedAnimation->stillWidth;
+        frameHeight = selectedAnimation->stillHeight;
+        imageAnchorX = selectedAnimation->stillAnchorX;
+        imageAnchorY = selectedAnimation->stillAnchorY;
+        source = {0, 0, frameWidth, frameHeight};
     }
-
-    const int localFrame = static_cast<int>(frame) - selectedChunk->firstFrame;
-    SDL_Rect source = {
-        (localFrame % selectedChunk->columns) * selectedAnimation->frameWidth,
-        (localFrame / selectedChunk->columns) * selectedAnimation->frameHeight,
-        selectedAnimation->frameWidth,
-        selectedAnimation->frameHeight,
-    };
     const int footprintWidth = selectedDefinition->footprintWidth * TILESIZE
                                * static_cast<int>(z + 1);
     const double scale = static_cast<double>(footprintWidth)
-                         / static_cast<double>(selectedAnimation->frameWidth);
+                         / static_cast<double>(frameWidth);
     const int destinationWidth = std::max(1, footprintWidth);
     const int destinationHeight = std::max(
-        1, static_cast<int>(lround(selectedAnimation->frameHeight * scale)));
+        1, static_cast<int>(lround(frameHeight * scale)));
     SDL_Rect destination = {
-        anchorX - static_cast<int>(lround(selectedAnimation->anchorX * scale)),
-        anchorY - static_cast<int>(lround(selectedAnimation->anchorY * scale)),
+        anchorX - static_cast<int>(lround(imageAnchorX * scale)),
+        anchorY - static_cast<int>(lround(imageAnchorY * scale)),
         destinationWidth,
         destinationHeight,
     };
-    SDL_Texture* texture = selectedChunk->texture.get();
     SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
     SDL_SetTextureAlphaMod(texture, blend);
     SDL_RenderCopy(renderer, texture, &source, &destination);
     SDL_SetTextureAlphaMod(texture, SDL_ALPHA_OPAQUE);
+    if(animated) {
+        const auto nextFrame = selectedChunk->firstFrame + selectedChunk->frameCount;
+        for(auto& next : selectedAnimation->chunks) {
+            if(next.firstFrame == nextFrame
+               || (selectedAnimation->loop && nextFrame == selectedAnimation->frameCount && next.firstFrame == 0)) {
+                enhancedBuildingAtlasCache->request(next.atlasPath,
+                    next.columns * selectedAnimation->frameWidth,
+                    next.rows * selectedAnimation->frameHeight);
+                break;
+            }
+        }
+    }
     return true;
 }
 
