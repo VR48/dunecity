@@ -473,7 +473,14 @@ if(EMSCRIPTEN)
         -sUSE_SDL_TTF=2
     )
 
-    target_compile_options(dunecity PRIVATE ${DUNECITY_EM_PORT_FLAGS})
+    # Existing startup paths use C++ try/catch (e.g. GFXManager init in main.cpp).
+    # Emscripten disables exception catching by default; enable it for browser builds only.
+    set(DUNECITY_EM_EXCEPTION_FLAGS
+        -fexceptions
+        -sDISABLE_EXCEPTION_CATCHING=0
+    )
+
+    target_compile_options(dunecity PRIVATE ${DUNECITY_EM_PORT_FLAGS} ${DUNECITY_EM_EXCEPTION_FLAGS})
 
     set(DUNECITY_EM_PRELOADS
         "${CMAKE_SOURCE_DIR}/data@/data"
@@ -488,6 +495,7 @@ if(EMSCRIPTEN)
 
     set(DUNECITY_EM_LINK_FLAGS
         ${DUNECITY_EM_PORT_FLAGS}
+        ${DUNECITY_EM_EXCEPTION_FLAGS}
         -sASYNCIFY=1
         -sALLOW_MEMORY_GROWTH=1
         -sMAXIMUM_MEMORY=2147483648
