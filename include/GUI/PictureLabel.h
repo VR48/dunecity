@@ -21,6 +21,7 @@
 #include "Widget.h"
 #include <misc/draw_util.h>
 #include <misc/SDL2pp.h>
+#include <algorithm>
 
 /// A class for showning a static picture
 class PictureLabel : public Widget {
@@ -63,6 +64,7 @@ public:
     */
     Point getMinimumSize() const override
     {
+        if(fitToSize) return Point(0, 0);
         if(pTexture) {
             return getTextureSize(pTexture.get());
         } else {
@@ -85,11 +87,23 @@ public:
         }
 
         SDL_Rect dest = calcDrawingRect(pTexture.get(), position.x, position.y);
+        if(fitToSize) {
+            const auto size = getTextureSize(pTexture.get());
+            if(size.x <= 0 || size.y <= 0) return;
+            const double scale = std::min(double(getSize().x) / size.x, double(getSize().y) / size.y);
+            dest.w = int(size.x * scale);
+            dest.h = int(size.y * scale);
+            dest.x += (getSize().x - dest.w) / 2;
+            dest.y += (getSize().y - dest.h) / 2;
+        }
         SDL_RenderCopy(renderer, pTexture.get(), nullptr, &dest);
     }
 
 
+    void setFitToSize(bool fit) { fitToSize = fit; enableResizing(fit, fit); }
+
 private:
+    bool fitToSize = false;
     sdl2::texture_unique_or_nonowning_ptr pTexture;  ///< The texture that is shown
 };
 

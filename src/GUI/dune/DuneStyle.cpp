@@ -319,23 +319,23 @@ sdl2::surface_ptr DuneStyle::createButtonSurface(Uint32 width, Uint32 height, co
     }
 
     // create text on this button
-    int fontsize;
-    if( (width < getTextWidth(text,14) + 12) ||
-        (height < getTextHeight(14) + 2)) {
-        fontsize = 12;
-    } else {
-        fontsize = 14;
-    }
+    int fontsize = height >= 48 ? 22 : height >= 36 ? 20 : height >= 28 ? 16 : 14;
+    while(fontsize > 12 && (width < getTextWidth(text, fontsize) + 12 ||
+                           height < getTextHeight(fontsize) + 4)) --fontsize;
 
-    if(textcolor == COLOR_DEFAULT) textcolor = defaultForegroundColor;
-    if(textshadowcolor == COLOR_DEFAULT) textshadowcolor = defaultShadowColor;
+    // Dark lettering remains readable against the original gold button bevels.
+    const bool defaultText = textcolor == COLOR_DEFAULT;
+    if(defaultText) textcolor = COLOR_BLACK;
+    if(textshadowcolor == COLOR_DEFAULT) textshadowcolor = defaultText ? COLOR_TRANSPARENT : defaultShadowColor;
+    if(activated && width >= 8 && height >= 8)
+        drawRect(surface.get(), 3, 3, surface->w - 4, surface->h - 4, COLOR_BLACK);
 
     sdl2::surface_ptr textSurface1 = createSurfaceWithText(text, textshadowcolor, fontsize);
-    SDL_Rect textRect1 = calcDrawingRect(textSurface1.get(), surface->w / 2 + 2 + (pressed ? 1 : 0), surface->h / 2 + 3 + (pressed ? 1 : 0), HAlign::Center, VAlign::Center);
+    SDL_Rect textRect1 = calcDrawingRect(textSurface1.get(), surface->w / 2 + 1 + (pressed ? 1 : 0), surface->h / 2 + 1 + (pressed ? 1 : 0), HAlign::Center, VAlign::Center);
     SDL_BlitSurface(textSurface1.get(), nullptr, surface.get(), &textRect1);
 
-    sdl2::surface_ptr textSurface2 = createSurfaceWithText(text, (activated == true) ? brightenUp(textcolor) : textcolor, fontsize);
-    SDL_Rect textRect2 = calcDrawingRect(textSurface2.get(), surface->w / 2 + 1 + (pressed ? 1 : 0), surface->h / 2 + 2 + (pressed ? 1 : 0), HAlign::Center, VAlign::Center);
+    sdl2::surface_ptr textSurface2 = createSurfaceWithText(text, (activated && !defaultText) ? brightenUp(textcolor) : textcolor, fontsize);
+    SDL_Rect textRect2 = calcDrawingRect(textSurface2.get(), surface->w / 2 + (pressed ? 1 : 0), surface->h / 2 + (pressed ? 1 : 0), HAlign::Center, VAlign::Center);
     SDL_BlitSurface(textSurface2.get(), nullptr, surface.get(), &textRect2);
 
     return surface;

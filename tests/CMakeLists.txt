@@ -34,6 +34,9 @@ target_sources(dunelegacy_tests
         NeutralHouseTestCase/NeutralHouseTestCase.cpp
         Dune2RAssetManagerTestCase/Dune2RAssetManagerTestCase.cpp
         EnhancedAtlasCacheTestCase/EnhancedAtlasCacheTestCase.cpp
+        EnhancedBuildingGeometryTestCase/EnhancedBuildingGeometryTestCase.cpp
+        MenuLayoutTestCase/MenuLayoutTestCase.cpp
+        ${CMAKE_SOURCE_DIR}/src/mmath.cpp
         ${CMAKE_SOURCE_DIR}/src/FileClasses/EnhancedAtlasCache.cpp
         ${CMAKE_SOURCE_DIR}/src/FileClasses/lodepng.cpp
         # DuneCity core sources (needed for CitySimulation tests)

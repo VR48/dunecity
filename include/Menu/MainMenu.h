@@ -50,6 +50,7 @@ private:
     void onMods() const;
     void onDune2REditor() const;
     void onOptions();
+    void onDisplay();
     void onAbout() const;
     void onHowToPlay() const;
     void onQuit();
@@ -60,13 +61,14 @@ private:
     /// directory so it only appears once per install.
     void showFirstLaunchCityPromptIfNeeded();
 
-    /// Refresh the bottom-left mod/version watermark from the current
+    /// Refresh the footer mod/version label from the current
     /// active mod. Cheap; no-op when the displayed mod hasn't changed.
     void refreshModVersionLabel();
     void refreshDune2REditorButton();
 
     StaticContainer windowWidget;
-    VBox            MenuButtons;
+    PictureLabel planetPicture;
+    PictureLabel logoPicture;
 
     TextButton      singlePlayerButton;
     TextButton      multiPlayerButton;
@@ -74,16 +76,13 @@ private:
     TextButton      modsButton;
     TextButton      dune2rEditorButton;
     TextButton      optionsButton;
+    TextButton      displayButton;
     TextButton      howToPlayButton;
     TextButton      aboutButton;
     TextButton      quitButton;
 
-    PictureLabel    planetPicture;
-    PictureLabel    duneLegacy;
-    PictureLabel    buttonBorder;
 
-    Label           modVersionLabel; ///< Bottom-left "<active mod>\nv<VERSION>" watermark.
-    Label           cityInfoLabel;  ///< Left-side info text about DuneCity mod activation.
+    Label           modVersionLabel; ///< Current mod and version footer.
     std::string     lastShownModName; ///< Tracks last mod name written to modVersionLabel; avoids redundant setText.
 
     // Version checking

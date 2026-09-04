@@ -2,6 +2,7 @@
 #include <FileClasses/EnhancedAtlasCache.h>
 #include <FileClasses/INIFile.h>
 #include <FileClasses/lodepng.h>
+#include <misc/EnhancedBuildingGeometry.h>
 
 #include <chrono>
 #include <cstdlib>
@@ -150,6 +151,16 @@ TEST_CASE("Dune2R Refinery playback stays responsive on the native renderer", "[
     const int count = manifest.getIntValue(section, "AtlasCount", 0);
     const int frames = manifest.getIntValue(section, "Frames", 0);
     const int frameMs = manifest.getIntValue(section, "FrameMs", 42);
+    const int footprintWidth = manifest.getIntValue("Building", "FootprintWidth", 0);
+    const int footprintHeight = manifest.getIntValue("Building", "FootprintHeight", 0);
+    const SDL_Point imageAnchor{manifest.getIntValue(section, "AnchorX", 0),
+                                manifest.getIntValue(section, "AnchorY", 0)};
+    constexpr unsigned int zoom = 2;
+    constexpr int tilePixels = D2_TILESIZE * (zoom + 1);
+    const SDL_Point screenAnchor{288 + tilePixels / 2, 384};
+    const SDL_Rect footprint{screenAnchor.x - footprintWidth * tilePixels / 2,
+                             screenAnchor.y - footprintHeight * tilePixels,
+                             footprintWidth * tilePixels, footprintHeight * tilePixels};
     struct Page { std::string path; int first; int frames; int cols; int rows; };
     std::vector<Page> pages;
     for(int i = 0; i < count; ++i) {
@@ -178,11 +189,20 @@ TEST_CASE("Dune2R Refinery playback stays responsive on the native renderer", "[
         worstRequestMs = std::max(worstRequestMs, 1000.0 * (SDL_GetPerformanceCounter() - requestStart) / SDL_GetPerformanceFrequency());
         SDL_SetRenderDrawColor(renderer.get(), 30, 30, 30, 255);
         SDL_RenderClear(renderer.get());
+        SDL_SetRenderDrawColor(renderer.get(), 65, 65, 65, 255);
+        for(int x = 0; x < 576; x += tilePixels) SDL_RenderDrawLine(renderer.get(), x, 0, x, 639);
+        for(int y = 0; y < 640; y += tilePixels) SDL_RenderDrawLine(renderer.get(), 0, y, 575, y);
         if(texture) {
             SDL_Rect source{((frame - found->first) % found->cols) * width,
                             ((frame - found->first) / found->cols) * height, width, height};
-            SDL_Rect dest{0, 640 - height, width, height};
+            const SDL_Rect dest = calcEnhancedBuildingDrawingRect(
+                footprintWidth, zoom, {width, height}, imageAnchor, screenAnchor);
+            REQUIRE(dest.w == footprint.w);
+            REQUIRE(dest.x == footprint.x);
+            REQUIRE(dest.y + dest.h == footprint.y + footprint.h);
             REQUIRE(SDL_RenderCopy(renderer.get(), texture, &source, &dest) == 0);
+            SDL_SetRenderDrawColor(renderer.get(), 220, 190, 70, 255);
+            SDL_RenderDrawRect(renderer.get(), &footprint);
             ++animated;
             if(frame % 10 == 0) {
                 REQUIRE(SDL_RenderReadPixels(renderer.get(), nullptr, SDL_PIXELFORMAT_RGBA32, canvas->pixels, canvas->pitch) == 0);

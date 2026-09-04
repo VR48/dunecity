@@ -176,6 +176,7 @@ bool refreshManagedMod(const std::string& modName,
         if(modName == DUNE2R_MOD_NAME && std::filesystem::is_directory(destination)) {
             const std::filesystem::path persistentDirectories[] = {
                 std::filesystem::path("graphics_hd") / "units",
+                std::filesystem::path("graphics_hd") / ".atlas-backups",
                 std::filesystem::path("graphics_compact") / "objpics"
             };
             for(const auto& relative : persistentDirectories) {
@@ -189,6 +190,13 @@ bool refreshManagedMod(const std::string& modName,
                 std::filesystem::copy(installedAssets, stagedAssets,
                     std::filesystem::copy_options::recursive |
                     std::filesystem::copy_options::overwrite_existing);
+            }
+            for(const auto* filename : {"asset-catalog-online.ini", ".asset-catalog.previous"}) {
+                const auto installedCatalog = destination / filename;
+                if(std::filesystem::is_regular_file(installedCatalog)) {
+                    std::filesystem::copy_file(installedCatalog, staged / filename,
+                        std::filesystem::copy_options::overwrite_existing);
+                }
             }
         }
 

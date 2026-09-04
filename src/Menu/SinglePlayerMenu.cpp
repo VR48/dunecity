@@ -23,6 +23,7 @@
 #include <FileClasses/TextManager.h>
 
 #include <misc/fnkdat.h>
+#include <misc/MenuLayout.h>
 #include <misc/string_util.h>
 #include <misc/exceptions.h>
 
@@ -45,62 +46,29 @@ SinglePlayerMenu::SinglePlayerMenu() : MenuBase() {
 
     setWindowWidget(&windowWidget);
 
-    // set up pictures in the background
-    SDL_Texture* pPlanetBackground = pGFXManager->getUIGraphic(UI_PlanetBackground);
-    planetPicture.setTexture(pPlanetBackground);
-    SDL_Rect dest1 = calcAlignedDrawingRect(pPlanetBackground);
-    dest1.y = dest1.y - getHeight(pPlanetBackground)/2 + 10;
-    windowWidget.addWidget(&planetPicture, dest1);
-
-    SDL_Texture* pDuneLegacy = pGFXManager->getUIGraphic(UI_DuneLegacy);
-    duneLegacy.setTexture(pDuneLegacy);
-    SDL_Rect dest2 = calcAlignedDrawingRect(pDuneLegacy);
-    dest2.y = dest2.y + getHeight(pDuneLegacy)/2 + 28;
-    windowWidget.addWidget(&duneLegacy, dest2);
-
-    SDL_Texture* pMenuButtonBorder = pGFXManager->getUIGraphic(UI_MenuButtonBorder);
-    buttonBorder.setTexture(pMenuButtonBorder);
-    SDL_Rect dest3 = calcAlignedDrawingRect(pMenuButtonBorder);
-    dest3.y = dest3.y + getHeight(pMenuButtonBorder)/2 + 59;
-    windowWidget.addWidget(&buttonBorder, dest3);
-
-    // set up menu buttons
-    windowWidget.addWidget(&menuButtonsVBox,Point((getRendererWidth() - 160)/2,getRendererHeight()/2 + 64),Point(160,111));
-
     campaignButton.setText(_("CAMPAIGN"));
     campaignButton.setOnClick(std::bind(&SinglePlayerMenu::onCampaign, this));
-    menuButtonsVBox.addWidget(&campaignButton);
     campaignButton.setActive();
-
-    menuButtonsVBox.addWidget(VSpacer::create(3));
-
     customButton.setText(_("CUSTOM GAME"));
     customButton.setOnClick(std::bind(&SinglePlayerMenu::onCustom, this));
-    menuButtonsVBox.addWidget(&customButton);
-
-    menuButtonsVBox.addWidget(VSpacer::create(3));
-
     skirmishButton.setText(_("SKIRMISH"));
     skirmishButton.setOnClick(std::bind(&SinglePlayerMenu::onSkirmish, this));
-    menuButtonsVBox.addWidget(&skirmishButton);
-
-    menuButtonsVBox.addWidget(VSpacer::create(3));
-
     loadSavegameButton.setText(_("LOAD GAME"));
     loadSavegameButton.setOnClick(std::bind(&SinglePlayerMenu::onLoadSavegame, this));
-    menuButtonsVBox.addWidget(&loadSavegameButton);
-
-    menuButtonsVBox.addWidget(VSpacer::create(3));
-
     loadReplayButton.setText(_("LOAD REPLAY"));
     loadReplayButton.setOnClick(std::bind(&SinglePlayerMenu::onLoadReplay, this));
-    menuButtonsVBox.addWidget(&loadReplayButton);
-
-    menuButtonsVBox.addWidget(VSpacer::create(3));
-
     cancelButton.setText(_("BACK"));
     cancelButton.setOnClick(std::bind(&SinglePlayerMenu::onCancel, this));
-    menuButtonsVBox.addWidget(&cancelButton);
+    const StartMenuLayout layout{getSize().x, getSize().y, 3};
+    planetPicture.setTexture(pGFXManager->getUIGraphic(UI_PlanetBackground));
+    planetPicture.setFitToSize(true);
+    windowWidget.addWidget(&planetPicture, layout.planetBounds());
+    logoPicture.setTexture(pGFXManager->getUIGraphic(UI_DuneLegacy));
+    logoPicture.setFitToSize(true);
+    windowWidget.addWidget(&logoPicture, layout.logoBounds());
+    TextButton* buttons[] = {&campaignButton, &customButton, &skirmishButton,
+                             &loadSavegameButton, &loadReplayButton, &cancelButton};
+    for(int i = 0; i < 6; ++i) windowWidget.addWidget(buttons[i], layout.button(i));
 }
 
 SinglePlayerMenu::~SinglePlayerMenu() = default;

@@ -7,6 +7,78 @@
 #include <filesystem>
 #include <fstream>
 #include <algorithm>
+#include <chrono>
+
+namespace {
+struct CatalogFixture {
+    std::filesystem::path root = std::filesystem::temp_directory_path()
+        / ("dune2r-catalog-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    std::string contents;
+    CatalogFixture() {
+        const auto source = std::filesystem::path(std::getenv("DUNE_CITY_SOURCE_DIR"))
+                            / "mods/Dune2R/asset-catalog.ini";
+        std::filesystem::create_directories(root);
+        std::filesystem::copy_file(source, root / "asset-catalog.ini");
+        std::ifstream input(source);
+        contents.assign(std::istreambuf_iterator<char>(input), {});
+    }
+    ~CatalogFixture() {
+        std::error_code ignored;
+        std::filesystem::remove_all(root, ignored);
+    }
+};
+}
+
+TEST_CASE("Dune2R refreshed catalogs persist independently of bundled catalogs", "[Dune2RAssets]") {
+    CatalogFixture fixture;
+    Dune2RAssetManager manager(fixture.root.string());
+    const auto oldRevision = manager.getRevision();
+    auto updated = fixture.contents;
+    const std::string revision(40, 'a');
+    size_t pos = 0;
+    while((pos = updated.find(oldRevision, pos)) != std::string::npos) {
+        updated.replace(pos, oldRevision.size(), revision);
+        pos += revision.size();
+    }
+    const auto result = manager.applyCatalog(updated);
+    INFO(result.message);
+    REQUIRE(result.success);
+    CHECK(result.changed);
+    CHECK(manager.getRevision() == revision);
+    CHECK(Dune2RAssetManager(fixture.root.string()).getRevision() == revision);
+    CHECK(std::filesystem::exists(fixture.root / "asset-catalog.ini"));
+}
+
+TEST_CASE("Dune2R rejects untrusted catalog updates without losing the installed catalog", "[Dune2RAssets]") {
+    CatalogFixture fixture;
+    Dune2RAssetManager manager(fixture.root.string());
+    const auto revision = manager.getRevision();
+    const auto packCount = manager.getPacks().size();
+    auto badHost = fixture.contents;
+    badHost.replace(badHost.find("raw.githubusercontent.com"), 25, "untrusted.invalid");
+    auto executable = fixture.contents;
+    const auto pathStart = executable.find("File.0=") + 7;
+    executable.replace(pathStart, executable.find('|', pathStart) - pathStart, "execute.py");
+    auto traversal = fixture.contents;
+    traversal.replace(pathStart, traversal.find('|', pathStart) - pathStart, "../outside.png");
+    for(const auto& candidate : {std::string(), std::string(1024 * 1024 + 1, 'x'), badHost, executable, traversal}) {
+        CHECK_FALSE(manager.applyCatalog(candidate).success);
+        CHECK(manager.getRevision() == revision);
+        CHECK(manager.getPacks().size() == packCount);
+    }
+    CHECK_FALSE(std::filesystem::exists(fixture.root / "asset-catalog-online.ini"));
+}
+
+TEST_CASE("Dune2R falls back to its bundled catalog when its online cache is corrupt", "[Dune2RAssets]") {
+    CatalogFixture fixture;
+    const auto expected = Dune2RAssetManager(fixture.root.string()).getPacks().size();
+    {
+        std::ofstream output(fixture.root / "asset-catalog-online.ini");
+        output << "not a catalog";
+    }
+    Dune2RAssetManager manager(fixture.root.string());
+    CHECK(manager.getPacks().size() == expected);
+}
 
 TEST_CASE("Dune2R asset paths reject traversal", "[Dune2RAssets]") {
     CHECK(Dune2RAssetManager::isSafeRelativeAssetPath("atlases/idle/east.png"));

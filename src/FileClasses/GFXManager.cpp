@@ -39,6 +39,7 @@
 #include <main.h>
 
 #include <misc/draw_util.h>
+#include <misc/EnhancedBuildingGeometry.h>
 #include <misc/Scaler.h>
 #include <misc/exceptions.h>
 
@@ -7731,19 +7732,9 @@ bool GFXManager::drawEnhancedBuilding(int itemID, int house, unsigned int z,
         imageAnchorY = selectedAnimation->stillAnchorY;
         source = {0, 0, frameWidth, frameHeight};
     }
-    const int footprintWidth = selectedDefinition->footprintWidth * TILESIZE
-                               * static_cast<int>(z + 1);
-    const double scale = static_cast<double>(footprintWidth)
-                         / static_cast<double>(frameWidth);
-    const int destinationWidth = std::max(1, footprintWidth);
-    const int destinationHeight = std::max(
-        1, static_cast<int>(lround(frameHeight * scale)));
-    SDL_Rect destination = {
-        anchorX - static_cast<int>(lround(imageAnchorX * scale)),
-        anchorY - static_cast<int>(lround(imageAnchorY * scale)),
-        destinationWidth,
-        destinationHeight,
-    };
+    const SDL_Rect destination = calcEnhancedBuildingDrawingRect(
+        selectedDefinition->footprintWidth, z, {frameWidth, frameHeight},
+        {imageAnchorX, imageAnchorY}, {anchorX, anchorY});
     SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
     SDL_SetTextureAlphaMod(texture, blend);
     SDL_RenderCopy(renderer, texture, &source, &destination);

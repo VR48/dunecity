@@ -44,6 +44,7 @@
 #include <misc/fnkdat.h>
 #include <misc/FileSystem.h>
 #include <misc/Scaler.h>
+#include <misc/MenuLayout.h>
 #include <misc/string_util.h>
 #include <misc/exceptions.h>
 #include <misc/format.h>
@@ -188,8 +189,7 @@ void setVideoMode(int displayIndex)
 #ifdef __ANDROID__
     // Keep the game UI stable while Android replaces the physical surface
     // during fold, unfold, rotation, DeX, and multi-window transitions.
-    settings.video.width = 640;
-    settings.video.height = 480;
+    settings.video.interfaceHeight = validatedInterfaceHeight(settings.video.interfaceHeight, true);
 #endif
 #endif
 
@@ -249,6 +249,13 @@ void setVideoMode(int displayIndex)
         SDL_Log("VSync disabled");
     }
 #endif
+    if(settings.video.interfaceHeight > 0) {
+        settings.video.height = settings.video.interfaceHeight;
+        settings.video.width = settings.video.height * 4 / 3;
+    }
+    SDL_Log("Display: %dx%d physical, %dx%d logical, interface preset=%d",
+            settings.video.physicalWidth, settings.video.physicalHeight,
+            settings.video.width, settings.video.height, settings.video.interfaceHeight);
     SDL_RenderSetLogicalSize(renderer, settings.video.width, settings.video.height);
     screenTexture = SDL_CreateTexture(renderer, SCREEN_FORMAT, SDL_TEXTUREACCESS_TARGET, settings.video.width, settings.video.height);
 
@@ -970,6 +977,14 @@ int main(int argc, char *argv[]) {
             settings.general.showTutorialHints = myINIFile.getBoolValue("General","Show Tutorial Hints",true);
             settings.video.width = myINIFile.getIntValue("Video","Width",640);
             settings.video.height = myINIFile.getIntValue("Video","Height",480);
+            settings.video.interfaceHeight = validatedInterfaceHeight(
+                myINIFile.getIntValue("Video", "Interface Height", 0),
+#ifdef __ANDROID__
+                true
+#else
+                false
+#endif
+            );
             settings.video.physicalWidth= myINIFile.getIntValue("Video","Physical Width",640);
             settings.video.physicalHeight = myINIFile.getIntValue("Video","Physical Height",480);
             settings.video.fullscreen = myINIFile.getBoolValue("Video","Fullscreen",false);
@@ -1126,10 +1141,9 @@ int main(int argc, char *argv[]) {
                     settings.video.physicalWidth = displayMode.w;
                     settings.video.physicalHeight = displayMode.h;
                 }
-                settings.video.width = 640;
-                settings.video.height = 480;
+                settings.video.height = settings.video.interfaceHeight;
+                settings.video.width = settings.video.height * 4 / 3;
                 settings.video.fullscreen = true;
-                settings.video.preferredZoomLevel = 1;
 
                 SDL_Log("Android display config updated to %dx%d physical, %dx%d fixed logical",
                         settings.video.physicalWidth, settings.video.physicalHeight,

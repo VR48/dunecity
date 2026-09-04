@@ -405,11 +405,13 @@ void Tile::blitGround(int xPos, int yPos) {
     // zone structures are an exception: their density=0 cells are
     // transparent so the player sees the Micropolis-style empty plot
     // (colored zone tint + dotted border) underneath. Without this
-    // exception, fresh-zoned tiles render as solid black.
+    // exception, fresh-zoned tiles render as solid black. Dune2R's transparent
+    // sprites and crossfade also need the terrain beneath their footprints.
     if (hasANonInfantryGroundObject()) {
         const ObjectBase* groundObject = getNonInfantryGroundObject();
         if (groundObject != nullptr && groundObject->isAStructure()
             && !hasCityZone()
+            && pGFXManager->getDune2RVisualBlend() == 0
             && !shouldDrawTerrainBelowStructure(groundObject->getItemID())) {
             return;
         }

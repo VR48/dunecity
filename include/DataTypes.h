@@ -176,6 +176,7 @@ public:
         int         physicalHeight;
         int         width;
         int         height;
+        int         interfaceHeight = 0; ///< 0=automatic; 480/600/768=readable logical canvas presets.
         bool        frameLimit;
         int         preferredZoomLevel;
         std::string scaler;

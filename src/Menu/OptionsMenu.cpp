@@ -148,17 +148,30 @@ OptionsMenu::OptionsMenu() : MenuBase()
     mainVBox.addWidget(Spacer::create(), 0.2);
 
     resolutionHBox.addWidget(Spacer::create(), 0.5);
+#ifdef __ANDROID__
+    resolutionHBox.addWidget(Label::create(_("Interface Resolution")), 190);
+#else
     resolutionHBox.addWidget(Label::create(_("Video Resolution")), 190);
+#endif
 
     int i = 0;
     for(const Coord& coord : availScreenRes) {
         int factor = getLogicalToPhysicalResolutionFactor(coord.x, coord.y);
+#ifdef __ANDROID__
+        factor = 1;
+#endif
         if(factor > 1) {
             resolutionDropDownBox.addEntry(fmt::sprintf("%d x %d @ %dx", coord.x, coord.y, factor), i);
         } else {
             resolutionDropDownBox.addEntry(fmt::sprintf("%d x %d", coord.x, coord.y), i);
         }
-        if(coord.x == settings.video.physicalWidth && coord.y == settings.video.physicalHeight) {
+        if(
+#ifdef __ANDROID__
+            coord.y == settings.video.interfaceHeight
+#else
+            coord.x == settings.video.physicalWidth && coord.y == settings.video.physicalHeight
+#endif
+        ) {
             resolutionDropDownBox.setSelectedItem(i);
         }
         i++;
@@ -334,8 +347,12 @@ void OptionsMenu::onChangeOption(bool bInteractive) {
 
     int selectedResolution = resolutionDropDownBox.getSelectedEntryIntData();
     if(selectedResolution >= 0) {
+#ifdef __ANDROID__
+        bChanged |= settings.video.interfaceHeight != availScreenRes[selectedResolution].y;
+#else
         bChanged |= (settings.video.physicalWidth != availScreenRes[selectedResolution].x);
         bChanged |= (settings.video.physicalHeight != availScreenRes[selectedResolution].y);
+#endif
     }
     bChanged |= (settings.video.preferredZoomLevel != zoomlevelDropDownBox.getSelectedEntryIntData());
     bChanged |= (settings.video.fullscreen != fullScreenCheckbox.isChecked());
@@ -386,8 +403,12 @@ void OptionsMenu::onOptionsOK() {
     settings.ai.campaignAI = ((pPlayerData != nullptr) ? pPlayerData->getPlayerClass() : DEFAULTAIPLAYERCLASS);
 
     int selectedResolution = resolutionDropDownBox.getSelectedEntryIntData();
+#ifdef __ANDROID__
+    if(selectedResolution >= 0) settings.video.interfaceHeight = availScreenRes[selectedResolution].y;
+#else
     settings.video.physicalWidth = (selectedResolution >= 0) ? availScreenRes[selectedResolution].x : 0;
     settings.video.physicalHeight = (selectedResolution >= 0) ? availScreenRes[selectedResolution].y : 0;
+#endif
     
     // Validate resolution settings
     if(settings.video.physicalWidth < SCREEN_MIN_WIDTH || settings.video.physicalHeight < SCREEN_MIN_HEIGHT) {
@@ -476,6 +497,7 @@ void OptionsMenu::saveConfiguration2File() {
     myINIFile.setIntValue("Video","Physical Height",settings.video.physicalHeight);
     myINIFile.setIntValue("Video","Width",settings.video.width);
     myINIFile.setIntValue("Video","Height",settings.video.height);
+    myINIFile.setIntValue("Video","Interface Height",settings.video.interfaceHeight);
     myINIFile.setBoolValue("Video","Fullscreen",settings.video.fullscreen);
     myINIFile.setBoolValue("Video","FrameLimit",settings.video.frameLimit);
     myINIFile.setIntValue("Video","Preferred Zoom Level",settings.video.preferredZoomLevel);
@@ -517,6 +539,12 @@ void OptionsMenu::saveConfiguration2File() {
 
 void OptionsMenu::determineAvailableScreenResolutions() {
     availScreenRes.clear();
+#ifdef __ANDROID__
+    availScreenRes.emplace_back(640, 480);
+    availScreenRes.emplace_back(800, 600);
+    availScreenRes.emplace_back(1024, 768);
+    return;
+#endif
 
     // Safety check: ensure window exists before trying to get display index
     if(window == nullptr) {
