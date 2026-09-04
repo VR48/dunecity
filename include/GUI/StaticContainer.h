@@ -130,6 +130,8 @@ protected:
         return widgetData.position;
     }
 
+public:
+    // Reposition an existing control without removing its ownership or callbacks.
     void setWidgetGeometry(Widget* pWidget, Point position, Point size) {
         StaticContainer_WidgetData* pWidgetData = getWidgetDataFromWidget(pWidget);
         if(pWidgetData != 0) {
