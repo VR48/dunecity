@@ -60,25 +60,41 @@ OptionsMenu::OptionsMenu() : MenuBase()
 
     setWindowWidget(&windowWidget);
 
-    windowWidget.addWidget(&mainVBox, Point(50,50), Point(getSize().x - 100,getSize().y - 100));
-
-    mainVBox.addWidget(Spacer::create(), 0.2);
+    const int left = (getSize().x - 540) / 2;
+    title.setText(_("OPTIONS"));
+    title.setTextFontSize(22);
+    title.setTextColor(COLOR_BLACK, COLOR_TRANSPARENT);
+    title.setAlignment(Alignment_HCenter);
+    windowWidget.addWidget(&title, Point(left, 18), Point(540, 30));
+    const char* tabNames[] = {"GENERAL", "DISPLAY", "AUDIO / NETWORK"};
+    for(int page = 0; page < 3; ++page) {
+        pageButtons[page].setText(_(tabNames[page]));
+        pageButtons[page].setToggleButton(true);
+        pageButtons[page].setOnClick([this, page] { showPage(page); });
+        windowWidget.addWidget(&pageButtons[page], Point(left + page * 182, 58), Point(176, 36));
+        windowWidget.addWidget(&pages[page], Point(left, 110), Point(540, getSize().y - 192));
+    }
+    auto optionLabel = [](const std::string& text) {
+        auto* label = Label::create(text);
+        label->setTextColor(COLOR_BLACK, COLOR_TRANSPARENT);
+        label->setAlignment(static_cast<Alignment_Enum>(Alignment_Left | Alignment_VCenter));
+        return label;
+    };
 
     NameHBox.addWidget(Spacer::create(), 0.5);
-    NameHBox.addWidget(Label::create(_("Player Name")), 190);
+    NameHBox.addWidget(optionLabel(_("Player Name")), 190);
     nameTextBox.setMaximumTextLength(MAX_PLAYERNAMELENGHT);
     nameTextBox.setOnTextChange(std::bind(&OptionsMenu::onChangeOption, this, std::placeholders::_1));
     NameHBox.addWidget(&nameTextBox, 290);
     NameHBox.addWidget(Spacer::create(), 0.5);
     nameTextBox.setText(settings.general.playerName);
 
-    mainVBox.addWidget(&NameHBox, 0.01);
-
-    mainVBox.addWidget(VSpacer::create(5));
+    pages[0].addWidget(&NameHBox, 40);
+    pages[0].addWidget(VSpacer::create(8));
 
     gameOptionsHBox.addWidget(Spacer::create(), 0.5);
 
-    gameOptionsHBox.addWidget(Label::create(_("Default Game Options")), 190);
+    gameOptionsHBox.addWidget(optionLabel(_("Default Game Options")), 190);
     gameOptionsButton.setText(_("Change..."));
     gameOptionsButton.setOnClick(std::bind(&OptionsMenu::onGameOptions, this));
     gameOptionsHBox.addWidget(&gameOptionsButton, 130);
@@ -87,12 +103,11 @@ OptionsMenu::OptionsMenu() : MenuBase()
 
     gameOptionsHBox.addWidget(Spacer::create(), 0.5);
 
-    mainVBox.addWidget(&gameOptionsHBox, 0.01);
-
-    mainVBox.addWidget(Spacer::create(), 0.2);
+    pages[0].addWidget(&gameOptionsHBox, 40);
+    pages[0].addWidget(VSpacer::create(8));
 
     languageHBox.addWidget(Spacer::create(), 0.5);
-    languageHBox.addWidget(Label::create(_("Language")), 190);
+    languageHBox.addWidget(optionLabel(_("Language")), 190);
 
     for(size_t i = 0; i < availLanguages.size(); i++) {
         languageDropDownBox.addEntry(availLanguages[i].substr(0, availLanguages[i].size()-6), i);
@@ -106,12 +121,11 @@ OptionsMenu::OptionsMenu() : MenuBase()
     languageHBox.addWidget(Spacer::create(), 190);
     languageHBox.addWidget(Spacer::create(), 0.5);
 
-    mainVBox.addWidget(&languageHBox, 0.01);
-
-    mainVBox.addWidget(VSpacer::create(1));
+    pages[0].addWidget(&languageHBox, 40);
+    pages[0].addWidget(VSpacer::create(8));
 
     generalHBox.addWidget(Spacer::create(), 0.5);
-    generalHBox.addWidget(Label::create(_("Campaign AI")), 190);
+    generalHBox.addWidget(optionLabel(_("Campaign AI")), 190);
     int visibleIndex = 0;
     int selectedVisibleIndex = -1;
     for(unsigned int i=1; i<PlayerFactory::getList().size(); i++) {
@@ -135,23 +149,25 @@ OptionsMenu::OptionsMenu() : MenuBase()
         aiDropDownBox.setSelectedItem(0);
     }
     aiDropDownBox.setOnSelectionChange(std::bind(&OptionsMenu::onChangeOption, this, std::placeholders::_1));
-    generalHBox.addWidget(&aiDropDownBox, 140);
-    generalHBox.addWidget(Spacer::create(), 20);
+    generalHBox.addWidget(&aiDropDownBox, 290);
     introCheckbox.setText(_("Play Intro"));
     introCheckbox.setChecked(settings.general.playIntro);
     introCheckbox.setOnClick(std::bind(&OptionsMenu::onChangeOption, this, true));
-    generalHBox.addWidget(&introCheckbox, 130);
+    introHBox.addWidget(Spacer::create(), 0.5);
+    introHBox.addWidget(&introCheckbox, 480);
+    introHBox.addWidget(Spacer::create(), 0.5);
+    pages[0].addWidget(&introHBox, 40);
+    pages[0].addWidget(VSpacer::create(8));
     generalHBox.addWidget(Spacer::create(), 0.5);
 
-    mainVBox.addWidget(&generalHBox, 0.01);
-
-    mainVBox.addWidget(Spacer::create(), 0.2);
+    pages[0].addWidget(&generalHBox, 40);
+    pages[0].addWidget(VSpacer::create(8));
 
     resolutionHBox.addWidget(Spacer::create(), 0.5);
 #ifdef __ANDROID__
-    resolutionHBox.addWidget(Label::create(_("Interface Resolution")), 190);
+    resolutionHBox.addWidget(optionLabel(_("Interface Resolution")), 190);
 #else
-    resolutionHBox.addWidget(Label::create(_("Video Resolution")), 190);
+    resolutionHBox.addWidget(optionLabel(_("Video Resolution")), 190);
 #endif
 
     int i = 0;
@@ -196,35 +212,37 @@ OptionsMenu::OptionsMenu() : MenuBase()
 
     resolutionHBox.addWidget(Spacer::create(), 0.5);
 
-    mainVBox.addWidget(&resolutionHBox, 0.01);
-
-    mainVBox.addWidget(VSpacer::create(1));
+    pages[1].addWidget(&resolutionHBox, 40);
+    pages[1].addWidget(VSpacer::create(8));
 
     videoHBox.addWidget(Spacer::create(), 0.5);
     fullScreenCheckbox.setText(_("Full Screen"));
     fullScreenCheckbox.setChecked(settings.video.fullscreen);
     fullScreenCheckbox.setOnClick(std::bind(&OptionsMenu::onChangeOption, this, true));
-    videoHBox.addWidget(&fullScreenCheckbox, 155);
+    videoHBox.addWidget(&fullScreenCheckbox, 240);
     frameLimitCheckbox.setText(_("Enable VSync"));
     frameLimitCheckbox.setChecked(settings.video.frameLimit);
     frameLimitCheckbox.setOnClick(std::bind(&OptionsMenu::onChangeOption, this, true));
-    videoHBox.addWidget(&frameLimitCheckbox, 155);
+    videoHBox.addWidget(&frameLimitCheckbox, 240);
     showTutorialHintsCheckbox.setText(_("Show Tutorial Hints"));
     showTutorialHintsCheckbox.setChecked(settings.general.showTutorialHints);
     showTutorialHintsCheckbox.setOnClick(std::bind(&OptionsMenu::onChangeOption, this, true));
-    videoHBox.addWidget(&showTutorialHintsCheckbox, 155);
+    flagsHBox.addWidget(Spacer::create(), 0.5);
+    flagsHBox.addWidget(&showTutorialHintsCheckbox, 240);
     videoHBox.addWidget(Spacer::create(), 0.5);
 
-    mainVBox.addWidget(&videoHBox, 0.01);
-
-    mainVBox.addWidget(VSpacer::create(1));
+    pages[1].addWidget(&videoHBox, 40);
+    pages[1].addWidget(VSpacer::create(8));
 
     videoHBox2.addWidget(Spacer::create(), 0.5);
     showWatermarkCheckbox.setText(_("Show Watermark"));
     showWatermarkCheckbox.setChecked(settings.video.showWatermark);
     showWatermarkCheckbox.setOnClick(std::bind(&OptionsMenu::onChangeOption, this, true));
-    videoHBox2.addWidget(&showWatermarkCheckbox, 135);
-    videoHBox2.addWidget(Label::create(_("Cursor")), 52);
+    flagsHBox.addWidget(&showWatermarkCheckbox, 240);
+    flagsHBox.addWidget(Spacer::create(), 0.5);
+    pages[1].addWidget(&flagsHBox, 40);
+    pages[1].addWidget(VSpacer::create(8));
+    videoHBox2.addWidget(optionLabel(_("Cursor")), 190);
     cursorVisibilityDropDownBox.addEntry(_("Auto"), 0);
     cursorVisibilityDropDownBox.addEntry(_("Hidden"), 1);
     cursorVisibilityDropDownBox.addEntry(_("Visible"), 2);
@@ -232,8 +250,8 @@ OptionsMenu::OptionsMenu() : MenuBase()
         ? settings.video.cursorVisibility : 0;
     cursorVisibilityDropDownBox.setSelectedItem(cursorVisibilityIndex);
     cursorVisibilityDropDownBox.setOnSelectionChange(std::bind(&OptionsMenu::onChangeOption, this, std::placeholders::_1));
-    videoHBox2.addWidget(&cursorVisibilityDropDownBox, 78);
-    videoHBox2.addWidget(Label::create(_("Scale")), 45);
+    videoHBox2.addWidget(&cursorVisibilityDropDownBox, 130);
+    videoHBox2.addWidget(optionLabel(_("Scale")), 90);
     cursorScaleDropDownBox.addEntry(_("Auto"), 0);
     cursorScaleDropDownBox.addEntry("1x", 1);
     cursorScaleDropDownBox.addEntry("2x", 2);
@@ -242,12 +260,11 @@ OptionsMenu::OptionsMenu() : MenuBase()
     int cursorScaleIndex = settings.video.cursorScale >= 0 && settings.video.cursorScale <= 4 ? settings.video.cursorScale : 0;
     cursorScaleDropDownBox.setSelectedItem(cursorScaleIndex);
     cursorScaleDropDownBox.setOnSelectionChange(std::bind(&OptionsMenu::onChangeOption, this, std::placeholders::_1));
-    videoHBox2.addWidget(&cursorScaleDropDownBox, 65);
+    videoHBox2.addWidget(&cursorScaleDropDownBox, 70);
     videoHBox2.addWidget(Spacer::create(), 0.5);
 
-    mainVBox.addWidget(&videoHBox2, 0.01);
-
-    mainVBox.addWidget(Spacer::create(), 0.2);
+    pages[1].addWidget(&videoHBox2, 40);
+    pages[1].addWidget(VSpacer::create(8));
 
     audioHBox.addWidget(Spacer::create(), 0.5);
     playSFXCheckbox.setText(_("Play SFX"));
@@ -260,7 +277,8 @@ OptionsMenu::OptionsMenu() : MenuBase()
     audioHBox.addWidget(&playMusicCheckbox, 240);
     audioHBox.addWidget(Spacer::create(), 0.5);
 
-    mainVBox.addWidget(&audioHBox, 0.01);
+    pages[2].addWidget(&audioHBox, 40);
+    pages[2].addWidget(VSpacer::create(8));
 
     audioHBox2.addWidget(Spacer::create(), 0.5);
     playCreditsSFXCheckbox.setText(_("Play Credits SFX"));
@@ -270,12 +288,11 @@ OptionsMenu::OptionsMenu() : MenuBase()
     audioHBox2.addWidget(Spacer::create(), 240);
     audioHBox2.addWidget(Spacer::create(), 0.5);
 
-    mainVBox.addWidget(&audioHBox2, 0.01);
-
-    mainVBox.addWidget(Spacer::create(), 0.2);
+    pages[2].addWidget(&audioHBox2, 40);
+    pages[2].addWidget(VSpacer::create(8));
 
     networkPortHBox.addWidget(Spacer::create(), 0.5);
-    networkPortHBox.addWidget(Label::create(_("Port")), 190);
+    networkPortHBox.addWidget(optionLabel(_("Port")), 190);
     portTextBox.setMaximumTextLength(5);
     portTextBox.setAllowedChars("0123456789");
     portTextBox.setOnTextChange(std::bind(&OptionsMenu::onChangeOption, this, std::placeholders::_1));
@@ -283,52 +300,63 @@ OptionsMenu::OptionsMenu() : MenuBase()
     portTextBox.setText(std::to_string(settings.network.serverPort));
     networkPortHBox.addWidget(Spacer::create(), 190);
     networkPortHBox.addWidget(Spacer::create(), 0.5);
-    mainVBox.addWidget(&networkPortHBox, 0.01);
-
-    mainVBox.addWidget(VSpacer::create(5));
+    pages[2].addWidget(&networkPortHBox, 40);
+    pages[2].addWidget(VSpacer::create(8));
 
     networkMetaServerHBox.addWidget(Spacer::create(), 0.5);
-    networkMetaServerHBox.addWidget(Label::create(_("MetaServer")), 190);
+    networkMetaServerHBox.addWidget(optionLabel(_("MetaServer")), 190);
     metaServerTextBox.setOnTextChange(std::bind(&OptionsMenu::onChangeOption, this, std::placeholders::_1));
     networkMetaServerHBox.addWidget(&metaServerTextBox, 290);
     metaServerTextBox.setText(settings.network.metaServer);
     networkMetaServerHBox.addWidget(Spacer::create(), 0.5);
-    mainVBox.addWidget(&networkMetaServerHBox, 0.01);
-
-    mainVBox.addWidget(VSpacer::create(10));
+    pages[2].addWidget(&networkMetaServerHBox, 40);
+    pages[2].addWidget(VSpacer::create(8));
 
     restoreDefaultsHBox.addWidget(Spacer::create(), 0.5);
     restoreDefaultsButton.setText(_("Restore Config Defaults"));
     restoreDefaultsButton.setOnClick(std::bind(&OptionsMenu::onRestoreDefaults, this));
     restoreDefaultsHBox.addWidget(&restoreDefaultsButton, 320);
     restoreDefaultsHBox.addWidget(Spacer::create(), 0.5);
-    mainVBox.addWidget(&restoreDefaultsHBox, 0.01);
+    pages[0].addWidget(&restoreDefaultsHBox, 40);
+    pages[0].addWidget(VSpacer::create(8));
 
-    mainVBox.addWidget(Spacer::create(), 0.2);
-
-    okCancelHBox.addWidget(Spacer::create());
-
-    backButton.setText(_("Back"));
+    backButton.setText(_("BACK"));
     backButton.setOnClick(std::bind(&OptionsMenu::onOptionsCancel, this));
-    okCancelHBox.addWidget(&backButton);
 
-    okCancelHBox.addWidget(Spacer::create());
 
-    acceptButton.setText(_("Accept"));
-    acceptButton.setVisible(false);
+    acceptButton.setText(_("APPLY"));
+    acceptButton.setEnabled(false);
     acceptButton.setOnClick(std::bind(&OptionsMenu::onOptionsOK, this));
-    okCancelHBox.addWidget(&acceptButton);
 
-    okCancelHBox.addWidget(Spacer::create());
 
-    mainVBox.addWidget(&okCancelHBox, 26);
-
-    mainVBox.addWidget(Spacer::create(), 0.1);
+    windowWidget.addWidget(&backButton, Point(left + 30, getSize().y - 64), Point(220, 40));
+    windowWidget.addWidget(&acceptButton, Point(left + 290, getSize().y - 64), Point(220, 40));
+    for(auto* checkbox : {&introCheckbox, &fullScreenCheckbox, &frameLimitCheckbox,
+            &showTutorialHintsCheckbox, &showWatermarkCheckbox, &playSFXCheckbox,
+            &playMusicCheckbox, &playCreditsSFXCheckbox})
+        checkbox->setTextColor(COLOR_BLACK, COLOR_TRANSPARENT);
+    for(auto* box : {&nameTextBox, &portTextBox, &metaServerTextBox})
+        box->setTextColor(COLOR_BLACK, COLOR_TRANSPARENT);
+    for(auto* box : {&languageDropDownBox, &aiDropDownBox, &resolutionDropDownBox,
+            &zoomlevelDropDownBox, &scalerDropDownBox, &cursorVisibilityDropDownBox, &cursorScaleDropDownBox})
+        box->setColor(COLOR_BLACK);
+#ifdef __ANDROID__
+    fullScreenCheckbox.setEnabled(false);
+#endif
+    showPage(0);
 }
 
 OptionsMenu::~OptionsMenu()
 {
     ;
+}
+
+void OptionsMenu::showPage(int page) {
+    for(int i = 0; i < 3; ++i) {
+        pages[i].setVisible(i == page);
+        pages[i].setEnabled(i == page);
+        pageButtons[i].setToggleState(i == page);
+    }
 }
 
 void OptionsMenu::onChangeOption(bool bInteractive) {
@@ -371,7 +399,7 @@ void OptionsMenu::onChangeOption(bool bInteractive) {
     bChanged |= (settings.network.serverPort != atoi(portTextBox.getText().c_str()));
     bChanged |= (settings.network.metaServer != metaServerTextBox.getText());
 
-    acceptButton.setVisible(bChanged);
+    acceptButton.setEnabled(bChanged);
 }
 
 void OptionsMenu::onOptionsOK() {

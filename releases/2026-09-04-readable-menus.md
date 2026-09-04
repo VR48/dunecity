@@ -12,6 +12,9 @@
   default, independently of the phone's native display resolution, and exposes
   the same presets in Options. Keep landscape and fold/unfold surface handling.
 - Shorten and wrap the first-launch DuneCity prompt to fit small screens.
+- Split Options into General, Display, and Audio / Network tabs with stable
+  row heights and always-visible Back / Apply controls. Keep settings edits
+  pending across tabs until Apply, with Back discarding them.
 
 ## Dune2R Assets
 

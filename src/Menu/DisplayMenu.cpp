@@ -2,8 +2,10 @@
 #include <Menu/OptionsMenu.h>
 #include <FileClasses/GFXManager.h>
 #include <FileClasses/INIFile.h>
+#include <FileClasses/TextManager.h>
 #include <globals.h>
 #include <main.h>
+#include <GUI/MsgBox.h>
 
 DisplayMenu::DisplayMenu() : selectedHeight(settings.video.interfaceHeight) {
     setBackground(pGFXManager->getUIGraphic(UI_MenuBackground));
@@ -47,7 +49,10 @@ void DisplayMenu::apply() {
     if(selectedHeight == settings.video.interfaceHeight) { quit(); return; }
     INIFile config(getConfigFilepath());
     config.setIntValue("Video", "Interface Height", selectedHeight);
-    config.saveChangesTo(getConfigFilepath());
+    if(!config.saveChangesTo(getConfigFilepath())) {
+        openWindow(MsgBox::create(_("Could not save display settings.")));
+        return;
+    }
     settings.video.interfaceHeight = selectedHeight;
     quit(MENU_QUIT_REINITIALIZE);
 }
