@@ -38,6 +38,7 @@
 #include <misc/Scaler.h>
 #include <misc/FileSystem.h>
 #include <misc/format.h>
+#include <misc/MenuPalette.h>
 
 #include <algorithm>
 
@@ -63,7 +64,6 @@ OptionsMenu::OptionsMenu() : MenuBase()
     const int left = (getSize().x - 540) / 2;
     title.setText(_("OPTIONS"));
     title.setTextFontSize(22);
-    title.setTextColor(COLOR_BLACK, COLOR_TRANSPARENT);
     title.setAlignment(Alignment_HCenter);
     windowWidget.addWidget(&title, Point(left, 18), Point(540, 30));
     const char* tabNames[] = {"GENERAL", "DISPLAY", "AUDIO / NETWORK"};
@@ -76,7 +76,6 @@ OptionsMenu::OptionsMenu() : MenuBase()
     }
     auto optionLabel = [](const std::string& text) {
         auto* label = Label::create(text);
-        label->setTextColor(COLOR_BLACK, COLOR_TRANSPARENT);
         label->setAlignment(static_cast<Alignment_Enum>(Alignment_Left | Alignment_VCenter));
         return label;
     };
@@ -266,6 +265,24 @@ OptionsMenu::OptionsMenu() : MenuBase()
     pages[1].addWidget(&videoHBox2, 40);
     pages[1].addWidget(VSpacer::create(8));
 
+    paletteHBox.addWidget(Spacer::create(), 0.5);
+    paletteHBox.addWidget(optionLabel(_("Menu Colors")), 190);
+    paletteDropDownBox.addEntry(_("Desert Gold"), 0);
+    paletteDropDownBox.addEntry(_("High Contrast"), 1);
+    paletteDropDownBox.setSelectedItem(validatedMenuPalette(settings.video.menuPalette));
+    paletteDropDownBox.setOnSelectionChange([this](bool interactive) {
+        updatePalettePreview();
+        onChangeOption(interactive);
+    });
+    paletteHBox.addWidget(&paletteDropDownBox, 290);
+    paletteHBox.addWidget(Spacer::create(), 0.5);
+    pages[1].addWidget(&paletteHBox, 40);
+    pages[1].addWidget(VSpacer::create(8));
+    palettePreview.setText("DUNE LEGACY");
+    palettePreview.setEnabled(false);
+    updatePalettePreview();
+    pages[1].addWidget(&palettePreview, 40);
+
     audioHBox.addWidget(Spacer::create(), 0.5);
     playSFXCheckbox.setText(_("Play SFX"));
     playSFXCheckbox.setChecked(settings.audio.playSFX);
@@ -331,15 +348,6 @@ OptionsMenu::OptionsMenu() : MenuBase()
 
     windowWidget.addWidget(&backButton, Point(left + 30, getSize().y - 64), Point(220, 40));
     windowWidget.addWidget(&acceptButton, Point(left + 290, getSize().y - 64), Point(220, 40));
-    for(auto* checkbox : {&introCheckbox, &fullScreenCheckbox, &frameLimitCheckbox,
-            &showTutorialHintsCheckbox, &showWatermarkCheckbox, &playSFXCheckbox,
-            &playMusicCheckbox, &playCreditsSFXCheckbox})
-        checkbox->setTextColor(COLOR_BLACK, COLOR_TRANSPARENT);
-    for(auto* box : {&nameTextBox, &portTextBox, &metaServerTextBox})
-        box->setTextColor(COLOR_BLACK, COLOR_TRANSPARENT);
-    for(auto* box : {&languageDropDownBox, &aiDropDownBox, &resolutionDropDownBox,
-            &zoomlevelDropDownBox, &scalerDropDownBox, &cursorVisibilityDropDownBox, &cursorScaleDropDownBox})
-        box->setColor(COLOR_BLACK);
 #ifdef __ANDROID__
     fullScreenCheckbox.setEnabled(false);
 #endif
@@ -357,6 +365,11 @@ void OptionsMenu::showPage(int page) {
         pages[i].setEnabled(i == page);
         pageButtons[i].setToggleState(i == page);
     }
+}
+
+void OptionsMenu::updatePalettePreview() {
+    const auto colors = menuPalette(paletteDropDownBox.getSelectedEntryIntData());
+    palettePreview.setTextColor(colors.foreground, colors.shadow);
 }
 
 void OptionsMenu::onChangeOption(bool bInteractive) {
@@ -389,6 +402,7 @@ void OptionsMenu::onChangeOption(bool bInteractive) {
     bChanged |= (settings.video.showWatermark != showWatermarkCheckbox.isChecked());
     bChanged |= (settings.video.cursorVisibility != cursorVisibilityDropDownBox.getSelectedEntryIntData());
     bChanged |= (settings.video.cursorScale != cursorScaleDropDownBox.getSelectedEntryIntData());
+    bChanged |= (settings.video.menuPalette != paletteDropDownBox.getSelectedEntryIntData());
 
     bChanged |= (settings.audio.playSFX != playSFXCheckbox.isChecked());
     bChanged |= (settings.audio.playMusic != playMusicCheckbox.isChecked());
@@ -463,6 +477,7 @@ void OptionsMenu::onOptionsOK() {
     settings.video.showWatermark = showWatermarkCheckbox.isChecked();
     settings.video.cursorVisibility = cursorVisibilityDropDownBox.getSelectedEntryIntData();
     settings.video.cursorScale = cursorScaleDropDownBox.getSelectedEntryIntData();
+    settings.video.menuPalette = validatedMenuPalette(paletteDropDownBox.getSelectedEntryIntData());
 
     settings.audio.playSFX = playSFXCheckbox.isChecked();
     settings.audio.playMusic = playMusicCheckbox.isChecked();
@@ -534,6 +549,7 @@ void OptionsMenu::saveConfiguration2File() {
     myINIFile.setBoolValue("Video","Show Watermark",settings.video.showWatermark);
     myINIFile.setIntValue("Video","Cursor Visibility",settings.video.cursorVisibility);
     myINIFile.setIntValue("Video","Cursor Scale",settings.video.cursorScale);
+    myINIFile.setIntValue("Video","Menu Palette",settings.video.menuPalette);
 
     myINIFile.setStringValue("General","Player Name",settings.general.playerName);
     myINIFile.setStringValue("General","Language",settings.general.language);

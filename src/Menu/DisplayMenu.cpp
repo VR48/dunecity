@@ -15,7 +15,6 @@ DisplayMenu::DisplayMenu() : selectedHeight(settings.video.interfaceHeight) {
     const int top = (getSize().y - 360) / 2;
     title.setText("DISPLAY / INTERFACE SIZE");
     title.setTextFontSize(22);
-    title.setTextColor(COLOR_BLACK, COLOR_TRANSPARENT);
     content.addWidget(&title, Point(left, top), Point(440, 40));
     const char* labels[] = {"Large - 640 x 480", "Medium - 800 x 600",
                             "Small - 1024 x 768", "Automatic"};

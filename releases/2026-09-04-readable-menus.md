@@ -4,8 +4,10 @@
 
 - Rebuild the main and single-player menus with generously sized, spaced
   buttons. Preserve the original gold controls, Arrakis artwork and Dune theme.
-- Use dark, centered button lettering with font sizes that fit each control.
-  Keyboard focus retains a visible outline; explicit custom text colors remain.
+- Default to Desert Gold lettering with a sand highlight. Options > Display >
+  Menu Colors offers opt-in High Contrast black lettering, with a sample before
+  Apply. Keep colors across restarts; Back discards an unconfirmed choice.
+  Fonts fit each control and keyboard focus retains a visible outline.
 - Add DISPLAY to the main menu, before starting a game. Choose Large
   (640x480), Medium (800x600), Small (1024x768), or desktop Automatic.
 - Save the chosen interface resolution across restarts. Android uses Large by
@@ -17,6 +19,9 @@
   pending across tabs until Apply, with Back discarding them.
 
 ## Dune2R Assets
+
+- Show the DUNE2R ASSETS main-menu button only while the Dune2R mod is active.
+  Vanilla and other mods retain their own identities and no remaster-only UI.
 
 - Include the verified Refinery footprint scaling and alignment corrections.
   The current remastered Refinery is bound to House Atreides only.

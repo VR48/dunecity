@@ -75,6 +75,7 @@ private:
     TextButton      mapEditorButton;
     TextButton      modsButton;
     TextButton      dune2rEditorButton;
+    bool            dune2rButtonLayoutInitialized = false;
     TextButton      optionsButton;
     TextButton      displayButton;
     TextButton      howToPlayButton;

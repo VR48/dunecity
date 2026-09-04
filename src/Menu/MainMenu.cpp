@@ -119,7 +119,6 @@ MainMenu::MainMenu()
     for(int i = 0; i < 10; ++i) windowWidget.addWidget(buttons[i], layout.button(i));
     refreshDune2REditorButton();
     modVersionLabel.setTextFontSize(14);
-    modVersionLabel.setTextColor(COLOR_BLACK, COLOR_TRANSPARENT);
     modVersionLabel.setAlignment(Alignment_HCenter);
     refreshModVersionLabel();
     windowWidget.addWidget(&modVersionLabel, Point(24, getSize().y - 30), Point(getSize().x - 48, 24));
@@ -299,8 +298,16 @@ void MainMenu::refreshDune2REditorButton()
 {
     const bool available = ModManager::instance().isInitialized()
                            && ModManager::instance().getActiveModName() == "Dune2R";
-    dune2rEditorButton.setVisible(true);
+    if(dune2rButtonLayoutInitialized && dune2rEditorButton.isVisible() == available) return;
+    dune2rButtonLayoutInitialized = true;
+    dune2rEditorButton.setVisible(available);
     dune2rEditorButton.setEnabled(available);
+    const StartMenuLayout layout{getSize().x, getSize().y, 5};
+    const auto aboutBounds = layout.button(available ? 8 : 7);
+    windowWidget.setWidgetGeometry(&aboutButton, Point(aboutBounds.x, aboutBounds.y), Point(aboutBounds.w, aboutBounds.h));
+    auto quitBounds = layout.button(available ? 9 : 8);
+    if(!available) quitBounds.x = (getSize().x - quitBounds.w) / 2;
+    windowWidget.setWidgetGeometry(&quitButton, Point(quitBounds.x, quitBounds.y), Point(quitBounds.w, quitBounds.h));
 }
 
 void MainMenu::onOptions() {
@@ -368,7 +375,6 @@ void MainMenu::showFirstLaunchCityPromptIfNeeded()
     message += _("Enable Dune City now?\nYou can change this later in MODS.");
 
     auto* prompt = QstBox::create(message, _("Enable now"), _("Later"), QSTBOX_BUTTON1);
-    prompt->setTextColor(COLOR_BLACK, COLOR_TRANSPARENT);
     openWindow(prompt);
 }
 

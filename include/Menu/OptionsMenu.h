@@ -44,6 +44,7 @@ public:
 
 private:
     void    showPage(int page);
+    void    updatePalettePreview();
     void    onChangeOption(bool bInteractive);
     void    onOptionsOK();
     void    onOptionsCancel();
@@ -98,6 +99,9 @@ private:
     Checkbox    showWatermarkCheckbox;
     DropDownBox cursorVisibilityDropDownBox;
     DropDownBox cursorScaleDropDownBox;
+    HBox        paletteHBox;
+    DropDownBox paletteDropDownBox;
+    TextButton  palettePreview;
 
     HBox        audioHBox;
     Checkbox    playSFXCheckbox;

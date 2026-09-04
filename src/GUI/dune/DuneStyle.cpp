@@ -73,8 +73,8 @@ sdl2::surface_ptr DuneStyle::createLabelSurface(Uint32 width, Uint32 height, con
 
     SDL_FillRect(surface.get(), nullptr, backgroundcolor);
 
-    if(textcolor == COLOR_DEFAULT) textcolor = defaultForegroundColor;
-    if(textshadowcolor == COLOR_DEFAULT) textshadowcolor = defaultShadowColor;
+    if(textcolor == COLOR_DEFAULT) textcolor = textPalette.foreground;
+    if(textshadowcolor == COLOR_DEFAULT) textshadowcolor = textPalette.shadow;
 
     int fontheight = getTextHeight(fontSize);
     int spacing = 2;
@@ -136,8 +136,8 @@ sdl2::surface_ptr DuneStyle::createCheckboxSurface(Uint32 width, Uint32 height, 
 
     SDL_FillRect(surface.get(), nullptr, backgroundcolor);
 
-    if(textcolor == COLOR_DEFAULT) textcolor = defaultForegroundColor;
-    if(textshadowcolor == COLOR_DEFAULT) textshadowcolor = defaultShadowColor;
+    if(textcolor == COLOR_DEFAULT) textcolor = textPalette.foreground;
+    if(textshadowcolor == COLOR_DEFAULT) textshadowcolor = textPalette.shadow;
 
     if(activated) {
         textcolor = brightenUp(textcolor);
@@ -191,8 +191,8 @@ sdl2::surface_ptr DuneStyle::createRadioButtonSurface(Uint32 width, Uint32 heigh
 
     SDL_FillRect(surface.get(), nullptr, backgroundcolor);
 
-    if(textcolor == COLOR_DEFAULT) textcolor = defaultForegroundColor;
-    if(textshadowcolor == COLOR_DEFAULT) textshadowcolor = defaultShadowColor;
+    if(textcolor == COLOR_DEFAULT) textcolor = textPalette.foreground;
+    if(textshadowcolor == COLOR_DEFAULT) textshadowcolor = textPalette.shadow;
 
     if(activated) {
         textcolor = brightenUp(textcolor);
@@ -245,7 +245,7 @@ sdl2::surface_ptr DuneStyle::createRadioButtonSurface(Uint32 width, Uint32 heigh
 
 sdl2::surface_ptr DuneStyle::createDropDownBoxButton(Uint32 size, bool pressed, bool activated, Uint32 color) {
     if(color == COLOR_DEFAULT) {
-        color = defaultForegroundColor;
+        color = textPalette.foreground;
     }
 
     // create surfaces
@@ -323,12 +323,11 @@ sdl2::surface_ptr DuneStyle::createButtonSurface(Uint32 width, Uint32 height, co
     while(fontsize > 12 && (width < getTextWidth(text, fontsize) + 12 ||
                            height < getTextHeight(fontsize) + 4)) --fontsize;
 
-    // Dark lettering remains readable against the original gold button bevels.
     const bool defaultText = textcolor == COLOR_DEFAULT;
-    if(defaultText) textcolor = COLOR_BLACK;
-    if(textshadowcolor == COLOR_DEFAULT) textshadowcolor = defaultText ? COLOR_TRANSPARENT : defaultShadowColor;
+    if(defaultText) textcolor = textPalette.foreground;
+    if(textshadowcolor == COLOR_DEFAULT) textshadowcolor = textPalette.shadow;
     if(activated && width >= 8 && height >= 8)
-        drawRect(surface.get(), 3, 3, surface->w - 4, surface->h - 4, COLOR_BLACK);
+        drawRect(surface.get(), 3, 3, surface->w - 4, surface->h - 4, textPalette.foreground);
 
     sdl2::surface_ptr textSurface1 = createSurfaceWithText(text, textshadowcolor, fontsize);
     SDL_Rect textRect1 = calcDrawingRect(textSurface1.get(), surface->w / 2 + 1 + (pressed ? 1 : 0), surface->h / 2 + 1 + (pressed ? 1 : 0), HAlign::Center, VAlign::Center);
@@ -364,8 +363,8 @@ sdl2::surface_ptr DuneStyle::createTextBoxSurface(Uint32 width, Uint32 height, c
     drawHLine(surface.get(),1,surface->h-2,surface->w-2,buttonEdgeTopLeftColor);
     drawVLine(surface.get(),surface->w-2,1,surface->h-2,buttonEdgeTopLeftColor);
 
-    if(textcolor == COLOR_DEFAULT) textcolor = defaultForegroundColor;
-    if(textshadowcolor == COLOR_DEFAULT) textshadowcolor = defaultShadowColor;
+    if(textcolor == COLOR_DEFAULT) textcolor = textPalette.foreground;
+    if(textshadowcolor == COLOR_DEFAULT) textshadowcolor = textPalette.shadow;
 
     SDL_Rect cursorPos;
 
@@ -432,7 +431,7 @@ Point DuneStyle::getMinimumScrollBarArrowButtonSize() {
 
 sdl2::surface_ptr DuneStyle::createScrollBarArrowButton(bool down, bool pressed, bool activated, Uint32 color) {
     if(color == COLOR_DEFAULT) {
-        color = defaultForegroundColor;
+        color = textPalette.foreground;
     }
 
     // create surfaces
@@ -490,7 +489,7 @@ Uint32 DuneStyle::getListBoxEntryHeight() {
 
 sdl2::surface_ptr DuneStyle::createListBoxEntry(Uint32 width, const std::string& text, bool selected, Uint32 color) {
     if(color == COLOR_DEFAULT) {
-        color = defaultForegroundColor;
+        color = textPalette.foreground;
     }
 
     // create surfaces

@@ -994,6 +994,7 @@ int main(int argc, char *argv[]) {
             settings.video.rotateUnitGraphics = myINIFile.getBoolValue("Video","RotateUnitGraphics",false);
             settings.video.showWatermark = myINIFile.getBoolValue("Video","Show Watermark",true);
             settings.video.cursorVisibility = myINIFile.getIntValue("Video","Cursor Visibility",0);
+            settings.video.menuPalette = validatedMenuPalette(myINIFile.getIntValue("Video", "Menu Palette", 0));
             settings.video.cursorScale = myINIFile.getIntValue("Video","Cursor Scale",0);
             settings.audio.musicType = myINIFile.getStringValue("Audio","Music Type","adl");
             settings.audio.adlHarmonicStereo = myINIFile.getBoolValue("Audio","ADL Harmonic Stereo", false);
@@ -1308,7 +1309,7 @@ int main(int argc, char *argv[]) {
                 pSFXManager = std::make_unique<SFXManager>();
 #endif
 
-                GUIStyle::setGUIStyle(std::make_unique<DuneStyle>());
+                GUIStyle::setGUIStyle(std::make_unique<DuneStyle>(settings.video.menuPalette));
 
                 if(bFirstInit == true) {
                     SDL_Log("Starting sound player...");

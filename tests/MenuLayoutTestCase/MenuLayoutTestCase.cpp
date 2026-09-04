@@ -1,5 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <misc/MenuLayout.h>
+#include <misc/MenuPalette.h>
+#include <FileClasses/INIFile.h>
 
 TEST_CASE("Start menus retain readable targets and clear artwork at supported resolutions", "[menu][display]") {
     for(const auto size : {SDL_Point{640,480}, SDL_Point{800,600}, SDL_Point{1024,768},
@@ -32,5 +34,24 @@ TEST_CASE("Android preserves chosen interface size and repairs old native resolu
     for(int old : {0,-1,2000,2800}) {
         REQUIRE(validatedInterfaceHeight(old, true) == 480);
         REQUIRE(validatedInterfaceHeight(old, false) == 0);
+    }
+}
+
+TEST_CASE("Desert menu colors default safely and high contrast remains opt in", "[menu][accessibility]") {
+    const auto desert = menuPalette(0);
+    REQUIRE(desert.foreground != COLOR_BLACK);
+    REQUIRE(desert.shadow == COLOR_DESERTSAND);
+    const auto contrast = menuPalette(1);
+    REQUIRE(contrast.foreground == COLOR_BLACK);
+    REQUIRE(contrast.shadow == COLOR_TRANSPARENT);
+    for(int invalid : {-99, -1, 2, 100}) {
+        REQUIRE(validatedMenuPalette(invalid) == 0);
+        REQUIRE(menuPalette(invalid).foreground == desert.foreground);
+    }
+    INIFile config(true, "Menu color preference test");
+    REQUIRE(validatedMenuPalette(config.getIntValue("Video", "Menu Palette", 0)) == 0);
+    for(int selected : {1, 0}) {
+        config.setIntValue("Video", "Menu Palette", selected);
+        REQUIRE(validatedMenuPalette(config.getIntValue("Video", "Menu Palette", 0)) == selected);
     }
 }
