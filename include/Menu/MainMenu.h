@@ -67,8 +67,10 @@ private:
     void refreshDune2REditorButton();
 
     StaticContainer windowWidget;
+    VBox            menuButtonsVBox;
     PictureLabel planetPicture;
     PictureLabel logoPicture;
+    PictureLabel buttonBorder;
 
     TextButton      singlePlayerButton;
     TextButton      multiPlayerButton;
@@ -76,6 +78,7 @@ private:
     TextButton      modsButton;
     TextButton      dune2rEditorButton;
     bool            dune2rButtonLayoutInitialized = false;
+    bool            enlargedStartMenus = false;
     TextButton      optionsButton;
     TextButton      displayButton;
     TextButton      howToPlayButton;

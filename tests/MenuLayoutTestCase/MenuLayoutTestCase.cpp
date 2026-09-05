@@ -55,3 +55,18 @@ TEST_CASE("Desert menu colors default safely and high contrast remains opt in", 
         REQUIRE(validatedMenuPalette(config.getIntValue("Video", "Menu Palette", 0)) == selected);
     }
 }
+
+TEST_CASE("Classic start menus default safely and enlarged remains opt in", "[menu][accessibility]") {
+    for(int invalid : {-99, -1, 2, 100}) {
+        REQUIRE(validatedStartMenuMode(invalid) == 0);
+    }
+    REQUIRE(validatedStartMenuMode(0) == 0);
+    REQUIRE(validatedStartMenuMode(1) == 1);
+
+    INIFile config(true, "Start menu mode preference test");
+    REQUIRE(validatedStartMenuMode(config.getIntValue("Video", "Start Menu Mode", 0)) == 0);
+    for(int selected : {1, 0}) {
+        config.setIntValue("Video", "Start Menu Mode", selected);
+        REQUIRE(validatedStartMenuMode(config.getIntValue("Video", "Start Menu Mode", 0)) == selected);
+    }
+}

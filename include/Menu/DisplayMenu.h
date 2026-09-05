@@ -12,13 +12,17 @@ public:
     DisplayMenu();
 private:
     void select(int height);
+    void selectLayout(int mode);
     void apply();
     StaticContainer content;
     Label title;
+    Label sizeTitle;
+    std::array<TextButton, 2> layoutChoices;
     std::array<TextButton, 4> choices;
     TextButton cancelButton;
     TextButton applyButton;
     int selectedHeight;
+    int selectedLayout;
 };
 
 #endif

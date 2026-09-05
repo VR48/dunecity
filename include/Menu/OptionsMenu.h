@@ -100,6 +100,7 @@ private:
     DropDownBox cursorVisibilityDropDownBox;
     DropDownBox cursorScaleDropDownBox;
     HBox        paletteHBox;
+    DropDownBox startMenuModeDropDownBox;
     DropDownBox paletteDropDownBox;
     TextButton  palettePreview;
 

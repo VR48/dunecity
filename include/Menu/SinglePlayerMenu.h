@@ -49,8 +49,10 @@ private:
     void onCancel();
 
     StaticContainer windowWidget;
+    VBox menuButtonsVBox;
     PictureLabel planetPicture;
     PictureLabel logoPicture;
+    PictureLabel buttonBorder;
 
     TextButton  campaignButton;
     TextButton  customButton;

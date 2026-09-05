@@ -59,16 +59,43 @@ SinglePlayerMenu::SinglePlayerMenu() : MenuBase() {
     loadReplayButton.setOnClick(std::bind(&SinglePlayerMenu::onLoadReplay, this));
     cancelButton.setText(_("BACK"));
     cancelButton.setOnClick(std::bind(&SinglePlayerMenu::onCancel, this));
-    const StartMenuLayout layout{getSize().x, getSize().y, 3};
-    planetPicture.setTexture(pGFXManager->getUIGraphic(UI_PlanetBackground));
-    planetPicture.setFitToSize(true);
-    windowWidget.addWidget(&planetPicture, layout.planetBounds());
-    logoPicture.setTexture(pGFXManager->getUIGraphic(UI_DuneLegacy));
-    logoPicture.setFitToSize(true);
-    windowWidget.addWidget(&logoPicture, layout.logoBounds());
-    TextButton* buttons[] = {&campaignButton, &customButton, &skirmishButton,
-                             &loadSavegameButton, &loadReplayButton, &cancelButton};
-    for(int i = 0; i < 6; ++i) windowWidget.addWidget(buttons[i], layout.button(i));
+    SDL_Texture* pPlanet = pGFXManager->getUIGraphic(UI_PlanetBackground);
+    SDL_Texture* pLogo = pGFXManager->getUIGraphic(UI_DuneLegacy);
+    planetPicture.setTexture(pPlanet);
+    logoPicture.setTexture(pLogo);
+    if(validatedStartMenuMode(settings.video.startMenuMode) == 1) {
+        const StartMenuLayout layout{getSize().x, getSize().y, 3};
+        planetPicture.setFitToSize(true);
+        windowWidget.addWidget(&planetPicture, layout.planetBounds());
+        logoPicture.setFitToSize(true);
+        windowWidget.addWidget(&logoPicture, layout.logoBounds());
+        TextButton* buttons[] = {&campaignButton, &customButton, &skirmishButton,
+                                 &loadSavegameButton, &loadReplayButton, &cancelButton};
+        for(int i = 0; i < 6; ++i) windowWidget.addWidget(buttons[i], layout.button(i));
+    } else {
+        SDL_Rect planetBounds = calcAlignedDrawingRect(pPlanet);
+        planetBounds.y = planetBounds.y - getHeight(pPlanet) / 2 + 10;
+        windowWidget.addWidget(&planetPicture, planetBounds);
+
+        SDL_Rect logoBounds = calcAlignedDrawingRect(pLogo);
+        logoBounds.y = logoBounds.y + getHeight(pLogo) / 2 + 28;
+        windowWidget.addWidget(&logoPicture, logoBounds);
+
+        SDL_Texture* pBorder = pGFXManager->getUIGraphic(UI_MenuButtonBorder);
+        buttonBorder.setTexture(pBorder);
+        SDL_Rect borderBounds = calcAlignedDrawingRect(pBorder);
+        borderBounds.y = borderBounds.y + getHeight(pBorder) / 2 + 59;
+        windowWidget.addWidget(&buttonBorder, borderBounds);
+
+        windowWidget.addWidget(&menuButtonsVBox,
+            Point((getSize().x - 160) / 2, getSize().y / 2 + 64), Point(160, 111));
+        TextButton* buttons[] = {&campaignButton, &customButton, &skirmishButton,
+                                 &loadSavegameButton, &loadReplayButton, &cancelButton};
+        for(int i = 0; i < 6; ++i) {
+            menuButtonsVBox.addWidget(buttons[i]);
+            if(i != 5) menuButtonsVBox.addWidget(VSpacer::create(3));
+        }
+    }
 }
 
 SinglePlayerMenu::~SinglePlayerMenu() = default;

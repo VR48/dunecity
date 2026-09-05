@@ -39,6 +39,7 @@
 #include <misc/FileSystem.h>
 #include <misc/format.h>
 #include <misc/MenuPalette.h>
+#include <misc/MenuLayout.h>
 
 #include <algorithm>
 
@@ -266,7 +267,13 @@ OptionsMenu::OptionsMenu() : MenuBase()
     pages[1].addWidget(VSpacer::create(8));
 
     paletteHBox.addWidget(Spacer::create(), 0.5);
-    paletteHBox.addWidget(optionLabel(_("Menu Colors")), 190);
+    paletteHBox.addWidget(optionLabel(_("Menu Layout")), 110);
+    startMenuModeDropDownBox.addEntry(_("Classic"), 0);
+    startMenuModeDropDownBox.addEntry(_("Enlarged"), 1);
+    startMenuModeDropDownBox.setSelectedItem(validatedStartMenuMode(settings.video.startMenuMode));
+    startMenuModeDropDownBox.setOnSelectionChange(std::bind(&OptionsMenu::onChangeOption, this, std::placeholders::_1));
+    paletteHBox.addWidget(&startMenuModeDropDownBox, 120);
+    paletteHBox.addWidget(optionLabel(_("Colors")), 70);
     paletteDropDownBox.addEntry(_("Desert Gold"), 0);
     paletteDropDownBox.addEntry(_("High Contrast"), 1);
     paletteDropDownBox.setSelectedItem(validatedMenuPalette(settings.video.menuPalette));
@@ -274,7 +281,7 @@ OptionsMenu::OptionsMenu() : MenuBase()
         updatePalettePreview();
         onChangeOption(interactive);
     });
-    paletteHBox.addWidget(&paletteDropDownBox, 290);
+    paletteHBox.addWidget(&paletteDropDownBox, 180);
     paletteHBox.addWidget(Spacer::create(), 0.5);
     pages[1].addWidget(&paletteHBox, 40);
     pages[1].addWidget(VSpacer::create(8));
@@ -403,6 +410,7 @@ void OptionsMenu::onChangeOption(bool bInteractive) {
     bChanged |= (settings.video.cursorVisibility != cursorVisibilityDropDownBox.getSelectedEntryIntData());
     bChanged |= (settings.video.cursorScale != cursorScaleDropDownBox.getSelectedEntryIntData());
     bChanged |= (settings.video.menuPalette != paletteDropDownBox.getSelectedEntryIntData());
+    bChanged |= (settings.video.startMenuMode != startMenuModeDropDownBox.getSelectedEntryIntData());
 
     bChanged |= (settings.audio.playSFX != playSFXCheckbox.isChecked());
     bChanged |= (settings.audio.playMusic != playMusicCheckbox.isChecked());
@@ -478,6 +486,7 @@ void OptionsMenu::onOptionsOK() {
     settings.video.cursorVisibility = cursorVisibilityDropDownBox.getSelectedEntryIntData();
     settings.video.cursorScale = cursorScaleDropDownBox.getSelectedEntryIntData();
     settings.video.menuPalette = validatedMenuPalette(paletteDropDownBox.getSelectedEntryIntData());
+    settings.video.startMenuMode = validatedStartMenuMode(startMenuModeDropDownBox.getSelectedEntryIntData());
 
     settings.audio.playSFX = playSFXCheckbox.isChecked();
     settings.audio.playMusic = playMusicCheckbox.isChecked();
@@ -550,6 +559,7 @@ void OptionsMenu::saveConfiguration2File() {
     myINIFile.setIntValue("Video","Cursor Visibility",settings.video.cursorVisibility);
     myINIFile.setIntValue("Video","Cursor Scale",settings.video.cursorScale);
     myINIFile.setIntValue("Video","Menu Palette",settings.video.menuPalette);
+    myINIFile.setIntValue("Video","Start Menu Mode",settings.video.startMenuMode);
 
     myINIFile.setStringValue("General","Player Name",settings.general.playerName);
     myINIFile.setStringValue("General","Language",settings.general.language);

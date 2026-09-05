@@ -594,6 +594,9 @@ void createDefaultConfigFile(const std::string& configfilepath, const std::strin
                                 "Height = 480\n"
                                 "Physical Width = 640\n"
                                 "Physical Height = 480\n"
+                                "Interface Height = 0       # 0 = automatic; 480/600/768 = fixed readable UI size\n"
+                                "Start Menu Mode = 0        # 0 = classic; 1 = enlarged TV/tablet/accessibility layout\n"
+                                "Menu Palette = 0           # 0 = desert gold; 1 = high contrast\n"
                                 "Fullscreen = true\n"
                                 "FrameLimit = true           # Enable VSync for smooth, tear-free rendering.\n"
                                 "Preferred Zoom Level = 1    # 0 = no zooming, 1 = 2x, 2 = 3x\n"
@@ -995,6 +998,7 @@ int main(int argc, char *argv[]) {
             settings.video.showWatermark = myINIFile.getBoolValue("Video","Show Watermark",true);
             settings.video.cursorVisibility = myINIFile.getIntValue("Video","Cursor Visibility",0);
             settings.video.menuPalette = validatedMenuPalette(myINIFile.getIntValue("Video", "Menu Palette", 0));
+            settings.video.startMenuMode = validatedStartMenuMode(myINIFile.getIntValue("Video", "Start Menu Mode", 0));
             settings.video.cursorScale = myINIFile.getIntValue("Video","Cursor Scale",0);
             settings.audio.musicType = myINIFile.getStringValue("Audio","Music Type","adl");
             settings.audio.adlHarmonicStereo = myINIFile.getBoolValue("Audio","ADL Harmonic Stereo", false);

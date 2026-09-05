@@ -4,6 +4,10 @@
 #include <SDL.h>
 #include <algorithm>
 
+inline constexpr int validatedStartMenuMode(int value) {
+    return value == 1 ? 1 : 0;
+}
+
 // Start-screen geometry is independent of the display's physical pixel density.
 struct StartMenuLayout {
     int width;
