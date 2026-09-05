@@ -2,6 +2,10 @@
 
 This guide covers building Dune Legacy on all platforms using modern dependency management.
 
+For the verified PREDATOR laptop workflow, including the current Dune2R Windows
+ZIP, Android APK, warm-cache strategy, and exFAT workarounds, see
+[`LOCAL_BUILD_GUIDE.md`](LOCAL_BUILD_GUIDE.md).
+
 ## Quick Start
 
 ### Prerequisites

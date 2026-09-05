@@ -176,7 +176,7 @@ public:
         int         physicalHeight;
         int         width;
         int         height;
-        int         interfaceHeight = 0; ///< 0=automatic; 480/600/768=readable logical canvas presets.
+        int         interfaceHeight = 0; ///< 0=automatic; 480/600/768 with a persisted 4:3 or 16:9 logical width.
         int         menuPalette = 0; ///< 0=desert gold; 1=high-contrast dark text.
         int         startMenuMode = 0; ///< 0=classic; 1=enlarged TV/tablet/accessibility layout.
         bool        frameLimit;

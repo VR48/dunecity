@@ -64,11 +64,17 @@ SinglePlayerMenu::SinglePlayerMenu() : MenuBase() {
     planetPicture.setTexture(pPlanet);
     logoPicture.setTexture(pLogo);
     if(validatedStartMenuMode(settings.video.startMenuMode) == 1) {
-        const StartMenuLayout layout{getSize().x, getSize().y, 3};
+        const StartMenuLayout layout{getSize().x, getSize().y, 6};
         planetPicture.setFitToSize(true);
         windowWidget.addWidget(&planetPicture, layout.planetBounds());
         logoPicture.setFitToSize(true);
         windowWidget.addWidget(&logoPicture, layout.logoBounds());
+
+        SDL_Texture* pBorder = pGFXManager->getUIGraphic(UI_MenuButtonBorder);
+        buttonBorder.setTexture(pBorder);
+        buttonBorder.setStretchToSize(true);
+        windowWidget.addWidget(&buttonBorder, layout.borderBounds());
+
         TextButton* buttons[] = {&campaignButton, &customButton, &skirmishButton,
                                  &loadSavegameButton, &loadReplayButton, &cancelButton};
         for(int i = 0; i < 6; ++i) windowWidget.addWidget(buttons[i], layout.button(i));

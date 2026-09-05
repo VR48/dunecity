@@ -183,7 +183,7 @@ OptionsMenu::OptionsMenu() : MenuBase()
         }
         if(
 #ifdef __ANDROID__
-            coord.y == settings.video.interfaceHeight
+            coord.x == settings.video.width && coord.y == settings.video.interfaceHeight
 #else
             coord.x == settings.video.physicalWidth && coord.y == settings.video.physicalHeight
 #endif
@@ -396,6 +396,7 @@ void OptionsMenu::onChangeOption(bool bInteractive) {
     int selectedResolution = resolutionDropDownBox.getSelectedEntryIntData();
     if(selectedResolution >= 0) {
 #ifdef __ANDROID__
+        bChanged |= settings.video.width != availScreenRes[selectedResolution].x;
         bChanged |= settings.video.interfaceHeight != availScreenRes[selectedResolution].y;
 #else
         bChanged |= (settings.video.physicalWidth != availScreenRes[selectedResolution].x);
@@ -454,7 +455,11 @@ void OptionsMenu::onOptionsOK() {
 
     int selectedResolution = resolutionDropDownBox.getSelectedEntryIntData();
 #ifdef __ANDROID__
-    if(selectedResolution >= 0) settings.video.interfaceHeight = availScreenRes[selectedResolution].y;
+    if(selectedResolution >= 0) {
+        settings.video.width = availScreenRes[selectedResolution].x;
+        settings.video.height = availScreenRes[selectedResolution].y;
+        settings.video.interfaceHeight = availScreenRes[selectedResolution].y;
+    }
 #else
     settings.video.physicalWidth = (selectedResolution >= 0) ? availScreenRes[selectedResolution].x : 0;
     settings.video.physicalHeight = (selectedResolution >= 0) ? availScreenRes[selectedResolution].y : 0;
@@ -466,6 +471,7 @@ void OptionsMenu::onOptionsOK() {
         return;
     }
     
+#ifndef __ANDROID__
     int factor = getLogicalToPhysicalResolutionFactor(settings.video.physicalWidth, settings.video.physicalHeight);
     // Prevent division by zero and ensure minimum dimensions
     if(factor <= 0) {
@@ -477,6 +483,7 @@ void OptionsMenu::onOptionsOK() {
     // Ensure minimum dimensions
     if(settings.video.width < SCREEN_MIN_WIDTH) settings.video.width = SCREEN_MIN_WIDTH;
     if(settings.video.height < SCREEN_MIN_HEIGHT) settings.video.height = SCREEN_MIN_HEIGHT;
+#endif
 
     settings.video.preferredZoomLevel = zoomlevelDropDownBox.getSelectedEntryIntData();
     settings.video.scaler = scalerDropDownBox.getSelectedEntry();
@@ -595,8 +602,11 @@ void OptionsMenu::determineAvailableScreenResolutions() {
     availScreenRes.clear();
 #ifdef __ANDROID__
     availScreenRes.emplace_back(640, 480);
+    availScreenRes.emplace_back(854, 480);
     availScreenRes.emplace_back(800, 600);
+    availScreenRes.emplace_back(1067, 600);
     availScreenRes.emplace_back(1024, 768);
+    availScreenRes.emplace_back(1366, 768);
     return;
 #endif
 

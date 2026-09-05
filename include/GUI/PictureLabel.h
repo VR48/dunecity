@@ -64,7 +64,7 @@ public:
     */
     Point getMinimumSize() const override
     {
-        if(fitToSize) return Point(0, 0);
+        if(fitToSize || stretchToSize) return Point(0, 0);
         if(pTexture) {
             return getTextureSize(pTexture.get());
         } else {
@@ -87,7 +87,9 @@ public:
         }
 
         SDL_Rect dest = calcDrawingRect(pTexture.get(), position.x, position.y);
-        if(fitToSize) {
+        if(stretchToSize) {
+            dest = {position.x, position.y, getSize().x, getSize().y};
+        } else if(fitToSize) {
             const auto size = getTextureSize(pTexture.get());
             if(size.x <= 0 || size.y <= 0) return;
             const double scale = std::min(double(getSize().x) / size.x, double(getSize().y) / size.y);
@@ -101,9 +103,11 @@ public:
 
 
     void setFitToSize(bool fit) { fitToSize = fit; enableResizing(fit, fit); }
+    void setStretchToSize(bool stretch) { stretchToSize = stretch; enableResizing(stretch, stretch); }
 
 private:
     bool fitToSize = false;
+    bool stretchToSize = false;
     sdl2::texture_unique_or_nonowning_ptr pTexture;  ///< The texture that is shown
 };
 

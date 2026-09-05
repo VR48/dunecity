@@ -44,10 +44,7 @@ public:
     virtual void onChildWindowClose(Window* pChildWindow) override;
 
 private:
-    void onSinglePlayer() const;
-    void onMultiPlayer() const;
-    void onMapEditor() const;
-    void onMods() const;
+    void onModes() const;
     void onDune2REditor() const;
     void onOptions();
     void onDisplay();
@@ -64,20 +61,15 @@ private:
     /// Refresh the footer mod/version label from the current
     /// active mod. Cheap; no-op when the displayed mod hasn't changed.
     void refreshModVersionLabel();
-    void refreshDune2REditorButton();
+    void refreshContextButtons();
 
     StaticContainer windowWidget;
-    VBox            menuButtonsVBox;
     PictureLabel planetPicture;
     PictureLabel logoPicture;
     PictureLabel buttonBorder;
 
-    TextButton      singlePlayerButton;
-    TextButton      multiPlayerButton;
-    TextButton      mapEditorButton;
-    TextButton      modsButton;
+    TextButton      modesButton;
     TextButton      dune2rEditorButton;
-    bool            dune2rButtonLayoutInitialized = false;
     bool            enlargedStartMenus = false;
     TextButton      optionsButton;
     TextButton      displayButton;

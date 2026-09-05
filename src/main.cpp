@@ -134,6 +134,17 @@ int getLogicalToPhysicalResolutionFactor(int physicalWidth, int physicalHeight) 
 void setVideoMode(int displayIndex)
 {
     int videoFlags = 0;
+    const int requestedInterfaceHeight = validatedInterfaceHeight(
+        settings.video.interfaceHeight,
+#ifdef __ANDROID__
+        true
+#else
+        false
+#endif
+    );
+    const int requestedInterfaceWidth = requestedInterfaceHeight > 0
+        ? validatedInterfaceWidth(settings.video.width, requestedInterfaceHeight)
+        : settings.video.width;
 
 #ifdef __EMSCRIPTEN__
     // Keep SDL's logical surface independent from the browser viewport. CSS
@@ -189,7 +200,9 @@ void setVideoMode(int displayIndex)
 #ifdef __ANDROID__
     // Keep the game UI stable while Android replaces the physical surface
     // during fold, unfold, rotation, DeX, and multi-window transitions.
-    settings.video.interfaceHeight = validatedInterfaceHeight(settings.video.interfaceHeight, true);
+    settings.video.interfaceHeight = requestedInterfaceHeight;
+    settings.video.width = requestedInterfaceWidth;
+    settings.video.height = requestedInterfaceHeight;
 #endif
 #endif
 
@@ -251,7 +264,7 @@ void setVideoMode(int displayIndex)
 #endif
     if(settings.video.interfaceHeight > 0) {
         settings.video.height = settings.video.interfaceHeight;
-        settings.video.width = settings.video.height * 4 / 3;
+        settings.video.width = validatedInterfaceWidth(requestedInterfaceWidth, settings.video.height);
     }
     SDL_Log("Display: %dx%d physical, %dx%d logical, interface preset=%d",
             settings.video.physicalWidth, settings.video.physicalHeight,
@@ -594,7 +607,7 @@ void createDefaultConfigFile(const std::string& configfilepath, const std::strin
                                 "Height = 480\n"
                                 "Physical Width = 640\n"
                                 "Physical Height = 480\n"
-                                "Interface Height = 0       # 0 = automatic; 480/600/768 = fixed readable UI size\n"
+                                "Interface Height = 0       # 0 = automatic; 480/600/768 = fixed UI size; Width keeps 4:3 or 16:9\n"
                                 "Start Menu Mode = 0        # 0 = classic; 1 = enlarged TV/tablet/accessibility layout\n"
                                 "Menu Palette = 0           # 0 = desert gold; 1 = high contrast\n"
                                 "Fullscreen = true\n"
@@ -1147,7 +1160,7 @@ int main(int argc, char *argv[]) {
                     settings.video.physicalHeight = displayMode.h;
                 }
                 settings.video.height = settings.video.interfaceHeight;
-                settings.video.width = settings.video.height * 4 / 3;
+                settings.video.width = validatedInterfaceWidth(settings.video.width, settings.video.height);
                 settings.video.fullscreen = true;
 
                 SDL_Log("Android display config updated to %dx%d physical, %dx%d fixed logical",

@@ -320,20 +320,24 @@ sdl2::surface_ptr DuneStyle::createButtonSurface(Uint32 width, Uint32 height, co
 
     // create text on this button
     int fontsize = height >= 48 ? 22 : height >= 36 ? 20 : height >= 28 ? 16 : 14;
-    while(fontsize > 12 && (width < getTextWidth(text, fontsize) + 12 ||
-                           height < getTextHeight(fontsize) + 4)) --fontsize;
+    while(fontsize > 8 && (width < getTextWidth(text, fontsize) + 12 ||
+                          height < getTextHeight(fontsize) + 4)) --fontsize;
 
     const bool defaultText = textcolor == COLOR_DEFAULT;
     if(defaultText) textcolor = textPalette.foreground;
     if(textshadowcolor == COLOR_DEFAULT) textshadowcolor = textPalette.shadow;
-    if(activated && width >= 8 && height >= 8)
+    const int textWidth = getTextWidth(text, fontsize);
+    const int textHeight = getTextHeight(fontsize);
+    const bool focusOutlineFits = width >= textWidth + 18 && height >= textHeight + 10;
+    if(activated && focusOutlineFits)
         drawRect(surface.get(), 3, 3, surface->w - 4, surface->h - 4, textPalette.foreground);
 
     sdl2::surface_ptr textSurface1 = createSurfaceWithText(text, textshadowcolor, fontsize);
     SDL_Rect textRect1 = calcDrawingRect(textSurface1.get(), surface->w / 2 + 1 + (pressed ? 1 : 0), surface->h / 2 + 1 + (pressed ? 1 : 0), HAlign::Center, VAlign::Center);
     SDL_BlitSurface(textSurface1.get(), nullptr, surface.get(), &textRect1);
 
-    sdl2::surface_ptr textSurface2 = createSurfaceWithText(text, (activated && !defaultText) ? brightenUp(textcolor) : textcolor, fontsize);
+    const Uint32 foreground = (activated && (!defaultText || !focusOutlineFits)) ? brightenUp(textcolor) : textcolor;
+    sdl2::surface_ptr textSurface2 = createSurfaceWithText(text, foreground, fontsize);
     SDL_Rect textRect2 = calcDrawingRect(textSurface2.get(), surface->w / 2 + (pressed ? 1 : 0), surface->h / 2 + (pressed ? 1 : 0), HAlign::Center, VAlign::Center);
     SDL_BlitSurface(textSurface2.get(), nullptr, surface.get(), &textRect2);
 
@@ -582,6 +586,12 @@ sdl2::surface_ptr DuneStyle::createBackground(Uint32 width, Uint32 height) {
         }
         SDL_FillRect(pSurface.get(), nullptr, buttonBackgroundColor);
     }
+
+    // Dialogs are modal panels, not overlays. The shared palette background
+    // carries a transparent color key for sprites; remove it here so underlying
+    // labels and buttons cannot bleed through a message box.
+    SDL_SetColorKey(pSurface.get(), SDL_FALSE, 0);
+    SDL_SetSurfaceBlendMode(pSurface.get(), SDL_BLENDMODE_NONE);
 
 
     drawRect(pSurface.get(), 0, 0, pSurface->w-1, pSurface->h-1, buttonBorderColor);
