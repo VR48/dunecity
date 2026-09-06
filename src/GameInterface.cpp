@@ -103,16 +103,30 @@ GameInterface::GameInterface() : Window(0,0,0,0) {
     dune2rZoomButton.setText(_("Zoom"));
     dune2rZoomButton.setTooltipText(_("Cycle Dune2R view: Action, Tactical, Strategic"));
     dune2rZoomButton.setOnClick(std::bind(&Game::cycleDune2RZoom, currentGame));
-    topBarHBox.addWidget(&dune2rZoomButton);
-
-    topBarHBox.addWidget(Spacer::create());
 
     dune2rVisualButton.setText(_("Dune2R"));
     dune2rVisualButton.setTooltipText(_("Crossfade between classic and Dune2R visuals"));
     dune2rVisualButton.setOnClick(std::bind(&Game::toggleDune2RVisuals, currentGame));
-    topBarHBox.addWidget(&dune2rVisualButton);
-
-    topBarHBox.addWidget(Spacer::create());
+    // Keep presentation controls out of the crowded top bar. Reserve the
+    // larger toggle label so switching visuals never moves either button.
+    const Point classicButtonSize = GUIStyle::getInstance().getMinimumButtonSize(_("Classic"));
+    const int viewButtonWidth = std::max({96, dune2rZoomButton.getMinimumSize().x,
+        dune2rVisualButton.getMinimumSize().x, classicButtonSize.x});
+    const int viewButtonHeight = std::max({32, dune2rZoomButton.getMinimumSize().y,
+        dune2rVisualButton.getMinimumSize().y, classicButtonSize.y});
+    const int viewButtonGap = 10;
+    const int viewControlsRight = getRendererWidth() - sideBar.getSize().x - 10;
+    const int viewControlsY = getHeight(pTopBarTex) + 6;
+    windowWidget.addWidget(&dune2rZoomButton,
+        Point(viewControlsRight - 2 * viewButtonWidth - viewButtonGap, viewControlsY),
+        Point(viewButtonWidth, viewButtonHeight));
+    windowWidget.addWidget(&dune2rVisualButton,
+        Point(viewControlsRight - viewButtonWidth, viewControlsY),
+        Point(viewButtonWidth, viewButtonHeight));
+    const bool showViewControls = ModManager::instance().isInitialized()
+        && ModManager::instance().getActiveModName() == "Dune2R";
+    dune2rZoomButton.setVisible(showViewControls);
+    dune2rVisualButton.setVisible(showViewControls);
 
     // add radar
     const Point radarOrigin(getRendererWidth() - sideBar.getSize().x + SIDEBAR_COLUMN_WIDTH, 0);
@@ -223,8 +237,10 @@ void GameInterface::draw(Point position) {
     dune2rZoomButton.setVisible(dune2rActive);
     dune2rVisualButton.setVisible(dune2rActive);
     if(dune2rActive) {
-        dune2rVisualButton.setText(
-            pGFXManager->isDune2RVisualsEnabled() ? _("Dune2R") : _("Classic"));
+        const std::string visualLabel = pGFXManager->isDune2RVisualsEnabled() ? _("Dune2R") : _("Classic");
+        if(dune2rVisualButton.getText() != visualLabel) {
+            dune2rVisualButton.setText(visualLabel);
+        }
         pGFXManager->getDune2RVisualBlend();
     }
 
