@@ -37,6 +37,7 @@
 #include <GameInitSettings.h>
 
 #include <globals.h>
+#include <main.h>
 #include <mod/ModManager.h>
 
 #include <algorithm>
@@ -112,6 +113,8 @@ CustomGameMenu::CustomGameMenu(bool multiplayer, bool LANServer)
     leftVBox.addWidget(VSpacer::create(10));
 
     multiplePlayersPerHouseCheckbox.setText(_("Multiple players per house"));
+    multiplePlayersPerHouseCheckbox.setChecked(settings.general.multiplePlayersPerHouse);
+    multiplePlayersPerHouseCheckbox.setOnClick(std::bind(&CustomGameMenu::onMultiplePlayersPerHouseChange, this));
     optionsHBox.addWidget(&multiplePlayersPerHouseCheckbox);
     optionsHBox.addWidget(Spacer::create());
     gameOptionsButton.setText(_("Game Options..."));
@@ -228,6 +231,18 @@ void CustomGameMenu::onChildWindowClose(Window* pChildWindow) {
     GameOptionsWindow* pGameOptionsWindow = dynamic_cast<GameOptionsWindow*>(pChildWindow);
     if(pGameOptionsWindow != nullptr) {
         currentGameOptions = pGameOptionsWindow->getGameOptions();
+        // Choices made here become the new defaults, the same as in Options.
+        saveGameOptionsAsDefaults(currentGameOptions);
+    }
+}
+
+void CustomGameMenu::onMultiplePlayersPerHouseChange() {
+    // Remember the choice across games and restarts.
+    settings.general.multiplePlayersPerHouse = multiplePlayersPerHouseCheckbox.isChecked();
+    INIFile config(getConfigFilepath());
+    config.setBoolValue("General", "Multiple Players Per House", settings.general.multiplePlayersPerHouse);
+    if(!config.saveChangesTo(getConfigFilepath())) {
+        SDL_Log("Warning: could not save 'Multiple Players Per House' to the configuration file");
     }
 }
 

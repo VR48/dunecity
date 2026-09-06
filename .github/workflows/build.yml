@@ -101,20 +101,25 @@ jobs:
           path: build/*.zip
 
   build-macos:
-    # Optional: set the repository variable ENABLE_MACOS_BUILD=true when a
-    # compatible self-hosted runner is online.
-    # Self-hosted on Stefan's MacBook (8-core arm64) with a warm vcpkg binary
-    # cache. GitHub's free hosted macos-14 runner is a 3-core box that took
-    # ~70 min per cold build (and its 60-min cap killed a run); this machine
-    # builds in ~10 min. The DMG is ad-hoc signed, so no signing certs needed.
-    runs-on: [self-hosted, macOS, ARM64]
+    # The extra label keeps unrelated self-hosted Macs from accepting release
+    # jobs. Pull requests never run here because this is a persistent machine
+    # with repository access and a warm dependency cache.
+    runs-on: [self-hosted, macOS, ARM64, dunecity-builder]
     needs: [verify-version]
-    if: always() && vars.ENABLE_MACOS_BUILD == 'true' && (needs.verify-version.result == 'success' || needs.verify-version.result == 'skipped')
+    if: |
+      always() &&
+      github.event_name != 'pull_request' &&
+      vars.ENABLE_MACOS_BUILD == 'true' &&
+      (needs.verify-version.result == 'success' || needs.verify-version.result == 'skipped')
     timeout-minutes: 60
+    permissions:
+      contents: read
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: "8"
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Clean previous build
         run: rm -rf build
@@ -123,7 +128,7 @@ jobs:
       # from source; ensure the autotools toolchain + nasm are present
       # (idempotent — already installed on the runner).
       - name: Install build deps
-        run: brew install autoconf autoconf-archive automake libtool pkg-config nasm ninja || true
+        run: brew install autoconf autoconf-archive automake cmake libtool pkg-config nasm ninja
 
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
@@ -138,22 +143,30 @@ jobs:
           echo "VCPKG_BINARY_SOURCES=clear;files,$HOME/.cache/vcpkg/archives,readwrite" >> "$GITHUB_ENV"
 
       - name: Configure CMake
-        run: cmake -B build -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
+        run: >-
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
+          -DVCPKG_TARGET_TRIPLET=arm64-osx
 
       - name: Build
-        run: cmake --build build --config Release --parallel
+        run: cmake --build build --config Release --parallel "$CMAKE_BUILD_PARALLEL_LEVEL"
 
       - name: Create DMG Installer
         run: |
           cd build
-          cmake --install . --prefix install --config Release
           cpack -G DragNDrop -C Release
+
+      - name: Verify DMG
+        run: bash scripts/verify-macos-dmg.sh build/DuneCity-*-macOS.dmg
 
       - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
           name: DuneCity-macOS-DMG
           path: build/*.dmg
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Notify Discord
         if: always() && env.DISCORD_WEBHOOK != ''

@@ -167,6 +167,7 @@ public:
         std::string     language;           ///< Language code: "en" = English, "fr" = French, "de" = German
         int             scrollSpeed;        ///< Scroll speed in pixels
         bool            showTutorialHints;  ///< If true, tutorial hints are shown during the game
+        bool            multiplePlayersPerHouse = false; ///< Custom game lobby: allow two players per house (remembered across games)
     } general;
 
     class VideoClass {

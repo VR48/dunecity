@@ -29,6 +29,7 @@
 #include <FileClasses/GFXManager.h>
 #include <FileClasses/TextManager.h>
 #include <FileClasses/INIFile.h>
+#include <mod/ModManager.h>
 #include <FileClasses/music/MusicPlayer.h>
 
 #include <SoundPlayer.h>
@@ -499,7 +500,7 @@ void OptionsMenu::onOptionsOK() {
     settings.audio.playMusic = playMusicCheckbox.isChecked();
     settings.audio.playCreditsSFX = playCreditsSFXCheckbox.isChecked();
 
-    settings.gameOptions = currentGameOptions;
+    saveGameOptionsAsDefaults(currentGameOptions);
 
     settings.network.serverPort = serverport;
     settings.network.metaServer = metaserver;
@@ -528,10 +529,23 @@ void OptionsMenu::onGameOptions() {
 void OptionsMenu::onRestoreDefaults() {
     // Restore config files
     if (restoreDefaultConfigs()) {
+        // Forget the player's game option choices for this mod too, so the
+        // mod's own defaults come back.
+        const std::string section = userGameOptionsSection();
+        if(!section.empty()) {
+            INIFile config(getConfigFilepath());
+            if(config.hasSection(section)) {
+                config.removeSection(section);
+                config.saveChangesTo(getConfigFilepath());
+            }
+        }
+        effectiveGameOptions = ModManager::instance().loadEffectiveGameOptions(settings.gameOptions);
+        currentGameOptions = effectiveGameOptions;
+
         std::string successMessage = 
             "Config files restored successfully!\n\n"
-            "ObjectData.ini and QuantBot Config.ini have been\n"
-            "reset to default values.\n\n"
+            "ObjectData.ini, QuantBot Config.ini and the game\n"
+            "option defaults have been reset.\n\n"
             "IMPORTANT: Changes will take effect on next game start.\n"
             "Please restart the game.";
         MsgBox* pMsgBox = MsgBox::create(successMessage);
@@ -551,6 +565,7 @@ void OptionsMenu::saveConfiguration2File() {
 
     myINIFile.setBoolValue("General","Play Intro",settings.general.playIntro);
     myINIFile.setBoolValue("General","Show Tutorial Hints",settings.general.showTutorialHints);
+    myINIFile.setBoolValue("General","Multiple Players Per House",settings.general.multiplePlayersPerHouse);
 
     myINIFile.setIntValue("Video","Physical Width",settings.video.physicalWidth);
     myINIFile.setIntValue("Video","Physical Height",settings.video.physicalHeight);
@@ -646,10 +661,19 @@ void OptionsMenu::determineAvailableScreenResolutions() {
         return;
     }
     
+    // Fullscreen is always desktop-sized and a window cannot be larger than the
+    // desktop, so modes beyond it (e.g. the native pixel resolution of a Retina
+    // panel, which SDL lists next to the scaled modes) can never be used.
+    SDL_Rect displayBounds = {0, 0, 0, 0};
+    const bool haveDisplayBounds = (SDL_GetDisplayBounds(displayIndex, &displayBounds) == 0
+                                    && displayBounds.w > 0 && displayBounds.h > 0);
+
     for(int i = numDisplayModes-1; i >=0; i--) {
         if(SDL_GetDisplayMode(displayIndex, i, &displayMode) == 0) {
             Coord screenRes(displayMode.w, displayMode.h);
-            if(screenRes.x >= SCREEN_MIN_WIDTH && screenRes.y >= SCREEN_MIN_HEIGHT) {
+            const bool fitsDisplay = !haveDisplayBounds
+                                     || (screenRes.x <= displayBounds.w && screenRes.y <= displayBounds.h);
+            if(fitsDisplay && screenRes.x >= SCREEN_MIN_WIDTH && screenRes.y >= SCREEN_MIN_HEIGHT) {
                 if(std::find(availScreenRes.begin(), availScreenRes.end(), screenRes) == availScreenRes.end()) {
                     // not yet in the list (might happen if e.g. multiple refresh rates are reported)
                     availScreenRes.push_back(screenRes);

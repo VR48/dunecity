@@ -312,6 +312,29 @@ void BuilderBase::updateProductionProgress() {
             if(productionProgress >= tmp->price) {
                 setWaitingToPlace();
             }
+        } else if(owner == pLocalHouse && productionProgress < tmp->price) {
+            // The queue is stalled and nothing tells the player why: say so in
+            // the log (every 10 s) and on the ticker (every 30 s).
+            static Uint32 lastStallLog = 0;
+            static Uint32 lastStallTicker = 0;
+            const Uint32 now = SDL_GetTicks();
+            const bool unitLimit = isUnitLimitReached(currentProducedItem);
+            const bool noCredits = owner->getCredits() <= 0;
+            if(now - lastStallLog >= 10000) {
+                lastStallLog = now;
+                SDL_Log("Production stalled: item %d in builder %u (item %d): onHold=%d unitLimit=%d (units %d/%d) credits=%d (city %ld, stored %ld, starting %ld)",
+                        currentProducedItem, getObjectID(), getItemID(),
+                        isOnHold() ? 1 : 0, unitLimit ? 1 : 0, owner->getNumUnits(), owner->getMaxUnits(),
+                        owner->getCredits(), lround(owner->getCityCredits()), lround(owner->getStoredCredits()), lround(owner->getStartingCredits()));
+            }
+            if(!isOnHold() && now - lastStallTicker >= 30000) {
+                lastStallTicker = now;
+                if(unitLimit) {
+                    currentGame->addToNewsTicker(_("Unit limit reached") + " (" + std::to_string(owner->getMaxUnits()) + ")");
+                } else if(noCredits) {
+                    currentGame->addToNewsTicker(_("Not enough money"));
+                }
+            }
         }
     }
 }

@@ -205,7 +205,14 @@ inline SDL_Rect getRendererSize() {
     SDL_Rect rect = {0, 0, 0, 0};
     SDL_RenderGetLogicalSize(renderer, &rect.w, &rect.h);
     if(rect.w == 0 || rect.h == 0) {
-        SDL_GetRendererOutputSize(renderer, &rect.w, &rect.h);
+        // Binding a texture can clear the logical size. sdl2-compat still
+        // reports the window's pixel dimensions as the renderer output then,
+        // so query the active target to keep right-aligned UI inside it.
+        if(SDL_Texture* target = SDL_GetRenderTarget(renderer)) {
+            SDL_QueryTexture(target, nullptr, nullptr, &rect.w, &rect.h);
+        } else {
+            SDL_GetRendererOutputSize(renderer, &rect.w, &rect.h);
+        }
     }
     return rect;
 }

@@ -17,8 +17,16 @@ DisplayMenu::DisplayMenu()
     setBackground(pGFXManager->getUIGraphic(UI_MenuBackground));
     resize(getRendererWidth(), getRendererHeight());
     setWindowWidget(&content);
+#ifdef __ANDROID__
+    const bool showAspect = true;
+#else
+    // On desktop the interface takes the shape of the window, so there is no
+    // screen-shape choice to make.
+    const bool showAspect = false;
+#endif
+    const int aspectSection = showAspect ? 76 : 0;
     const int left = (getSize().x - 440) / 2;
-    const int top = (getSize().y - 430) / 2;
+    const int top = (getSize().y - (354 + aspectSection)) / 2;
     title.setText("DISPLAY");
     title.setTextFontSize(22);
     title.setAlignment(Alignment_HCenter);
@@ -33,21 +41,23 @@ DisplayMenu::DisplayMenu()
     }
     selectLayout(selectedLayout);
 
-    aspectTitle.setText("SCREEN SHAPE");
-    aspectTitle.setAlignment(Alignment_HCenter);
-    content.addWidget(&aspectTitle, Point(left, top + 94), Point(440, 24));
-    const char* aspectLabels[] = {"STANDARD 4:3", "WIDESCREEN 16:9"};
-    for(int i = 0; i < 2; ++i) {
-        aspectChoices[i].setText(aspectLabels[i]);
-        aspectChoices[i].setToggleButton(true);
-        aspectChoices[i].setOnClick([this, i] { selectAspect(i == 1); });
-        content.addWidget(&aspectChoices[i], Point(left + i * 224, top + 122), Point(216, 40));
+    if(showAspect) {
+        aspectTitle.setText("SCREEN SHAPE");
+        aspectTitle.setAlignment(Alignment_HCenter);
+        content.addWidget(&aspectTitle, Point(left, top + 94), Point(440, 24));
+        const char* aspectLabels[] = {"STANDARD 4:3", "WIDESCREEN 16:9"};
+        for(int i = 0; i < 2; ++i) {
+            aspectChoices[i].setText(aspectLabels[i]);
+            aspectChoices[i].setToggleButton(true);
+            aspectChoices[i].setOnClick([this, i] { selectAspect(i == 1); });
+            content.addWidget(&aspectChoices[i], Point(left + i * 224, top + 122), Point(216, 40));
+        }
+        selectAspect(selectedWidescreen);
     }
-    selectAspect(selectedWidescreen);
 
     sizeTitle.setText("INTERFACE SIZE");
     sizeTitle.setAlignment(Alignment_HCenter);
-    content.addWidget(&sizeTitle, Point(left, top + 170), Point(440, 24));
+    content.addWidget(&sizeTitle, Point(left, top + 94 + aspectSection), Point(440, 24));
     const char* labels[] = {"LARGE", "MEDIUM", "SMALL", "AUTOMATIC"};
     const int heights[] = {480, 600, 768, 0};
     for(int i = 0; i < 4; ++i) {
@@ -55,9 +65,9 @@ DisplayMenu::DisplayMenu()
         choices[i].setToggleButton(true);
         choices[i].setOnClick([this, height = heights[i]] { select(height); });
         if(i < 3) {
-            content.addWidget(&choices[i], Point(left, top + 198 + i * 44), Point(440, 38));
+            content.addWidget(&choices[i], Point(left, top + 122 + aspectSection + i * 44), Point(440, 38));
         } else {
-            content.addWidget(&choices[i], Point(left, top + 332), Point(440, 38));
+            content.addWidget(&choices[i], Point(left, top + 256 + aspectSection), Point(440, 38));
         }
     }
 #ifdef __ANDROID__
@@ -67,10 +77,10 @@ DisplayMenu::DisplayMenu()
     select(selectedHeight);
     cancelButton.setText("CANCEL");
     cancelButton.setOnClick([this] { quit(); });
-    content.addWidget(&cancelButton, Point(left, top + 378), Point(210, 40));
+    content.addWidget(&cancelButton, Point(left, top + 302 + aspectSection), Point(210, 40));
     applyButton.setText("APPLY");
     applyButton.setOnClick([this] { apply(); });
-    content.addWidget(&applyButton, Point(left + 230, top + 378), Point(210, 40));
+    content.addWidget(&applyButton, Point(left + 230, top + 302 + aspectSection), Point(210, 40));
 }
 
 void DisplayMenu::select(int height) {
@@ -93,8 +103,13 @@ void DisplayMenu::apply() {
     const int selectedWidth = selectedHeight > 0
         ? interfaceWidthForHeight(selectedHeight, selectedWidescreen)
         : settings.video.width;
+#ifdef __ANDROID__
+    const bool widthChanged = selectedHeight > 0 && selectedWidth != settings.video.width;
+#else
+    const bool widthChanged = false; // the width follows the window shape
+#endif
     if(selectedHeight == settings.video.interfaceHeight
-       && (selectedHeight == 0 || selectedWidth == settings.video.width)
+       && !widthChanged
        && selectedLayout == settings.video.startMenuMode) { quit(); return; }
     INIFile config(getConfigFilepath());
     config.setIntValue("Video", "Interface Height", selectedHeight);

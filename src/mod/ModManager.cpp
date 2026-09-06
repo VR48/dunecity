@@ -29,6 +29,8 @@
 #include <misc/exceptions.h>
 #include <Definitions.h>
 #include <globals.h>
+#include <main.h>
+#include <FileClasses/INIFile.h>
 #include <config.h>
 
 #include <SDL.h>
@@ -642,9 +644,20 @@ SettingsClass::GameOptionsClass ModManager::loadEffectiveGameOptions(
         return result;
     }
     
+    // The player's own choices for this mod (saved from the Options screen or
+    // a game lobby) sit on top of whatever the mod file says.
+    auto applyPlayerChoices = [&]() {
+        try {
+            applyGameOptionsFromConfig(INIFile(getConfigFilepath()), userGameOptionsSection(), result);
+        } catch (const std::exception& e) {
+            SDL_Log("ModManager: Warning - could not read the player's game option overrides: %s", e.what());
+        }
+    };
+
     // Try to load mod's GameOptions.ini
     std::string gameOptionsPath = getActiveGameOptionsPath();
     if (!existsFile(gameOptionsPath)) {
+        applyPlayerChoices();
         return result;
     }
     
@@ -703,7 +716,8 @@ SettingsClass::GameOptionsClass ModManager::loadEffectiveGameOptions(
     } catch (const std::exception& e) {
         SDL_Log("ModManager: Warning - failed to load game options from mod: %s", e.what());
     }
-    
+
+    applyPlayerChoices();
     return result;
 }
 

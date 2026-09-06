@@ -164,6 +164,18 @@ SDL_Color getHouseColorSDL(int colorSlot, int shadeOffset = 3);
 Uint32 getHouseColorRGB(int colorSlot, int shadeOffset = 3);
 
 void loadCustomPalette();
+
+class INIFile;
+/// Config section holding the player's own game option choices for the active
+/// mod (empty for vanilla, which keeps them in [Game Options] directly).
+std::string userGameOptionsSection();
+/// Writes every game option key into the given config section.
+void writeGameOptionsToConfig(INIFile& config, const std::string& section, const SettingsClass::GameOptionsClass& options);
+/// Overlays the keys present in the given config section onto options.
+void applyGameOptionsFromConfig(const INIFile& config, const std::string& section, SettingsClass::GameOptionsClass& options);
+/// Makes options the new defaults: updates settings, the config file (base
+/// section and the per-mod override) and the effective options.
+void saveGameOptionsAsDefaults(const SettingsClass::GameOptionsClass& options);
 void applyCustomPaletteRuntimeHouseRamps();
 bool isHouseAvailable(HOUSETYPE house);
 int getNumAvailableHouses();

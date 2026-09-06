@@ -29,6 +29,7 @@
 #include <structures/BuilderBase.h>
 #include <structures/StarPort.h>
 #include <structures/ConstructionYard.h>
+#include <players/QuantBotBuildPolicy.h>
 #include <structures/RepairYard.h>
 #include <structures/Palace.h>
 #include <units/UnitBase.h>
@@ -956,6 +957,76 @@ Coord QuantBot::findMcvPlaceLocation(const MCV* pMCV) {
 	return bestLocation;
 }
 
+namespace {
+
+// A structure on this tile that is one of our city zones, or nullptr.
+const StructureBase* ownZoneAt(const Map& map, int houseID, int x, int y) {
+	if (!map.tileExists(x, y)) return nullptr;
+	const ObjectBase* pObject = map.getTile(x, y)->getNonInfantryGroundObject();
+	if (pObject == nullptr || !pObject->isAStructure()) return nullptr;
+	const auto* pStructure = static_cast<const StructureBase*>(pObject);
+	if (!DuneCity::isCityZoneStructure(pStructure->getItemID())) return nullptr;
+	if (pStructure->getOwner() == nullptr || pStructure->getOwner()->getHouseID() != houseID) return nullptr;
+	return pStructure;
+}
+
+// True when the tile could carry a road or already does, ignoring tiles that
+// the candidate footprint (x, y, w, h) is about to cover.
+bool tileKeepsFrontage(const Map& map, int tx, int ty, int x, int y, int w, int h) {
+	if (!map.tileExists(tx, ty)) return false;
+	if (tx >= x && tx < x + w && ty >= y && ty < y + h) return false;
+	const Tile* t = map.getTile(tx, ty);
+	if (t->isRoad()) return true;
+	return !t->hasAStructure() && !t->hasCityZone() && !t->isMountain()
+		&& !t->hasAGroundObject() && DuneCity::isCityZoneTerrain(t->getType());
+}
+
+// Would a lot at (x, y, w, h) take away the last open side of a neighbouring
+// zone? Every lot must keep a side where a road can run.
+bool wouldLandlockNeighbouringZone(const Map& map, int houseID, int x, int y, int w, int h) {
+	std::set<Uint32> checked;
+	auto sealsNeighbour = [&](int nx, int ny) {
+		const StructureBase* pZone = ownZoneAt(map, houseID, nx, ny);
+		if (pZone == nullptr || !checked.insert(pZone->getObjectID()).second) return false;
+		const int zx = pZone->getX(), zy = pZone->getY();
+		const int zw = pZone->getStructureSizeX(), zh = pZone->getStructureSizeY();
+		for (int i = zx; i < zx + zw; i++) {
+			if (tileKeepsFrontage(map, i, zy - 1, x, y, w, h)) return false;
+			if (tileKeepsFrontage(map, i, zy + zh, x, y, w, h)) return false;
+		}
+		for (int j = zy; j < zy + zh; j++) {
+			if (tileKeepsFrontage(map, zx - 1, j, x, y, w, h)) return false;
+			if (tileKeepsFrontage(map, zx + zw, j, x, y, w, h)) return false;
+		}
+		return true;
+	};
+	for (int i = x; i < x + w; i++) {
+		if (sealsNeighbour(i, y - 1) || sealsNeighbour(i, y + h)) return true;
+	}
+	for (int j = y; j < y + h; j++) {
+		if (sealsNeighbour(x - 1, j) || sealsNeighbour(x + w, j)) return true;
+	}
+	return false;
+}
+
+// Is there one of our zones directly beside this lot, or one road tile away,
+// sharing its row or column? That is the "next to each other or one away"
+// pattern that keeps a road path along every row of lots.
+bool alignedWithNeighbouringZone(const Map& map, int houseID, int x, int y, int w, int h) {
+	const int offsets[4][2] = { { w, 0 }, { w + 1, 0 }, { 0, h }, { 0, h + 1 } };
+	for (const auto& offset : offsets) {
+		for (int sign = -1; sign <= 1; sign += 2) {
+			const int nx = x + sign * offset[0];
+			const int ny = y + sign * offset[1];
+			const StructureBase* pZone = ownZoneAt(map, houseID, nx, ny);
+			if (pZone != nullptr && pZone->getX() == nx && pZone->getY() == ny) return true;
+		}
+	}
+	return false;
+}
+
+} // namespace
+
 Coord QuantBot::findPlaceLocation(Uint32 itemID) {
 	// Check per-build-cycle cache first
 	auto cacheIt = placementCache.find(itemID);
@@ -978,6 +1049,13 @@ Coord QuantBot::findPlaceLocation(Uint32 itemID) {
 		|| itemID == Structure_WOR
 		|| itemID == Structure_Barracks
 		|| itemID == Structure_StarPort);
+
+	// City zones follow road-frontage rules instead of the compact-base
+	// scoring: they sit next to each other or one road tile apart, and never
+	// pack into blocks that landlock the inner lots.
+	const bool cityZonePlacement = currentGame && currentGame->isCitySimEnabled()
+		&& DuneCity::isCityZoneStructure(itemID);
+	const int houseID = getHouse()->getHouseID();
 
 	// Bound search to radius around base center instead of scanning entire map
 	int searchRadius = 50;
@@ -1039,7 +1117,7 @@ Coord QuantBot::findPlaceLocation(Uint32 itemID) {
 						// Favor being near our buildings, avoid enemy buildings
 						if (getMap().getTile(i, j)->getOwner() == getHouse()->getHouseID()) {
 							adjacentFriendlyStructureTiles++;
-							locationScore += 10;  // Base linear bonus
+							locationScore += cityZonePlacement ? 0 : 10;  // compact bases only; lots keep frontage instead
 							
 							// Track which side this building is on and which building it is
 							const ObjectBase* pObject = getMap().getTile(i, j)->getObject();
@@ -1204,7 +1282,9 @@ Coord QuantBot::findPlaceLocation(Uint32 itemID) {
 			int gridOffsetX = ((placeLocationX - baseCenter.x) % 3 + 3) % 3;
 			int gridOffsetY = ((placeLocationY - baseCenter.y) % 3 + 3) % 3;
 			if (gridOffsetX == 0 && gridOffsetY == 0) {
-				locationScore += 80;  // strong grid alignment bonus
+				locationScore += 40;  // grid alignment bonus
+			} else if (cityZonePlacement && alignedWithNeighbouringZone(getMap(), houseID, placeLocationX, placeLocationY, newSizeX, newSizeY)) {
+				locationScore += 50;  // continues a row of lots: touching or one road tile apart
 			} else {
 				locationScore -= 40;  // off-grid penalty
 			}
@@ -1241,6 +1321,9 @@ Coord QuantBot::findPlaceLocation(Uint32 itemID) {
 			if (sidesWithRoad == 0 && sidesWithOpen == 0) {
 				continue;  // landlocked — skip
 			}
+			if (cityZonePlacement && wouldLandlockNeighbouringZone(getMap(), houseID, placeLocationX, placeLocationY, newSizeX, newSizeY)) {
+				continue;  // would take a neighbour's last road frontage
+			}
 			locationScore += sidesWithRoad * 25;
 			locationScore += sidesWithOpen * 5;
 			locationScore -= sidesTouchingStructure * 30;
@@ -1254,6 +1337,18 @@ Coord QuantBot::findPlaceLocation(Uint32 itemID) {
 			bool isIndustrial  = (itemID == Structure_ZoneIndustrial);
 
 			if (isResidential || isCommercial || isIndustrial) {
+				// Favour lots that use sand so rock stays free for Dune
+				// structures. The placement check already guarantees at
+				// least one rock tile under the lot.
+				for (int px = placeLocationX; px < placeLocationEndX; px++) {
+					for (int py = placeLocationY; py < placeLocationEndY; py++) {
+						if (getMap().tileExists(px, py)) {
+							const Tile* t = getMap().getTile(px, py);
+							if (t->isSand() || t->isDunes()) locationScore += 6;
+						}
+					}
+				}
+
 				int closestIndDist = 100;
 				int nearbyRes = 0, nearbyCom = 0, nearbyInd = 0;
 
@@ -1771,7 +1866,9 @@ void QuantBot::build(int militaryValue) {
 			if (pStructure->isABuilder()) {
 				const BuilderBase* pBuilder = static_cast<const BuilderBase*>(pStructure);
 				if (pBuilder->getProductionQueueSize() > 0) {
-					itemCount[pBuilder->getCurrentProducedItem()]++;
+					for (const auto& queued : pBuilder->getBuildList()) {
+						itemCount[queued.itemID] += queued.num;
+					}
 					if (pBuilder->getItemID() == Structure_HeavyFactory) {
 						activeHeavyFactoryCount++;
 					}
@@ -1841,9 +1938,10 @@ void QuantBot::build(int militaryValue) {
 
 	const bool customStrategicPlanning = gameMode == GameMode::Custom && !supportMode;
 	const bool stablePower = getHouse()->getProducedPower() >= getHouse()->getPowerRequirement();
-	const bool palaceAllowedNow = citySimEnabled
-		? itemCount[Structure_Palace] < 1 + ownTotalPop / 25
-		: itemCount[Structure_Palace] == 0;
+	const int palaceTarget = QuantBotBuildPolicy::palaceTarget(
+		getGameInitSettings().getGameOptions().onlyOnePalace, citySimEnabled,
+		ownTotalPop * DuneCity::CitySimulation::kPopDisplayMultiplier);
+	const bool palaceAllowedNow = itemCount[Structure_Palace] < palaceTarget;
 	const bool ixEligible = customStrategicPlanning
 		&& itemCount[Structure_IX] == 0
 		&& itemCount[Structure_HeavyFactory] > 0
@@ -1896,6 +1994,24 @@ void QuantBot::build(int militaryValue) {
 	} else if (stablePower && palaceOverdue) {
 		strategicReserveItem = Structure_Palace;
 	}
+	// Reserve only the cost of a feasible order. An unplaceable structure must
+	// not freeze production indefinitely, and excess funds remain spendable.
+	if (strategicReserveItem != NONE_ID && !findPlaceLocation(strategicReserveItem).isValid()) {
+		strategicReserveItem = NONE_ID;
+	}
+	int strategicReserveCost = strategicReserveItem == NONE_ID ? 0
+		: data[strategicReserveItem][houseID].price;
+
+	auto chooseCityZone = [&](const BuilderBase* builder, bool bootstrap) {
+		const auto ranked = QuantBotBuildPolicy::rankZones(
+			itemCount[Structure_ZoneResidential], itemCount[Structure_ZoneCommercial],
+			itemCount[Structure_ZoneIndustrial], ownResValve, ownComValve, ownIndValve, bootstrap);
+		for (Uint32 candidate : ranked) {
+			if (candidate != NONE_ID && builder->isAvailableToBuild(candidate)
+				&& findPlaceLocation(candidate).isValid()) return candidate;
+		}
+		return static_cast<Uint32>(NONE_ID);
+	};
 
 	bool emitStatsLog = false;
 
@@ -2215,16 +2331,24 @@ void QuantBot::build(int militaryValue) {
 						std::string itemName = getItemNameByID(itemID);
 						logDebug("Queuing %s (ID:%d)", itemName.c_str(), itemID);
 					}
+					const int before = pBuilder->getProductionQueueSize();
 					doProduceItem(pBuilder, itemID);
+					const bool accepted = pBuilder->getProductionQueueSize() > before;
+					if (!accepted && emitStatsLog) {
+						logDebug("PRODUCTION: builder=%u rejected item=%u credits=%d", pBuilder->getObjectID(), itemID, money);
+					}
+					return accepted;
 				};
 
-				// Preserve the bank regardless of builder iteration order once strategic
-				// infrastructure has aged into priority. The Construction Yard remains
-				// active so it can spend the reserved credits on the intended structure.
-				if (strategicReserveItem != NONE_ID
-					&& pStructure->getItemID() != Structure_ConstructionYard) {
-					continue;
-				}
+				// Restore the reserved portion after this builder's decisions, keeping
+				// all existing local spending deductions for subsequent builders.
+				struct RestoreReservedCredits {
+					int& money;
+					int reserved;
+					~RestoreReservedCredits() { money += reserved; }
+				} reserve{money, pStructure->getItemID() == Structure_ConstructionYard
+					? 0 : money - QuantBotBuildPolicy::spendableCredits(money, strategicReserveCost)};
+				money -= reserve.reserved;
 				
 				if (!pBuilder->isUpgrading() && pBuilder->getProductionQueueSize() < 1
 					&& money > 1500) {
@@ -2364,11 +2488,12 @@ void QuantBot::build(int militaryValue) {
 				case Structure_HeavyFactory: {
 					// Log HF status when idle with money (Custom mode diagnostics)
 					if (gameMode == GameMode::Custom && emitStatsLog) {
-						logDebug("HF: upgrading=%d queue=%d buildList=%d upgLv=%d/%d unitLimit=%d money=%d",
-							pBuilder->isUpgrading(), pBuilder->getProductionQueueSize(),
+						logDebug("HF=%u: upgrading=%d queue=%d buildList=%d upgLv=%d/%d unitLimit=%d spendable=%d hold=%d military=%d/%d reserve=%d",
+							pBuilder->getObjectID(), pBuilder->isUpgrading(), pBuilder->getProductionQueueSize(),
 							pBuilder->getBuildListSize(),
 							pBuilder->getCurrentUpgradeLevel(), pBuilder->getMaxUpgradeLevel(),
-							getHouse()->isGroundUnitLimitReached(), money);
+							getHouse()->isGroundUnitLimitReached(), money, pBuilder->isOnHold(),
+							militaryValue, militaryValueLimit, strategicReserveCost);
 					}
 					// only if the factory isn't busy
 					if ((pBuilder->isUpgrading() == false) && (pBuilder->getProductionQueueSize() < 1) && (pBuilder->getBuildListSize() > 0)) {
@@ -2492,7 +2617,7 @@ void QuantBot::build(int militaryValue) {
 							else if (pBuilder->isAvailableToBuild(Unit_SiegeTank) && (militaryValue * siegePercent > siegeValue)) {
 								produceItemWithLogging(Unit_SiegeTank);
 								itemCount[Unit_SiegeTank]++;
-								money -= data[Unit_Tank][houseID].price;
+								money -= data[Unit_SiegeTank][houseID].price;
 								militaryValue += data[Unit_SiegeTank][houseID].price;
 							}
 							else if (pBuilder->isAvailableToBuild(Unit_Tank)) {
@@ -2596,19 +2721,37 @@ void QuantBot::build(int militaryValue) {
 
 				const ConstructionYard* pConstYard = static_cast<const ConstructionYard*>(pBuilder);
 
-				// Only log production status when something changes (not every cycle)
-				static int lastQueueSize = -1;
-				static bool lastUpgrading = false;
-				static int lastBuildListSize = -1;
-				
-				if(pBuilder->getProductionQueueSize() != lastQueueSize || 
-				   pBuilder->isUpgrading() != lastUpgrading || 
-				   pBuilder->getBuildListSize() != lastBuildListSize) {
-					logDebug("PRODUCTION: CY Status - Upgrading:%d Queue:%d Credits:%d BuildList:%d", 
-						pBuilder->isUpgrading(), pBuilder->getProductionQueueSize(), money, pBuilder->getBuildListSize());
-					lastQueueSize = pBuilder->getProductionQueueSize();
-					lastUpgrading = pBuilder->isUpgrading();
-					lastBuildListSize = pBuilder->getBuildListSize();
+				// Each yard owns its concrete/structure placement sequence. Sharing
+				// a single FIFO lets the faster yard consume the other's locations.
+				auto& placeLocations = builderPlaceLocations[pBuilder->getObjectID()];
+				if (pBuilder->getProductionQueueSize() == 0) placeLocations.clear();
+				if (emitStatsLog) {
+					logDebug("PRODUCTION: CY=%u upgrading=%d queue=%d hold=%d credits=%d buildList=%d R/C/I=%d/%d/%d reserve=%u/%d",
+						pBuilder->getObjectID(), pBuilder->isUpgrading(), pBuilder->getProductionQueueSize(),
+						pBuilder->isOnHold(), money, pBuilder->getBuildListSize(),
+						itemCount[Structure_ZoneResidential], itemCount[Structure_ZoneCommercial],
+						itemCount[Structure_ZoneIndustrial], strategicReserveItem, strategicReserveCost);
+					auto* balanceCity = currentGame ? currentGame->getCitySimulation() : nullptr;
+					const int taxIncome = citySimEnabled
+						? DuneCity::computeAnnualTaxRevenue(ownTotalPop, balanceCity ? balanceCity->getCityTax() : 7, ownAvgLandValue) / 60 : 0;
+					const int factoryTarget = QuantBotBuildPolicy::desiredHeavyFactories(citySimEnabled, taxIncome, money);
+					const int tech = currentGame ? currentGame->techLevel : 8;
+					const bool policyPrerequisites = citySimEnabled || tech <= 4
+						|| (itemCount[Structure_RepairYard] > 0 && (tech <= 6 || itemCount[Structure_IX] > 0));
+					const char* factoryReason = !pBuilder->isAvailableToBuild(Structure_HeavyFactory) ? "unavailable"
+						: money <= 2000 ? "cash-reserve"
+						: militaryValue >= militaryValueLimit ? "military-limit"
+						: getHouse()->isGroundUnitLimitReached() ? "unit-limit"
+						: itemCount[Structure_HeavyFactory] >= factoryTarget ? "target-met"
+						: !policyPrerequisites ? "tech-policy" : "expansion-due";
+					logDebug("BUILD-BALANCE: CY=%u HF=%d queued=%d busy=%d target=%d reason=%s RY=%d queued=%d busy=%d cap=%d taxPerSec=%d power=%d/%d",
+						pBuilder->getObjectID(), getHouse()->getNumItems(Structure_HeavyFactory),
+						itemCount[Structure_HeavyFactory] - getHouse()->getNumItems(Structure_HeavyFactory),
+						activeHeavyFactoryCount, factoryTarget, factoryReason,
+						getHouse()->getNumItems(Structure_RepairYard),
+						itemCount[Structure_RepairYard] - getHouse()->getNumItems(Structure_RepairYard),
+						activeRepairYardCount, QuantBotBuildPolicy::repairYardCap(getHouse()->getNumItems(Structure_HeavyFactory)),
+						taxIncome, getHouse()->getProducedPower(), getHouse()->getPowerRequirement());
 				}
 
 					if (!pBuilder->isUpgrading() && getHouse()->getCredits() > 100 && (pBuilder->getProductionQueueSize() < 1) && pBuilder->getBuildListSize()) {
@@ -2943,32 +3086,7 @@ void QuantBot::build(int militaryValue) {
 						// demand-AND-ratio rule used in the main zoning block,
 						// otherwise R-valve's wider range dominates and we end
 						// up R-only.
-						Uint32 zoneID = NONE_ID;
-						if (resCount == 0) {
-							zoneID = Structure_ZoneResidential;
-						} else if (indCount == 0) {
-							zoneID = Structure_ZoneIndustrial;
-						} else if (comCount == 0) {
-							zoneID = Structure_ZoneCommercial;
-						} else {
-							const int expR = std::max(comCount, indCount) * 3 + 3;
-							const int expI = std::max(resCount / 3, 1);
-							const int expC = std::max(resCount / 3, 1);
-							const int rGap = expR - resCount;
-							const int iGap = expI - indCount;
-							const int cGap = expC - comCount;
-							int bestGap = std::numeric_limits<int>::min();
-							if (ownResValve > 0 && rGap > bestGap) {
-								bestGap = rGap; zoneID = Structure_ZoneResidential;
-							}
-							if (ownIndValve > 0 && iGap > bestGap) {
-								bestGap = iGap; zoneID = Structure_ZoneIndustrial;
-							}
-							if (ownComValve > 0 && cGap > bestGap) {
-								bestGap = cGap; zoneID = Structure_ZoneCommercial;
-							}
-							if (zoneID == NONE_ID) zoneID = Structure_ZoneResidential;
-						}
+						const Uint32 zoneID = chooseCityZone(pBuilder, true);
 
 						if (zoneID != NONE_ID
 							&& money > 200
@@ -3207,6 +3325,7 @@ void QuantBot::build(int militaryValue) {
 					logDebug("Build IX... money: %d", money);
 				}
 				if (ixOverdue && !skipRemainingStructureLogic
+					&& itemCount[Structure_IX] == 0
 					&& stablePower
 					&& money > 1000
 					&& pBuilder->isAvailableToBuild(Structure_IX)
@@ -3216,38 +3335,35 @@ void QuantBot::build(int militaryValue) {
 					itemID = Structure_IX;
 				}
 				// 12. Additional Heavy Factories (expansion).
-				//     City sim: scale HF count with credits/sec income (same formula
-				//     as CY/MCV scaling). HFs should grow with the city economy, not
-				//     with raw treasury size — otherwise the AI hoards money and
-				//     spams factories with no use for them.
-				//     Non-city: keep money/4000 fallback.
-				//     Requirements are progressive based on tech level:
+				//     Income supports steady expansion; large cash surpluses fund
+				//     extra tank capacity, bounded while military demand remains.
+				//     Non-city uses the existing money/4000 target, also bounded.
+				//     City mode uses actual build availability; classic prerequisites remain.
+				//     Requirements outside city mode are progressive based on tech level:
 				//     Tech 4: No prerequisites (just money and need)
 				//     Tech 5-6: Require Repair Yard
 				//     Tech 7+: Require Repair Yard + IX
 				if (itemID == NONE_ID && !skipRemainingStructureLogic
 								&& money > 2000 && pBuilder->isAvailableToBuild(Structure_HeavyFactory)) {
 
-								int desiredHFs = 1;
+								int creditsPerSec = 0;
 								if (isCitySim) {
 									auto* citySim = currentGame ? currentGame->getCitySimulation() : nullptr;
 									int tax = citySim ? citySim->getCityTax() : 7;
 									int32_t annual = DuneCity::computeAnnualTaxRevenue(ownTotalPop, tax, ownAvgLandValue);
-									int creditsPerSec = annual / 60;
-									desiredHFs = 1 + creditsPerSec / 50;
-								} else {
-									desiredHFs = 1 + money / 4000;
+									creditsPerSec = annual / 60;
 								}
+								const int desiredHFs = QuantBotBuildPolicy::desiredHeavyFactories(isCitySim, creditsPerSec, money);
 
-								const bool needMore = (activeHeavyFactoryCount >= itemCount[Structure_HeavyFactory])
-									|| (itemCount[Structure_HeavyFactory] < desiredHFs);
+								const bool needMore = itemCount[Structure_HeavyFactory] < desiredHFs
+									&& militaryValue < militaryValueLimit && !getHouse()->isGroundUnitLimitReached();
 
 								if (needMore) {
 									int techLevel = currentGame ? currentGame->techLevel : 8;
 									bool prerequisitesMet = false;
 
-									if (techLevel <= 4) {
-										// Tech 4: Can build additional Heavy Factories without prerequisites
+									if (isCitySim || techLevel <= 4) {
+										// City production uses the actual tech tree, not an extra IX policy gate.
 										prerequisitesMet = true;
 									}
 									else if (techLevel <= 6) {
@@ -3279,12 +3395,14 @@ void QuantBot::build(int militaryValue) {
 							itemCount[Unit_Harvester]++;
 						}
 					}
-				// 14. Additional Repair Yards (1 per 6000 military value)
+				// 14. Expand repair only when existing capacity is busy and production supports it.
 				if (itemID == NONE_ID && !skipRemainingStructureLogic
 							&& pBuilder->isAvailableToBuild(Structure_RepairYard) && money > 2000
-							&& itemCount[Structure_RepairYard] * 6000 < militaryValue) {
+							&& QuantBotBuildPolicy::needsExtraRepairYard(itemCount[Structure_RepairYard],
+								activeRepairYardCount, getHouse()->getNumItems(Structure_HeavyFactory), militaryValue)) {
 							itemID = Structure_RepairYard;
-							logDebug("Build Repair Yard: have %d, need %d (military: %d)", itemCount[Structure_RepairYard], (militaryValue / 6000) + 1, militaryValue);
+							logDebug("Build Repair Yard: have=%d busy=%d cap=%d military=%d", itemCount[Structure_RepairYard], activeRepairYardCount,
+								QuantBotBuildPolicy::repairYardCap(getHouse()->getNumItems(Structure_HeavyFactory)), militaryValue);
 						}
 				// 15. Additional High Tech Factories (if all existing ones are busy)
 				if (itemID == NONE_ID && !skipRemainingStructureLogic
@@ -3348,7 +3466,8 @@ void QuantBot::build(int militaryValue) {
 				// 17b. Palace (after military infrastructure)
 				//       City sim: 1 palace per 30000 population
 				{
-				const bool palaceAllowed = palaceAllowedNow;
+				const bool palaceAllowed = itemCount[Structure_Palace] < palaceTarget
+					&& !orderedThisTick.count(Structure_Palace);
 				if (itemID == NONE_ID && !skipRemainingStructureLogic
 									&& money > 5000
 									&& pBuilder->isAvailableToBuild(Structure_Palace)
@@ -3419,9 +3538,8 @@ void QuantBot::build(int militaryValue) {
 					}
 				}
 
-				// Zone type is chosen by demand valves: build whichever R/I/C
-				// has the highest positive demand. Falls back to R if all
-				// valves are equal or negative.
+				// Rank zones by live demand and the R/I/C balance. Try the next
+				// candidate if the preferred zone has no available building site.
 				// In city sim, zones are the economic base — only windtrap is
 				// required so the AI doesn't gate growth behind military
 				// infrastructure that itself requires population (e.g. Starport
@@ -3449,40 +3567,17 @@ void QuantBot::build(int militaryValue) {
 								powerSurplus, kZonePowerHeadroom);
 						}
 					} else {
-						// Pick zone by demand AND target ratio (~3R : 1I : 1C).
-						// Pure valve picking is broken when all three valves
-						// saturate: R-valve range is ±2000 vs ±1500 for C/I, so
-						// at full demand R always wins and the city becomes
-						// pure-residential. Combine valve sign (live demand)
-						// with the count gap to the target ratio.
 						const int resCount = itemCount[Structure_ZoneResidential];
 						const int comCount = itemCount[Structure_ZoneCommercial];
 						const int indCount = itemCount[Structure_ZoneIndustrial];
-						const int expR = std::max(comCount, indCount) * 3 + 3;
-						const int expI = std::max(resCount / 3, 1);
-						const int expC = std::max(resCount / 3, 1);
-						const int rGap = expR - resCount;
-						const int iGap = expI - indCount;
-						const int cGap = expC - comCount;
-
-						Uint32 zoneID = NONE_ID;
-						int bestGap = std::numeric_limits<int>::min();
-						if (ownResValve > 0 && rGap > bestGap) {
-							bestGap = rGap; zoneID = Structure_ZoneResidential;
-						}
-						if (ownIndValve > 0 && iGap > bestGap) {
-							bestGap = iGap; zoneID = Structure_ZoneIndustrial;
-						}
-						if (ownComValve > 0 && cGap > bestGap) {
-							bestGap = cGap; zoneID = Structure_ZoneCommercial;
-						}
+						const Uint32 zoneID = chooseCityZone(pBuilder, false);
 
 						if (zoneID != NONE_ID && pBuilder->isAvailableToBuild(zoneID)
 							&& findPlaceLocation(zoneID).isValid()) {
 							itemID = zoneID;
-							logDebug("CITY-ZONE: Building %s (R:%d C:%d I:%d gap=%d valves=R%+d C%+d I%+d surplus=%d)",
+							logDebug("CITY-ZONE: Building %s (R:%d C:%d I:%d valves=R%+d C%+d I%+d surplus=%d)",
 								getItemNameByID(zoneID).c_str(), resCount, comCount, indCount,
-								bestGap, ownResValve, ownComValve, ownIndValve, powerSurplus);
+								ownResValve, ownComValve, ownIndValve, powerSurplus);
 						}
 					}
 				}
@@ -3504,6 +3599,22 @@ void QuantBot::build(int militaryValue) {
 				}
 			}
 
+			// Retry useful economic work when another yard claimed the strategic
+			// order, or a chosen structure has no feasible footprint. Never
+			// default to residential regardless of demand or power.
+			if (itemID != NONE_ID && itemID != Structure_RocketTurret
+				&& itemID != Structure_GunTurret && !findPlaceLocation(itemID).isValid()) {
+				if (emitStatsLog) logDebug("PRODUCTION: CY=%u no site for item=%u", pBuilder->getObjectID(), itemID);
+				itemID = NONE_ID;
+			}
+			if (itemID == NONE_ID && !skipRemainingStructureLogic && isCitySim && money > 200
+				&& getHouse()->getProducedPower() - getHouse()->getPowerRequirement() >= 24
+				&& itemCount[Structure_WindTrap] > 0) {
+				itemID = chooseCityZone(pBuilder, false);
+			}
+
+			if (emitStatsLog) logDebug("BUILD-CHOICE: CY=%u item=%u credits=%d skip=%d",
+				pBuilder->getObjectID(), itemID, money, skipRemainingStructureLogic);
 			Coord selectedPlaceLocation = Coord::Invalid();
 			if (itemID != NONE_ID && pBuilder->isAvailableToBuild(itemID)) {
 				selectedPlaceLocation = (itemID == Structure_RocketTurret || itemID == Structure_GunTurret)
@@ -3574,9 +3685,15 @@ void QuantBot::build(int militaryValue) {
 					placeLocations.push_back(location);
 				}
 
-				orderedThisTick.insert(itemID);
-				produceItemWithLogging(itemID);
-				itemCount[itemID]++;
+				if (produceItemWithLogging(itemID)) {
+					orderedThisTick.insert(itemID);
+					itemCount[itemID]++;
+					money -= data[itemID][houseID].price;
+					if (itemID == strategicReserveItem) strategicReserveCost = 0;
+					placementCache.clear();
+				} else {
+					placeLocations.clear();
+				}
 			}
 			else if (itemID != NONE_ID && pBuilder->isAvailableToBuild(itemID)) {
 				// Only build concrete slabs to expand buildable area for structures that need it:
@@ -3604,28 +3721,16 @@ void QuantBot::build(int militaryValue) {
 		else if (itemID != NONE_ID && !pBuilder->isAvailableToBuild(itemID)) {
 			logDebug("Cannot build itemID %d: not available (prerequisites not met)", itemID);
 		}
-		else if (itemID == NONE_ID && !skipRemainingStructureLogic) {
+		else if (itemID == NONE_ID && !skipRemainingStructureLogic && emitStatsLog) {
 			logDebug("No structure selected to build (money: %d, skipRemaining: %d)", money, skipRemainingStructureLogic);
 		}
 		
-		// Proactive idle build. In city sim mode the AI should keep growing
-		// its economic base (residential zones) when there's nothing else to
-		// do — laying concrete in the desert burns credits and adds no income.
-		// Outside city sim, fall back to perimeter concrete.
-		if (money > 500 && pBuilder->getProductionQueueSize() < 1 && itemID == NONE_ID) {
-			if (isCitySim
-				&& itemCount[Structure_WindTrap] > 0
-				&& pBuilder->isAvailableToBuild(Structure_ZoneResidential)
-				&& findPlaceLocation(Structure_ZoneResidential).isValid()) {
-				doProduceItem(pBuilder, Structure_ZoneResidential);
-				logDebug("PROACTIVE: Building Residential Zone (idle CY, money: %d)", money);
-			} else if (!isCitySim && pBuilder->isAvailableToBuild(Structure_Slab1)) {
-				Coord slabLocation = findSlabPlaceLocation(Structure_Slab1);
-				if (slabLocation.isValid()) {
-					doProduceItem(pBuilder, Structure_Slab1);
-					logDebug("PROACTIVE: Building concrete slab to expand base (money: %d) at (%d,%d)", money, slabLocation.x, slabLocation.y);
-				}
-			}
+		// City yards use the demand-ranked fallback before placement above.
+		// Outside city mode an otherwise idle yard can extend concrete.
+		if (!isCitySim && money > 500 && pBuilder->getProductionQueueSize() < 1
+			&& itemID == NONE_ID && pBuilder->isAvailableToBuild(Structure_Slab1)) {
+			Coord slabLocation = findSlabPlaceLocation(Structure_Slab1);
+			if (slabLocation.isValid()) doProduceItem(pBuilder, Structure_Slab1);
 		}
 		
 						}
@@ -3678,6 +3783,7 @@ void QuantBot::build(int militaryValue) {
 
 						if (location.isValid()) {
 							doPlaceStructure(pConstYard, location.x, location.y);
+							placementCache.clear();
 							logDebug("PRODUCTION: Placed structure itemID: %d at (%d,%d)", itemToBePlaced, location.x, location.y);
 						}
 						else if (!alreadyCancelled) {
