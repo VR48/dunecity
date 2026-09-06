@@ -44,9 +44,34 @@ TEST_CASE("QuantBot seeds missing jobs before relying on positive demand", "[qua
 }
 
 TEST_CASE("QuantBot expands tank production with surplus cash without unbounded factory growth", "[quantbot][production]") {
-    REQUIRE(desiredHeavyFactories(true, 50, 59044) == 6);
+    REQUIRE(desiredHeavyFactories(true, 50, 59044) == 8);
     REQUIRE(desiredHeavyFactories(true, 150, 3000) == 4);
     REQUIRE(desiredHeavyFactories(true, 0, 2000) == 1);
     REQUIRE(desiredHeavyFactories(true, 10000, 1000000) == 8);
     REQUIRE(desiredHeavyFactories(false, 0, 12000) == 4);
+}
+
+TEST_CASE("QuantBot converts the observed city cash surplus into troop capacity", "[quantbot][production]") {
+    REQUIRE(desiredHeavyFactories(true, 0, 6999) == 1);
+    REQUIRE(desiredHeavyFactories(true, 0, 7000) == 2);
+    REQUIRE(desiredHeavyFactories(true, 0, 11926) == 2);
+    REQUIRE(desiredHeavyFactories(true, 0, 13873) == 3);
+    REQUIRE(desiredHeavyFactories(true, 0, 17922) == 4);
+    REQUIRE(desiredHeavyFactories(true, 0, -100) == 1);
+}
+
+TEST_CASE("QuantBot repair expansion follows load and heavy production capacity", "[quantbot][production]") {
+    // Current-game regressions: four/six yards with just two factories.
+    REQUIRE_FALSE(needsExtraRepairYard(3, 3, 2, 19520));
+    REQUIRE_FALSE(needsExtraRepairYard(5, 5, 2, 30200));
+    REQUIRE_FALSE(needsExtraRepairYard(1, 1, 2, 19520));
+    // Productive army with a busy repair yard can add a second.
+    REQUIRE(needsExtraRepairYard(1, 1, 3, 19520));
+    REQUIRE_FALSE(needsExtraRepairYard(1, 0, 3, 19520));
+    // One busy yard plus another queued must not trigger a third order.
+    REQUIRE_FALSE(needsExtraRepairYard(2, 1, 6, 30000));
+    REQUIRE(needsExtraRepairYard(2, 2, 6, 30000));
+    REQUIRE_FALSE(needsExtraRepairYard(2, 2, 6, 12000));
+    REQUIRE_FALSE(needsExtraRepairYard(0, 0, 0, 30000));
+    REQUIRE_FALSE(needsExtraRepairYard(4, 4, 20, 80000));
 }

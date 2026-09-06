@@ -1,5 +1,32 @@
 # Handover — DuneCity session, 2026-09-06
 
+## Codex follow-up: repair/factory balance, 2026-09-06
+
+Current-game evidence saved in `build/ai-balance-before.log`: Neutral ordered
+its fourth repair yard with two busy heavy factories and later held ~18k credits;
+Mercenary ordered its sixth repair yard with two factories. Some heavy factories
+were being built, but the city cash target added only one per 10k credits while
+repair yards grew unconditionally with army value (one per 6k).
+
+`QuantBotBuildPolicy` now targets an extra city heavy factory per 5k credits above
+2k working capital, still taking the larger income target and capping at eight.
+Extra repair yards require all existing yards busy, count queued yards as spare
+capacity, and cap at ceil(completed heavy factories / 2), minimum one, maximum four.
+The first-yard tech rule remains. City factory expansion uses actual build-list
+availability without the additional policy-only repair-yard/IX prerequisite;
+classic-mode factory prerequisites remain. Power recovery and economy seeding
+still precede expansion, and military/unit limits still stop factory expansion.
+
+Added 30-game-second per-CY `BUILD-BALANCE` logs (HF/RY completed/queued/busy,
+factory target/reason, repair cap, estimated tax income, power) and `BUILD-CHOICE`
+logs alongside the existing no-site/rejected-order diagnostics.
+
+Local app rebuilt at `build/bin/dunecity.app`, source version 1.0.535 checked
+consistent; no version bump, commit, or push. `build/ai-balance-tests.log` reports
+372 passed, the same two pre-existing parseDouble("nan") failures, three skipped.
+The running game must be saved, quit, and reloaded in this rebuilt app before
+these changes and new logs take effect. Live post-change validation is pending.
+
 ## Codex follow-up: QuantBot production and civic graphics, 2026-09-06
 
 User reported Brutal QuantBot's heavy factory idle, one construction yard

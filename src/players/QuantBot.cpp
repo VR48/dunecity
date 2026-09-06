@@ -2731,6 +2731,27 @@ void QuantBot::build(int militaryValue) {
 						pBuilder->isOnHold(), money, pBuilder->getBuildListSize(),
 						itemCount[Structure_ZoneResidential], itemCount[Structure_ZoneCommercial],
 						itemCount[Structure_ZoneIndustrial], strategicReserveItem, strategicReserveCost);
+					auto* balanceCity = currentGame ? currentGame->getCitySimulation() : nullptr;
+					const int taxIncome = citySimEnabled
+						? DuneCity::computeAnnualTaxRevenue(ownTotalPop, balanceCity ? balanceCity->getCityTax() : 7, ownAvgLandValue) / 60 : 0;
+					const int factoryTarget = QuantBotBuildPolicy::desiredHeavyFactories(citySimEnabled, taxIncome, money);
+					const int tech = currentGame ? currentGame->techLevel : 8;
+					const bool policyPrerequisites = citySimEnabled || tech <= 4
+						|| (itemCount[Structure_RepairYard] > 0 && (tech <= 6 || itemCount[Structure_IX] > 0));
+					const char* factoryReason = !pBuilder->isAvailableToBuild(Structure_HeavyFactory) ? "unavailable"
+						: money <= 2000 ? "cash-reserve"
+						: militaryValue >= militaryValueLimit ? "military-limit"
+						: getHouse()->isGroundUnitLimitReached() ? "unit-limit"
+						: itemCount[Structure_HeavyFactory] >= factoryTarget ? "target-met"
+						: !policyPrerequisites ? "tech-policy" : "expansion-due";
+					logDebug("BUILD-BALANCE: CY=%u HF=%d queued=%d busy=%d target=%d reason=%s RY=%d queued=%d busy=%d cap=%d taxPerSec=%d power=%d/%d",
+						pBuilder->getObjectID(), getHouse()->getNumItems(Structure_HeavyFactory),
+						itemCount[Structure_HeavyFactory] - getHouse()->getNumItems(Structure_HeavyFactory),
+						activeHeavyFactoryCount, factoryTarget, factoryReason,
+						getHouse()->getNumItems(Structure_RepairYard),
+						itemCount[Structure_RepairYard] - getHouse()->getNumItems(Structure_RepairYard),
+						activeRepairYardCount, QuantBotBuildPolicy::repairYardCap(getHouse()->getNumItems(Structure_HeavyFactory)),
+						taxIncome, getHouse()->getProducedPower(), getHouse()->getPowerRequirement());
 				}
 
 					if (!pBuilder->isUpgrading() && getHouse()->getCredits() > 100 && (pBuilder->getProductionQueueSize() < 1) && pBuilder->getBuildListSize()) {
@@ -3317,7 +3338,8 @@ void QuantBot::build(int militaryValue) {
 				//     Income supports steady expansion; large cash surpluses fund
 				//     extra tank capacity, bounded while military demand remains.
 				//     Non-city uses the existing money/4000 target, also bounded.
-				//     Requirements are progressive based on tech level:
+				//     City mode uses actual build availability; classic prerequisites remain.
+				//     Requirements outside city mode are progressive based on tech level:
 				//     Tech 4: No prerequisites (just money and need)
 				//     Tech 5-6: Require Repair Yard
 				//     Tech 7+: Require Repair Yard + IX
@@ -3340,8 +3362,8 @@ void QuantBot::build(int militaryValue) {
 									int techLevel = currentGame ? currentGame->techLevel : 8;
 									bool prerequisitesMet = false;
 
-									if (techLevel <= 4) {
-										// Tech 4: Can build additional Heavy Factories without prerequisites
+									if (isCitySim || techLevel <= 4) {
+										// City production uses the actual tech tree, not an extra IX policy gate.
 										prerequisitesMet = true;
 									}
 									else if (techLevel <= 6) {
@@ -3373,12 +3395,14 @@ void QuantBot::build(int militaryValue) {
 							itemCount[Unit_Harvester]++;
 						}
 					}
-				// 14. Additional Repair Yards (1 per 6000 military value)
+				// 14. Expand repair only when existing capacity is busy and production supports it.
 				if (itemID == NONE_ID && !skipRemainingStructureLogic
 							&& pBuilder->isAvailableToBuild(Structure_RepairYard) && money > 2000
-							&& itemCount[Structure_RepairYard] * 6000 < militaryValue) {
+							&& QuantBotBuildPolicy::needsExtraRepairYard(itemCount[Structure_RepairYard],
+								activeRepairYardCount, getHouse()->getNumItems(Structure_HeavyFactory), militaryValue)) {
 							itemID = Structure_RepairYard;
-							logDebug("Build Repair Yard: have %d, need %d (military: %d)", itemCount[Structure_RepairYard], (militaryValue / 6000) + 1, militaryValue);
+							logDebug("Build Repair Yard: have=%d busy=%d cap=%d military=%d", itemCount[Structure_RepairYard], activeRepairYardCount,
+								QuantBotBuildPolicy::repairYardCap(getHouse()->getNumItems(Structure_HeavyFactory)), militaryValue);
 						}
 				// 15. Additional High Tech Factories (if all existing ones are busy)
 				if (itemID == NONE_ID && !skipRemainingStructureLogic
@@ -3589,6 +3613,8 @@ void QuantBot::build(int militaryValue) {
 				itemID = chooseCityZone(pBuilder, false);
 			}
 
+			if (emitStatsLog) logDebug("BUILD-CHOICE: CY=%u item=%u credits=%d skip=%d",
+				pBuilder->getObjectID(), itemID, money, skipRemainingStructureLogic);
 			Coord selectedPlaceLocation = Coord::Invalid();
 			if (itemID != NONE_ID && pBuilder->isAvailableToBuild(itemID)) {
 				selectedPlaceLocation = (itemID == Structure_RocketTurret || itemID == Structure_GunTurret)

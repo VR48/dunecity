@@ -49,8 +49,26 @@ inline int desiredHeavyFactories(bool citySim, int creditsPerSecond, int credits
     // Income sustains normal expansion; a large unspent treasury can fund
     // additional capacity. Bound expansion so a busy queue cannot grow it forever.
     const int incomeTarget = 1 + std::max(0, creditsPerSecond) / 50;
-    const int cashTarget = 1 + std::max(0, credits) / (citySim ? 10000 : 4000);
+    // Keep working capital for units/power, then add a city production lane
+    // per 5000 surplus credits instead of waiting for another 10000.
+    const int cashTarget = 1 + (citySim ? spendableCredits(credits, 2000) / 5000
+                                      : std::max(0, credits) / 4000);
     return std::clamp(citySim ? std::max(incomeTarget, cashTarget) : cashTarget, 1, 8);
+}
+
+inline int repairYardCap(int heavyFactories) {
+    // Repair is support capacity: at most one yard per two heavy factories.
+    return std::clamp((heavyFactories + 1) / 2, 1, 4);
+}
+
+inline bool needsExtraRepairYard(int yardsIncludingQueued, int busyYards,
+                                int heavyFactories, int militaryValue) {
+    // A queued yard counts as spare capacity, preventing multiple CYs from
+    // expanding repair simultaneously. The first yard has its own tech rule.
+    return yardsIncludingQueued > 0
+        && busyYards >= yardsIncludingQueued
+        && yardsIncludingQueued < repairYardCap(heavyFactories)
+        && militaryValue > yardsIncludingQueued * 6000;
 }
 
 } // namespace QuantBotBuildPolicy
