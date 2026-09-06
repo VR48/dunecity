@@ -778,17 +778,28 @@ elseif(APPLE)
         BUNDLE DESTINATION .
     )
 
-    # Re-codesign the installed bundle. The POST_BUILD codesign on the
-    # in-tree build is invalidated by `cmake --install` rewriting the
-    # binary's rpath, so verification fails ("code or signature have
-    # been modified") and macOS shows "dunecity.app is damaged and
-    # can't be opened." Signing the bundle at install time, after all
-    # rpath fixup is done, restores a valid ad-hoc signature. The
-    # signature is still ad-hoc (no Apple Developer ID), so first-run
-    # downloads still hit Gatekeeper, but with a valid signature the
-    # warning becomes "cannot verify developer" with an Open Anyway
-    # path instead of the unrecoverable "damaged" message.
+    # Make release bundles independent of Homebrew and vcpkg paths. CPack
+    # invokes the install rules in a staging tree, so BundleUtilities copies
+    # every non-system dylib into Contents/Frameworks and rewrites its load
+    # commands before the final signature is applied.
+    set(DUNECITY_MACOS_DEPENDENCY_DIRS "")
+    if(DEFINED VCPKG_INSTALLED_DIR AND DEFINED VCPKG_TARGET_TRIPLET)
+        list(APPEND DUNECITY_MACOS_DEPENDENCY_DIRS
+            "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/lib")
+    endif()
+
+    # Re-sign last because dependency fixup changes the executable and copied
+    # libraries. The signature is ad-hoc until Developer ID credentials are
+    # added to the runner, but it is internally valid and supports Open Anyway.
     install(CODE "
+        include(BundleUtilities)
+        set(BU_CHMOD_BUNDLE_ITEMS ON)
+        message(STATUS \"Bundling macOS runtime dependencies...\")
+        fixup_bundle(
+            \"\${CMAKE_INSTALL_PREFIX}/dunecity.app\"
+            \"\"
+            \"${DUNECITY_MACOS_DEPENDENCY_DIRS}\"
+        )
         message(STATUS \"Re-codesigning installed dunecity.app...\")
         execute_process(
             COMMAND codesign --force --deep --sign - \"\${CMAKE_INSTALL_PREFIX}/dunecity.app\"
