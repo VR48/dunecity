@@ -10,6 +10,8 @@ add_executable(dunelegacy_tests)
 # Note: Catch2WithMain provides main(), no testmain.cpp needed
 target_sources(dunelegacy_tests
     PRIVATE
+        RendererSizeTestCase.cpp
+        QuantBotBuildPolicyTestCase.cpp
         PathBudgetTestCase/PathBudgetTestCase.cpp
         NetworkManagerTestCase/NetworkManagerTestCase.cpp
         GenericNinthHouseRegressionTestCase/GenericNinthHouseRegressionTestCase.cpp
@@ -89,6 +91,20 @@ target_link_libraries(dunelegacy_tests
         $<IF:$<TARGET_EXISTS:SDL2_mixer::SDL2_mixer>,SDL2_mixer::SDL2_mixer,SDL2_mixer::SDL2_mixer-static>
         CURL::libcurl
 )
+
+if(APPLE)
+    # fnkdat.cpp calls getMacApplicationSupportFolder(), which is implemented in
+    # the Objective-C helper the game target also compiles (src/CMakeLists.txt).
+    target_sources(dunelegacy_tests PRIVATE ${CMAKE_SOURCE_DIR}/IDE/xCode/MacFunctions.m)
+    set_source_files_properties(${CMAKE_SOURCE_DIR}/IDE/xCode/MacFunctions.m
+        PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+    target_link_libraries(dunelegacy_tests
+        PRIVATE
+            "-framework Cocoa"
+            "-framework Foundation"
+            "-framework CoreFoundation"
+    )
+endif()
 
 if(WIN32)
     target_link_libraries(dunelegacy_tests

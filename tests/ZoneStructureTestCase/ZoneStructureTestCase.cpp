@@ -170,15 +170,18 @@ TEST_CASE("ZoneStructure: header declares setLocation override",
     REQUIRE(hdr.find("override") != std::string::npos);
 }
 
-TEST_CASE("ZoneStructure: placement rejects sand and accepts rock or slab",
+TEST_CASE("ZoneStructure: placement allows sand only when anchored on rock or slab",
           "[zone][placement][sand][regression]") {
     std::string src = readSourceFile("src/structures/ZoneStructure.cpp");
     REQUIRE_FALSE(src.empty());
 
     std::string body = extractFunctionBody(src, "ZoneStructure::canBePlacedAt(");
     REQUIRE_FALSE(body.empty());
-    REQUIRE(body.find("terrain != Terrain_Rock && terrain != Terrain_Slab") != std::string::npos);
-    REQUIRE(body.find("Terrain_Sand") == std::string::npos);
+    // Every tile must be zone terrain (rock, slab, sand or dunes) ...
+    REQUIRE(body.find("isCityZoneTerrain") != std::string::npos);
+    // ... and at least one tile must be rock or slab.
+    REQUIRE(body.find("isCityBuildableTerrain") != std::string::npos);
+    REQUIRE(body.find("anchoredTiles == 0") != std::string::npos);
 }
 
 // =============================================================================
@@ -494,6 +497,33 @@ TEST_CASE("ZoneStructure: GFXManager skips SDL_SetColorKey for truecolor zone sp
 }
 
 // =============================================================================
+TEST_CASE("ZoneStructure: civic art survives the renderer texture refresh",
+          "[zone][graphics][civic][regression]") {
+    const auto zone = extractFunctionBody(readSourceFile("src/structures/ZoneStructure.cpp"),
+                                           "void ZoneStructure::updateStructureSpecificStuff()");
+    const auto draw = extractFunctionBody(readSourceFile("src/structures/StructureBase.cpp"),
+                                           "void StructureBase::blitToScreen()");
+    REQUIRE_FALSE(zone.empty());
+    REQUIRE_FALSE(draw.empty());
+    // The render path re-resolves the texture by ID. Setting only `graphic`
+    // in the update path draws a 4x4 atlas using the civic 1x1 frame layout.
+    REQUIRE(draw.find("getObjPic(graphicID, owner->getHouseID())") != std::string::npos);
+    const auto civic = extractFunctionBody(zone, "if (civicOverlay_ != CivicOverlay::None && density > 0)");
+    REQUIRE(civic.find("graphicID =") != std::string::npos);
+    REQUIRE(civic.find("ObjPic_Hospital : ObjPic_Church") != std::string::npos);
+    REQUIRE(civic.find("getObjPic(graphicID,") != std::string::npos);
+    REQUIRE(civic.find("numImagesX = 1") != std::string::npos);
+    REQUIRE(civic.find("numImagesY = 1") != std::string::npos);
+    // Clearing a civic overlay (including a vacant lot) restores the normal
+    // atlas ID and dimensions, without depending on cached pointer equality.
+    const auto restore = zone.substr(zone.find("switch (zoneType_)"));
+    REQUIRE(restore.find("graphicID = ObjPic_ZoneResidential") != std::string::npos);
+    REQUIRE(restore.find("graphicID = ObjPic_ZoneCommercial") != std::string::npos);
+    REQUIRE(restore.find("graphicID = ObjPic_ZoneIndustrial") != std::string::npos);
+    REQUIRE(restore.find("numImagesX = 4") != std::string::npos);
+    REQUIRE(restore.find("ZoneType::Industrial ? 2 : 4") != std::string::npos);
+}
+
 // Zone animation frame regression tests
 //
 // StructureBase::init() defaults firstAnimFrame = lastAnimFrame = curAnimFrame = 2,

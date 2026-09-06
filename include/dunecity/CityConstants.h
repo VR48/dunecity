@@ -50,6 +50,15 @@ inline bool isCityBuildableTerrain(uint32_t terrain) {
     return terrain == Terrain_Rock || terrain == Terrain_Slab;
 }
 
+// Zones may spill onto sand: every tile must be rock, slab, sand or dunes,
+// and the footprint must keep at least one rock or slab tile so the lot stays
+// anchored to the buildable substrate. Spice, blooms and mountains never
+// qualify.
+inline bool isCityZoneTerrain(uint32_t terrain) {
+    return terrain == Terrain_Rock || terrain == Terrain_Slab
+        || terrain == Terrain_Sand || terrain == Terrain_Dunes;
+}
+
 inline int getCityBuildTime(int itemID, int configuredBuildTime,
                             int concreteBuildTime, int policeBuildTime) {
     if (itemID == Structure_Road) {

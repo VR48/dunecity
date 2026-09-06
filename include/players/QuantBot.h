@@ -126,6 +126,9 @@ private:
                                     const QuantBotConfig& config);
 
     std::list<Coord> placeLocations;    ///< Where to place structures
+    // Runtime-only plans; the legacy list above remains in the save layout.
+    // After loading, each yard safely finds positions for its own queued items.
+    std::map<Uint32, std::list<Coord>> builderPlaceLocations;
     OrnithopterStrikeTeam ornithopterStrikeTeam;
     std::unordered_map<Uint32, Coord> placementCache; ///< Per-build-cycle cache for findPlaceLocation results
 

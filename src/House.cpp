@@ -897,7 +897,13 @@ StructureBase* House::placeStructure(Uint32 builderID, int itemID, int xPos, int
                 // check if there is already something on this tile
                 for(int i=0;i<newStructure->getStructureSizeX();i++) {
                     for(int j=0;j<newStructure->getStructureSizeY();j++) {
-                        if((currentGameMap->tileExists(xPos+i, yPos+j) == false) || (currentGameMap->getTile(xPos+i, yPos+j)->hasAGroundObject() == true)) {
+                        const Tile* pTile = currentGameMap->tileExists(xPos+i, yPos+j) ? currentGameMap->getTile(xPos+i, yPos+j) : nullptr;
+                        if(pTile == nullptr || pTile->hasAGroundObject() || pTile->hasCityZone()) {
+                            if(pTile != nullptr && isZoneStructure(itemID)) {
+                                SDL_Log("placeStructure: refused zone item %d for house %d at (%d,%d): tile (%d,%d) %s",
+                                        itemID, houseID, xPos, yPos, xPos+i, yPos+j,
+                                        pTile->hasCityZone() ? "already belongs to a zone" : "is occupied");
+                            }
                             delete newObject;
                             return nullptr;
                         }

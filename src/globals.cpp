@@ -17,6 +17,8 @@
 
 #include <globals.h>
 #include <mod/ModManager.h>
+#include <main.h>
+#include <FileClasses/INIFile.h>
 
 #include <SoundPlayer.h>
 #include <FileClasses/music/MusicPlayer.h>
@@ -118,6 +120,80 @@ const std::array<SDL_Color, 8> darkGreyRamp{{
     {42, 42, 42, 255}, {34, 34, 34, 255}, {27, 27, 27, 255}, {20, 20, 20, 255}
 }};
 
+}
+
+std::string userGameOptionsSection() {
+    const ModManager& mods = ModManager::instance();
+    if(!mods.isInitialized() || mods.getActiveModName() == "vanilla") {
+        return std::string();
+    }
+    return "Game Options " + mods.getActiveModName();
+}
+
+void writeGameOptionsToConfig(INIFile& config, const std::string& section, const SettingsClass::GameOptionsClass& options) {
+    config.setIntValue(section, "Game Speed", options.gameSpeed);
+    config.setBoolValue(section, "Concrete Required", options.concreteRequired);
+    config.setBoolValue(section, "Structures Degrade On Concrete", options.structuresDegradeOnConcrete);
+    config.setBoolValue(section, "Fog of War", options.fogOfWar);
+    config.setBoolValue(section, "Start with Explored Map", options.startWithExploredMap);
+    config.setBoolValue(section, "Instant Build", options.instantBuild);
+    config.setBoolValue(section, "Only One Palace", options.onlyOnePalace);
+    config.setBoolValue(section, "Rocket-Turrets Need Power", options.rocketTurretsNeedPower);
+    config.setBoolValue(section, "Sandworms Respawn", options.sandwormsRespawn);
+    config.setBoolValue(section, "Killed Sandworms Drop Spice", options.killedSandwormsDropSpice);
+    config.setBoolValue(section, "Manual Carryall Drops", options.manualCarryallDrops);
+    config.setIntValue(section, "Maximum Number of Units Override", options.maximumNumberOfUnitsOverride);
+    config.setIntValue(section, "Maximum Number of Harvesters Override", options.maximumNumberOfHarvestersOverride);
+    config.setBoolValue(section, "Immortal Human Player", options.immortalHumanPlayer);
+    config.setBoolValue(section, "City Effects", options.cityEffects);
+}
+
+void applyGameOptionsFromConfig(const INIFile& config, const std::string& section, SettingsClass::GameOptionsClass& options) {
+    if(section.empty() || !config.hasSection(section)) {
+        return;
+    }
+    auto readBool = [&](const char* key, bool& field) {
+        if(config.hasKey(section, key)) field = config.getBoolValue(section, key, field);
+    };
+    auto readInt = [&](const char* key, int& field) {
+        if(config.hasKey(section, key)) field = config.getIntValue(section, key, field);
+    };
+    readInt("Game Speed", options.gameSpeed);
+    readBool("Concrete Required", options.concreteRequired);
+    readBool("Structures Degrade On Concrete", options.structuresDegradeOnConcrete);
+    readBool("Fog of War", options.fogOfWar);
+    readBool("Start with Explored Map", options.startWithExploredMap);
+    readBool("Instant Build", options.instantBuild);
+    readBool("Only One Palace", options.onlyOnePalace);
+    readBool("Rocket-Turrets Need Power", options.rocketTurretsNeedPower);
+    readBool("Sandworms Respawn", options.sandwormsRespawn);
+    readBool("Killed Sandworms Drop Spice", options.killedSandwormsDropSpice);
+    readBool("Manual Carryall Drops", options.manualCarryallDrops);
+    readInt("Maximum Number of Units Override", options.maximumNumberOfUnitsOverride);
+    readInt("Maximum Number of Harvesters Override", options.maximumNumberOfHarvestersOverride);
+    readBool("Immortal Human Player", options.immortalHumanPlayer);
+    readBool("City Effects", options.cityEffects);
+}
+
+void saveGameOptionsAsDefaults(const SettingsClass::GameOptionsClass& options) {
+    settings.gameOptions = options;
+
+    INIFile config(getConfigFilepath());
+    writeGameOptionsToConfig(config, "Game Options", options);
+    const std::string section = userGameOptionsSection();
+    if(!section.empty()) {
+        // The mod's own GameOptions.ini stays untouched: it is hashed for
+        // multiplayer config checks. The player's choices live here instead
+        // and are layered over the mod's defaults.
+        writeGameOptionsToConfig(config, section, options);
+    }
+    if(!config.saveChangesTo(getConfigFilepath())) {
+        SDL_Log("Warning: could not save the game option defaults to the configuration file");
+    }
+
+    effectiveGameOptions = ModManager::instance().loadEffectiveGameOptions(settings.gameOptions);
+    SDL_Log("Game options saved as defaults%s%s", section.empty() ? "" : " for mod ",
+            section.empty() ? "" : ModManager::instance().getActiveModName().c_str());
 }
 
 void loadCustomPalette() {

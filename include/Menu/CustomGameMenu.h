@@ -54,6 +54,7 @@ private:
     void onCancel();
     void onLoad();
     void onGameOptions();
+    void onMultiplePlayersPerHouseChange();
     void onMapTypeChange(int buttonID);
     void onMapListSelectionChange(bool bInteractive);
 

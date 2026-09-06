@@ -173,6 +173,8 @@ void HouseChoiceMenu::onChildWindowClose(Window* pChildWindow) {
     GameOptionsWindow* pGameOptionsWindow = dynamic_cast<GameOptionsWindow*>(pChildWindow);
     if(pGameOptionsWindow != nullptr) {
         s_currentGameOptions = pGameOptionsWindow->getGameOptions();
+        // Choices made here become the new defaults, the same as in Options.
+        saveGameOptionsAsDefaults(s_currentGameOptions);
     }
 }
 

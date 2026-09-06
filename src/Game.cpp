@@ -1693,6 +1693,20 @@ void Game::drawScreen()
 
                     }
 
+                    // A zone may reach onto sand, but at least one tile must sit on rock or slab.
+                    bool zoneFootprintAnchored = !isZoneStructure(placeItem);
+                    if(!zoneFootprintAnchored && footprintInsideMap) {
+                        for(int i = xPos; i < (xPos + structuresize.x) && !zoneFootprintAnchored; i++) {
+                            for(int j = yPos; j < (yPos + structuresize.y); j++) {
+                                if(currentGameMap->tileExists(i,j)
+                                   && DuneCity::isCityBuildableTerrain(currentGameMap->getTile(i,j)->getType())) {
+                                    zoneFootprintAnchored = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
                     for(int i = xPos; i < (xPos + structuresize.x); i++) {
                         for(int j = yPos; j < (yPos + structuresize.y); j++) {
                             SDL_Texture* image;
@@ -1701,7 +1715,8 @@ void Game::drawScreen()
                             if(footprintInsideMap && withinRange && currentGameMap->tileExists(i,j)) {
                                 Tile* pTile = currentGameMap->getTile(i,j);
                                 if(isZoneStructure(placeItem)) {
-                                    tileValid = DuneCity::isCityBuildableTerrain(pTile->getType())
+                                    tileValid = zoneFootprintAnchored
+                                        && DuneCity::isCityZoneTerrain(pTile->getType())
                                         && !pTile->hasCityZone()
                                         && !pTile->hasAGroundObject();
                                 } else {
@@ -3676,6 +3691,44 @@ bool Game::loadSaveGame(InputStream& stream) {
     //load the structures and units
     logLoadStage("objects");
     objectManager.load(stream);
+
+    // Zones from older saves can come back without owning their tiles, which
+    // lets new lots be placed right on top of them. Re-attach every zone to
+    // its footprint and report anything that was off.
+    {
+        int detachedTiles = 0;
+        int overlappingTiles = 0;
+        for(StructureBase* pStructure : structureList) {
+            if(!isZoneStructure(pStructure->getItemID())) {
+                continue;
+            }
+            for(int dy = 0; dy < pStructure->getStructureSizeY(); dy++) {
+                for(int dx = 0; dx < pStructure->getStructureSizeX(); dx++) {
+                    Tile* pTile = currentGameMap->getTile(pStructure->getX() + dx, pStructure->getY() + dy);
+                    if(pTile == nullptr) {
+                        continue;
+                    }
+                    const ObjectBase* pOccupant = pTile->getNonInfantryGroundObject();
+                    if(pOccupant == pStructure) {
+                        continue;
+                    }
+                    if(pOccupant == nullptr) {
+                        pTile->assignNonInfantryGroundObject(pStructure->getObjectID());
+                        detachedTiles++;
+                    } else {
+                        overlappingTiles++;
+                        SDL_Log("Loaded game: zone %u at (%d,%d) overlaps object %u on tile (%d,%d)",
+                                pStructure->getObjectID(), pStructure->getX(), pStructure->getY(),
+                                pOccupant->getObjectID(), pStructure->getX() + dx, pStructure->getY() + dy);
+                    }
+                }
+            }
+        }
+        if(detachedTiles > 0 || overlappingTiles > 0) {
+            SDL_Log("Loaded game: re-attached %d zone tiles, %d zone tiles overlap another object",
+                    detachedTiles, overlappingTiles);
+        }
+    }
 
     logLoadStage("bullets");
     int numBullets = stream.readUint32();

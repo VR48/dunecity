@@ -354,9 +354,12 @@ void GameInterface::draw(Point position) {
     const auto NumDigits = CreditsBuffer.length();
     SDL_Texture* digitsTex = pGFXManager->getUIGraphic(UI_CreditsDigits);
 
-    for(int i=NumDigits-1; i>=0; i--) {
+    // NumDigits is unsigned: with more than 6 digits `6 - NumDigits` wraps
+    // around and every digit lands far off-screen. Keep the arithmetic signed.
+    const int numDigits = static_cast<int>(NumDigits);
+    for(int i = numDigits - 1; i >= 0; i--) {
         SDL_Rect source = calcSpriteSourceRect(digitsTex, CreditsBuffer[i] - '0', 10);
-        SDL_Rect dest = calcSpriteDrawingRect(digitsTex, getRendererWidth() - sideBar.getSize().x + 49 + (6 - NumDigits + i)*10, 135, 10);
+        SDL_Rect dest = calcSpriteDrawingRect(digitsTex, getRendererWidth() - sideBar.getSize().x + 49 + (6 - numDigits + i)*10, 135, 10);
         SDL_RenderCopy(renderer, digitsTex, &source, &dest);
     }
 

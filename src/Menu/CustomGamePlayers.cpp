@@ -233,14 +233,6 @@ CustomGamePlayers::CustomGamePlayers(const GameInitSettings& newGameInitSettings
         extractMapInfo(&inimap);
     }
 
-    // House and color uniqueness is enforced when starting a game. Keep the
-    // lobby consistent with that rule instead of exposing an unusable second
-    // player slot. Loaded multiplayer saves retain their recorded layout.
-    if(gameInitSettings.getGameType() == GameType::CustomGame
-       || gameInitSettings.getGameType() == GameType::CustomMultiplayer) {
-        gameInitSettings.setMultiplePlayersPerHouse(false);
-    }
-
     rightVBox.addWidget(VSpacer::create(10));
     rightVBox.addWidget(&mapPropertiesHBox, 0.01);
     mapPropertiesHBox.addWidget(&mapPropertyNamesVBox, 75);
@@ -1247,7 +1239,6 @@ void CustomGamePlayers::onNext()
     int numTeams = 0;
     bool houseAlreadyUsed[NUM_HOUSES] = {};
     bool colorAlreadyUsed[NUM_HOUSE_COLOR_SLOTS] = {};
-    bool bTwoPlayersInSameHouse = false;
     bool bDuplicateHouse = false;
     bool bDuplicateColor = false;
 
@@ -1262,10 +1253,6 @@ void CustomGamePlayers::onNext()
 
         if(bPlayer1Active || bPlayer2Active) {
             numUsedHouses++;
-
-            if(bPlayer1Active && bPlayer2Active) {
-                bTwoPlayersInSameHouse = true;
-            }
 
             const int selectedHouse = curHouseInfo.houseDropDown.getSelectedEntryIntData();
             if(selectedHouse >= 0 && isCustomGameHouseAvailable(static_cast<HOUSETYPE>(selectedHouse))) {
@@ -1312,8 +1299,6 @@ void CustomGamePlayers::onNext()
     if(numUsedHouses < 2) {
         // No game possible with only 1 house
         openWindow(MsgBox::create(_("At least 2 houses must be controlled\nby a human player or an AI player!")));
-    } else if(bTwoPlayersInSameHouse) {
-        openWindow(MsgBox::create(_("Each player must use a different house/color.")));
     } else if(bDuplicateHouse) {
         openWindow(MsgBox::create(_("The same house cannot be used twice.")));
     } else if(bDuplicateColor) {

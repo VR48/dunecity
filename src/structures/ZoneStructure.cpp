@@ -69,25 +69,28 @@ void ZoneStructure::updateStructureSpecificStuff() {
     // Civic overlay: hospital/church sprites replace the normal zone art.
     // These are single-cell (1×1) atlases loaded as ObjPic_Hospital/Church.
     if (civicOverlay_ != CivicOverlay::None && density > 0) {
-        const int civicPic = (civicOverlay_ == CivicOverlay::Hospital)
+        // Keep the cache-refresh ID in sync with the single-cell layout.
+        // StructureBase::blitToScreen reloads by graphicID on every draw.
+        graphicID = (civicOverlay_ == CivicOverlay::Hospital)
             ? ObjPic_Hospital : ObjPic_Church;
-        graphic = pGFXManager->getObjPic(civicPic, getOwner()->getHouseID());
+        graphic = pGFXManager->getObjPic(graphicID, getOwner()->getHouseID());
         numImagesX = 1;
         numImagesY = 1;
         firstAnimFrame = lastAnimFrame = curAnimFrame = 0;
         return;
     }
 
-    // Restore normal zone atlas if overlay was cleared.
-    if (graphic != pGFXManager->getObjPic(graphicID, getOwner()->getHouseID())) {
-        graphic = pGFXManager->getObjPic(graphicID, getOwner()->getHouseID());
-        // Restore atlas dimensions per zone type.
-        if (graphicID == ObjPic_ZoneResidential || graphicID == ObjPic_ZoneCommercial) {
-            numImagesX = 4; numImagesY = 4;
-        } else if (graphicID == ObjPic_ZoneIndustrial) {
-            numImagesX = 4; numImagesY = 2;
-        }
+    // Restore both ID and layout when the civic overlay clears or the lot
+    // becomes vacant. Pointer equality cannot identify an atlas layout.
+    switch (zoneType_) {
+        case DuneCity::ZoneType::Residential: graphicID = ObjPic_ZoneResidential; break;
+        case DuneCity::ZoneType::Commercial: graphicID = ObjPic_ZoneCommercial; break;
+        case DuneCity::ZoneType::Industrial: graphicID = ObjPic_ZoneIndustrial; break;
+        default: return;
     }
+    graphic = pGFXManager->getObjPic(graphicID, getOwner()->getHouseID());
+    numImagesX = 4;
+    numImagesY = zoneType_ == DuneCity::ZoneType::Industrial ? 2 : 4;
 
     int valueT = 0;
     if (auto* citySim = currentGame ? currentGame->getCitySimulation() : nullptr;
@@ -156,6 +159,7 @@ bool ZoneStructure::canBePlacedAt(int x, int y, bool torch) const {
             }
         }
     }
+    int anchoredTiles = 0;
     for (int y1 = 0; y1 < structureSize.y; y1++) {
         for (int x1 = 0; x1 < structureSize.x; x1++) {
             Tile* pTile = currentGameMap->getTile(x + x1, y + y1);
@@ -163,10 +167,17 @@ bool ZoneStructure::canBePlacedAt(int x, int y, bool torch) const {
                 return false;
             }
             auto terrain = pTile->getType();
-            if (terrain != Terrain_Rock && terrain != Terrain_Slab) {
+            if (!DuneCity::isCityZoneTerrain(terrain)) {
                 return false;
             }
+            if (DuneCity::isCityBuildableTerrain(terrain)) {
+                anchoredTiles++;
+            }
         }
+    }
+    // A lot may reach onto sand, but at least one tile must sit on rock.
+    if (anchoredTiles == 0) {
+        return false;
     }
 
     // Trigger milestone notification for first zone built
