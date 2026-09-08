@@ -7,20 +7,15 @@ namespace UnitMixPolicy {
 // Tank, siege, launcher, special, ornithopter, trike, raider trike, quad.
 using Weights = std::array<int64_t, 8>;
 using Mix = std::array<int, 8>;
-// Recent performance forgets 1/8 of old evidence each 30-second sample (~2.6min
-// half-life). This lets a previously poor type be tried again as opponents change.
-struct PerformanceWindow {
+// Full-match evidence is authoritative in House's saved combat counters.
+// Keep the former window's serialized layout so existing saves can be read;
+// update replaces even a loaded decayed window with the complete match totals.
+struct PerformanceHistory {
     uint32_t sampled=0;
     bool initialized=false;
     Weights previousReward{},previousLoss{},reward{},loss{};
-    void update(uint32_t cycle,uint32_t period,const Weights& totals,const Weights& losses) {
-        if (initialized && cycle-sampled<period) return;
-        const uint32_t steps=initialized && period ? std::min<uint32_t>(256,(cycle-sampled)/period) : 0;
-        for (size_t i=0;i<8;++i) {
-            for (uint32_t n=0;n<steps;++n) { reward[i]=reward[i]*7/8; loss[i]=loss[i]*7/8; }
-            reward[i]+=std::max<int64_t>(0,totals[i]-previousReward[i]);
-            loss[i]+=std::max<int64_t>(0,losses[i]-previousLoss[i]);
-        }
+    void update(uint32_t cycle,const Weights& totals,const Weights& losses) {
+        reward=totals; loss=losses;
         previousReward=totals; previousLoss=losses; sampled=cycle; initialized=true;
     }
     template<class Stream> void save(Stream& stream) const {

@@ -112,7 +112,7 @@ private:
     Uint32 groundSquadInitialCount = 0, groundSquadObjective = NONE_ID, groundSquadObjectiveCycle = 0;
     Uint32 groundSquadProgressCycle = 0;
     Coord groundSquadProgressLocation = Coord::Invalid();
-    UnitMixPolicy::PerformanceWindow performanceWindow;
+    UnitMixPolicy::PerformanceHistory performanceHistory;
     std::set<Uint32> groundSquad;
     std::map<Uint32, Uint32> manualUnitOrders, escortAssignments;
     void launchGroundHunt();
@@ -196,7 +196,7 @@ private:
     struct PlannedStructure { Uint32 item; Coord location; };
     std::map<Uint32, PlannedStructure> reservedStructures;
     struct RecentStructureLoss { Coord location; Coord size; Uint32 cycle; Uint32 item; };
-    std::vector<int> tacticalDanger, harvesterDanger, lossDanger;
+    std::vector<int> tacticalDanger, harvesterDanger, lossDanger, factoryEnemyClearance;
     std::vector<Coord> visibleEnemyBases;
     Uint32 dangerUpdated = std::numeric_limits<Uint32>::max();
     Uint32 lastSafetyTrace = std::numeric_limits<Uint32>::max();

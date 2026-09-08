@@ -611,24 +611,82 @@ TEST_CASE("Reactor spacing protects production and expensive facilities while al
         REQUIRE_FALSE(protectedReactorNeighbour(item));
 }
 
-TEST_CASE("Recent unit evidence fades and resumes identically after save and load", "[quantbot][allocation][save-compat]") {
-    UnitMixPolicy::PerformanceWindow original;
-    UnitMixPolicy::Weights reward{},loss{};
+TEST_CASE("Unit mix remembers full-match evidence across idle time and saves", "[quantbot][allocation][save-compat]") {
+    using namespace UnitMixPolicy;
+    PerformanceHistory original;
+    Weights reward{},loss{},prices{}; prices.fill(600000);
+    const std::array<bool,8> available{true,false,false,false,true,false,false,false};
+    reward[0]=4000000; loss[0]=2000000;
     reward[4]=800000; loss[4]=1600000;
-    original.update(100,30,reward,loss);
-    original.update(130,30,reward,loss);
-    REQUIRE(original.reward[4]==700000);
-    REQUIRE(original.loss[4]==1400000);
+    auto score = [&]() {
+        Weights scores{};
+        for (size_t i=0;i<8;++i) scores[i]=performanceScore(original.reward[i],original.loss[i],prices[i]);
+        return normalize(exploredScores(scores,original.reward,original.loss,prices,available));
+    };
+    original.update(100,reward,loss);
+    const auto initial=score();
+    original.update(1000000,reward,loss);
+    REQUIRE(original.reward==reward);
+    REQUIRE(original.loss==loss);
+    REQUIRE(score()==initial); // Time alone cannot restore a poorly performing type's share.
     OMemoryStream output; original.save(output);
     IMemoryStream input(output.getData(),output.getDataLength());
-    UnitMixPolicy::PerformanceWindow restored; restored.load(input);
+    PerformanceHistory restored; restored.load(input);
     reward[4]+=500000; loss[4]+=100000;
-    original.update(160,30,reward,loss); restored.update(160,30,reward,loss);
+    original.update(1000001,reward,loss); restored.update(1000001,reward,loss);
     REQUIRE(restored.reward==original.reward);
     REQUIRE(restored.loss==original.loss);
     REQUIRE(restored.sampled==original.sampled);
-    REQUIRE(original.reward[4]==1112500);
-    REQUIRE(original.loss[4]==1325000);
+    REQUIRE(original.reward[4]==1300000);
+    REQUIRE(original.loss[4]==1700000);
+}
+TEST_CASE("Loaded legacy evidence is replaced with the house's complete combat totals", "[quantbot][allocation][save-compat]") {
+    using namespace UnitMixPolicy;
+    // The old format stores cycle, initialized, previous totals, and decayed totals.
+    OMemoryStream output;
+    output.writeUint32(100); output.writeBool(true);
+    Weights totalReward{},totalLoss{},decayedReward{},decayedLoss{};
+    totalReward[4]=800000; totalLoss[4]=1600000;
+    decayedReward[4]=100000; decayedLoss[4]=200000;
+    for (const auto& values:{totalReward,totalLoss,decayedReward,decayedLoss})
+        for (auto value:values) output.writeSint64(value);
+    IMemoryStream input(output.getData(),output.getDataLength());
+    PerformanceHistory restored; restored.load(input);
+    restored.update(101,totalReward,totalLoss);
+    REQUIRE(restored.reward==totalReward);
+    REQUIRE(restored.loss==totalLoss);
+}
+TEST_CASE("Factory threat clearance matches nearest danger including diagonals and map edges", "[quantbot][placement]") {
+    using namespace TacticalSafetyPolicy;
+    // Exhaust all 3x3 threat arrangements; the reference scans sources directly.
+    for (unsigned mask=0;mask<512;++mask) {
+        std::vector<int> danger(9);
+        for (int i=0;i<9;++i) if (mask&(1u<<i)) danger[i]=100;
+        const auto clearance=enemyClearance(danger,3,3);
+        for (int y=0;y<3;++y) for (int x=0;x<3;++x) {
+            int expected=12;
+            for (int i=0;i<9;++i) if (danger[i])
+                expected=std::min(expected,std::max(std::abs(x-i%3),std::abs(y-i/3)));
+            REQUIRE(clearance[y*3+x]==expected);
+        }
+    }
+    std::vector<int> danger(20*10); danger[0]=100;
+    const auto clearance=enemyClearance(danger,20,10);
+    REQUIRE(footprintClearance(clearance,20,10,3,2,3,2)==3);
+    REQUIRE(footprintClearance(clearance,20,10,17,7,3,3)==12);
+    REQUIRE(footprintClearance(clearance,20,10,18,7,3,3)==0);
+}
+TEST_CASE("Factory safety outranks frontage preferences without banning constrained sites", "[quantbot][placement]") {
+    using namespace TacticalSafetyPolicy;
+    REQUIRE(factorySiteRank(0,8,0,-100)>factorySiteRank(0,2,10,1000));
+    REQUIRE(factorySiteRank(0,2,0,0)>factorySiteRank(100,12,10,1000));
+    REQUIRE(factorySiteRank(0,1,0,-1000)>factorySiteRank(1,-1,-1,0));
+    // With no threats (12 everywhere), keep ordinary tier and score preferences.
+    REQUIRE(factorySiteRank(0,12,10,0)>factorySiteRank(0,12,9,1000));
+    for (int item:{Structure_HeavyFactory,Structure_LightFactory,Structure_HighTechFactory,
+                  Structure_Barracks,Structure_WOR}) REQUIRE(productionFactory(item));
+    REQUIRE_FALSE(productionFactory(Structure_Refinery));
+    REQUIRE_FALSE(productionFactory(Structure_RocketTurret));
 }
 
 #include <players/SimpleArmyPolicy.h>

@@ -1,10 +1,50 @@
 #ifndef TACTICAL_SAFETY_POLICY_H
 #define TACTICAL_SAFETY_POLICY_H
 #include <algorithm>
+#include <vector>
+#include <tuple>
 #include <data.h>
 #include <players/CityPlacementPolicy.h>
 
 namespace TacticalSafetyPolicy {
+inline bool productionFactory(int type) {
+    return type == Structure_HeavyFactory || type == Structure_LightFactory
+        || type == Structure_HighTechFactory || type == Structure_Barracks || type == Structure_WOR;
+}
+// Distance beyond known weapon reach (including the construction safety buffer).
+// Two deterministic passes cost O(map area), shared by every candidate. Beyond
+// twelve clear tiles, normal placement preferences decide rather than map edges.
+inline std::vector<int> enemyClearance(const std::vector<int>& danger, int w, int h) {
+    constexpr int sufficient = 12;
+    std::vector<int> result(w*h, sufficient);
+    for (int y=0; y<h; ++y) for (int x=0; x<w; ++x) {
+        auto& distance=result[y*w+x];
+        if (danger[y*w+x]>0) { distance=0; continue; }
+        if (x>0) distance=std::min(distance,result[y*w+x-1]+1);
+        if (y>0) for (int dx=-1; dx<=1; ++dx)
+            if (x+dx>=0 && x+dx<w) distance=std::min(distance,result[(y-1)*w+x+dx]+1);
+    }
+    for (int y=h-1; y>=0; --y) for (int x=w-1; x>=0; --x) {
+        auto& distance=result[y*w+x];
+        if (x+1<w) distance=std::min(distance,result[y*w+x+1]+1);
+        if (y+1<h) for (int dx=-1; dx<=1; ++dx)
+            if (x+dx>=0 && x+dx<w) distance=std::min(distance,result[(y+1)*w+x+dx]+1);
+    }
+    return result;
+}
+inline int footprintClearance(const std::vector<int>& clearance, int w, int h,
+                              int x, int y, int sx, int sy) {
+    if (x<0 || y<0 || x+sx>w || y+sy>h || clearance.size()!=static_cast<size_t>(w*h)) return 0;
+    int result=12;
+    for (int py=y; py<y+sy; ++py) for (int px=x; px<x+sx; ++px)
+        result=std::min(result,clearance[py*w+px]);
+    return result;
+}
+// Avoid known loss sites first, then prefer distance from live threats. This
+// ranks legal alternatives; it never bans the only available factory site.
+inline auto factorySiteRank(int lossRisk, int clearance, int tier, int score) {
+    return std::make_tuple(lossRisk==0,clearance,tier,score);
+}
 inline bool protectedReactorNeighbour(int type) {
     return type == Structure_NuclearPlant || type == Structure_HeavyFactory
         || type == Structure_ConstructionYard || type == Structure_RepairYard

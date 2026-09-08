@@ -1,3 +1,40 @@
+# Full-match unit learning and safer factories — 1.0.603
+
+Stefan explicitly requested keeping the entire game's unit performance rather
+than fading old evidence. This supersedes the longer-confidence/recent-results
+proposal in the 601 review below. Both DuneCity and Vanilla qBot now calculate
+performance and exploration confidence from cumulative House combat rewards and
+losses. Cost-weighted actual damage and the 20% unit kill bonus are unchanged.
+Idle time never removes evidence or restores an unsuccessful type's uncertainty.
+Opening availability rules and existing allocation constraints are unchanged.
+
+PerformanceHistory retains the former PerformanceWindow binary save layout.
+On the next allocation, authoritative saved House totals replace loaded decayed
+values, so old compatible saves regain all recorded evidence. Save version stays
+9832. Telemetry identifies lifetime inputs and policy
+`lifetime-mix-safe-factories-v41`; cumulative raw fields remain available for SQL.
+
+Factory placement no longer rewards proximity to the army rally. Heavy, light,
+high-tech factories and infantry production prefer greater clearance from visible
+hostile weapon zones, after avoiding recent loss sites and before city frontage
+and compactness preferences. The heavy-factory redevelopment fallback uses the
+same safety ranking. Existing legal placement, fire-zone, road and reactor checks
+still apply. A constrained legal site remains usable; this introduces no new veto.
+Clearance saturates twelve tiles beyond the existing firing buffer to avoid
+needlessly chasing remote map edges. Existing rear preference also applies to
+light and infantry factories.
+
+A deterministic two-pass distance transform is cached with the existing two-second
+threat map: O(map area), not enemy scans per candidate. Placement telemetry includes
+`enemy_clearance_tiles`. The cache is derived and rebuilt after loading.
+
+Verified local build 1.0.603: dependency audit before/after build, ad-hoc signature,
+version consistency and CTest passed (474 passed, 3 optional skipped). Regression
+tests cover full-match retention through long idle periods/save-load, migration
+from a decayed saved window, all 512 threat arrangements on a 3x3 map, footprint
+clearance at edges, safety ranking and constrained-site fallback. Built and committed
+locally; not pushed, released, launched or tested in a live match.
+
 # Completed 601 match review after simple-controller build
 
 Session1788846458415706-0 ended cleanly at760548cycles/202.81simulation minutes,

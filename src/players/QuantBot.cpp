@@ -285,7 +285,7 @@ QuantBot::QuantBot(InputStream& stream, House* associatedHouse) : Player(stream,
             loss.size.x=stream.readSint32(); loss.size.y=stream.readSint32();
             loss.cycle=stream.readUint32(); loss.item=stream.readUint32(); recentStructureLosses.push_back(loss);
         }
-        performanceWindow.load(stream);
+        performanceHistory.load(stream);
     }
     if (currentGame->getLoadedSavegameVersion() >= 9831) {
         groundSquadProgressCycle=stream.readUint32();
@@ -372,7 +372,7 @@ void QuantBot::save(OutputStream& stream) const {
         stream.writeSint32(loss.size.x); stream.writeSint32(loss.size.y);
         stream.writeUint32(loss.cycle); stream.writeUint32(loss.item);
     }
-    performanceWindow.save(stream);
+    performanceHistory.save(stream);
     stream.writeUint32(groundSquadProgressCycle);
     stream.writeSint32(groundSquadProgressLocation.x);
     stream.writeSint32(groundSquadProgressLocation.y);
@@ -1232,6 +1232,7 @@ void QuantBot::refreshTacticalDanger() {
     };
     for (const auto* unit : getUnitList()) if (unit->isActive()) observe(unit);
     for (const auto* structure : getStructureList()) observe(structure);
+    factoryEnemyClearance = TacticalSafetyPolicy::enemyClearance(tacticalDanger,w,h);
     for (const auto& loss : recentStructureLosses) {
         const Uint32 age = now - loss.cycle;
         const Uint32 lifetime=loss.item==Structure_HeavyFactory ? MILLI2CYCLES(900000) : MILLI2CYCLES(300000);
@@ -1482,6 +1483,7 @@ Coord QuantBot::findRedevelopmentSite(Uint32 item) {
     const Coord size=getStructureSize(item), base=findBaseCentre(getHouse()->getHouseID());
     Coord best=Coord::Invalid();
     int bestScore=std::numeric_limits<int>::max();
+    auto bestFactoryRank=TacticalSafetyPolicy::factorySiteRank(1,-1,-1,0);
     auto* sim=currentGame->getCitySimulation();
     if (!sim) return best;
     for (int y=std::max(0,base.y-50); y<=std::min(getMap().getSizeY()-size.y,base.y+50); ++y)
@@ -1502,7 +1504,12 @@ Coord QuantBot::findRedevelopmentSite(Uint32 item) {
                 score += RedevelopmentPolicy::displacementCost(density,sim->getLandValueMap().worldGet(z.x,z.y),demand,residential?2000:1500);
             }
             score += blockDistance(pos,base).lround()-rearScore(pos,base);
-            if (score<bestScore) { bestScore=score; best=pos; }
+            const auto rank=TacticalSafetyPolicy::factorySiteRank(dangerAt(pos,size,true),
+                TacticalSafetyPolicy::footprintClearance(factoryEnemyClearance,getMap().getSizeX(),getMap().getSizeY(),
+                    x,y,size.x,size.y),0,-score);
+            if (TacticalSafetyPolicy::productionFactory(item) ? rank>bestFactoryRank : score<bestScore) {
+                bestFactoryRank=rank; bestScore=score; best=pos;
+            }
         }
     return best;
 }
@@ -1524,6 +1531,8 @@ Coord QuantBot::findPlaceLocation(Uint32 itemID) {
 	int bestLocationScore = std::numeric_limits<int>::min();
 	Coord bestLocation = Coord::Invalid();
     int bestSiteTier = -1;
+    const bool factoryPlacement = TacticalSafetyPolicy::productionFactory(itemID);
+    auto bestFactoryRank = TacticalSafetyPolicy::factorySiteRank(1,-1,-1,0);
     AITelemetry::Record bestQuality;
     int candidates = 0, threatRejected = 0, blastRejected = 0, lossRejected = 0;
 
@@ -1746,8 +1755,9 @@ Coord QuantBot::findPlaceLocation(Uint32 itemID) {
 	}
 
 		// Building-specific positioning
-		if (itemIsBuilder || itemID == Structure_GunTurret || itemID == Structure_RocketTurret) {
-			locationScore -= lround(blockDistance(squadRallyLocation, Coord(placeLocationX, placeLocationY)));
+		if (itemIsBuilder || factoryPlacement || itemID == Structure_GunTurret || itemID == Structure_RocketTurret) {
+            if (!factoryPlacement)
+			    locationScore -= lround(blockDistance(squadRallyLocation, Coord(placeLocationX, placeLocationY)));
 			locationScore -= lround(blockDistance(baseCenter, Coord(placeLocationX, placeLocationY)));
 		} else if (itemID == Structure_Refinery) {
 			// Refineries prefer being close to spice deposits
@@ -2055,13 +2065,19 @@ Coord QuantBot::findPlaceLocation(Uint32 itemID) {
                 // Safety outranks pollution/grid preferences; losses decay over five minutes.
                 siteTier += lossRisk == 0 ? 6 : 0;
                 locationScore -= lossRisk * 5;
-                const int rear = (itemID == Structure_NuclearPlant || itemID == Structure_HeavyFactory || itemID == Structure_HighTechFactory) ? rearScore(Coord(placeLocationX, placeLocationY), baseCenter) : 0;
+                const int rear = (itemID == Structure_NuclearPlant || factoryPlacement) ? rearScore(Coord(placeLocationX, placeLocationY), baseCenter) : 0;
                 locationScore += rear;
-                quality.set("recent_loss_risk", lossRisk).set("enemy_fire_risk", 0)
+                const int enemyClearance = factoryPlacement ? TacticalSafetyPolicy::footprintClearance(
+                    factoryEnemyClearance,mapW,mapH,placeLocationX,placeLocationY,newSizeX,newSizeY) : 0;
+                const auto factoryRank = TacticalSafetyPolicy::factorySiteRank(lossRisk,enemyClearance,siteTier,locationScore);
+                quality.set("enemy_clearance_tiles", enemyClearance)
+                    .set("recent_loss_risk", lossRisk).set("enemy_fire_risk", 0)
                     .set("rear_score", rear).set("reactor_clearance", true);
 
 				// Pick this location if it has the best score
-				if (siteTier > bestSiteTier || (siteTier == bestSiteTier && locationScore > bestLocationScore)) {
+				if (factoryPlacement ? factoryRank > bestFactoryRank
+                    : siteTier > bestSiteTier || (siteTier == bestSiteTier && locationScore > bestLocationScore)) {
+                    bestFactoryRank = factoryRank;
                     bestSiteTier = siteTier;
                     bestQuality = quality.set("tier", siteTier).set("score", locationScore);
 					bestLocationScore = locationScore;
@@ -3387,11 +3403,11 @@ void QuantBot::build(int militaryValue) {
         scores[i] = UnitMixPolicy::performanceScore(rewardMilli[i], lostValue[i]*1000, priorPrice*1000);
     }
     const bool learningUnitMix = totalRewardMilli >= 3000000;
-    performanceWindow.update(getGameCycleCount(),MILLI2CYCLES(30000),rewardMilli,lossMilli);
+    performanceHistory.update(getGameCycleCount(),rewardMilli,lossMilli);
     if (learningUnitMix) {
         for (size_t i=0;i<8;++i) scores[i]=available[i]
-            ? UnitMixPolicy::performanceScore(performanceWindow.reward[i],performanceWindow.loss[i],prices[i]) : 0;
-        scores=UnitMixPolicy::exploredScores(scores,performanceWindow.reward,performanceWindow.loss,prices,available);
+            ? UnitMixPolicy::performanceScore(performanceHistory.reward[i],performanceHistory.loss[i],prices[i]) : 0;
+        scores=UnitMixPolicy::exploredScores(scores,performanceHistory.reward,performanceHistory.loss,prices,available);
     }
     const auto rawMix = UnitMixPolicy::normalize(scores);
     const int performanceConfidenceBps = UnitMixPolicy::evidenceConfidenceBps(totalLostValue, militaryValue);
@@ -3423,7 +3439,7 @@ void QuantBot::build(int militaryValue) {
     const int fundedArmyValue = QuantBotBuildPolicy::fundedArmyTarget(militaryValue, militaryValueLimit, productionCash);
     const int vehiclePlanValue = std::max(0, fundedArmyValue - infantryValue);
     if (emitStatsLog && AITelemetry::log().enabled()) {
-        traceDecision("unit_mix", AITelemetry::Record().set("basis", !learningUnitMix ? "configured" : vanillaEconomy ? "recent_evidence_weighted_value_per_loss" : "recent_value_per_loss")
+        traceDecision("unit_mix", AITelemetry::Record().set("basis", !learningUnitMix ? "configured" : vanillaEconomy ? "lifetime_evidence_weighted_value_per_loss" : "lifetime_value_per_loss")
             .set("tank_bps", (tankPercent * 10000).lround()).set("siege_bps", (siegePercent * 10000).lround())
             .set("special_bps", (specialPercent * 10000).lround()).set("launcher_bps", (launcherPercent * 10000).lround())
             .set("ornithopter_bps", (ornithopterPercent * 10000).lround()).set("raw_ornithopter_bps", rawOrnithopterBps)
@@ -3438,7 +3454,7 @@ void QuantBot::build(int militaryValue) {
                 for (size_t i=0; i<8; ++i) inputs.set(i == 3 ? "special" : std::to_string(mixItems[i]),
                     AITelemetry::Record().set("damage", damage[i]).set("reward_milli", rewardMilli[i]).set("kill_bonus_milli", killBonusMilli[i])
                         .set("lost_value", lostValue[i]).set("score", scores[i])
-                        .set("recent_reward_milli",performanceWindow.reward[i]).set("recent_loss_milli",performanceWindow.loss[i])
+                        .set("lifetime_reward_milli",performanceHistory.reward[i]).set("lifetime_loss_milli",performanceHistory.loss[i])
                         .set("available", available[i]).set("opening_bps", openingMix[i]).set("target_bps", unitMix[i]));
                 return inputs;
             }()).set("infantry_percent", infantryPercent));
