@@ -1,3 +1,49 @@
+# Police reinforcement ceiling and completed 603 match — 1.0.604
+
+Stefan requested increasing police deployment's per-house count ceiling to 250.
+PoliceStation now permits reinforcements below 250 military units and blocks at
+250; the existing per-member batch recheck prevents overshoot. Count still excludes
+harvesters, MCVs, carryalls, frigates, sandworms and ambient units, as before.
+The qBot army-value ceiling and engine unit limits remain enforced. Automatic and
+manual deployment, and the sidebar Unit limit reached indicator, share this gate.
+Cooldown and composition unchanged. Built locally as 1.0.604; dependency audits,
+version check, signature verification and CTest passed (474 passed, 3 skipped).
+Not pushed, released or launched.
+
+Reviewed completed 603 telemetry session1788861469063600-0, 2P - 192x192 - SimCity,
+seed132153238. Ended without result at85818cycles/22.8848simulation minutes;
+Fremen and Mercenary both alive, with458803 and600912credits. SQLite
+build/review-603.sqlite imported52277records, zero invalid/incomplete records,
+audit no issues. Full session captured; report/tmp/dunecity-603-report.txt.
+This is the new simple-hunt/full-match-memory controller, unlike the old601 review.
+
+Findings (recommendations only; 604 changes the police ceiling alone):
+- Heavy production constrained by strict allocation shares, not lack of cash.
+  Final snapshots show8/24 and4/22 heavy factories busy. In last~5minutes,
+ 207/314 and217/296 heavy-allocation decisions had no positive affordable deficit;
+  final samples show all available heavy candidates affordable but above quota.
+  Military values only~65k/~71k against100k ceiling. Light allocation rose from
+  4% opening to39.80%/34.55%, while each house had one light factory. Candidate
+  refinement: make production capacity follow actual deficits, and permit useful
+  heavy production to fill spare army capacity while light production catches up.
+-534crime events spawned1602troopers,1597 subsequently destroyed.4059/4288 defence
+  dispatch events (94.7%) targeted those exact spawned IDs. Local crime hotspots
+  remain despite final mean crime12/15. Suggested refinement: district gang spawn
+  pacing/outstanding-gang controls and persistent incident handling, leaving the
+  Micropolis crime calculation intact. Earliest spawn1.41min on a populated map;
+  do not call this a tiny-population regression without checking starting population.
+- Combined reward/lost-value ratios:launcher4.280,ornithopter0.680,quad1.377,
+  trike1.827,raider1.359. Reward includes weighted actual damage plus unitkillbonus.
+  Final launcher allocation33.31%/42.93%,air6.45%/5.50%. Light shares reflect actual
+  results across three separate types; plentiful gang infantry may influence the
+  matchup mix, but victim-specific reward attribution was not established here.
+-17ground hunts issued, typical groups~100–135units; defence response median1unit,
+  max12/13, total7363dispatches (orders, not distinct troops). Both ended with40
+  harvesters; only3/6harvester losses and~229.5k/~227.1k refined spice each. Heavy
+  factories lost5/7, significantly fewer absolute losses than the much longer601
+  game, but duration/map/player differences prevent a causal comparison.
+- No frame-time samples in this game's ordinary log; do not claim an FPS gain.
+
 # Full-match unit learning and safer factories — 1.0.603
 
 Stefan explicitly requested keeping the entire game's unit performance rather

@@ -75,7 +75,7 @@ bool PoliceStation::isReinforcementLimitReached() const {
             && item != Unit_Sandworm && !isAmbientUnit(item))
             militaryUnits += owner->getNumItems(item);
     }
-    if (militaryUnits >= 100) return true;
+    if (militaryUnits >= 250) return true;
     for (const auto& player : owner->getPlayerList()) {
         const auto* bot = dynamic_cast<const QuantBot*>(player.get());
         if (bot && !bot->permitsPoliceReinforcement(0)) return true;
@@ -91,7 +91,7 @@ void PoliceStation::doSpawnVehicles() {
     for (int i = 0; i < 12; ++i) {
         // Three groups of three troopers, with two trikes and one quad.
         const Uint32 item = i % 4 != 0 ? Unit_Trooper : (i == 4 ? Unit_Quad : Unit_Trike);
-        // Recheck each batch member so the player's military count cannot exceed 100.
+        // Recheck each batch member so the player's military count cannot exceed 250.
         if (isReinforcementLimitReached()) { capped += 12 - i; break; }
         bool militaryCapped = false;
         for (const auto& player : owner->getPlayerList()) {
