@@ -6,6 +6,15 @@
 #include <optional>
 #include <utility>
 namespace SimpleArmyPolicy {
+// Stateless variation from saved simulation inputs. Every house gets the same
+// 75–125% interval distribution instead of a permanently house-biased delay.
+inline int attackDelay(int baseCycles,uint32_t seed,uint32_t cycle,uint32_t house) {
+    uint32_t hash=seed ^ (cycle*0x9e3779b9u) ^ ((house+1)*0x85ebca6bu);
+    hash^=hash>>16; hash*=0x7feb352du; hash^=hash>>15;
+    hash*=0x846ca68bu; hash^=hash>>16;
+    const int percent=75+int(hash%51);
+    return int(std::clamp<int64_t>(int64_t(baseCycles)*percent/100,1,INT32_MAX));
+}
 struct Responder { uint32_t id; int value; int distance; };
 inline int responseValue(int threat) { return std::max(0,threat) + (std::max(0,threat)+3)/4; }
 // Prefer the nearest usable troops; existing responders count against the budget.

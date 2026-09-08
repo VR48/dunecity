@@ -1,3 +1,46 @@
+# Performance weighting, fair attack timing and local placement lookup — 1.0.609
+
+Stefan approved score^1.5 plus the prior review recommendations and a local build.
+UnitMixPolicy now sharpens normalised performance scores with an integer square
+root, after the fading trial prior. Full-match reward/loss evidence, tech openings,
+Vanilla evidence blending, the universal 80% type cap and Vanilla air cap remain.
+Integer normalisation bounds arithmetic and avoids floating-point pow differences.
+Telemetry records exponent1500 and per-type allocation_weight alongside the
+original score; SQLite unit_allocation exposes both new fields, with old logs NULL.
+
+Attack delays now derive 75–125% of the configured interval from seed, simulation
+cycle and house through a fixed uint32 hash. Both initialization and resets use it.
+This replaces the permanent (houseID-3)*15-second bias. No wall clock or extra RNG
+consumption; existing saved countdowns still load, next reset uses the new policy.
+An attack_schedule event records base and selected cycles. This is deterministic
+by construction; a live multi-computer test has not been run.
+
+Service planning snapshots own police and rocket positions once per decision,
+instead of rescanning the global structure list per property/candidate. An 8-tile
+spatial index visits only properties within the existing 23-tile Chebyshev radius.
+Scoring, coverage stacking, reservations, candidate iteration/tie order and building
+priorities are unchanged. The local snapshot is rebuilt per decision. Regression
+checks compare indexed results against exhaustive scans, including map/bucket edges.
+This addresses a visible repeated-scan cost; it does not claim to identify every
+source of the logged 405ms AI spike or prove a live FPS improvement.
+
+Local Release1.0.609 built on MacBook Air, dependency audits before/after passed,
+CTest493passed/3optional skipped, SQLite importer11tests passed, version metadata
+and deep strict ad-hoc signature checked. No game launch or remote push requested.
+Policy performance-weighted-fair-attacks-v44; save layout unchanged at9834.
+Logs /tmp/dunecity-609-build.log, /tmp/dunecity-609-tests.log,
+/tmp/dunecity-609-sql-tests.log. Source is committed for the next release.
+
+Previous release1.0.608 is public (a094d10), all GitHub platform/tests passed and
+website links verified. The next reviewed match was actually1.0.606:
+session1788869520113577-0,81.84simminutes,328467events imported/audited clean in
+build/review-latest-606.sqlite. All4qBotHard70kcap,roughly947k–999999credits,24heavy
+factories and8yards each. Latest mix snapshots76–77min: launcher shares55/47/49/42%,
+reward/loss4.38/3.24/5.44/3.33; orni4.5/7.9/3.5/6.6%,reward/loss.35/.53/.37/.51.
+Huntorders73/46/19/22 (Harkonnen/Ordos/Neutral/Rebels); readiness also affects counts.
+Last performance window18.2FPS,AIaverage12.43ms,max405.02ms,~1000units,5cycles/frame.
+No additional economy, factory, crime or military-limit changes made here.
+
 # Road completion, launcher safety and grouped outbreaks — 1.0.607
 
 Stefan approved all three findings from the completed 606 review. ConstructionYard

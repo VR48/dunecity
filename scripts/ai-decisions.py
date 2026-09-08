@@ -139,6 +139,7 @@ CREATE VIEW IF NOT EXISTS unit_allocation AS
  SELECT e.session,e.seq,e.cycle,e.house,e.player,u.key AS category,
   json_extract(e.data,'$.basis') AS basis,json_extract(e.data,'$.tech_level') AS tech_level,
   json_extract(e.data,'$.performance_confidence_bps') AS performance_confidence_bps,
+  json_extract(e.data,'$.performance_exponent_milli') AS performance_exponent_milli,
   json_extract(e.data,'$.total_lost_value') AS total_lost_value,
   json_extract(u.value,'$.available') AS available,
   json_extract(u.value,'$.opening_bps') AS opening_bps,
@@ -147,7 +148,8 @@ CREATE VIEW IF NOT EXISTS unit_allocation AS
   json_extract(u.value,'$.reward_milli')/1000.0 AS reward,
   json_extract(u.value,'$.kill_bonus_milli')/1000.0 AS kill_bonus,
   json_extract(u.value,'$.lost_value') AS lost_value,
-  json_extract(u.value,'$.score') AS score
+  json_extract(u.value,'$.score') AS score,
+  json_extract(u.value,'$.allocation_weight') AS allocation_weight
  FROM events e,json_each(e.data,'$.mix_inputs') u WHERE e.event='unit_mix';
 
 CREATE VIEW IF NOT EXISTS raid_samples AS

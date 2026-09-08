@@ -61,6 +61,25 @@ inline Mix normalize(const Weights& weights) {
     *std::max_element(result.begin(), result.end()) += 10000-assigned;
     return result;
 }
+// Integer square root keeps the 1.5 exponent identical on every platform.
+inline uint64_t integerSqrt(uint64_t value) {
+    uint64_t result=0, bit=uint64_t(1)<<62;
+    while (bit>value) bit>>=2;
+    while (bit) {
+        if (value>=result+bit) { value-=result+bit; result=(result>>1)+bit; }
+        else result>>=1;
+        bit>>=2;
+    }
+    return result;
+}
+inline Weights sharpenScores(const Weights& scores) {
+    // Normalise first to bound products even for a loss-free veteran type.
+    const auto shares=normalize(scores);
+    Weights weights{};
+    for (size_t i=0;i<weights.size();++i)
+        weights[i]=int64_t(shares[i])*integerSqrt(uint64_t(shares[i])*1000000);
+    return weights;
+}
 // Opening light support shrinks as heavier technology becomes available.
 inline int openingLightShare(int tech) {
     return tech >= 7 ? 400 : tech >= 5 ? 800 : tech >= 4 ? 1500 : 3000;
@@ -113,7 +132,7 @@ inline Mix blendByEvidence(const Mix& baseline, const Mix& performance,
 inline Mix allocate(const Weights& scores, const Weights& defaults, bool learning, bool vanilla,
                     int64_t lostValue = 0, int64_t armyValue = 0) {
     const Mix baseline = normalize(defaults);
-    Mix result = normalize(scores);
+    Mix result = normalize(sharpenScores(scores));
     if (!learning || *std::max_element(result.begin(), result.end()) == 0) return baseline;
     if (vanilla) result = blendByEvidence(baseline, result, lostValue, armyValue);
     auto cap = [&](size_t index, int limit) {

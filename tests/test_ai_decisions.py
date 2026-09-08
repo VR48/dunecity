@@ -17,10 +17,10 @@ class ImportTest(unittest.TestCase):
         with ai.connect(':memory:') as db:
             for seq,kind,data in [(1,'state_snapshot',{'house_comparison':{'1':{'combat_rewards':{'33':reward}}}}),
                                   (2,'game_summary',{'houses':{'1':{'combat_rewards':{'33':reward}}}}),
-                                  (3,'unit_mix',{'basis':'value_per_loss','tech_level':8,'mix_inputs':{
+                                  (3,'unit_mix',{'basis':'value_per_loss','tech_level':8,'performance_exponent_milli':1500,'mix_inputs':{
                                       '33':dict(available=1,opening_bps=500,target_bps=1500,
                                                 damage=100,reward_milli=160000,kill_bonus_milli=120000,
-                                                lost_value=600,score=178)}})]:
+                                                lost_value=600,score=178,allocation_weight=25000)}})]:
                 ai.insert(db,dict(schema_version=1,session='reward',seq=seq,cycle=seq,house=1,
                                  player=18,event=kind,data=data),'fixture')
             self.assertEqual(db.execute('select house,item,damage_value,kill_bonus,reward,unit_killing_blows '
@@ -28,6 +28,8 @@ class ImportTest(unittest.TestCase):
             self.assertEqual(db.execute('select count(*) from combat_reward_samples').fetchone(),(2,))
             self.assertEqual(db.execute('select opening_bps,target_bps,reward,score from unit_allocation').fetchone(),
                              (500,1500,160.0,178))
+            self.assertEqual(db.execute('select performance_exponent_milli,allocation_weight from unit_allocation').fetchone(),
+                             (1500,25000))
             ai.insert(db,dict(schema_version=1,session='old',seq=1,cycle=1,house=1,player=18,
                              event='unit_mix',data={'mix_inputs':{'33':{'damage':100}}}),'fixture')
             self.assertEqual(db.execute("select reward from unit_allocation where session='old'").fetchone(),(None,))

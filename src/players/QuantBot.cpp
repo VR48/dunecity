@@ -1,3 +1,4 @@
+#include <players/LocalPointIndex.h>
 #include <players/CityRoadRepairPolicy.h>
 #include <players/UnitMixPolicy.h>
 #include <players/CityServiceInvestmentPolicy.h>
@@ -159,11 +160,8 @@ QuantBot::QuantBot(House* associatedHouse, const std::string& playername, Diffic
 
     const QuantBotConfig& config = getQuantBotConfig();
 
-    // MULTIPLAYER FIX: Add deterministic attack timer variation per house
-    // Spreads attacks across 75 seconds to prevent synchronized mass attacks
-    const int houseID = static_cast<int>(getHouse()->getHouseID());
-    const int attackVariation = (houseID - 3) * MILLI2CYCLES(15000);  // -45s to +30s variation
-    attackTimer = MILLI2CYCLES(config.attackTimerMs) + attackVariation;
+    attackTimer = SimpleArmyPolicy::attackDelay(MILLI2CYCLES(config.attackTimerMs),
+        currentGame->getGameInitSettings().getRandomSeed(), getGameCycleCount(), getHouse()->getHouseID());
 
     retreatTimer = MILLI2CYCLES(60000); //turning off
 
@@ -2336,6 +2334,16 @@ bool QuantBot::selectCityServiceInvestment(const BuilderBase* builder, int money
             && data[unit->getItemID()][unit->getOwner()->getHouseID()].weapondamage > 0)
             threats.push_back(unit);
     }
+    std::vector<Coord> turretSites, stationSites;
+    for (const auto* structure : getStructureList()) {
+        if (structure->getOwner()!=getHouse()) continue;
+        if (structure->getItemID()==Structure_RocketTurret) turretSites.push_back(structure->getLocation());
+        if (structure->getItemID()==Structure_PoliceStation && structure->getHealth()>0)
+            stationSites.push_back(structure->getLocation());
+    }
+    for (const auto& entry:reservedStructures)
+        if (entry.first!=planningBuilder && entry.second.item==Structure_PoliceStation)
+            stationSites.push_back(entry.second.location);
     int totalPopulation = 0, sampleCount = 0;
     for (const auto* structure : getStructureList()) {
         if (structure->getOwner() != getHouse() || structure->getHealth() <= 0) continue;
@@ -2369,9 +2377,7 @@ bool QuantBot::selectCityServiceInvestment(const BuilderBase* builder, int money
                 if (distance <= 12) threat += data[unit->getItemID()][unit->getOwner()->getHouseID()].price * (13-distance)/13;
             }
             threat = std::min(threat, data[item][house].price) * RocketTurretPolicy::defenseWeight(item) / 4;
-            for (const auto* other : getStructureList()) {
-                if (other->getOwner() != getHouse() || other->getItemID() != Structure_RocketTurret) continue;
-                const Coord t = other->getLocation();
+            for (const Coord t : turretSites) {
                 if (std::max(std::abs(p.x-t.x),std::abs(p.y-t.y)) <= data[Structure_RocketTurret][house].weaponrange)
                     threat /= 2;
             }
@@ -2389,6 +2395,8 @@ bool QuantBot::selectCityServiceInvestment(const BuilderBase* builder, int money
         properties.push_back({p,item,std::min(250,value+plannedValue),crime,base,coverage,pop,nextPop,demand,
             sim->getPollutionDensityMap().worldGet(p.x,p.y),threat});
     }
+    LocalPointIndex propertyIndex(w,h);
+    for (size_t i=0;i<properties.size();++i) propertyIndex.add(properties[i].p.x,properties[i].p.y,i);
     Value bestValue;
     Coord bestSite = Coord::Invalid();
     Uint32 bestItem = NONE_ID;
@@ -2416,16 +2424,8 @@ bool QuantBot::selectCityServiceInvestment(const BuilderBase* builder, int money
             // built/planned. It does not change stacking in the simulation.
             if (item == Structure_PoliceStation) {
                 int nearest = 12;
-                for (const auto* station : getStructureList()) {
-                    if (station->getOwner() != getHouse() || station->getItemID() != item || station->getHealth() <= 0) continue;
-                    const Coord p = station->getLocation();
+                for (const Coord p : stationSites)
                     nearest = std::min(nearest,std::max(std::abs(x-p.x),std::abs(y-p.y)));
-                }
-                for (const auto& entry : reservedStructures) {
-                    if (entry.first == planningBuilder || entry.second.item != item) continue;
-                    const Coord p = entry.second.location;
-                    nearest = std::min(nearest,std::max(std::abs(x-p.x),std::abs(y-p.y)));
-                }
                 value.overlapPenalty = value.buildCost*(12-nearest)/12;
             }
             value.upkeep = (DuneCity::getPoliceAnnualCost(item)*state.policeFundingPercent/100).lround();
@@ -2438,9 +2438,9 @@ bool QuantBot::selectCityServiceInvestment(const BuilderBase* builder, int money
             const auto source = DuneCity::policeSource(getMap(),x,y,size.x,size.y,
                 DuneCity::getPoliceCoverage(item),state.policeFundingPercent,powered);
             int valueGainSum = 0, neighbourhoodGainSum = 0, growthTax = 0;
-            for (const auto& p : properties) {
+            propertyIndex.visit(x,y,23,[&](size_t propertyID) {
+                const auto& p=properties[propertyID];
                 const int distance = std::max(std::abs(x-p.p.x),std::abs(y-p.p.y));
-                if (distance > 23) continue;
                 const int added = DuneCity::policeCoverageAt(source.x,source.y,p.p.x,p.p.y,2,source.strength,w,h);
                 const int reduction = DuneCity::marginalCrimeReduction(p.baseCrime,p.coverage,added);
                 if (p.population > 0) {
@@ -2466,7 +2466,7 @@ bool QuantBot::selectCityServiceInvestment(const BuilderBase* builder, int money
                         sim->getCityTax(),std::max(1,state.avgLandValue)) * std::min(gain,64) / (4*64);
                 if (powered && item == Structure_RocketTurret && distance <= data[item][house].weaponrange)
                     value.defense += p.threat;
-            }
+            });
             value.tax = CityServiceInvestmentPolicy::annualTaxGain(totalPopulation,sim->getCityTax(),valueGainSum,sampleCount);
             value.growthTax = growthTax;
             if (item == Structure_RocketTurret) {
@@ -3435,7 +3435,8 @@ void QuantBot::build(int militaryValue) {
             ? UnitMixPolicy::performanceScore(performanceHistory.reward[i],performanceHistory.loss[i],prices[i]) : 0;
         scores=UnitMixPolicy::exploredScores(scores,performanceHistory.reward,performanceHistory.loss,prices,available);
     }
-    const auto rawMix = UnitMixPolicy::normalize(scores);
+    const auto allocationWeights = UnitMixPolicy::sharpenScores(scores);
+    const auto rawMix = UnitMixPolicy::normalize(allocationWeights);
     const int performanceConfidenceBps = UnitMixPolicy::evidenceConfidenceBps(totalLostValue, militaryValue);
     const auto unitMix = UnitMixPolicy::allocate(scores, defaults, learningUnitMix, vanillaEconomy,
                                                   totalLostValue, militaryValue);
@@ -3474,12 +3475,12 @@ void QuantBot::build(int militaryValue) {
             .set("allocation_types", 8).set("tech_level", currentGame->techLevel)
             .set("opening_light_bps", openingMix[5]+openingMix[6]+openingMix[7]).set("total_damage", totalDamage)
             .set("total_reward_milli", totalRewardMilli).set("total_lost_value", totalLostValue)
-            .set("performance_confidence_bps", performanceConfidenceBps).set("funded_army_value",fundedArmyValue)
+            .set("performance_exponent_milli",1500).set("performance_confidence_bps", performanceConfidenceBps).set("funded_army_value",fundedArmyValue)
             .set("vehicle_plan_value",vehiclePlanValue).set("queued_military_value",queuedMilitaryValue).set("mix_inputs", [&]() {
                 AITelemetry::Record inputs;
                 for (size_t i=0; i<8; ++i) inputs.set(i == 3 ? "special" : std::to_string(mixItems[i]),
                     AITelemetry::Record().set("damage", damage[i]).set("reward_milli", rewardMilli[i]).set("kill_bonus_milli", killBonusMilli[i])
-                        .set("lost_value", lostValue[i]).set("score", scores[i])
+                        .set("lost_value", lostValue[i]).set("score", scores[i]).set("allocation_weight",allocationWeights[i])
                         .set("lifetime_reward_milli",performanceHistory.reward[i]).set("lifetime_loss_milli",performanceHistory.loss[i])
                         .set("available", available[i]).set("opening_bps", openingMix[i]).set("target_bps", unitMix[i]));
                 return inputs;
@@ -5838,10 +5839,10 @@ void QuantBot::attack(int militaryValue) {
     const QuantBotConfig& config = getQuantBotConfig();
     const QuantBotConfig::DifficultySettings& diffSettings = config.getSettings(static_cast<int>(difficulty));
 
-    // MULTIPLAYER FIX: Reset attack timer with deterministic house-based variation
-    const int houseID = static_cast<int>(getHouse()->getHouseID());
-    const int attackVariation = (houseID - 3) * MILLI2CYCLES(15000);  // -45s to +30s variation
-    attackTimer = MILLI2CYCLES(config.attackTimerMs) + attackVariation;
+    attackTimer = SimpleArmyPolicy::attackDelay(MILLI2CYCLES(config.attackTimerMs),
+        currentGame->getGameInitSettings().getRandomSeed(), getGameCycleCount(), getHouse()->getHouseID());
+    traceDecision("attack_schedule",AITelemetry::Record().set("delay_cycles",attackTimer)
+        .set("base_cycles",MILLI2CYCLES(config.attackTimerMs)));
 
 	// Check if this difficulty is allowed to attack at all
 	if (!diffSettings.attackEnabled) {

@@ -769,3 +769,49 @@ TEST_CASE("Spice clearing recruits a complete nearby force without distant reinf
     REQUIRE(clearingForce(1000,1000,army,18)==std::vector<uint32_t>{1});
     REQUIRE(clearingForce(450,600,army,18).empty()); // Already covered; no repeated recruitment.
 }
+
+TEST_CASE("Performance weighting favours proven returns without type-specific bonuses", "[quantbot][mix]") {
+    using namespace UnitMixPolicy;
+    const auto mixed=normalize(sharpenScores(Weights{4,1,0,0,0,0,0,0}));
+    REQUIRE(mixed[0]==8889);
+    REQUIRE(mixed[1]==1111);
+    REQUIRE(normalize(sharpenScores(Weights{4000,1000,0,0,0,0,0,0}))==mixed);
+    REQUIRE(sharpenScores(Weights{})==Weights{});
+    REQUIRE(integerSqrt(UINT64_MAX)==UINT32_MAX);
+    REQUIRE(integerSqrt(9999)==99);
+    auto result=allocate(Weights{4,1},Weights{1,1},true,false);
+    REQUIRE(result[0]==8000); // Existing anti-monoculture cap remains.
+    REQUIRE(result[1]==2000);
+}
+
+#include <players/SimpleArmyPolicy.h>
+#include <players/LocalPointIndex.h>
+TEST_CASE("Attack intervals vary reproducibly without a permanent house advantage", "[quantbot][army]") {
+    for(uint32_t house=0;house<8;++house) {
+        int64_t sum=0;
+        for(uint32_t n=0;n<10000;++n) {
+            const int delay=SimpleArmyPolicy::attackDelay(10000,n,n*3750,house);
+            REQUIRE(delay>=7500);
+            REQUIRE(delay<=12500);
+            REQUIRE(delay==SimpleArmyPolicy::attackDelay(10000,n,n*3750,house));
+            sum+=delay;
+        }
+        REQUIRE(sum/10000>9900);
+        REQUIRE(sum/10000<10100);
+    }
+    REQUIRE(SimpleArmyPolicy::attackDelay(0,0,0,0)>=1);
+}
+TEST_CASE("Local service property lookup matches full scans at map and bucket edges", "[quantbot][placement]") {
+    LocalPointIndex index(43,37);
+    std::vector<std::pair<int,int>> points;
+    for(int y=0;y<37;y+=3) for(int x=0;x<43;x+=2) {
+        index.add(x,y,points.size()); points.emplace_back(x,y);
+    }
+    for(int radius:{0,1,8,23,99}) for(int y=0;y<37;y+=4) for(int x=0;x<43;x+=5) {
+        std::set<size_t> expected,actual;
+        for(size_t i=0;i<points.size();++i)
+            if(std::max(std::abs(x-points[i].first),std::abs(y-points[i].second))<=radius) expected.insert(i);
+        index.visit(x,y,radius,[&](size_t i){ REQUIRE(actual.insert(i).second); });
+        REQUIRE(actual==expected);
+    }
+}
