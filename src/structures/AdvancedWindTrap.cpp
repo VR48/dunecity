@@ -1,4 +1,5 @@
 #include <structures/AdvancedWindTrap.h>
+#include <dunecity/PowerRules.h>
 
 #include <globals.h>
 
@@ -55,7 +56,10 @@ void AdvancedWindTrap::init(Uint32 newItemID) {
     lastVisibleFrame = firstAnimFrame;
 }
 
-AdvancedWindTrap::~AdvancedWindTrap() = default;
+AdvancedWindTrap::~AdvancedWindTrap() {
+    // Rejected placement and demolition must also release generated power.
+    setHealth(0);
+}
 
 ObjectInterface* AdvancedWindTrap::getInterfaceContainer() {
     if((pLocalHouse == owner) || (debug == true)) {
@@ -91,7 +95,6 @@ void AdvancedWindTrap::setHealth(FixPoint newHealth) {
 }
 
 int AdvancedWindTrap::getProducedPower() const {
-    int nominal = abs(currentGame->objectData.data[itemID][originalHouseID].power);
-    FixPoint ratio = getHealth() / getMaxHealth();
-    return lround(ratio * nominal);
+    const int nominal = abs(currentGame->objectData.data[itemID][originalHouseID].power);
+    return DuneCity::generatorOutput(nominal, getHealth(), getMaxHealth(), false);
 }

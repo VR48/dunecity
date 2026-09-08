@@ -43,6 +43,7 @@
 #include <config.h>
 
 #include <cstdio>
+#include <cctype>
 #include <fstream>
 #include <vector>
 
@@ -218,8 +219,16 @@ MainMenu::MainMenu()
     for(TextButton* button : allButtons) {
         windowWidget.addWidget(button, Point(0, 0), Point(1, 1));
     }
+    // The generic product logo must not imply DuneCity rules when Vanilla is active.
+    logoPicture.setVisible(false);
+    activeModLabel.setTextFontSize(24);
+    // Same-colour shadow supplies an extra pixel of weight to the lettering.
+    activeModLabel.setTextColor(COLOR_WHITE, COLOR_WHITE, COLOR_BLACK);
+    activeModLabel.setAlignment(static_cast<Alignment_Enum>(Alignment_HCenter | Alignment_VCenter));
+    windowWidget.addWidget(&activeModLabel, Point(0, 0), Point(1, 1));
     refreshContextButtons();
-    modVersionLabel.setTextFontSize(enlargedStartMenus ? 14 : 16);
+    modVersionLabel.setTextFontSize(14);
+    modVersionLabel.setTextColor(COLOR_WHITE, COLOR_BLACK);
     modVersionLabel.setAlignment(enlargedStartMenus
         ? Alignment_HCenter
         : static_cast<Alignment_Enum>(Alignment_Left | Alignment_VCenter));
@@ -264,7 +273,16 @@ void MainMenu::refreshModVersionLabel()
     }
     lastShownModName = activeModName;
     try {
-        modVersionLabel.setText(modDisplayName + "  v" + std::string(VERSION));
+        std::transform(modDisplayName.begin(), modDisplayName.end(), modDisplayName.begin(),
+            [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+        const std::string bannerText = "MOD: " + modDisplayName;
+        int bannerFontSize = 24;
+        const int bannerWidth = std::min(getSize().x - 48, 420);
+        while (bannerFontSize > 12 && GUIStyle::getInstance().getMinimumLabelSize(bannerText, bannerFontSize).x > bannerWidth)
+            --bannerFontSize;
+        activeModLabel.setTextFontSize(bannerFontSize);
+        activeModLabel.setText(bannerText);
+        modVersionLabel.setText("v" + std::string(VERSION));
     } catch (const std::exception& e) {
         SDL_Log("MainMenu: setText failed: %s", e.what());
     }
@@ -408,6 +426,9 @@ void MainMenu::refreshContextButtons()
                                        Point(planetBounds.w, planetBounds.h));
         windowWidget.setWidgetGeometry(&logoPicture, Point(logoBounds.x, logoBounds.y),
                                        Point(logoBounds.w, logoBounds.h));
+        const int bannerWidth = std::min(getSize().x - 48, 420);
+        windowWidget.setWidgetGeometry(&activeModLabel,
+            Point((getSize().x - bannerWidth) / 2, logoBounds.y - 8), Point(bannerWidth, 38));
         windowWidget.setWidgetGeometry(&buttonBorder, Point(borderBounds.x, borderBounds.y),
                                        Point(borderBounds.w, borderBounds.h));
         for(size_t i = 0; i < buttons.size(); ++i) {
@@ -415,6 +436,9 @@ void MainMenu::refreshContextButtons()
             windowWidget.setWidgetGeometry(buttons[i], Point(bounds.x, bounds.y), Point(bounds.w, bounds.h));
         }
     } else {
+        const int bannerWidth = std::min(getSize().x - 48, 420);
+        windowWidget.setWidgetGeometry(&activeModLabel,
+            Point((getSize().x - bannerWidth) / 2, getSize().y / 2 + 20), Point(bannerWidth, 38));
         constexpr int listHeight = 128;
         constexpr int gap = 3;
         const int buttonHeight = (listHeight - (static_cast<int>(buttons.size()) - 1) * gap)

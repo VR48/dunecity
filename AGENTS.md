@@ -16,6 +16,7 @@ brew install cmake ninja sdl2_mixer sdl2_ttf miniupnpc catch2
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_PREFIX_PATH=/opt/homebrew -DDUNECITY_BUILD_TESTS=ON
 cmake --build build --parallel 10
+python3 scripts/check-build-deps.py build
 ctest --test-dir build --output-on-failure
 ```
 
@@ -24,6 +25,12 @@ Run tests through `ctest`, never `./build/bin/dunelegacy_tests` directly — cte
 `DUNE_CITY_SOURCE_DIR` and `DUNECITY_DATADIR`, without which ~50 tests silently misbehave.
 Ignore the tracked `build2/`, `build_phase4/`, `build.bad/`, `buildtests/` trees; they are stale
 and belong to another machine.
+
+Run `python3 scripts/check-build-deps.py build` before and after incremental builds.
+If it fails, use `cmake --build build --clean-first --parallel 10` and check again.
+Version 1.0.588 crashed because six existing objects had empty Ninja dependency
+records: an old inline sidebar reader accessed the new CitySimulation layout at
+obsolete offsets. A successful incremental link alone did not detect this.
 
 Baseline test result: 362 passed, 2 failed, 3 skipped. The two failures are pre-existing
 (`parseDouble` accepts `"nan"`); see `HANDOVER.md` §1.
@@ -36,7 +43,15 @@ Baseline test result: 362 passed, 2 failed, 3 skipped. The two failures are pre-
 
 ## Working agreement
 
-- Do not commit or push without being asked. The tree currently carries a large body of
-  uncommitted work described in `HANDOVER.md`.
+- Do not push or open a PR without being asked.
 - Any release build, tag, or CI-triggering push must include the version bump in the same commit
   (`scripts/bump-version.sh`); CI verifies the tag against the source metadata.
+- **Every code change you make must end up in git.** When you finish, `git status` should show no
+  untracked `.h`/`.cpp`/`.py` files and no unstaged source edits. Leaving new headers and test
+  cases untracked means a release built from a tree nobody else can reproduce — 1.0.599 was
+  carried as 88 modified plus 23 untracked source files before it was captured. Staging and
+  committing as you go is what keeps `HANDOVER.md` and the tree describing the same thing.
+- **Do not leave analysis markdown in the repo root.** Per-version review notes (`AI-*.md`,
+  `*-REVIEW.md`, `*-ANALYSIS.md`) are session scratch and are gitignored. Fold whatever outlives
+  the session into `HANDOVER.md`; if a note is genuinely reference material, put it under `docs/`
+  with a lowercase name so it is tracked deliberately.

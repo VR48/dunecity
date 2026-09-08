@@ -37,7 +37,7 @@ void TrafficSimulation::init(CitySimulation* sim) {
 bool TrafficSimulation::isRoad(int x, int y) const {
     if (!currentGameMap) return false;
     if (!currentGameMap->tileExists(x, y)) return false;
-    return currentGameMap->getTile(x, y)->isRoad();
+    return currentGameMap->getTile(x, y)->isRoadConnection();
 }
 
 bool TrafficSimulation::driveDone(int x, int y, ZoneType destZone) const {
@@ -132,6 +132,7 @@ bool TrafficSimulation::tryDrive(int startX, int startY, ZoneType destZone) {
 
         if (dist >= kMaxTrafficDistance) continue;
 
+        // Rocket turret tiles act as junctions through isRoadConnection().
         for (int d = 0; d < 4; ++d) {
             const int nx = cx + DX[d];
             const int ny = cy + DY[d];

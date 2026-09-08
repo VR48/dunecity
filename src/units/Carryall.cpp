@@ -89,6 +89,14 @@ void Carryall::save(OutputStream& stream) const
 }
 
 bool Carryall::update() {
+    // Carryalls do not keep a house alive. Remove survivors on their own
+    // update instead of mutating the unit list recursively from House::lose.
+    // The normal destruction path releases bookings and disposes of cargo.
+    if (owner && !owner->isAlive()) {
+        destroy();
+        return false;
+    }
+
     const auto& maxSpeed = currentGame->objectData.data[itemID][originalHouseID].maxspeed;
 
     FixPoint dist = -1;

@@ -78,7 +78,8 @@ private:
     TextButton      quitButton;
 
 
-    Label           modVersionLabel; ///< Current mod and version footer.
+    Label           activeModLabel;  ///< Prominent active mod banner above the menu buttons.
+    Label           modVersionLabel; ///< Version footer.
     std::string     lastShownModName; ///< Tracks last mod name written to modVersionLabel; avoids redundant setText.
 
     // Version checking

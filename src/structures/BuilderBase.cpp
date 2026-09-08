@@ -1,3 +1,4 @@
+#include <players/AIDecisionLog.h>
 /*
  *  This file is part of Dune Legacy.
  *
@@ -63,6 +64,12 @@ bool isWorfineryDirectProduct(Uint32 itemID) {
         || itemID == Unit_Harvester;
 }
 
+bool isCityHarkonnenOrnithopterBuilder(Uint32 builderID, Uint32 productID, int originalHouseID) {
+    return currentGame && currentGame->isCitySimEnabled()
+        && originalHouseID == HOUSE_HARKONNEN
+        && builderID == Structure_HighTechFactory && productID == Unit_Ornithopter;
+}
+
 bool isAlternateTornieBuilder(Uint32 builderID, Uint32 itemID) {
     return builderID == Structure_Worfinery && isWorfineryDirectProduct(itemID);
 }
@@ -75,7 +82,7 @@ void logTechCenterBuildGate(const BuilderBase* builder,
                             int missingPrerequisite,
                             const char* reason,
                             bool available) {
-    if(builder == nullptr || owner == nullptr || currentGame == nullptr) {
+    if(builder == nullptr || owner == nullptr || currentGame == nullptr || !objData.enabled || objData.techLevel < 0) {
         return;
     }
 
@@ -361,10 +368,13 @@ int BuilderBase::getMaxUpgradeLevel() const {
     int upgradeLevel = 0;
 
     for(int i = ItemID_FirstID; i <= ItemID_LastID; i++) {
+        if (!currentGame->isCitySimEnabled() && DuneCity::isCityOnlyStructure(i)) continue;
         const int dataHouseID = (i == Unit_ChemicalCarryall) ? owner->getHouseID() : originalHouseID;
         const ObjectData::ObjectDataStruct& objData = currentGame->objectData.data[i][dataHouseID];
 
-        if(objData.enabled && (objData.builder == (int) itemID) && (objData.techLevel <= currentGame->techLevel)) {
+        if(objData.enabled && (objData.builder == (int) itemID
+            || isCityHarkonnenOrnithopterBuilder(itemID, i, originalHouseID))
+            && (objData.techLevel <= currentGame->techLevel)) {
             upgradeLevel = std::max(upgradeLevel, (int) objData.upgradeLevel);
         }
     }
@@ -434,6 +444,7 @@ void BuilderBase::updateBuildList()
             ? std::max(9, configuredTechLevel)
             : configuredTechLevel;
         const bool producedHere = objData.builder == static_cast<int>(itemID)
+                               || isCityHarkonnenOrnithopterBuilder(itemID, itemID2Add, originalHouseID)
                                || isAlternateTornieBuilder(itemID, itemID2Add)
                                || specialChemicalCarryall;
         const bool directWorfineryProduct = itemID == Structure_Worfinery
@@ -630,6 +641,9 @@ bool BuilderBase::update() {
 
                     // inform owner of its new unit
                     newUnit->getOwner()->informWasBuilt(newUnit);
+                    AITelemetry::log().write(currentGame->getGameCycleCount(), owner->getHouseID(), -1, "unit_produced",
+                        AITelemetry::Record().set("builder", getObjectID()).set("item", finishedItemID)
+                            .set("object", newUnit->getObjectID()).set("x", spot.x).set("y", spot.y));
                 }
             }
         }

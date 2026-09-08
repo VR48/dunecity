@@ -355,6 +355,8 @@ void CampaignAIPlayer::updateStructures() {
                         Coord target = pBestHouse->getNumStructures() > 0 
                             ? pBestHouse->getCenterOfMainBase() 
                             : pBestHouse->getStrongestUnitPosition();
+                        const Coord reactorTarget = findNuclearMissileTarget();
+                        if (reactorTarget.isValid()) target = reactorTarget;
                         doLaunchDeathhand(pPalace, target.x, target.y);
                     }
                 }

@@ -21,6 +21,8 @@
 #include "DefaultObjectInterface.h"
 
 #include <globals.h>
+#include <Command.h>
+#include <GUI/TextButton.h>
 
 #include <FileClasses/GFXManager.h>
 #include <FileClasses/TextManager.h>
@@ -47,6 +49,14 @@ protected:
         repairButton.setOnClick(std::bind(&DefaultStructureInterface::OnRepair, this));
 
         topBox.addWidget(&repairButton, Point(2,2), getTextureSize(pUIRepair));
+        destroyButton.setText(_("Destroy"));
+        destroyButton.setTooltipText(_("Destroy this building. No building refund. Nuclear plants explode."));
+        destroyButton.setOnClick([this]() {
+            if (pLocalPlayer) currentGame->getCommandManager().addCommand(
+                Command(pLocalPlayer->getPlayerID(), CMD_STRUCTURE_DEMOLISH, this->objectID));
+        });
+        destroyButton.setVisible(false);
+        topBox.addWidget(&destroyButton, Point(28,0), Point(SIDEBARWIDTH-53,22));
     }
 
     void OnRepair() {
@@ -71,6 +81,7 @@ protected:
 
         StructureBase* pStructure = dynamic_cast<StructureBase*>(pObject);
         if(pStructure != nullptr) {
+            destroyButton.setVisible(pLocalPlayer && pLocalPlayer->getHouse() == pStructure->getOwner());
             if(pStructure->getHealth() >= pStructure->getMaxHealth()) {
                 repairButton.setVisible(false);
             } else {
@@ -83,6 +94,7 @@ protected:
     }
 
     PictureButton   repairButton;
+    TextButton destroyButton;
 };
 
 #endif // DEFAULTSTRUCTUREINTERFACE_H

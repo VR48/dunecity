@@ -37,7 +37,7 @@ public:
 
     void setHealth(FixPoint newHealth) override;
 
-protected:
+    /// Actual output, including damage-related loss.
     int getProducedPower() const;
 
 private:

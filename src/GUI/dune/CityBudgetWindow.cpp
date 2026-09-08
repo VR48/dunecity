@@ -19,6 +19,7 @@
 
 #include <globals.h>
 #include <Game.h>
+#include <House.h>
 #include <dunecity/CitySimulation.h>
 #include <dunecity/CityEffects.h>
 #include <Command.h>
@@ -32,7 +33,7 @@
 namespace {
 
 constexpr int kBudgetWindowWidth = 420;
-constexpr int kBudgetWindowHeight = 380;
+constexpr int kBudgetWindowHeight = 490;
 
 Uint32 centeredCoordinate(int available, int extent) {
     return static_cast<Uint32>(std::max(0, (available - extent) / 2));
@@ -152,6 +153,15 @@ CityBudgetWindow::CityBudgetWindow()
     forecastSecondaryHBox.addWidget(HSpacer::create(8));
     forecastSecondaryHBox.addWidget(&perSecondLabel);
     mainVBox.addWidget(&forecastPrimaryHBox, 22);
+    configureValueLabel(policeStationCostLabel);
+    configureValueLabel(rocketTurretCostLabel);
+    policeStationCostLabel.setText("Police stations: 0 | -0/yr");
+    rocketTurretCostLabel.setText("Rocket turrets: 0 | -0/yr");
+    mainVBox.addWidget(&policeStationCostLabel, 22);
+    mainVBox.addWidget(&rocketTurretCostLabel, 22);
+    configureValueLabel(gunTurretCostLabel);
+    gunTurretCostLabel.setText("Gun turrets: 0 | -0/yr");
+    mainVBox.addWidget(&gunTurretCostLabel, 22);
     mainVBox.addWidget(&forecastSecondaryHBox, 22);
     mainVBox.addWidget(VSpacer::create(6));
 
@@ -183,6 +193,15 @@ CityBudgetWindow::CityBudgetWindow()
     servicesLabel.setText("Services: 0 hospitals | 0 churches");
     configureValueLabel(servicesLabel);
     mainVBox.addWidget(&servicesLabel, 22);
+
+    environmentLabel.setText("Land Value: — | Pollution: —");
+    crimeTrafficLabel.setText("Crime: — | Traffic: —");
+    configureValueLabel(environmentLabel);
+    configureValueLabel(crimeTrafficLabel);
+    environmentLabel.setTextFontSize(11);
+    crimeTrafficLabel.setTextFontSize(11);
+    mainVBox.addWidget(&environmentLabel, 22);
+    mainVBox.addWidget(&crimeTrafficLabel, 22);
     mainVBox.addWidget(VSpacer::create(10));
 
     confirmButton.setText("Confirm");
@@ -290,15 +309,26 @@ void CityBudgetWindow::updateDisplay() {
 
     // Police: nominal cost is full-funded; actual paid is scaled by the
     // selected funding percentage, including pending slider changes.
-    const int32_t nominal = citySim->getNominalPoliceCost();
-    const int32_t paying  = (nominal * pendingPolicePercent) / 100;
-    policeCostLabel.setText(fmt::sprintf("Police Services: -%d/yr", paying));
-
-    const int32_t netAnnual = projected - paying;
-    netLabel.setText(fmt::sprintf("Net Annual: %+d/yr", netAnnual));
-    // At default game speed (16ms/cycle), 1 city year ≈ 60 seconds.
-    const int32_t perSec = netAnnual / 60;
-    perSecondLabel.setText(fmt::sprintf("Cash Flow: %+d/sec", perSec));
+    const int stationCount = pLocalHouse ? pLocalHouse->getNumItems(Structure_PoliceStation) : 0;
+    const int rocketCount = pLocalHouse ? pLocalHouse->getNumItems(Structure_RocketTurret) : 0;
+    const int gunCount = pLocalHouse ? pLocalHouse->getNumItems(Structure_GunTurret) : 0;
+    const FixPoint stationPaying = DuneCity::getPoliceAnnualCost(Structure_PoliceStation) * stationCount * pendingPolicePercent / 100;
+    const FixPoint rocketPaying = DuneCity::getPoliceAnnualCost(Structure_RocketTurret) * rocketCount * pendingPolicePercent / 100;
+    const FixPoint gunPaying = DuneCity::getPoliceAnnualCost(Structure_GunTurret) * gunCount * pendingPolicePercent / 100;
+    const FixPoint paying = stationPaying + rocketPaying + gunPaying;
+    auto credits = [](FixPoint amount) {
+        std::string text = fmt::sprintf("%.3f", amount.toDouble());
+        while (!text.empty() && text.back() == '0') text.pop_back();
+        if (!text.empty() && text.back() == '.') text.pop_back();
+        return text;
+    };
+    policeStationCostLabel.setText(fmt::sprintf("Police stations: %d | -%s/yr", stationCount, credits(stationPaying)));
+    rocketTurretCostLabel.setText(fmt::sprintf("Rocket turrets: %d | -%s/yr", rocketCount, credits(rocketPaying)));
+    gunTurretCostLabel.setText(fmt::sprintf("Gun turrets: %d | -%s/yr", gunCount, credits(gunPaying)));
+    policeCostLabel.setText("Services: -" + credits(paying) + "/yr");
+    const FixPoint netAnnual = FixPoint(projected) - paying;
+    netLabel.setText(fmt::sprintf("Net Annual: %+.1f/yr", netAnnual.toDouble()));
+    perSecondLabel.setText(fmt::sprintf("Cash Flow: %+.1f/sec", (netAnnual / 60).toDouble()));
 
     // The slider's pending value is seeded once in the constructor so
     // subsequent +/- clicks edit the pending copy without being clobbered.
@@ -317,4 +347,19 @@ void CityBudgetWindow::updateDisplay() {
     // Hospital/church count (auto-created by game on residential zones)
     servicesLabel.setText(fmt::sprintf("Services: %d hospitals | %d churches",
                                        citySim->getHospitalCount(), citySim->getChurchCount()));
+
+    const auto& environment = citySim->getEnvironmentStatus(
+        pLocalHouse ? pLocalHouse->getHouseID() : 0);
+    if (environment.sampledStructures == 0) {
+        environmentLabel.setText("Land Value: — | Pollution: —");
+        crimeTrafficLabel.setText("Crime: — | Traffic: —");
+    } else {
+        environmentLabel.setText(std::string("Land Value: ")
+            + DuneCity::landValueCategory(environment.averageLandValue)
+            + " | Pollution: " + DuneCity::pollutionCategory(environment.averagePollution));
+        crimeTrafficLabel.setText(std::string("Crime: ")
+            + DuneCity::crimeCategory(environment.averageCrime)
+            + " | Traffic: "
+            + (environment.averageTraffic < 64 ? "Light" : environment.averageTraffic < 128 ? "Moderate" : "Heavy"));
+    }
 }

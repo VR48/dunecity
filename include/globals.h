@@ -160,6 +160,7 @@ inline const Palette& getPaletteForHouseColorSlot(int colorSlot) {
         : palette;
 }
 
+bool isDuneCityHouseColorSlot(int colorSlot);
 SDL_Color getHouseColorSDL(int colorSlot, int shadeOffset = 3);
 Uint32 getHouseColorRGB(int colorSlot, int shadeOffset = 3);
 

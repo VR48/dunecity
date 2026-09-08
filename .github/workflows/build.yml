@@ -20,9 +20,9 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.x'
       - name: Verify source version matches tag
@@ -43,7 +43,7 @@ jobs:
     needs: [verify-version]
     if: always() && (needs.verify-version.result == 'success' || needs.verify-version.result == 'skipped')
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install test dependencies
         run: |
@@ -71,7 +71,7 @@ jobs:
     needs: [verify-version]
     if: always() && (needs.verify-version.result == 'success' || needs.verify-version.result == 'skipped')
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
@@ -95,15 +95,21 @@ jobs:
           cpack -G ZIP -C Release
 
       - name: Upload Installer
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: DuneCity-Windows-Installer
           path: build/*.zip
 
   build-macos:
-    # The extra label keeps unrelated self-hosted Macs from accepting release
-    # jobs. Pull requests never run here because this is a persistent machine
-    # with repository access and a warm dependency cache.
+    # Runs on the Mac mini (claw.local, M4, macOS 26.6) registered as the
+    # self-hosted runner `dunecity-mac-mini`. The `dunecity-builder` label is
+    # what pins it there: the MacBook Air is still registered as a runner but
+    # deliberately carries only the read-only self-hosted/macOS/ARM64 labels,
+    # so it can never pick up a release build. Re-arm it as a fallback with:
+    #   gh api -X POST repos/VR48/dunecity/actions/runners/25/labels \
+    #     -f 'labels[]=dunecity-builder'
+    # Pull requests never run here because this is a persistent machine with
+    # repository access and a warm dependency cache.
     runs-on: [self-hosted, macOS, ARM64, dunecity-builder]
     needs: [verify-version]
     if: |
@@ -115,9 +121,39 @@ jobs:
     permissions:
       contents: read
     env:
+      # The mini has 10 cores / 16 GB. 8 parallel C++ TUs stays inside RAM.
       CMAKE_BUILD_PARALLEL_LEVEL: "8"
+      # A `brew update` on every build is minutes of network time and the most
+      # common cause of a slow or flaky macOS job.
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      HOMEBREW_NO_INSTALL_CLEANUP: "1"
+      HOMEBREW_NO_ENV_HINTS: "1"
     steps:
-      - uses: actions/checkout@v4
+      # Fail fast and legibly if this landed on a machine that is not set up,
+      # rather than 10 minutes later inside vcpkg. Records which Mac built the
+      # release, which matters when more than one runner carries the label.
+      - name: Preflight — identify runner and verify toolchain
+        run: |
+          set -euo pipefail
+          echo "Host:      $(hostname) ($(sysctl -n hw.model), $(sysctl -n hw.ncpu) cores)"
+          echo "macOS:     $(sw_vers -productVersion)  Xcode CLT: $(xcode-select -p)"
+          echo "Free disk: $(df -h / | awk 'NR==2 {print $4}')"
+
+          if ! command -v brew >/dev/null 2>&1; then
+            echo "::error title=Runner not provisioned::Homebrew is not on PATH. The runner reads its PATH from ~/actions-runner-dunecity/.path — it must include /opt/homebrew/bin."
+            exit 1
+          fi
+
+          MISSING=()
+          for tool in cmake ninja nasm autoconf automake glibtool pkg-config; do
+            command -v "$tool" >/dev/null 2>&1 || MISSING+=("$tool")
+          done
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "::notice title=Installing missing build deps::${MISSING[*]}"
+          fi
+          echo "cmake $(cmake --version | head -1) | ninja $(ninja --version) | nasm $(nasm --version | awk '{print $3}')"
+
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -125,22 +161,38 @@ jobs:
         run: rm -rf build
 
       # vcpkg builds SDL2 + its audio codecs, curl, miniupnpc and discord-rpc
-      # from source; ensure the autotools toolchain + nasm are present
-      # (idempotent — already installed on the runner).
+      # from source; the autotools toolchain + nasm have to be present. Only
+      # install what is actually missing — an unconditional `brew install` of
+      # eight already-present formulas is pure network latency on a persistent
+      # runner, and it is the step this job died in on the old laptop runner.
       - name: Install build deps
-        run: brew install autoconf autoconf-archive automake cmake libtool pkg-config nasm ninja
+        run: |
+          set -euo pipefail
+          WANT=(autoconf autoconf-archive automake cmake libtool pkg-config nasm ninja)
+          INSTALLED=$(brew list --formula -1)
+          MISSING=()
+          for f in "${WANT[@]}"; do
+            grep -qx "$f" <<<"$INSTALLED" || MISSING+=("$f")
+          done
+          if [ ${#MISSING[@]} -eq 0 ]; then
+            echo "All build deps already present."
+          else
+            echo "Installing: ${MISSING[*]}"
+            brew install "${MISSING[@]}"
+          fi
 
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
         with:
           vcpkgJsonGlob: 'vcpkg.json'
 
-      # Use the machine-local vcpkg binary cache (already warm) so deps restore
-      # instead of rebuilding from source.
+      # Use the machine-local vcpkg binary cache (seeded from the old runner)
+      # so deps restore instead of rebuilding from source.
       - name: Fix vcpkg binary caching
         run: |
           mkdir -p "$HOME/.cache/vcpkg/archives"
           echo "VCPKG_BINARY_SOURCES=clear;files,$HOME/.cache/vcpkg/archives,readwrite" >> "$GITHUB_ENV"
+          echo "Cache holds $(find "$HOME/.cache/vcpkg/archives" -name '*.zip' | wc -l | tr -d ' ') prebuilt packages."
 
       - name: Configure CMake
         run: >-
@@ -161,12 +213,19 @@ jobs:
         run: bash scripts/verify-macos-dmg.sh build/DuneCity-*-macOS.dmg
 
       - name: Upload DMG
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: DuneCity-macOS-DMG
           path: build/*.dmg
           if-no-files-found: error
           retention-days: 14
+
+      # A persistent runner keeps every past checkout's build tree. Drop the
+      # Release objects once the DMG is safely uploaded; the vcpkg binary cache
+      # (the expensive part) is outside _work and is untouched.
+      - name: Reclaim build space
+        if: always()
+        run: rm -rf build/CMakeFiles build/vcpkg_installed || true
 
       - name: Notify Discord
         if: always() && env.DISCORD_WEBHOOK != ''
@@ -175,9 +234,9 @@ jobs:
         run: |
           VERSION=$(sed -n 's/^project(DuneCity VERSION \([0-9]*\.[0-9]*\.[0-9]*\).*/\1/p' CMakeLists.txt)
           if [ "${{ job.status }}" = "success" ]; then
-            MSG="✅ **macOS build passed** — DuneCity v${VERSION} DMG ready"
+            MSG="✅ **macOS build passed** — DuneCity v${VERSION} DMG ready (built on $(hostname -s))"
           else
-            MSG="❌ **macOS build failed** — DuneCity v${VERSION}"
+            MSG="❌ **macOS build failed** — DuneCity v${VERSION} (on $(hostname -s))"
           fi
           curl -s -H "Content-Type: application/json" \
             -d "{\"content\": \"${MSG}\"}" \
@@ -190,7 +249,7 @@ jobs:
     needs: [verify-version]
     if: always() && (needs.verify-version.result == 'success' || needs.verify-version.result == 'skipped')
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1
@@ -213,7 +272,7 @@ jobs:
             libsystemd-dev xvfb xauth
 
       - name: Cache vcpkg binary packages
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/vcpkg/archives
           key: vcpkg-linux-x64-${{ hashFiles('vcpkg.json') }}
@@ -347,7 +406,7 @@ jobs:
 
       - name: Upload Packages
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: DuneCity-Linux-Packages
           path: |
@@ -368,24 +427,24 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Download Windows artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           name: DuneCity-Windows-Installer
           path: dist/windows
 
       - name: Download macOS artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           name: DuneCity-macOS-DMG
           path: dist/macos
 
       - name: Download Linux artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           name: DuneCity-Linux-Packages
@@ -426,23 +485,23 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Download Windows artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: DuneCity-Windows-Installer
           path: dist/windows
 
       - name: Download macOS artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           name: DuneCity-macOS-DMG
           path: dist/macos
 
       - name: Download Linux artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           name: DuneCity-Linux-Packages
@@ -524,15 +583,20 @@ jobs:
             sed -i "s|/v[0-9]\+\.[0-9]\+\.[0-9]\+/dunecity_[0-9]\+\.[0-9]\+\.[0-9]\+_amd64\.deb|/v${VERSION}/dunecity_${VERSION}_amd64.deb|g" "$FILE"
             # Release tag links
             sed -i "s|releases/tag/v[0-9]\+\.[0-9]\+\.[0-9]\+|releases/tag/v${VERSION}|g" "$FILE"
-            # Desktop release copy only. Keep independently versioned Android
-            # and legacy macOS labels intact.
+            # Desktop release copy. Android is versioned independently, so its
+            # labels must not be caught by these patterns.
+            #
+            # Since 1.0.599 all three desktop platforms ship from the same tag —
+            # the Mac mini runner builds a DMG for every release — so the copy
+            # says "Desktop: X.Y.Z" and "Windows, macOS and Linux X.Y.Z" rather
+            # than carrying macOS as a separate, older version. The old
+            # "no X macOS build exists" and "This is not version X" rewrites are
+            # deliberately gone: left in place they would have restated a claim
+            # that is now false, on the same page as a working DMG link.
             sed -i "s|>Dune City [0-9]\+\.[0-9]\+\.[0-9]\+<|>Dune City ${VERSION}<|g" "$FILE"
-            sed -i "s|Windows/Linux: [0-9]\+\.[0-9]\+\.[0-9]\+|Windows/Linux: ${VERSION}|g" "$FILE"
-            sed -i "s|Windows/Linux [0-9]\+\.[0-9]\+\.[0-9]\+|Windows/Linux ${VERSION}|g" "$FILE"
-            sed -i "s|Windows and Linux [0-9]\+\.[0-9]\+\.[0-9]\+|Windows and Linux ${VERSION}|g" "$FILE"
-            sed -i "s|This is not version [0-9]\+\.[0-9]\+\.[0-9]\+|This is not version ${VERSION}|g" "$FILE"
-            sed -i "s|no [0-9]\+\.[0-9]\+\.[0-9]\+ macOS build exists|no ${VERSION} macOS build exists|g" "$FILE"
-            # Desktop hero button text; the Mac button includes a DMG suffix.
+            sed -i "s|Desktop: [0-9]\+\.[0-9]\+\.[0-9]\+|Desktop: ${VERSION}|g" "$FILE"
+            sed -i "s|Windows, macOS and Linux [0-9]\+\.[0-9]\+\.[0-9]\+|Windows, macOS and Linux ${VERSION}|g" "$FILE"
+            # Desktop hero button text.
             sed -i "s|>Download [0-9]\+\.[0-9]\+\.[0-9]\+</a>|>Download ${VERSION}</a>|g" "$FILE"
             # Latest label: "Latest: X.X.X"
             sed -i "s|Latest: [0-9]\+\.[0-9]\+\.[0-9]\+|Latest: ${VERSION}|g" "$FILE"

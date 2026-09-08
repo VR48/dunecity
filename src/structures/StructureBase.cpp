@@ -1,3 +1,4 @@
+#include <players/AIDecisionLog.h>
 /*
  *  This file is part of Dune Legacy.
  *
@@ -116,7 +117,7 @@ StructureBase::~StructureBase() {
         }
         currentGame->getObjectManager().removeObject(getObjectID());
         structureList.remove(this);
-        owner->decrementStructures(itemID, location);
+        owner->decrementStructures(itemID, location, !demolishedByOwner_);
 
         removeFromSelectionLists();
 
@@ -532,7 +533,7 @@ bool StructureBase::update() {
     }
 
     // degrade
-    if((degradeTimer >= 0) && currentGame->getGameInitSettings().getGameOptions().concreteRequired && (owner->getPowerRequirement() > owner->getProducedPower())) {
+    if((degradeTimer >= 0) && currentGame->getGameInitSettings().getGameOptions().concreteRequired && !owner->hasPower()) {
         degradeTimer--;
         if(degradeTimer <= 0) {
             degradeTimer = MILLI2CYCLES(15*1000);
@@ -559,6 +560,10 @@ bool StructureBase::update() {
         return false;
     }
 
+    if (!repairing && owner->isAutoRepairEnabled()
+        && getHealth() < getMaxHealth() && owner->getCredits() >= 5) {
+        doRepair();
+    }
     if(repairing) {
         if(owner->getCredits() >= 5) {
             // Original dune 2 is doing the repair calculation with fix-point math (multiply everything with 256).
@@ -611,7 +616,18 @@ bool StructureBase::update() {
     return true;
 }
 
+void StructureBase::demolish() {
+    demolishedByOwner_ = true;
+    AITelemetry::log().write(currentGame->getGameCycleCount(), owner->getHouseID(), -1,
+        "building_demolished", AITelemetry::Record().set("object",objectID).set("item",itemID)
+            .set("x",location.x).set("y",location.y).set("refund",0));
+    destroy(); // retain special destruction behaviour, including reactor blasts
+}
+
 void StructureBase::destroy() {
+    if (currentGame && owner) AITelemetry::log().write(currentGame->getGameCycleCount(), owner->getHouseID(), -1,
+        "object_destroyed", AITelemetry::Record().set("object", objectID).set("item", itemID)
+            .set("x", location.x).set("y", location.y).set("health", getHealth().lround()));
     int*    pDestroyedStructureTiles = nullptr;
     int     DestroyedStructureTilesSizeY = 0;
     static int DestroyedStructureTilesWall[] = { DestroyedStructure_Wall };

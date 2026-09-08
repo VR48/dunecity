@@ -6,7 +6,7 @@
 /**
  * Advanced Windtrap: high-output 3x3 power source for DuneCity mode.
  *
- * Produces 300 power (3x standard WindTrap). Power output scales with health,
+ * Produces 300 power (3x standard WindTrap). Power output remains constant while alive,
  * matching WindTrap mechanics. Requires Windtrap + Radar + Hightech Factory.
  * Reuses WindTrap animation sprite.
  */
@@ -21,7 +21,6 @@ public:
     bool update() override;
     void setHealth(FixPoint newHealth) override;
 
-protected:
     int getProducedPower() const;
 
 private:

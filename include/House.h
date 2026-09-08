@@ -18,6 +18,10 @@
 #ifndef HOUSE_H
 #define HOUSE_H
 
+#include <players/CombatReward.h>
+namespace AITelemetry { class Record; }
+class ObjectData;
+
 #include <misc/InputStream.h>
 #include <misc/OutputStream.h>
 #include <Definitions.h>
@@ -51,6 +55,8 @@ public:
     inline int getTeamID() const { return teamID; }
 
     inline bool isAI() const { return ai; }
+    bool isAutoRepairEnabled() const { return autoRepairEnabled; }
+    void setAutoRepairEnabled(bool enabled) { autoRepairEnabled = enabled; }
     inline bool isAlive() const { return (teamID == 0) || !(((numStructures - numItem[Structure_Wall]) <= 0) && (((numUnits - numItem[Unit_Carryall] - numItem[Unit_ChemicalCarryall] - numItem[Unit_Harvester] - numItem[Unit_RebelHarvester] - numItem[Unit_Frigate] - numItem[Unit_Sandworm] - numItem[Unit_AmbientAirplane] - numItem[Unit_AmbientHelicopter]) <= 0))); }
 
     inline bool hasCarryalls() const { return (numItem[Unit_Carryall] + numItem[Unit_ChemicalCarryall] > 0); }
@@ -67,7 +73,8 @@ public:
     inline bool hasRadar() const { return (numItem[Structure_Radar] > 0); }
 
     inline bool hasRadarOn() const { return (hasRadar() && hasPower()); }
-    inline bool hasPower() const { return (producedPower >= powerRequirement); }
+    bool isPowerRequired() const;
+    bool hasPower() const;
 
     inline int getNumStructures() const { return numStructures; };
     inline int getNumUnits() const { return numUnits; };
@@ -99,6 +106,9 @@ public:
     inline int getNumKilledItems(int itemID) const { return numItemKills[itemID]; }
     inline int getNumLostItems(int itemID) const { return numItemLosses[itemID]; }
     inline Sint32 getNumItemDamageInflicted(int itemID) const { return numItemDamageInflicted[itemID]; }
+    const CombatReward::Totals& getCombatReward(int itemID) const { return combatRewards[itemID]; }
+    void addCombatReward(Uint32 itemID, const CombatReward::Totals& reward);
+    AITelemetry::Record combatRewardStats(const ObjectData& objectData) const;
     inline FixPoint getHarvestedSpice() const { return harvestedSpice; }
     inline int getNumVisibleEnemyUnits() const { return numVisibleEnemyUnits; }
     inline int getNumVisibleFriendlyUnits() const { return numVisibleFriendlyUnits; }
@@ -194,7 +204,7 @@ public:
     void decrementUnits(int itemID);
     void cancelCreatedUnit(int itemID);
     void incrementStructures(int itemID);
-    void decrementStructures(int itemID, const Coord& location);
+    void decrementStructures(int itemID, const Coord& location, bool recordLoss = true);
     void transformStructure(int oldItemID, int newItemID);
 
     /**
@@ -230,6 +240,7 @@ public:
     const std::list<std::unique_ptr<Player> >& getPlayerList() const { return players; };
 
 protected:
+    bool autoRepairEnabled = false;
     void decrementHarvesters();
 
     std::list<std::unique_ptr<Player> > players;        ///< List of associated players that control this house
@@ -245,6 +256,7 @@ protected:
     int numItemBuilt[Num_ItemID];  /// Number of items built by player
     int numItemKills[Num_ItemID]; /// Number of items killed by player
     int numItemLosses [Num_ItemID]; /// Number of items lost by player
+    CombatReward::Totals combatRewards[Num_ItemID];
     Sint32 numItemDamageInflicted[Num_ItemID]; /// Amount of damage inflicted by a specific unit type owned by the player
 
     int capacity;             ///< Total spice capacity

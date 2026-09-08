@@ -79,6 +79,9 @@ public:
         \param  players     Player details in format "House1:Player1,House2:Player2,..."
     */
     void announceGameStart(const std::string& mapName, const std::string& modName, const std::string& players);
+
+    /** Queue a bounded match summary for the SQLite analytics endpoint. */
+    void reportGameStats(const std::string& phase, const std::string& matchID, const std::string& stats);
     
     // NAT Traversal / Hole Punch methods (synchronous - for use in connection flow)
     
@@ -194,4 +197,3 @@ private:
 };
 
 #endif // METASERVERCLIENT_H
-

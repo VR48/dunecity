@@ -1,3 +1,5 @@
+#include <players/AIDecisionLog.h>
+#include <dunecity/NuclearBlastPolicy.h>
 /*
  *  This file is part of Dune Legacy.
  *
@@ -257,6 +259,35 @@ void Player::doSpecialWeapon(const Palace* pPalace) const {
     } else {
         logWarn("The player '%s' tries to activate a special weapon from a palace he doesn't own or that is inactive!\n", playername.c_str());
     }
+}
+
+Coord Player::findNuclearMissileTarget() const {
+    const int team = getHouse()->getTeamID();
+    const StructureBase* best = nullptr;
+    int bestScore = -1;
+    for (const auto* plant : getStructureList()) {
+        if (plant->getItemID() != Structure_NuclearPlant || !plant->isActive() || plant->getHealth() <= 0
+            || plant->getOwner()->getTeamID() == team || !plant->isVisible(team)) continue;
+        int score = 0;
+        const Coord center = plant->getCenterPoint();
+        for (const auto* nearby : getStructureList()) {
+            if (nearby == plant || nearby->getOwner()->getTeamID() == team || !nearby->isVisible(team)
+                || !nearby->isActive() || nearby->getHealth() <= 0) continue;
+            const Coord pos = nearby->getCenterPoint();
+            if (DuneCity::NuclearBlastPolicy::contains(pos.x - center.x, pos.y - center.y))
+                score += nearby->getItemID() == Structure_NuclearPlant ? 100 : 1;
+        }
+        if (score > bestScore || (score == bestScore && best && plant->getObjectID() < best->getObjectID())) {
+            best = plant; bestScore = score;
+        }
+    }
+    if (!best) return Coord::Invalid();
+    const Coord center = best->getCenterPoint();
+    AITelemetry::log().write(getGameCycleCount(), getHouse()->getHouseID(), getPlayerID(), "palace_target",
+        AITelemetry::Record().set("reason", "nuclear_chain_reaction").set("target", best->getObjectID())
+            .set("target_house", best->getOwner()->getHouseID()).set("chain_score", bestScore)
+            .set("x", center.x / TILESIZE).set("y", center.y / TILESIZE));
+    return Coord(center.x / TILESIZE, center.y / TILESIZE);
 }
 
 void Player::doLaunchDeathhand(const Palace* pPalace, int x, int y) const {

@@ -27,6 +27,7 @@ std::mutex Game::performanceLogMutex;
 
 #include <globals.h>
 #include <config.h>
+#include <players/AIDecisionLog.h>
 #include <main.h>
 
 #include <FileClasses/FileManager.h>
@@ -53,8 +54,10 @@ std::mutex Game::performanceLogMutex;
 #include <CursorManager.h>
 
 #include <players/HumanPlayer.h>
+#include <players/QuantBot.h>
 
 #include <Network/NetworkManager.h>
+#include <Network/MetaServerClient.h>
 #include <mod/ModManager.h>
 
 #include <GUI/dune/InGameMenu.h>
@@ -75,6 +78,10 @@ std::mutex Game::performanceLogMutex;
 #include <sand.h>
 
 #include <structures/StructureBase.h>
+#include <structures/WindTrap.h>
+#include <structures/AdvancedWindTrap.h>
+#include <structures/NuclearPlant.h>
+#include <structures/Scoutpost.h>
 #include <structures/ConstructionYard.h>
 #include <units/UnitBase.h>
 #include <structures/BuilderBase.h>
@@ -95,6 +102,66 @@ std::mutex Game::performanceLogMutex;
 namespace {
 
 constexpr Uint32 SAVE_SETUP_COLOR_MARKER = 0x53434F4C; // "SCOL"
+
+constexpr std::array<Uint32, 8> analyticsMixItems = {
+    Unit_Tank, Unit_SiegeTank, Unit_Launcher, 9999, // QBot's special-unit group
+    Unit_Ornithopter, Unit_Trike, Unit_RaiderTrike, Unit_Quad
+};
+
+std::string analyticsGameType(GameType type) {
+    switch (type) {
+        case GameType::Campaign: return "campaign";
+        case GameType::Skirmish: return "skirmish";
+        case GameType::CustomGame: return "single_custom";
+        case GameType::CustomMultiplayer: return "multiplayer";
+        case GameType::LoadSavegame:
+        case GameType::LoadMultiplayer: return "load";
+        default: return "unknown";
+    }
+}
+
+std::string analyticsArray(const std::vector<std::string>& rows) {
+    std::string output = "[";
+    for (size_t i = 0; i < rows.size(); ++i) {
+        if (i != 0) output += ',';
+        output += rows[i];
+    }
+    return output + ']';
+}
+
+std::string analyticsAIType(const std::string& playerClass) {
+    if (playerClass.rfind("qBot", 0) == 0) return "qbot";
+    if (playerClass.rfind("mentat", 0) == 0) return "mentat";
+    if (playerClass.rfind("AIPlayer", 0) == 0) return "classic";
+    if (playerClass == "CampaignAIPlayer") return "campaign";
+    if (playerClass == "SmartBot") return "smartbot";
+    return "unknown";
+}
+
+std::string analyticsAIDifficulty(const std::string& playerClass) {
+    static constexpr std::array<std::pair<const char*, const char*>, 5> suffixes = {{
+        {"Defend", "defend"}, {"Easy", "easy"}, {"Medium", "medium"},
+        {"Hard", "hard"}, {"Brutal", "brutal"},
+    }};
+    for (const auto& [suffix, name] : suffixes) {
+        const size_t suffixLength = std::char_traits<char>::length(suffix);
+        if (playerClass.size() >= suffixLength
+            && playerClass.compare(playerClass.size() - suffixLength, suffixLength, suffix) == 0) {
+            return name;
+        }
+    }
+    if (playerClass == "SmartBot") return "normal";
+    return {};
+}
+
+std::string analyticsMatchID(const GameInitSettings& settings) {
+    const auto micros = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    std::ostringstream id;
+    id << "m1-" << std::hex << static_cast<uint64_t>(micros) << '-'
+       << settings.getRandomSeed() << '-' << SDL_GetPerformanceCounter();
+    return id.str();
+}
 
 DuneCity::CityTilePlacementState makeCityTilePlacementState(const Tile& tile) {
     return DuneCity::makeCityTilePlacementState(
@@ -274,6 +341,27 @@ void Game::queuePathRequest(Uint32 objectId) {
     The destructor frees up all the used memory.
 */
 Game::~Game() {
+    finishMatchAnalytics();
+    if (AITelemetry::log().enabled()) {
+        AITelemetry::Record roster;
+        for (int h = 0; h < NUM_HOUSES; ++h) if (house[h]) {
+            for (const auto& player : house[h]->getPlayerList()) player->finishTelemetry();
+            AITelemetry::Record actual, built, lost;
+            for (int item = ItemID_FirstID; item <= ItemID_LastID; ++item) {
+                if (house[h]->getNumItems(item)) actual.set(std::to_string(item), house[h]->getNumItems(item));
+                if (house[h]->getNumBuiltItems(item)) built.set(std::to_string(item), house[h]->getNumBuiltItems(item));
+                if (house[h]->getNumLostItems(item)) lost.set(std::to_string(item), house[h]->getNumLostItems(item));
+            }
+            roster.set(std::to_string(h), AITelemetry::Record().set("name", getHouseNameByNumber(static_cast<HOUSETYPE>(h)))
+                .set("team", house[h]->getTeamID()).set("alive", house[h]->isAlive()).set("credits", house[h]->getCredits())
+                .set("actual", actual).set("built", built).set("lost", lost)
+                .set("economy_totals", AITelemetry::log().economyTotals(h)).set("combat_rewards", house[h]->combatRewardStats(objectData)));
+        }
+        AITelemetry::log().write(gameCycleCount, -1, -1, "game_summary", AITelemetry::Record()
+            .set("local_result", finished ? (won ? "victory" : "defeat") : "ended_without_result")
+            .set("local_house", pLocalHouse ? pLocalHouse->getHouseID() : -1).set("houses", roster));
+    }
+    AITelemetry::log().stop();
     // Close performance log
     closePerformanceLog();
     
@@ -451,11 +539,15 @@ void Game::initGame(const GameInitSettings& newGameInitSettings) {
             // mod's ObjectData.ini says.
             if (!citySimEnabled_) {
                 for (int h = 0; h < NUM_HOUSES; h++) {
-                    objectData.data[Structure_ZoneResidential][h].enabled = false;
-                    objectData.data[Structure_ZoneCommercial][h].enabled  = false;
-                    objectData.data[Structure_ZoneIndustrial][h].enabled  = false;
+                    for (int item = Structure_FirstID; item <= Structure_LastID; ++item)
+                        if (DuneCity::isCityOnlyStructure(item)) objectData.data[item][h].enabled = false;
                 }
             }
+
+            // Apply the city reactor balance only to a city match. ObjectData
+            // also loads non-city mods and must preserve their configured stats.
+            if (citySimEnabled_) for (int h = 0; h < NUM_HOUSES; ++h)
+                objectData.data[Structure_NuclearPlant][h].hitpoints = objectData.data[Structure_StarPort][h].hitpoints;
 
             objectData.logSettings();
 
@@ -487,6 +579,236 @@ void Game::initGame(const GameInitSettings& newGameInitSettings) {
         default: {
         } break;
     }
+    AITelemetry::startGame(AITelemetry::Record().set("version", VERSION)
+        .set("mod", ModManager::instance().getActiveModName())
+        .set("source", newGameInitSettings.getFilename()).set("seed", gameInitSettings.getRandomSeed())
+        .set("entry_type", static_cast<int>(newGameInitSettings.getGameType()))
+        .set("game_type", static_cast<int>(gameType)).set("tech", techLevel)
+        .set("city_sim", isCitySimEnabled()).set("cycles_per_30_seconds", MILLI2CYCLES(30000))
+        .set("start_cycle", gameCycleCount)
+        .set("options", AITelemetry::Record()
+            .set("concrete_required", gameInitSettings.getGameOptions().concreteRequired)
+            .set("structures_degrade_on_concrete", gameInitSettings.getGameOptions().structuresDegradeOnConcrete)
+            .set("fog_of_war", gameInitSettings.getGameOptions().fogOfWar)
+            .set("immortal_human_player", gameInitSettings.getGameOptions().immortalHumanPlayer)
+            .set("harvester_limit_override", gameInitSettings.getGameOptions().maximumNumberOfHarvestersOverride))
+        .set("map_width", currentGameMap ? currentGameMap->getSizeX() : 0)
+        .set("map_height", currentGameMap ? currentGameMap->getSizeY() : 0));
+    startMatchAnalytics();
+}
+
+void Game::startMatchAnalytics() {
+    if (bReplay || gameInitSettings.getGameType() == GameType::LoadSavegame
+        || gameInitSettings.getGameType() == GameType::LoadMultiplayer) {
+        return;
+    }
+    // A multiplayer game is reported by its host only. The reporter is kept
+    // separate from lobby announcement state, which is deliberately stopped
+    // once the countdown ends.
+    if (gameInitSettings.getGameType() == GameType::CustomMultiplayer
+        && (!pNetworkManager || !pNetworkManager->isServer())) {
+        return;
+    }
+    matchAnalyticsID = analyticsMatchID(gameInitSettings);
+    try {
+        matchAnalyticsClient = std::make_unique<MetaServerClient>(settings.network.metaServer);
+        matchAnalyticsClient->reportGameStats("start", matchAnalyticsID, buildMatchAnalyticsPayload(false));
+        matchAnalyticsStarted = true;
+    } catch (const std::exception& exception) {
+        SDL_Log("Game: Match analytics reporter unavailable: %s", exception.what());
+        matchAnalyticsClient.reset();
+    }
+}
+
+void Game::finishMatchAnalytics() {
+    if (!matchAnalyticsStarted || !matchAnalyticsClient) return;
+    matchAnalyticsClient->reportGameStats("end", matchAnalyticsID, buildMatchAnalyticsPayload(true));
+    // The client's worker drains the queued end event before joining. A failed
+    // request is caught inside MetaServerClient and can never affect teardown.
+    matchAnalyticsClient.reset();
+    matchAnalyticsStarted = false;
+}
+
+std::string Game::buildMatchAnalyticsPayload(bool finishedMatch) const {
+    int totalSpice = 0;
+    int totalUnitsDestroyed = 0;
+    int totalStructuresDestroyed = 0;
+    int winnerHouse = -1;
+    int winningTeam = -1;
+    // `won` only describes the local player. Derive the winner from the game
+    // state so a host that lost still records the actual winning team.
+    if (finishedMatch) {
+        std::set<int> survivingTeams;
+        for (const auto& currentHouse : house) {
+            if (currentHouse && currentHouse->getTeamID() != 0 && currentHouse->isAlive()) {
+                survivingTeams.insert(currentHouse->getTeamID());
+            }
+        }
+        if (survivingTeams.size() == 1) winningTeam = *survivingTeams.begin();
+        else if (pLocalHouse && won) winningTeam = pLocalHouse->getTeamID();
+    }
+    std::vector<std::string> playerRows;
+    int playerSlot = 0;
+
+    for (int h = 0; h < NUM_HOUSES; ++h) {
+        const House* currentHouse = house[h].get();
+        if (!currentHouse) continue;
+        const auto& players = currentHouse->getPlayerList();
+        if (players.empty()) continue;
+        totalSpice += currentHouse->getHarvestedSpice().lround();
+        totalUnitsDestroyed += currentHouse->getNumDestroyedUnits();
+        totalStructuresDestroyed += currentHouse->getNumDestroyedStructures();
+        if (finishedMatch && winningTeam >= 0 && currentHouse->getTeamID() == winningTeam && winnerHouse < 0)
+            winnerHouse = currentHouse->getHouseID();
+
+        int unitsLost = 0;
+        int structuresLost = 0;
+        for (int item = ItemID_FirstID; item <= ItemID_LastID; ++item) {
+            if (isUnit(item)) unitsLost += currentHouse->getNumLostItems(item);
+            else if (isStructure(item)) structuresLost += currentHouse->getNumLostItems(item);
+        }
+        std::vector<std::string> itemRows;
+        if (finishedMatch) {
+            for (int item = ItemID_FirstID; item <= ItemID_LastID; ++item) {
+                if (!isUnit(item) && !isStructure(item)) continue;
+                const int produced = currentHouse->getNumBuiltItems(item);
+                const int killed = currentHouse->getNumKilledItems(item);
+                const int lost = currentHouse->getNumLostItems(item);
+                if (produced == 0 && killed == 0 && lost == 0) continue;
+                std::ostringstream itemRow;
+                // Compact positional rows keep a full item breakdown bounded:
+                // [item id, item name, kind, produced, killed, lost].
+                itemRow << '[' << item << ',' << AITelemetry::Record::quote(getItemNameByID(item))
+                        << ",\"" << (isUnit(item) ? "unit" : "structure") << "\"," << produced << ','
+                        << killed << ',' << lost << ']';
+                itemRows.push_back(itemRow.str());
+            }
+        }
+
+        for (const auto& player : players) {
+            const auto* qbot = dynamic_cast<const QuantBot*>(player.get());
+            const std::string playerClass = player->getPlayerclass();
+            const char* controller = qbot ? "qbot"
+                : playerClass == HUMANPLAYERCLASS ? "human"
+                : playerClass == "SpectatorPlayer" ? "spectator" : "ai";
+            const std::string aiType = analyticsAIType(playerClass);
+            const std::string aiDifficulty = qbot ? qbot->getDifficultyName() : analyticsAIDifficulty(playerClass);
+            std::ostringstream row;
+            row << "{\"slot\":" << playerSlot++
+                << ",\"player_id\":" << static_cast<int>(player->getPlayerID())
+                << ",\"player_name\":" << AITelemetry::Record::quote(player->getPlayername())
+                << ",\"house_slot\":" << h
+                << ",\"house_id\":" << currentHouse->getHouseID()
+                << ",\"house_name\":" << AITelemetry::Record::quote(getHouseNameByNumber(static_cast<HOUSETYPE>(h)))
+                << ",\"team\":" << currentHouse->getTeamID()
+                << ",\"controller\":\"" << controller << '"'
+                << ",\"player_class\":" << AITelemetry::Record::quote(playerClass)
+                << ",\"shared_house_players\":" << players.size();
+            if (std::string(controller) == "ai" || qbot) {
+                row << ",\"ai_type\":" << AITelemetry::Record::quote(aiType)
+                    << ",\"ai_support\":" << (playerClass.find("Support") != std::string::npos ? "true" : "false");
+                if (!aiDifficulty.empty())
+                    row << ",\"ai_difficulty\":" << AITelemetry::Record::quote(aiDifficulty);
+            }
+            if (qbot) row << ",\"qbot_difficulty\":" << AITelemetry::Record::quote(aiDifficulty);
+
+            if (finishedMatch) {
+                row << ",\"result\":\"" << (winningTeam >= 0 && currentHouse->getTeamID() == winningTeam ? "winner" : currentHouse->isAlive() ? "alive" : "defeated") << '"'
+                    << ",\"final_credits\":" << currentHouse->getCredits()
+                    << ",\"spice_harvested\":" << currentHouse->getHarvestedSpice().lround()
+                    << ",\"units_built\":" << currentHouse->getNumBuiltUnits()
+                    << ",\"structures_built\":" << currentHouse->getNumBuiltStructures()
+                    << ",\"units_destroyed\":" << currentHouse->getNumDestroyedUnits()
+                    << ",\"structures_destroyed\":" << currentHouse->getNumDestroyedStructures()
+                    << ",\"units_lost\":" << unitsLost
+                    << ",\"structures_lost\":" << structuresLost
+                    << ",\"military_value\":" << currentHouse->getMilitaryValue()
+                    << ",\"item_stats\":" << analyticsArray(itemRows);
+                if (citySimulation_ && citySimulation_->isInitialized()) {
+                    const auto& city = citySimulation_->getHouseState(currentHouse->getHouseID());
+                    row << ",\"city_population\":" << city.getTotalPop() * DuneCity::CitySimulation::kPopDisplayMultiplier
+                        << ",\"city_value\":" << city.avgLandValue
+                        << ",\"city_residential_population\":" << city.resPop * DuneCity::CitySimulation::kPopDisplayMultiplier
+                        << ",\"city_commercial_population\":" << city.comPop * DuneCity::CitySimulation::kPopDisplayMultiplier
+                        << ",\"city_industrial_population\":" << city.indPop * DuneCity::CitySimulation::kPopDisplayMultiplier
+                        << ",\"city_unemployment_percent\":" << city.unemploymentRate
+                        << ",\"city_residential_demand\":" << city.resValve
+                        << ",\"city_commercial_demand\":" << city.comValve
+                        << ",\"city_industrial_demand\":" << city.indValve;
+                }
+            }
+            if (qbot && finishedMatch) {
+                std::vector<std::string> unitRows;
+                const auto& mix = qbot->getLastUnitMixBps();
+                for (size_t i = 0; i < analyticsMixItems.size(); ++i) {
+                    const int item = analyticsMixItems[i];
+                    int built = 0;
+                    int lost = 0;
+                    int destroyed = 0;
+                    int64_t rewardMilli = 0;
+                    int64_t damageValueMilli = 0;
+                    int64_t killBonusMilli = 0;
+                    int64_t lostValue = 0;
+                    const std::array<Uint32, 3> specialItems = {Unit_Devastator, Unit_SonicTank, Unit_Deviator};
+                    const bool specialGroup = item == 9999;
+                    const auto collect = [&](Uint32 unit) {
+                        built += currentHouse->getNumBuiltItems(unit);
+                        lost += currentHouse->getNumLostItems(unit);
+                        destroyed += currentHouse->getNumKilledItems(unit);
+                        const auto& reward = currentHouse->getCombatReward(unit);
+                        rewardMilli += reward.total();
+                        damageValueMilli += reward.damageMilli;
+                        killBonusMilli += reward.killBonusMilli;
+                        lostValue += int64_t(currentHouse->getNumLostItems(unit)) * objectData.data[unit][h].price;
+                    };
+                    if (specialGroup) {
+                        for (const auto unit : specialItems) collect(unit);
+                    } else {
+                        collect(item);
+                    }
+                    std::ostringstream unit;
+                    unit << "{\"item_id\":" << item
+                         << ",\"item_name\":" << AITelemetry::Record::quote(
+                                specialGroup ? "special" : getItemNameByID(item))
+                         << ",\"target_weight_bps\":" << mix[i]
+                         << ",\"built\":" << built
+                         << ",\"lost\":" << lost
+                         << ",\"destroyed\":" << destroyed
+                         << ",\"reward_milli\":" << rewardMilli
+                         << ",\"damage_value_milli\":" << damageValueMilli
+                         << ",\"kill_bonus_milli\":" << killBonusMilli
+                         << ",\"lost_value\":" << lostValue << '}';
+                    unitRows.push_back(unit.str());
+                }
+                row << ",\"qbot_units\":" << analyticsArray(unitRows);
+            }
+            row << '}';
+            playerRows.push_back(row.str());
+        }
+    }
+
+    const std::string mapName = getBasename(gameInitSettings.getFilename(), true);
+    std::ostringstream payload;
+    payload << "{\"schema_version\":3"
+            << ",\"game_type\":" << AITelemetry::Record::quote(analyticsGameType(gameInitSettings.getGameType()))
+            << ",\"game_version\":" << AITelemetry::Record::quote(VERSION)
+            << ",\"map\":{\"name\":" << AITelemetry::Record::quote(mapName)
+            << ",\"width\":" << (currentGameMap ? currentGameMap->getSizeX() : 0)
+            << ",\"height\":" << (currentGameMap ? currentGameMap->getSizeY() : 0)
+            << ",\"seed\":" << gameInitSettings.getRandomSeed() << '}'
+            << ",\"mod\":{\"name\":" << AITelemetry::Record::quote(gameInitSettings.getModName()) << '}'
+            << ",\"players\":" << analyticsArray(playerRows);
+    if (finishedMatch) {
+        payload << ",\"outcome\":" << AITelemetry::Record::quote(finished ? "finished" : "abandoned")
+                << ",\"duration_cycles\":" << gameCycleCount
+                << ",\"duration_seconds\":" << getGameTime() / 1000
+                << ",\"winning_house\":" << winnerHouse
+                << ",\"total_spice_harvested\":" << totalSpice
+                << ",\"total_units_destroyed\":" << totalUnitsDestroyed
+                << ",\"total_structures_destroyed\":" << totalStructuresDestroyed;
+    }
+    payload << '}';
+    return payload.str();
 }
 
 void Game::initReplay(const std::string& filename) {
@@ -2431,10 +2753,11 @@ void Game::runMainLoop() {
         const int actualFrameTime = frameEnd - frameStart;  // Actual time for this frame
         frameTime += actualFrameTime;
         
-        // CAP frameTime to prevent excessive catch-up bursts during network stalls
-        // Allow up to 3 cycles worth of catch-up per frame for smoother gameplay
-        // This trades off "real-time accuracy" for "smooth gameplay feel"
-        const int maxFrameTime = getGameSpeed() * 3;
+        // Bound catch-up after stalls, but keep at least the previous fastest
+        // setting's 24ms budget. At 4ms/tick a 60Hz frame needs 4-5 ticks;
+        // a three-tick budget would discard time and defeat the faster setting.
+        // The independent ten-cycle guard below still prevents renderer starvation.
+        const int maxFrameTime = std::max(getGameSpeed() * 3, 24);
         if (frameTime > maxFrameTime) {
             frameTime = maxFrameTime;
         }
@@ -2489,7 +2812,14 @@ void Game::runMainLoop() {
             if(!bWaitForNetwork && !bPause) {
                 // Time the core simulation step for CPU load detection
                 const Uint64 simStart = SDL_GetPerformanceCounter();
-                updateGameState();
+                try {
+                    updateGameState();
+                } catch (const std::exception& e) {
+                    // Record before stack unwinding closes this match's telemetry.
+                    AITelemetry::log().write(gameCycleCount,-1,-1,"simulation_exception",
+                        AITelemetry::Record().set("message",e.what()).set("stage","updateGameState"));
+                    throw;
+                }
                 const Uint64 simEnd = SDL_GetPerformanceCounter();
                 const double simMs = getElapsedMs(simStart, simEnd);
                 
@@ -3692,6 +4022,21 @@ bool Game::loadSaveGame(InputStream& stream) {
     logLoadStage("objects");
     objectManager.load(stream);
 
+    // Older saves stored health-scaled windtrap totals. Reconstruct generation
+    // from the loaded generators using current rules, without changing demand.
+    std::array<int, NUM_HOUSES> loadedGeneration{};
+    for (const auto* structure : structureList) {
+        int output = 0;
+        if (const auto* plant = dynamic_cast<const WindTrap*>(structure)) output = plant->getProducedPower();
+        else if (const auto* plant = dynamic_cast<const AdvancedWindTrap*>(structure)) output = plant->getProducedPower();
+        else if (const auto* plant = dynamic_cast<const NuclearPlant*>(structure)) output = plant->getProducedPower();
+        else if (const auto* plant = dynamic_cast<const Scoutpost*>(structure)) output = plant->getProducedPower();
+        loadedGeneration[structure->getOwner()->getHouseID()] += output;
+    }
+    for (int house = 0; house < NUM_HOUSES; ++house)
+        if (getHouse(house)) getHouse(house)->setProducedPower(loadedGeneration[house]);
+
+
     // Zones from older saves can come back without owning their tiles, which
     // lets new lots be placed right on top of them. Re-attach every zone to
     // its footprint and report anything that was off.
@@ -4299,6 +4644,8 @@ void Game::handleKeyInput(SDL_KeyboardEvent& keyboardEvent) {
         case SDLK_7:
         case SDLK_8:
         case SDLK_9: {
+            // Command-number shortcuts belong to macOS (including screenshots).
+            if (SDL_GetModState() & KMOD_GUI) break;
             int selectListIndex = keyboardEvent.keysym.sym - SDLK_1;
 
             if(citySimEnabled_ && (SDL_GetModState() & KMOD_SHIFT)) {
@@ -5076,9 +5423,13 @@ void Game::drawCityOverlay(int x1, int y1, int x2, int y2) {
             int blockSize = crimeMap.getBlockSize();
             for (int x = x1; x < x2; x += blockSize) {
                 for (int y = y1; y < y2; y += blockSize) {
-                    uint8_t crime = crimeMap.worldGet(x, y);
+                    const int crime = crimeMap.worldGet(x, y);
                     if (crime > 0) {
-                        drawOverlayBlock(x, y, blockSize, crime, 0, 255, 0, 255, 0, 0);
+                        // Crime is warm-coloured throughout its range: orange
+                        // at low levels and a deep red at high levels. Green
+                        // reads as safe and made this overlay misleading.
+                        drawOverlayBlock(x, y, blockSize, static_cast<uint8_t>(std::min(255, crime)),
+                                         255, 160, 0, 128, 0, 0);
                     }
                 }
             }

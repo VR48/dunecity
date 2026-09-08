@@ -12,6 +12,10 @@ target_sources(dunelegacy_tests
     PRIVATE
         RendererSizeTestCase.cpp
         QuantBotBuildPolicyTestCase.cpp
+        AIDecisionLogTestCase.cpp
+        CityPlacementPolicyTestCase.cpp
+        NuclearBlastPolicyTestCase.cpp
+        ${CMAKE_SOURCE_DIR}/src/players/AIDecisionLog.cpp
         PathBudgetTestCase/PathBudgetTestCase.cpp
         NetworkManagerTestCase/NetworkManagerTestCase.cpp
         GenericNinthHouseRegressionTestCase/GenericNinthHouseRegressionTestCase.cpp
@@ -30,6 +34,7 @@ target_sources(dunelegacy_tests
         PalaceUnitLimitRegressionTestCase/PalaceUnitLimitRegressionTestCase.cpp
         ZonePowerTestCase/ZonePowerTestCase.cpp
         CityEffectsTestCase/CityEffectsTestCase.cpp
+        ../src/fixmath/fix32.c
         ValueModelTestCase/ValueModelTestCase.cpp
         PoliceStationTestCase/PoliceStationTestCase.cpp
         SaveCompatTestCase/SaveCompatTestCase.cpp

@@ -18,13 +18,17 @@ public:
     explicit NuclearPlant(InputStream& stream);
     virtual ~NuclearPlant();
 
+    ObjectInterface* getInterfaceContainer() override;
     bool update() override;
+    void destroy() override;
+    void handleDamage(int damage, Uint32 damagerID, House* damagerOwner) override;
     void setHealth(FixPoint newHealth) override;
 
-protected:
     int getProducedPower() const;
 
 private:
+    House* detonationCreditOwner = nullptr; // Runtime-only attribution for a pending detonation.
+    Uint32 detonationTrigger = NONE_ID;
     void init();
 };
 

@@ -355,7 +355,7 @@ TEST_CASE("ZoneStructure: tooltip uses house power model not tile power",
 
     // Extract a reasonable window around the power check.
     auto start = (densityPos > 200) ? densityPos - 200 : 0;
-    auto window = src.substr(start, 600);
+    auto window = src.substr(start, src.find("cityStats_.update(pZone)", densityPos) - start);
 
     INFO("Power check must use the owner's hasPower(), not Tile::isCityPowered()");
     REQUIRE(window.find("hasPower()") != std::string::npos);

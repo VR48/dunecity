@@ -1,3 +1,5 @@
+#include <dunecity/NuclearBlastPolicy.h>
+#include <players/AIDecisionLog.h>
 /*
  *  This file is part of Dune Legacy.
  *
@@ -37,7 +39,7 @@
 
 #include <GUI/ObjectInterfaces/PalaceInterface.h>
 
-#define PALACE_DEATHHAND_WEAPONDAMAGE       100
+#define PALACE_DEATHHAND_WEAPONDAMAGE       DuneCity::NuclearBlastPolicy::missileDamagePerTile
 
 Palace::Palace(House* newOwner) : StructureBase(newOwner) {
     Palace::init();
@@ -97,6 +99,17 @@ void Palace::handleDeathhandClick(int xPos, int yPos) {
     if (currentGameMap->tileExists(xPos, yPos)) {
         currentGame->getCommandManager().addCommand(Command(pLocalPlayer->getPlayerID(), CMD_PALACE_DEATHHAND,objectID, (Uint32) xPos, (Uint32) yPos));
     }
+}
+
+int Palace::getSpecialWeaponCooldownForHouse(int houseID) {
+    const auto house = static_cast<HOUSETYPE>(houseID);
+    const bool tornie = ModManager::instance().isTornieContentActive();
+    if (tornie && getHouseFactionIdentity(house) == HOUSE_REBELS)
+        return MILLI2CYCLES(7*60*1000 + 30*1000);
+    if (houseID == HOUSE_HARKONNEN || houseID == HOUSE_SARDAUKAR
+        || (tornie && isHouseFaction(house, HOUSE_WILDSPADE)))
+        return MILLI2CYCLES(10*60*1000);
+    return MILLI2CYCLES(5*60*1000);
 }
 
 bool Palace::usesTornieMainRebelsCooldown() const {
@@ -289,6 +302,9 @@ void Palace::doLaunchDeathhand(int x, int y) {
     Coord dest( x * TILESIZE + TILESIZE/2 + deathOffX,
                 y * TILESIZE + TILESIZE/2 + deathOffY);
 
+    AITelemetry::log().write(currentGame->getGameCycleCount(), owner->getHouseID(), -1, "palace_missile_launched",
+        AITelemetry::Record().set("palace", objectID).set("aim_x", x).set("aim_y", y)
+            .set("destination_x_pixels", dest.x).set("destination_y_pixels", dest.y));
     bulletList.push_back(new Bullet(objectID, &centerPoint, &dest, Bullet_LargeRocket, PALACE_DEATHHAND_WEAPONDAMAGE, false, nullptr));
     soundPlayer->playSoundAt(Sound_Rocket, getLocation());
 

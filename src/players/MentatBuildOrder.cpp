@@ -78,7 +78,7 @@ const std::vector<MentatBuildStep>& QuantBot::getCYBuildOrder() {
             // Power buffer check for rocket turrets
             auto hasPowerBufferForTurret = [&]() {
                 if (!bot->getGameInitSettings().getGameOptions().rocketTurretsNeedPower) return true;
-                return (ctx.powerProduced - ctx.powerRequired) >= 225;
+                return !ctx.house->isPowerRequired() || (ctx.powerProduced - ctx.powerRequired) >= 225;
             };
 
             if (b->getCurrentUpgradeLevel() < 2) {
@@ -143,7 +143,7 @@ const std::vector<MentatBuildStep>& QuantBot::getCYBuildOrder() {
     // 1b. Power deficit recovery
     {"POWER-RECOVERY", anyMode(),
         [](QuantBot*, const BuilderBase*, const QuantBotBuildContext& ctx) {
-            return ctx.powerProduced < ctx.powerRequired;
+            return ctx.house->isPowerRequired() && ctx.powerProduced < ctx.powerRequired;
         },
         [](QuantBot* bot, const BuilderBase* b, QuantBotBuildContext& ctx) -> std::pair<Uint32, bool> {
             int powerDeficit = ctx.powerRequired - ctx.powerProduced;
@@ -425,7 +425,7 @@ const std::vector<MentatBuildStep>& QuantBot::getCYBuildOrder() {
             if (b->getCurrentUpgradeLevel() < 2) return false;
             if (!b->isAvailableToBuild(Structure_RocketTurret)) return false;
             // Check if we lack power buffer
-            return (ctx.powerProduced - ctx.powerRequired) < 225;
+            return ctx.house->isPowerRequired() && (ctx.powerProduced - ctx.powerRequired) < 225;
         },
         [](QuantBot* bot, const BuilderBase*, QuantBotBuildContext&) -> std::pair<Uint32, bool> {
             for (const StructureBase* pStruct : bot->getStructureList()) {
@@ -452,7 +452,7 @@ const std::vector<MentatBuildStep>& QuantBot::getCYBuildOrder() {
             if (ctx.itemCount[Structure_StarPort] == 0 && ctx.itemCount[Structure_HeavyFactory] == 0) return false;
             if (b->getCurrentUpgradeLevel() < 2) return false;
             if (!b->isAvailableToBuild(Structure_RocketTurret)) return false;
-            return (ctx.powerProduced - ctx.powerRequired) < 225;
+            return ctx.house->isPowerRequired() && (ctx.powerProduced - ctx.powerRequired) < 225;
         },
         [](QuantBot* bot, const BuilderBase* b, QuantBotBuildContext& ctx) -> std::pair<Uint32, bool> {
             int powerExcess = ctx.powerProduced - ctx.powerRequired;
@@ -476,7 +476,7 @@ const std::vector<MentatBuildStep>& QuantBot::getCYBuildOrder() {
             if (ctx.itemCount[Structure_StarPort] == 0 && ctx.itemCount[Structure_HeavyFactory] == 0) return false;
             // Power buffer check
             if (bot->getGameInitSettings().getGameOptions().rocketTurretsNeedPower
-                && (ctx.powerProduced - ctx.powerRequired) < 225) return false;
+                && ctx.house->isPowerRequired() && (ctx.powerProduced - ctx.powerRequired) < 225) return false;
             if (b->getCurrentUpgradeLevel() < 2) return false;
             if (!b->isAvailableToBuild(Structure_RocketTurret)) return false;
             return bot->findEffectiveTurretPlaceLocation(Structure_RocketTurret).isValid();
@@ -492,7 +492,7 @@ const std::vector<MentatBuildStep>& QuantBot::getCYBuildOrder() {
             if (ctx.itemCount[Structure_RepairYard] == 0) return false;
             if (ctx.itemCount[Structure_StarPort] == 0 && ctx.itemCount[Structure_HeavyFactory] == 0) return false;
             if (bot->getGameInitSettings().getGameOptions().rocketTurretsNeedPower
-                && (ctx.powerProduced - ctx.powerRequired) < 225) return false;
+                && ctx.house->isPowerRequired() && (ctx.powerProduced - ctx.powerRequired) < 225) return false;
             if (b->getCurrentUpgradeLevel() < 2) return false;
             if (!b->isAvailableToBuild(Structure_RocketTurret)) return false;
             if (!bot->findEffectiveTurretPlaceLocation(Structure_RocketTurret).isValid()) return false;
@@ -664,7 +664,7 @@ const std::vector<MentatBuildStep>& QuantBot::getCYBuildOrder() {
             if (ctx.money <= 500) return false;
             // Power buffer check
             if (bot->getGameInitSettings().getGameOptions().rocketTurretsNeedPower
-                && (ctx.powerProduced - ctx.powerRequired) < 225) return false;
+                && ctx.house->isPowerRequired() && (ctx.powerProduced - ctx.powerRequired) < 225) return false;
             if (!b->isAvailableToBuild(Structure_RocketTurret)) return false;
 
             int maxOwnCrime = 0;

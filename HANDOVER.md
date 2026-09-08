@@ -1,4 +1,1344 @@
+# Coordinated army and investment fixes — 1.0.599
+
+Implemented Stefan's approval of the six recommendations in AI-598-TACTICAL-REVIEW.md,
+plus the police eligibility fix from AI-598-POLICE-REVIEW.md. His correction overrides
+the proposed blanket reactor city buffer: R/I/C may remain next to reactors.
+
+- Heavy/light/air production use one funded army target and live+queued military
+  accounting. Vehicle shares exclude committed infantry. Infantry accepted orders
+  also debit the planning budget and respect the military cap. Air availability at
+  the engine air-unit cap removes its share from the plan. Construction backlog
+  calculations use the same vehicle plan, avoiding phantom factory demand.
+- A saved ground squad gathers 80% of eligible healthy AI-controlled combat units,
+  including existing hunters/AI forced orders. Fixed base rally, not harvester
+  clusters. Launch at 85% gathered; after 90 seconds permit a >=70% original core,
+  otherwise abort. Minimum6 units/3000 initial value. Stragglers stay for the next
+  wave. Front-runners stop to wait; fragmented unengaged formations gather again.
+  Local combat units override distant economic objectives. Shared objectives have
+  20-second persistence, evaluated on deterministic two-second simulation intervals.
+  Regroup below half strength or after three unengaged minutes. Base and harvester
+  reserves are10% each; escort assignments stick to a surviving harvester.
+- Economic targets include harvesters while spice remains, and production/power/city
+  buildings thereafter. Endpoint and straight-corridor danger are weighted relative
+  to force value; no absolute lightly-defended veto for a full squad. This corridor
+  estimate is not a proof of path safety. Removed gameplay retargeting from telemetry.
+- Network-replayed human unit commands create saved control leases. Squad gathering,
+  ordinary unit handling, scramble defense and air strikes respect these; protection
+  lasts at least120seconds and continues while the manual unit is moving/forced/engaged.
+- Repeated heavy-factory losses accumulate placement danger for15minutes rather than5,
+  with rear-placement preference for heavy/high-tech factories. Other losses retain
+  five-minute influence. Existing safe/recovery placement handling remains.
+- Reactor clearance applies both ways to reactors, construction/heavy/high-tech/repair
+  yards, refineries, IX, palace and starport. R/I/C and low-cost services remain allowed.
+- Unit allocation keeps a per-type uncertainty prior and recent combat evidence,
+  decaying1/8 every30 simulation seconds (~2.6-minute half-life). No named-unit minimum.
+  Recent and lifetime reward/loss inputs plus final shares are logged. Old saves seed
+  the new window from available lifetime evidence; subsequent samples decay normally.
+- Civic purchases need nonzero actual crime reduction plus sufficient weighted
+  economic/growth utility. Raw cumulative crime reduction no longer bypasses cost.
+  The emergency exception needs >=32 points of relief above191 crime. Coverage and
+  Micropolis crime formulas are unchanged. Existing military turret paths remain.
+- Routine city_growth_sample/harvest_rally_move_order observations sampled1/8; actual
+  level changes retained. Large captures reserve1/16 for game_summary/session_end/
+  simulation_exception. Detailed capture can cease before the end, but accounting
+  continues and end summaries remain writable. Policy tag coordinated-army-v38.
+
+SAVEGAMEVERSION9830 stores squad state/membership, manual orders, escort assignments,
+placement-loss history and recent performance window; older saves default these fields.
+All new decisions use simulation cycles/integer math, stable iteration and the existing
+seeded commitment choice. No multiplayer runtime test was performed.
+
+Validation: build and app ad-hoc signature passed; dependency audit passed before/after.
+Bundle reports1.0.599. CTest473:468 passed,2 pre-existing parseDouble("nan") failures,
+3 optional asset/atlas skips. Eight added tests cover assembly, concentration,
+production ledger, exploration, reactor rules, civic purchase value, capture reserve
+and recent-performance save/load. Logs: /tmp/dunecity-599-build.log and
+/tmp/dunecity-599-tests.log. No game launched or restarted. Real-map squad navigation
+and effectiveness need the next match; compile/policy tests do not prove combat wins.
+
+# Player-centred metaserver analytics — 1.0.598
+
+The structured payload now follows the existing multiplayer start model: map,
+mod, version, and one row per actual player with display name, house, team and
+controller. End events add house-owned results to each participant, including
+spice, totals and sparse `[item id, name, kind, produced, killed, lost]` rows for
+every unit or structure with activity. QBot rows retain final production weights
+and combat score components. The payload schema is v2 and the bound is 64 KiB;
+zero-only item rows are omitted. The metaserver normalizes item rows into
+`analytics_player_items` and migrates existing SQLite databases in place.
+
+Legacy multiplayer clients below v1.0.598 still create start-only rows from the
+existing `House: Player` list. Newer multiplayer announcements no longer create
+an additional legacy analytics row because the structured start/end reporter
+owns that match. Python fallback storage was verified for start/end upsert,
+player identity, item rows, QBot rows, and migration from the old player table.
+
+# Metaserver analytics retry — 1.0.598
+
+Production accepted both the start and end summaries for the completed v597
+match. The preceding match had one start request hit the client's three-second
+HTTP timeout with zero response bytes, while its end summary succeeded. Twelve
+production health requests then completed in 0.814–0.936 seconds, so this was a
+transient transport/server delay rather than an ongoing SQLite outage.
+
+Compact match start/end writes now retry once with the same opaque match ID and
+the same three-second bound. The metaserver's upsert makes this idempotent even
+when the first request completed after the client timed out. Both attempts stay
+on the analytics worker and remain independent of simulation and multiplayer
+lockstep. The end payload now fills the existing SQLite damage-value and kill-
+bonus columns separately as well as their combined reward; these fields were in
+the deployed schema but had been omitted by the client serializer. No credentials
+or local decision logs are added. Multiplayer display names are retained in the
+participant rows, matching the existing game-start announcement.
+
+Version 1.0.598 builds and signs successfully; dependency records are complete.
+Ctest reports 460 passed, the two known `parseDouble("nan")` failures and three
+skips. The retry path itself awaits a real transient failure in a future game.
+
+# Cash-first city MCV expansion — 1.0.598
+
+Session1788799572693304-0 v597: both houses stayed at two yards with
+~100k–140k credits because only one R/C/I valve was positive. A second positive
+valve raised the target to six; both reached six within ~40 simulation seconds.
+User rejects demand gating. Wealth now sets minimum yard targets5 at20k,
+6 at50k,8 at100k after existing production commitments, even with no positive
+valves. Low-cash demand targets remain. City MCV production/unlock upgrades
+now precede extra harvesters and generic upgrades, preserving working cash
+for a tank, needed harvester/refinery and minimum1000. Queued/live MCVs count
+towards capacity; engine ground limits still apply. Vanilla unchanged.
+Removed old late city MCV branch. Telemetry policyv37 adds city_mcv_cash,
+city_mcv_working_reserve and city_cash_construction_capacity order/unlock rule.
+No new persistent state or RNG; no game restarted.
+Build, dependency checks and signature verification passed. CTest460 passed,
+2 existing parseDouble("nan") failures,3 atlas skips; no new failures.
+
+# Power-demand forecast and earlier turrets — 1.0.597
+
+Latest completed session `1788797915444105-0` v596: houses0/6/7/3 ordered
+85/79/74/78 windtraps and0/0/1/1 nuclear plants. Incremental reserve top-ups kept
+the immediate gap below reactor break-even even with tens of thousands of cash.
+Generator comparison now adds a two-minute demand-growth forecast, sampled each
+30 simulation seconds, bounded by current demand and zero for flat/falling demand.
+Forecast sample cycle, previous demand and projected growth are saved as of
+SAVEGAMEVERSION9829 (old saves default to empty forecast). No wall-clock/random
+state. Telemetry includes forecast_growth/seconds, nuclear site availability/price.
+Offline snapshot approximation found13–22 financially eligible choices for houses
+0/6 instead of zero; this is not a live placement test or predicted order count.
+
+User-requested rocket land-value bonus halved30->15, radius unchanged. Shared
+simulation/AI helper and expected tests updated. Profitable crime-reducing R/C
+turret slot now checks before reserved police/service, every three non-service
+orders. Exception: if >half developed zones are dangerous, strongest-service
+comparison retains priority. Still requires some actual crime reduction and R/C
+tax gain; zero-crime civic turrets remain forbidden. Police stacking unchanged.
+
+Build/dependency/signature checks passed; no game restarted.
+
+# Power choice, turret returns and spice workers — 1.0.596
+
+Implemented user-approved v595 recommendations. City generator choices now use
+current shortage + queued consumer demand + existing city reserve. Compare cost
+of windtraps needed against reactor price, and count disjoint legal wind sites
+to detect land shortage. Nuclear must leave working cash for a tank, needed
+harvester and pending refinery expansion; actual brownouts may use this reserve.
+All city power orders pass through shared final choice; vanilla unchanged.
+Logs `city_generator_choice` demand, cash/reserve, wind count/sites and choice.
+
+City harvester target no longer depends on number of combat vehicles. It is
+min(map-share sustainable target, 3 * actual refineries). Orders need price plus
+one tank's cost rather than price+1000, still one per build pass with actual
+engine capacity checks. Other factories retain combat production; vanilla's
+existing 1000 cash threshold is unchanged. Existing city bootstrap/refinery
+expansion remains in effect.
+
+Added an early profitable rocket-turret investment slot every four non-service
+orders after core economy/factory bootstrap. Requires land-value tax plus
+conservative growth tax alone to repay construction/upkeep/power/placement cost
+within one year; crime utility cannot qualify this slot. Cash reserve and queued
+costs are protected. Uses existing marginal coverage/park calculations and road
+junction placement, so existing/planned services diminish additional benefit.
+Police still competes for emergency crime and ordinary service orders; no hard
+ban. Structure selection rule `turret_land_value_investment` identifies orders.
+User correction before release: all civic turret candidates must reduce some
+actual crime (zero reduction is rejected). Early land-value slots must additionally
+improve R/C value. Ranking adds a 50% preference on the R/C share of forecast tax
+gain; this is placement utility only, not extra reported income or simulation tax.
+Actual payback checks use unmodified income. Candidate telemetry includes
+`res_com_tax_gain`. Military threat-response branches remain distinct.
+
+Build/dependency/signature checks passed. New policy tests cover generator
+cost/space/reserve choices, harvester capacity and turret tax-only payback.
+No game restarted; runtime effectiveness remains to be evaluated next game.
+
+# Nuclear balance and completed-game review — 1.0.595
+
+User set nuclear price2000 and nominal output2000. Updated source default plus
+installed `mods/dunecity/ObjectData.ini`; other installed mods untouched. Existing
+health-scaled nuclear output remains, windtraps stay300credits/100power independent
+of damage while alive. Version reseeding will carry source defaults into DuneCity.
+
+Completed session `1788795517885598-0` ran v593 (not v594 opening). White slot3 is
+Fremen. At minute5 its land value68 vs orange Mercenary41, with identical population
+and almost identical spice income. Earlier rocket service orders (minute9.39 vs
+12.27) preceded value219/crime33 at minute12 vs orange55/210, producing much higher
+tax income. At minute25 white had14ref/40harvesters/7HF vs orange5/13/3. Final white
+city net241814 plus spice148545; orange125617+61865. White lost0ref/0HF/7harvesters;
+orange11/5/21. All houses alive when user ended game. Purple Rebels also strong,
+with18HF and124launchers at end; do not call this a confirmed white win.
+
+Recommendation ONLY (not implemented): choose generators by actual/queued near-term
+power shortfall, free legal land, industrial demand and available cash after
+refinery/harvester/military reserves. Wind suits small incremental demand and
+industrial jobs; nuclear saves land and wins direct capex once >=7 windtraps would
+be needed at current prices. Preserve nuclear blast clearance/health risk. User's
+claim equal power per credit is incorrect: wind3credits/power, new nuclear1.
+
+# Spice-first city opening — 1.0.594
+
+Live v593 session `1788795517885598-0`: all four houses ordered only one
+refinery despite ~193000 spice share each. The first factory saving rule was
+too early; radar/light/power spending delayed the factory until cycle~16000
+while only one refinery supported income. City opening now reserves for up to
+three refineries (bounded by sustainable map-share harvester target), ahead of
+R/C/I seeding and factory prerequisites. Refineries provide initial harvesters.
+Missing legal sites do not lock planning. Queued refineries count. Optional
+power-surplus construction waits until this opening is complete; actual power
+shortage recovery still precedes it. Added `city_spice_opening` telemetry with
+target/count/spice share/price/funding. Vanilla unchanged. Policy tests cover
+rich/scarce/no spice and a one-harvester limit. No game restarted.
+
+# Starter survival and completed power placement — 1.0.593
+
+Session `1788794508386046-0` confirmed tiny-settlement gang outbreaks: first
+house4 outbreak cycle8346, residential population40 (800 displayed residents),
+local crime250. Custom unrest now requires 5000 displayed total population per
+owner, resetting progress below it. Micropolis crime calculations remain intact.
+Outbreak events include population/minimum_population; boundary tests added.
+
+House4's completed reactor was rejected seven times at (12,183): legal footprint
+and blast clearance but threat300–500. Completed generators now fall back to
+the least exposed legal site, maintaining blast spacing, roads and zone access.
+Logs `placement_power_recovery`. Ordinary planned construction keeps its threat
+veto. Primary city deficit/reserve power rules require funds for nuclear orders,
+otherwise using windtraps instead of tying up a poor starter yard.
+
+House5 ordered 75 R/C/I before its first heavy-factory order at cycle62495;
+radar only cycle58795. Cheap zones consumed cash below infrastructure thresholds.
+After one R/C/I seed and refinery, city AI saves actual price for an available,
+placeable heavy factory or radar/light prerequisite, ahead of further zones or
+civic services. Logs `city_bootstrap_reserve`. Extra city refineries now need
+their price plus300 instead of4000, still requiring fleet demand and a factory.
+
+Build, dependency checks and bundle signature passed. Ctest:455 passed,2 known
+parseDouble("nan") failures,3 skipped (460 cases). No game launched/restarted;
+priority changes still need live gameplay validation in the next test.
+
+# Early crime and refinery retreat — 1.0.592
+
+Session 1788793767206934-0 (v590, 4P192 DuneCity) showed average crime250
+at cycle3800 with only 40 residential population. Density was incorrectly stamped
+as overlapping radius2 halos. Now uses Micropolis populationDensityScan exactly:
+point-set source min254, three non-dithered centre+cardinals /4 passes (clamp255),
+then byte-map doubling. Map block2 is retained. No invented population crime cap.
+Reference scan.cpp populationDensityScan/smoothDitherMap; default donDither=0.
+
+Harvester safety logged 21 redirects; several vehicles carried 350+ spice with
+current danger0 and old destination danger300. Visible threats were triplets of
+troopers spawned by crime. Foot infantry no longer adds to harvester danger (still
+counts for tactical defence). Threatened/unsafe-destination harvesters prefer a
+safe owned refinery/dropoff using existing network movement commands. An active
+safe unload trip retains control instead of being overwritten by spice searches.
+If no safe refinery corridor exists, prior safe-field/dispersal fallback remains.
+No game launched or restarted.
+
+# Shared civic investment selection — 1.0.591
+
+Replaced the city service picker with a shared police/rocket search, evaluating
+legal police footprints and turret junctions independently. The prior fallback
+amenity picker no longer bypasses this comparison. Essential military/power
+priorities are unchanged. Each candidate compares credit-equivalent benefit
+(occupied-property crime removed + one-year tax gain + conservative growth tax
++ threat-based defence value) against construction + funded annual upkeep +
+power cost + a separate police overlap placement penalty. Emergency allocation
+requires >=100 aggregate crime reduction; low-crime amenities can qualify with
+positive net return without any immediate crime reduction.
+
+Tax gain uses actual total city population, tax rate and property-average land
+value sensitivity. Park prediction matches the existing coarse-cell accumulation
+in stampFalloff, saturates at 250 and includes reserved amenity projects. Police
+can earn tax credit by removing the existing >190 crime land-value penalty.
+Growth is explicitly an estimate: up to 25% of one demanded additional level,
+scaled by value improvement, only while powered and pollution <128. Defence is
+a weighted estimate from visible armed enemies within 12 tiles of heavy factories,
+repair yards and reactors (reactors doubled); existing/queued turrets discount it.
+No enemy threat means no defence credit; unpowered turrets receive none.
+
+Both best eligible candidates and the winner are logged as city_service_candidate
+and city_service_investment, including every score/cost component. Policy tag is
+civic-investment-v36. Integer ordering and deterministic tile traversal preserve
+multiplayer behaviour. No game launched or restarted.
+
+# Crime construction allocation and police spawn limits — 1.0.590
+
+For populated, living owned R/C/I zones, dangerous means crime >=192. At >=25%
+dangerous, reserve one in four construction orders for crime services; above 50%,
+one in two. Essential power/bootstrap recovery still runs first. A saturating
+non-service order counter advances only on accepted non-road/non-slab orders,
+resets on a selected crime service, and is persisted in save version 9828 (older
+saves default to immediate response). Existing fallback service selection remains.
+Chosen crime-service location is retained instead of reselecting a different
+defence site later. Telemetry includes the zone counts, interval and counter.
+
+Police cooldown is twice the palace cooldown. Police batches stop at 100 military
+units owned by that player (transport/harvesting/MCV/ambient excluded) and retain
+house limits. Sidebar overlay reads "Unit limit reached" while capped and clears
+automatically. The suggested 2000 map-wide cutoff was rejected and removed.
+QuantBot Brutal-controlled houses also check
+each unit against the same military valuation as the production allocator,
+including earlier spawned batch members. At/above the limit nothing spawns;
+fully blocked batches retain readiness. No game restarted.
+
+Current Twin Cities session 1788790735257321-0 is still 1.0.589. Snapshot during
+analysis: Harkonnen 49 police/5 rocket crime selections; Ordos 60/10. Old comparison
+rejects zero-crime-benefit turret sites even with amenities, and uses raw amenity
+points rather than projected tax or upkeep. User requested analysis, not a new
+turret-versus-police balance change. Keep that comparison intact for now.
+
+# Crash repair — 1.0.589
+
+The September 7 23:55 crash was a stale-object ABI mismatch, not police diffusion.
+macOS report `dunecity-2026-09-07-235532.ips` identifies the fault at
+CityStatsBox::update +3032 (the in-game signal stack misleadingly reports the
+previous call return address +1852). Disassembly reads pollution vector data at
+CitySimulation+0x4a8 while the rebuilt simulation stores it at +0x5a8, following
+the new environment summary fields. StructureBase.cpp.o was two hours old and
+contributed the obsolete inline CityStatsBox implementation. Ninja recorded zero
+dependencies for it and five other objects, so header changes did not rebuild it.
+
+Performed a complete clean build. Verified sidebar now uses pollution+0x5a8 and
+land value+0x5c0, matching simulation initialization. All existing object dependency
+records are populated; bundle signature passes. Added scripts/check-build-deps.py
+and required pre/post-build checks in AGENTS.md. Guard tested against a deliberately
+empty Ninja dependency record. Crash log/binary preserved in /tmp/dunecity-588-*.
+No game launched. Gameplay confirmation remains for the next user test.
+
+# Police diffusion — 1.0.588
+
+Replaced linear police halos with Micropolis source accumulation followed by
+three `(center + neighbours / 4) / 2` integer smoothing passes. Full source
+strength is 1000, turrets 150; funding, missing power, and missing perimeter
+road scale the source, emitted at the first road. Grid uses six tiles instead
+of eight to preserve two zone-plus-road pitches (2+1 here, 3+1 in Micropolis).
+Actual overlapping sources are summed before smoothing, never penalised.
+AI spacing penalty remains placement-only. Its isolated-source estimate uses
+the same diffusion/boundaries, with small rounding differences versus combined
+sources. No running game relaunched. Prior 586 build failure was corrected:
+missing TextManager include. Budget summaries/sidebar categories are in bundle.
+
+# Full-capacity heavy-factory allocation — 1.0.579
+
+Live vanilla session `1788769143717332-0`, 5P128 All against Atreides, showed
+Atreides with 6k–74k spendable credits and 8k–55k military against an 80k cap.
+Of 7,109 heavy allocation decisions, 6,805 were
+`no_affordable_positive_deficit`, leaving factories idle because the normal
+one-unit mix horizon considered a proportionally balanced small army complete.
+When that happens below the military cap, the allocator now uses a deterministic
+doubling expansion horizon, selects the largest affordable configured-mix
+shortfall, and fills the lane. It repeats in stages until the cap or resources
+become the constraint. `expansion_horizon`, `expansion_fallback` and candidate
+`expansion_deficit_scaled` make the reason directly queryable in telemetry
+version 6 / policy `full-capacity-allocation-v31`. No game launch, commit or push.
+
+# Main-force harvester strikes — 1.0.578
+
+Removed the below-threshold 2–6 unit recovery raid. At a qualifying attack
+window, a stateless multiplayer-safe roll selects a safe exposed enemy harvester
+about one third of the time; every available main-force unit receives a forced
+order against it. The base and harvester-escort reserves remain assigned. A
+turret-covered field, returning/non-harvesting harvester, or local defender value
+above 2000 falls back to the ordinary HUNT wave. The force budget is the entire
+available force for a strike and the existing deterministic commitment percentage
+for a hunt. `harvester_strike` events, five-second progress/outcome samples and
+SQLite operation labels make full-force outcomes queryable; old captures remain
+`legacy_small_raid`. No game launched, commit or push.
+
+# Neutral radar visibility and light-raider tactics — 1.0.577
+
+Neutral now uses a dedicated bright cyan radar marker in every mod, instead of
+the vanilla grey palette entry that merges into rock. The override is minimap
+only; Neutral sprites, UI and lobby colour mapping stay unchanged.
+
+QuantBot trikes, raider trikes and quads now evade an armoured tank that is
+actively targeting them within its weapon range, retreating two tiles beyond
+that range. A tank hit uses the same immediate retreat even between AI updates.
+While hunting and not on a forced command, light raiders choose local visible
+launchers, harvesters, light raiders and infantry/troopers within 12 tiles over
+their normal target. Decisions are deterministic and logged as
+`light_raider_evade` and `light_raider_target`. No game launched, commit or
+push.
+
+# Approved final573 follow-up — 1.0.576
+
+User approved recommendations 1,2,4,5 and explicitly declined 3. Implemented:
+custom-match main-wave minimum actual dispatch of 6 units / 3000 value with
+15-second retry; stable harvesting anchor (30-second dwell, 25% larger cluster,
+immediate danger/depletion override); largest affordable positive HF allocation
+deficit with queued units and one-funded-unit horizon, no unconditional tank
+fallback; raid members/rewards/losses/outcomes and sampled duration logging.
+Campaign dispatch thresholds are preserved. No ornithopter gate change: still
+planning money >1200. No other air/production strategy changes.
+
+Save format 9827 adds QuantBot rally selection cycle after supportMode. Older
+saves expire the initial dwell. Pure fixed-order integer policies use no RNG.
+Raid observations are runtime-only and do not affect decisions. Game teardown
+flushes active raid outcomes before object cleanup and logger shutdown.
+New SQLite views and details in AI-DECISION-TELEMETRY.md. No gameplay launched.
+Built 1.0.576. C++: 444 passed, 2 existing parseDouble("nan") failures, 3 skipped.
+Python analytics: 11 passed. Version metadata, bundle and codesign verified.
+No launch/restart, no commit/push.
+
+# Final573 match analysed
+
+AI-573-FINAL-ANALYSIS.md;49,427events,auditclean,finalsummary/session_end.
+LocalOrdosdefeat;Atreidesalsoeliminated,Sardaukar58,650army/25harvestersdominant,
+Neutralalive1390army/2harvesters. Economyrefined218789Sardaukarversus113325/160099/
+173800;harvesterloss27vs63/55/48. Gunselection0;defeatedcarryalls0;kitingcommandsactive.
+19recoveryraidorders,outcomesnotlogged. Sardaukarrally1581evaluations543distinct
+suggestions49>10tilejumps;do notclaimallareexecutedrelocations. Mainwaveeligibility
+bug:25,350armybut900eligiblecaused1unitwave,41forcedground. Recommendations:
+minimumeligiblemainwave;stableharvestanchor;perclusterescortmetrics;costbasedairgate;
+deficit-basedHForders;raidmember/outcomelogging. No newgameplayeditsinanalysis.
+
+# Ornithopter live review and decision diagnostics — 1.0.575
+
+User askedwhyfewornithopters. Currentmatch573session1788753759241895-0,vanilla
+4corners seed1137063083. AI-573-ORNITHOPTER-REVIEW.md capturesstable20minsample.
+Air reward/lossAtreides.36,Ordos.57,Sardaukar.45,Neutral.70; targets~9.6/14.8/7.2/6.8%.
+25/39/19/28acceptedairordersby20min. Actualaircountslowbecauseoflosses,notzeroorders.
+Code subtractsqueuedcommitments/priorordersand>=2kreserve, thenrequires>1200for600
+orni; carryallsandupgradebranchhavepriority. No gameplayretuningin575.
+Addedperiodicair_production_decisionwithprecisereason,planningbudget/threshold,
+shares/committedvalue,carryallcount/target,andproducerstate. Availableonlynew575runs.
+Refactoredbranchbooleansmatchpriorconditions. Built575,440C++pass,2existingnanfail,
+3skip;10Pythonpass,version/bundle/signatureverified. No gamelaunch/restartorcommit.
+SQLitebuild/review-573-live.sqlite importedlivecapture; onepartialtaildeferrednormal.
+
+# Required-power display restored — 1.0.574
+
+WindTrapInterface always shows numeric Required alongside Output and Produced,
+including vanilla. RemovedPower:Notrequiredreplacementwhichhidactualdemandwhen
+rocket-turretpowerwasenabled. Displayonly; simulationpowerpolicyunchanged.
+Build574, version/bundlesignaturecheck; no additional testsforlabel-onlychange.
+No game launch/restart, no commit/push.
+
+# Constant windtrap output — 1.0.573
+
+User clarified damage must not reduce windtrap generation; only DuneCity nuclear
+plants scale with health. generatorOutput helper returns full nominal whilealive
+for WindTrap, AdvancedWindTrap andScoutpost; nuclear scalesonlyisCitySimEnabled.
+Zerohealth removesoutput, preservingdeltaaccounting/destructorcleanup. Removed
+QBot repairDamagedWindtraps power-recovery specialrule; ordinaryrepairsremain.
+Game::load rebuilds producedPower afterallobjectsload fromallfourgeneratorclasses,
+so olderhealth-scaledtotals do notremainstale. Powerdemand/saveformatunchanged.
+Built573;440C++passed,2preexistingnanfailures,3skip; source/bundleversion/signature
+verified. Unitcoverageincludesdamaged/full/dead/noncityreactor andzero-double-removal.
+No interactive gameplay/save-load smoke test performed. No game launch, commit/push.
+Policyconstant-windtrap-output-v29. Prior572rocketturretpowerexceptionretained.
+
+# Vanilla rocket-turret power and defence preference — 1.0.572
+
+User clarified vanilla: when rocketTurretsNeedPower is on, AI must supply power;
+otherwise one windtrap suffices. Ordinary vanilla power bypass stays unchanged
+(no production/radar penalty or power upkeep). RocketTurret checks actual global
+produced>=required when toggleon, independentofHouse::hasPower bypass; historical
+campaign/skirmishAI exemption is retained only for power-required nonvanilla modes.
+QBot turretbuffer now respects toggleevenvanilla, restoresgeneration for existing/
+queuedrocket turrets if actualpowerdeficit. Existing225buffer and onegeneratorpending
+checks retained. Telemetryrocket_turrets_need_power distinguishes vanillaexception.
+Vanilla gun turrets came from separate ground_defense fallback. It now chooses
+rocket turrets if enabledandtechlevelavailable, never substitutes gun turrets while
+waitingforCYupgrade/power. Gunsremain only belowrocket tech or rocketdisabled.
+No removal of existing guns. No citycrime/economychanges, no newRNG/saveformat.
+Policyvanilla-rocket-power-v28. Built572,439C++passed,2preexistingnanfailures,3skip;
+source/bundleversionandsignatureverified. No game launch; no commit/push.
+
+# Harvest-area main force and demand-based production — 1.0.571
+
+User corrected569: extra high-tech needs priorities, not arbitrary cap; only
+all factories making ornithopters should justify more. RemovedhighTechFactoryTarget.
+needsProductionLane checks completed=committed, >=75%busy, funded unit deficit,
+credits>=economyreserve+factoryprice+1000. CY computes next-wave heavy/air deficits
+from allocation fractions versus actual+queued units. heavy_unit_backlog rule
+comes after essential economy/earlyfactory rules and before optional Starport/tech.
+Existing24HFceiling remains; missing first-air unlock remains as before.
+Extra air requires ALL completed HTactively makingornithopters (notheld/upgrading),
+no pendingHT, funded air deficit, and no heavybacklog unlessHFceiling reached.
+Carryall queues alone cannot expandair. builder_status logs bothdeficits/backlogs
+and high_tech_building_ornithopters. Snapshotbusycounts update each build pass.
+
+findSquadRallyLocation picks safe adjacent tile beside densest radius6active
+harvesting cluster, ignoring returning/inactiveharvesters; stabilizesnearoldanchor.
+Refresh500cycles, resting combat units spread5x5nearanchor. Active targets/HUNT/
+retreat/forced units andbase/escortroles preserved. Existing fallbackwhen no safe
+workingfield. No path guarantee: sampled tile and normalpathfinder governroute.
+At a normal attack window, `shouldUseMainHarvesterStrike` deterministically selects
+an exposed, actively harvesting enemy harvester about one third of the time. It sends
+the entire currently available main force (base and harvester-escort reserves remain)
+with forced target orders; otherwise it launches the ordinary HUNT wave. It refuses
+turret-covered fields and escorts worth more than 2000. The policy is stateless and
+does not consume the multiplayer RNG stream. Telemetry records `harvester_strike`
+and five-second progress/outcome samples; SQLite labels older small raids
+`legacy_small_raid` and new operations `main_force_strike`.
+
+Built571;438C++pass,2existingnanfailures,3skip;10Pythontestspass. Version/bundle/
+signatureverified. No gameplay launch/test, no commit/push. Priorheartbeat paused.
+Actualmatch behaviour stillneeds nextmatch validation. Saveversion9826unchanged.
+
+# Final568 analysis and defeated carryall cleanup — 1.0.570
+
+User exited568 with Sardaukar winning. Actual end result ended_without_result;
+Atreides defeated, three houses alive. Final46,302 events audited; rewards valid.
+AI-568-FOUR-CORNERS-ANALYSIS.md includes all-house performance/value/kill bonuses,
+allocation histories at5minute intervals, economy and recommendations.
+Engine log copied build/review-568-final-engine.log; heartbeat paused after final.
+Carryall::update now destroys carrier when owner !isAlive(), returning immediately.
+Uses normal destruction/bookings/cargo cleanup, also inherited ChemicalCarryall.
+No recursive iteration over global units in House::lose. Team0 remains alive under
+existing rules; an owned combat unit/MCV still prevents defeat as before.
+Built570, version/bundle/signature verified;436 tests pass,2pre-existing nan failures,
+3skip. No gameplay launch or runtime defeat test performed. No commit/push.
+Recommendations are not implemented automatically;569 factory/kiting fixes included.
+
+# Air capacity and defender kiting — 1.0.569
+
+Live568 session1788747908951557-0 is vanilla4corners seed78385311, four Qbots
+Atreides/Sardaukar/Mercenary/Neutral. By~12minutes each had12 heavy factories,
+3–4 high-tech,15–17 refineries; cash fell to2–3k. No evidence to raise HF cap
+again from this snapshot. Air expansion had no ceiling, only all-busy check.
+Now high-tech target clamp(1+completedHF/8,1,3); queued high-tech counts against
+it. First-air unlock remains unchanged. builder_status adds target/busy.
+Defender/escort role early return bypassed existing launcher/deviator kiting.
+Close ground-target check now runs before role exclusion. Existing range-2
+trigger and Easy exemption retained. Stationary units no longer suppress kite
+because of stale destinations; only genuinely moving-away destinations do.
+Existing path-queue stress guard and retreat geometry retained. combat_kite
+records issued moves for subsequent analysis;568 cannot show these new events.
+Policyair-cap-kiting-v26; no save or random-stream changes. Monitor heartbeat
+review-next-dunecity-match active every5minutes for exact568 session, quiet unless
+material new findings; DBbuild/review-568-live.sqlite, statebuild/next-match-monitor.json.
+No game launch/restart/control, no commit/push. Built569 for next user launch.
+Validation:436 C++cases pass,2 pre-existing parseDouble nan failures,3skip;
+10 Python tests pass. Version/bundle/signature verified. LiveSQLite31,337events
+auditclean;6,192 reward rows,zero component-total mismatches;1,152 allocationrows.
+
+# Value damaged plus20% killing-blow score and SQLite — 1.0.568
+
+User approved credit-weighted actualdamage plus20%unitcostkillerbonus, thenaskedall
+statsinSQLite. CombatReward.h calculatesclippedHPvalue, unit-onlykillbonus,noallied/
+healing/deadobjectreward. ObjectBasecaptureshealthbefore/after, creditsattackingtype
+once. Structuresgetdamagevaluebutno20%unitbonus. Deviatorconversionpreservesold10/100%
+creditproxyseparatelywithoutkillbonus. House rewardstatsintegercreditmilli+HPmilli,
+hits/killingblows. QBotusesreward/lostvalue,3kcreditrewardlearningthreshold; rawdamage
+stilllogged. Existingvanillablend/capsandopeningavailabilityretained.
+Save9826 persists rewards + rawdamage + pertype losses (previouslynotpersisted).
+Olderloadsfreshrewardhistory; streams gatedonloadedversion. House summaryserializer
+acceptsObjectDataparameter so Game destructor doesnotdereferencepossiblynullglobal.
+Policyvalue-kill-reward-v25. All-houseperiodicsnapshots+game_summaryincludecombat_rewards.
+SQLcombat_reward_samples/final andunit_allocation exposeallcomponentsandshares.
+Noextraeveryhitevents. UpdatedAI-DECISION-TELEMETRY.md hascolumnsandexamplequery.
+Do not claim old564captureincludesnewrewards. Pythonanalytics10testspass; old559DB
+upgradedwithviews,auditcleanandnonewrewardrows(noinventedhistory).
+Built568; CTest434pass/2existingnanfailures/3skip; Pythonanalytics10pass.
+Source/bundleversionandsignatureverified; logsbuild/combat-reward-568-{build,tests}.log.
+No game launch/restart; no commit/push.
+
+# Tech-aware opening mix — 1.0.567
+
+User wants small high-tech trike/quad opening ratios and tech/availability-dependent
+defaults, plus advice on improving learning. UnitMixPolicy::openingMix allocates
+light15%attech4,8%at5–6,4%at7+,30%below4whenheaviesalsoavailable. Onlylightavailable
+means100%ofavailablevehiclemix; nofactoriesmeansallzero. Quadsweight2,trike/raider1
+withinlightshare. Heavy/airhouseconfiguredratiosrenormalizeoveravailabletypes.
+ActualownedLF/HF/HighTechbuildlistsdetermineavailability(includesupgradelocks);
+CHOAMignored. Baselinesrefreshasproductionunlocks/disappears. Learningretains566
+scoringandvanillablending; scoresmaskedforunavailabletypes. No hard4%learnedcap.
+Infantrydifficultyquotaunchanged. Policytech-aware-opening-v24; unit_mixtech_level,
+opening_light_bps; mix_inputsavailable/opening_bps. Deterministicintegerhelpers,
+noRNG/savechanges. Testscovertechbands,unavailabletypes,missingproducers,upgrades,
+zeroconfigfallbackandexactsharetotal. Built567; CTest432pass/2existingnanfailures/
+3skip. Source/bundleversionandsignatureverified; logsbuild/tech-opening-567-*.log.
+No game launched/restarted.
+Algorithmrecommendationsareproposalsonly: AI-ALLOCATION-IMPROVEMENTS.md.
+
+# Adaptive trikes and quads — 1.0.566
+
+User explicitly requested trikes/quads participate in damage-versus-loss allocation.
+QuantBot now allocates one normalized8-type vehicle/air mix: tank,siege,launcher,
+specialgroup,ornithopter,trike,raidertrike,quad. New UnitMixPolicy.h usesint64scores
+(damage*1e6/(lostreplacementvalue+oneunitprice)); specialgroupkeeps700prior.
+Negative damage clamps0, disabled/tech-ineligible types get0weight. Learningdamage
+nowincludesSonic/Deviatorandlighttypes, previouslyomitted. Zero-scorefallbackavoids
+olddividebyzero. Openingdefaultlightshare12/16/20/24%difficulty dividedacrossenabled
+lighttypes, deductedfromheavy/airdefaults; infantryquotaremainsseparate.
+After3000damagelearnsall8together; vanilla50/50baselineblendand25%aircapretained,
+80%singletypecapwherealternativesexist. Othermodesunblendedlearningstillapplies.
+Lightfactoryselectshighestpositivevalue-deficitamongavailabletypes(countsqueues),
+notfewestowned; onlyprelearningminimum2bootstrap. Citylightproductioncancontinue
+withHFpresentwhenadaptiveallocationcallsforit. Acceptedordersdeductplanningcash.
+ExistingHFopportunistictankfallbackremains; these aretargets,notexactarmycomposition.
+Policyadaptive-light-vehicles-v23. unit_mix adds allocation_types=8, trike/raider/quad
+bps, light_vehicle_bps,total_damage,mix_inputs(damage,lost_value,score). All8bpssum10000;
+older5fieldscoveredheavy/airalone. rawOrni nowrawuncappedshareacross8beforeblend.
+Testscovercostefficiency/losses,zero/negativedamage,openingdefaults,disabledraider,
+normalization/caps,queuedvalue-deficitsandreproduciblepeerresults. Built566;
+CTest430pass/2existingnanfailures/3skip. Version/bundlesignatureverified. Logs
+build/adaptive-light-566-{build,tests}.log. No game launch/restart, no new save/RNGstate.
+
+# First High Tech Factory priority — 1.0.565
+
+User reports slow High Tech Factory. Live564 session1788709485434043-0, vanilla
+All against Atreides seed1806040624: firstHeavyordered1.81min, MCVs2.59–3.81min,
+16heavyordersbeforefirstHighTechat5.44min. Our earlyfactorypriority delayedunlock.
+565 customvanilla now selects firstHighTech afteranactualHFexists, beforeexpanding
+refineries/repeatedHFpriority. Checksaffordability, actualtech/placementavailability;
+queuedHighTechcountpreventsduplicatesacrossyards. ExistinglaterfirstHTfallbackand
+extraHTbusycapacityrulesremain. Earlieremergency/power/firstrefineryrulesretained.
+Policyvanilla-early-hightech-v22; rulefirst_air_productionidentifiesthenewselection.
+No city/Tornie/campaign changes. No game launch/restart. Built565; CTest426pass/
+2existingnanfailures/3skip. Source/bundleversionsandsignatureverified. Logs
+build/early-hightech-565-{build,tests}.log.
+
+# Vehicle-focused custom vanilla — 1.0.564
+
+User says the infantry barracks is unnecessary. Custom vanilla QBot no longer
+selects Barracks or WOR in its generic construction priority, freeing yard time
+for vehicle infrastructure. Existing infantry buildings may still produce units;
+campaign rebuilding and other mods remain unchanged. Includes563parallelMCVs.
+Telemetry policy vanilla-vehicle-opening-v21 identifies this build; no schema change.
+Built564, CTest426passed/2existingnanfailures/3skipped. Source/bundle versions and
+signature checked. Logs build/vehicle-opening-564-{build,tests}.log. No launch.
+
+# Parallel MCV expansion — 1.0.563
+
+User explicitly requested multiple MCVs. Removes the one-pending-MCV restriction
+for custom vanilla priority. Each eligible idle factory can order an affordable
+MCV while actual yards + existing/queued MCVs is below the cash/economy yard target
+(max8). Counts and spending update after each accepted order, preventing same-pass
+overshoot. At~100k with1yard, up to7MCVs can be pending across available factories.
+MCV unlock upgrades can also run in parallel, bounded by the remaining shortfall;
+upgrade counts are reconstructed each build pass, with no new saved state or RNG.
+City/Tornie behavior unchanged. Telemetry policy vanilla-parallel-mcv-v20 adds
+mcv_shortfall and mcv_upgrades_in_progress; old boolean mcv_upgrade_in_progress kept.
+Built563, CTest426pass/2existingnanfailures/3skip; version and signature verified.
+Logs build/parallel-mcv-563-{build,tests}.log. No game launched/restarted.
+
+# Wealth-funded vanilla factory expansion — 1.0.562 (2026-09-07)
+
+User wants the100k custom vanilla opening to expand aggressively viaMCVs/HFs.
+Latest two sessions are559 campaigns (SCENH019/022), not a new custom test; no561
+capture. Requeried build/review-559-vanilla.sqlite: factory target1 at97k, then
+tech-policy blocks at93–95k. See appended AI-559-VANILLA-ANALYSIS.md follow-up.
+562 changes vanillaFactoryTarget to allow cash-funded capacity above harvester cap:
+min(existingpolicy,max(harvesters/3,1+max(0,spendable-10000)/4000)), bounded1..24.
+Early custom vanilla factory selection at>=20k targets2HFs/CY, countsqueued, runs
+after refinery needs andbeforestarport/optionalinfra. Legalavailability/placement,
+army/unitlimits remain. Vanilla usesactualtechavailability, removingextraRepair/IX
+policygate onHF expansion. City/Tornieunchanged. Includesall560/561MCV,cap,mixfixes.
+Policyvanilla-cash-expansion-v19; rulecash_factory_expansion, builder_status adds
+heavy_cash_target/heavy_economy_target/heavy_opening_target. No RNG/savechanges.
+Build562 completed; CTest425pass/2existingnanfailures/3skip; bundle/version/signature
+checked. Logs build/cash-expansion-562-{build,tests}.log. DO NOT launch/restart game.
+
+# Current vanilla review and combined arms — 1.0.561
+
+DO NOT launch/restart the game; no commits/pushes. Report AI-559-VANILLA-ANALYSIS.md.
+559 session1788699472069518-0 finished at17.97min, ended_without_result/allhousesalive.
+7990 events imported into build/review-559-vanilla.sqlite, audit clean; engine log
+preserved. Army at10.16min only12590 versus41390 in557 (differentseed). Early wealth
+failed to accelerate yards/MCV upgrades. Pending560 fixes below address this and
+named-housecap40→60 fornewmatches. No560testmatchhasoccurred.
+561 blends learned vanilla unit mix50/50 withconfiguredhouse mix andcapsair25%;
+78%airtarget hadsqueezedlaunchers/Sonics, thenHFtankfallbackdominated(136built125lost).
+Openingmix andcity/Tornieadaptationunchanged. Policyvanilla-combined-arms-v18.
+Telemetry raw_ornithopter_bps, blended_damage_per_loss basis, forced_with_target/
+forced_without_target. Do notcancel forcedorders blindly: mayalreadybefighting.
+IMPORTANT: pre561 house_comparison.military wascumulative, notcurrent. Corrected
+usingunitcounts×priceexcludingMCV/harvester/carryall/worm; military_basis marks it.
+Build561 successful; CTest424pass/2existingnanfailures/3skip. No game restarted.
+
+# Wealthy vanilla MCV priority — 1.0.560 (same pending build)
+
+User observed559 with~95kcredits,18harvesters/6refineries,1HF/1CY,noMCV at6.61min.
+They explicitly want MCVs prioritised with plentiful cash. Supersedes558 strict
+harvester-gated yard target: target=max(economy target,1+spendable/10000), max8.
+Vanilla custom QBot prioritises affordable MCV before more harvesters, one existing/
+queuedMCV at a time; also prioritises the required HFupgrade before harvester orders
+can starve the unlock. Only one factory unlock upgrade is in progress at a time.
+Keep2kreserve andprice+1kspendableguard. Other factories can keep producing harvesters
+while theMCV isqueued/deploying. City/Tornie order unchanged. Source560 also includes
+named-house60capfix below. Current559game is unchanged; no restart/launch.
+Policy vanilla-mcv-v17 adds cash_construction_capacity order rule, mcv_unlock event,
+vanilla_yard_target computed fromcurrentloggedspendable, mcv_upgrade_in_progress.
+Tests cover wealth override, affordability, oneMCVpending andmax8.
+Built560 successfully; CTest423passed/2existing nan failures/3skipped. Version/plist
+560 and bundle signature verified; logs build/mcv-priority-560-{build,tests}.log.
+
+# Named-house vanilla cap correction — 1.0.560
+
+User is playing559 session1788699472069518-0, vanilla All against Atreides,
+seed2045383069, QBotBrutal. DO NOT restart it. Current559 correctly logs modeflags,
+queue liabilities and house_comparison, but engine/AIcap40 exposed an omission:
+558 applied +50% only in INIMapLoader::getOrCreateHouse, not the ordinary named-house
+loading path. Both paths now apply the existing tested vanilla capacity helper;
+explicit overrides and city/other-mod limits remain unchanged. New matches in560
+will use60 here. Existing559 match/old saves keep40. This test can assess other
+changes but must not be reported as evidence forcap60.
+Monitoring automation reactivated for this exact session, comparisons against557,
+then pause after result report. State in build/next-match-monitor.json. No gameplay
+changes beyond fixing the omitted default-cap application. Build560 for next launch.
+
+# Visible active mod — 1.0.559
+
+Main menu replaces misleading generic Dune City logo with a centred `MOD: VANILLA`
+(or active mod) banner above buttons, uppercase 24px white, thickened lettering on
+opaque black. Works in classic/enlarged menu layouts and reflows when mods switch.
+Version footer remains separate. Gameplay badge uses20px uppercase lettering onblack,
+reads the match's mod from GameInitSettings and sizes to text. Existing watermark
+visibility preference is retained. Changes are presentation-only. Build559 succeeded;
+version metadata and signature checked. No game launched/restarted; visual runtime
+verification remains for user's next launch. No new tests for this small UI change.
+
+# Vanilla loss review and next build — 1.0.558 (2026-09-06)
+
+DO NOT launch/restart the game. No commits/pushes. Built bundle is for user's next test.
+Full report: AI-557-VANILLA-ANALYSIS.md. Completed vanilla session
+1788694972180753-0 (23.62 simulation minutes), 12,578 records in
+build/review-557-vanilla.sqlite, audit clean. Formally ended_without_result, nearly
+wiped out. Four allied opponents start with 51 refineries/28 HF/588 rockets; not
+an equal-start comparison. QBot had 8CY/6HF/1ref at6min, 40-harvester cap, bankrupt
+later; only4 waves,17 army-threshold deferrals. No earlier-binary win-rate comparison.
+
+558: max speed4ms (was8), accumulator allowance supports render pacing. Explicit
+user request: vanilla ignores shortages/deterioration/upkeep, radar/production/
+rockets use common House power rule. Keep windtrap prerequisites, actual outputs;
+city and other named mods retain power rules using session mod settings.
+
+Vanilla QBot prioritizes spice harvesters/refinery capacity; 2k planning reserve;
+default harvester caps+50% (huge40→60), explicit lobby limits unchanged; engine old
+save caps honored. Queue liabilities deducted from new-order budget. CY target
+1+harvesters/8 (cash-bound,max8), HF target bounded byharvesters/3. Optional gun/wall
+quotas await fleet/cash; emergency anti-air retained. Brutal vanilla custom threshold
+cap24k/Hard28k; respect lower config. Brutal threshold recheck15s. Deterministic
+commitment20–100 usesbest3samplesBrutal/best2Hard; city behavior unchanged.
+
+Policy vanilla-economy-v16: queue liabilities, economy reserve, mode flags, both
+harvester caps, all-house comparison at QBot snapshots, attack eligibility diagnostics.
+See telemetry doc. Build success; CTest422pass/2known nan failures/3skipped; Python9pass.
+Logs build/vanilla-558-{build,tests}.log. No runtime win/performance claim. Next
+recommendation: general air anti-air corridor screening (59/63 ornithopters lost).
+
+# Final555 capture reviewed after quit
+
+User manually quit cleanly at74.428game minutes. Full197,457records in build/review-555.sqlite;
+game_summary ended_without_result + session_end, no capture_limit or simulation_exception.
+Allhousesalive. Final ordinarylog build/review-555-game-final.log. See final section of
+AI-555-VANILLA-REVIEW.md. Newrecommendation: densityhysteresis/minimumleveldwell; Harkonnen
+670declines+658growths inlast10min, individualzones26changes. NOT implemented ahead ofvanilla.
+RichAIs24HF/~80karmy cap, so cashstockpile alone doesnotjustify morefactories. Source557
+unchanged andready. Do notlaunchgameforuser.
+
+# Live 555 review, city investment and vanilla audit — 1.0.557 (2026-09-06)
+
+**No game launch/restart.** User next match will be vanilla. Built557 in build/bin/dunecity.app.
+Review: AI-555-VANILLA-REVIEW.md. Evidence SQLite build/review-555.sqlite through41.87min,
+98,194 records; ordinary log preserved build/review-555-game.log. Audit old data clean for
+sequence/references (does not prove semantic correctness or completed match).
+
+Critical live bug: Fremen674,200 reported power despite7reactors+2windtraps (max7,200).
+Rejected placement constructs a generator and credits power, then directly deletes it;
+default destructors leaked the contribution. Repeated failed reactor attempts explain
+phantom surplus. WindTrap/NuclearPlant/AdvancedWindTrap/Scoutpost destructors now setHealth(0),
+removing remaining power without detonating on cancellation/teardown. Failed House placement
+marks cancelPlacement before delete, suppressing fake combat-loss callbacks. Full-health
+windtrap demolition is covered too, relevant to vanilla. Existing running555/old inflated
+save totals are not retroactively repaired. Next new match is the validation target.
+
+City improvements: stable construction-yard-first planning (store IDs, resolve each time so
+redevelopment cannot retain dangling zone pointers); demanded feasible zones ahead of
+optional land-value turrets, defensive turrets still first. City MCV expansion keeps existing
+income target/max8, one in flight, MCV cost+1000 working cash rather than strict>3000; may use
+optional Palace reserve so construction investment does not starve. Accepted MCV subtracts
+planning budget. Vanilla keeps money/4000 CY policy and original ordering. Small armies keep
+one base defender; empty reserves fall back to configured emergency structure response.
+
+Vanilla: all city-only object entries disabled on new-game init, upgrade-level calculation
+also filters them. Generic ObjectData no longer silently rewrites reactor HP; city match init
+applies Starport-equivalent HP. CityStatsBox attaches/updates only when city sim enabled;
+windtrap output and requested auto-repair/demolish UI remain in both modes. City effects,
+Harkonnen ornithopter exception, zoning/overlays/palette remain city-only. General QBot
+balancing/escorts/deterministic attacks remain shared deliberately.
+
+Telemetry policy city-investment-v15: post-plan yard_planning_result (pre-plan queue=0 not
+lasting idleness), construction yard/MCV counts, planning order flag, crime above250 bin,
+power_accounting reported/generator sum/difference in snapshots. Include all4 generator
+classes; expose AdvancedWindTrap output read-only for telemetry. SQLite audit aggregates
+power mismatches; old captures with missing fields accepted. Generator lifecycle test is
+source-integration, not a full renderer/game test; Python test covers accounting alert.
+
+Build successful. CTest418passed/2baseline parseDouble(nan) failures/3skipped; Python9pass.
+Version source/config/plist557 agree; no tag atHEAD, no commits/pushes. git diff --check clean.
+Detailed recommendations in review: smaller raids below32000 Brutal gate, placement stalls,
+coalesced harvester telemetry; assess growth/outage timing after real power totals restored.
+
+# Readable DuneCity house colours — 1.0.556 (2026-09-06)
+
+User's current555 match remains running; DO NOT restart/launch apps. Built556 for nextlaunch.
+Neutral is bright cyan, Fremen ivory; standard slots H/A/O/F/S/M/N/R now use distinct
+red/blue/green/ivory/magenta/orange/cyan/violet. Definitions include/dunecity/HouseColors.h.
+getHouseColorSDL returns these ramps only for active dunecity mod, slots0..7. GFXManager
+uses existing private indexed/truecolour remapping path for these slots; avoids editing
+shared IBM.PAL terrain/neutral metal colours. Explicit player colour-slot overrides remain.
+getHouseRadarColor uses brightest shade; terrain radar colours dim to55% in dunecity
+so spice and sand do not dominate ownership dots. Classic/Tornie palettes unaffected.
+No simulation/save/network changes beyond matching game-version metadata.
+
+Build success; CTest415passed,2known parseDouble(nan) failures,3skipped. New colour tests
+check pair separation, shade order/alpha and Neutral cyan. Logs build/house-colors-{build,tests}.log.
+Metadata/plist556. Runtime visual verification remains for user's next launch; no app opened.
+
+# Startup boundary fixes — 1.0.555 (2026-09-06)
+
+User reported match-start exit in553, then again554. STOP launching/reloading the game:
+user explicitly requested this after UI verification attempts. No launch of555 performed.
+
+Preserved initial failure: build/startup-553-crash.log contains Map.h:98 Tile(92,-1)
+does not exist during initial heavy-factory search. First fix554 bounded road/paving
+callbacks via CityPlacementPolicy::assessRoadsOnMap. Regression covers four edges/corners.
+
+Further static audit found fourZoneBlockBonus independently reading off-map neighbours
+and its road perimeter. 555 skips block layouts whose full4x4+road perimeter cannot fit;
+individual edge lots remain legal, they merely receive no block bonus. Regression checks
+all candidate origins/offsets on128x128. Placement failure telemetry also bounds tile reads.
+Session1788691499646985-0 endedcycle95 and1788691615471597-0 cycle99 in554; normal log
+was overwritten by later menu launches, so exact second exception was not retained.
+Do not claim full runtime verification. New simulation_exception event wraps updateGameState
+before destructor closes telemetry; subsequent launches cannot erase that session evidence.
+
+Built555 successfully; CTest414passed,2known parseDouble(nan) failures,3skipped. Logs
+build/startup-boundary-{build,tests}.log. Source/plist555; no commit/push. GUI automation
+resolved an old /Applications copy and had bundle-cache ambiguity; do not repeat it.
+
+# Final review, multiplayer, unrest and escorts — 1.0.553 (2026-09-06)
+
+Latest old-game capture: 88.17 min,493358 events, audit clean; still live/no session_end.
+AI-FINAL-LIVE-547-REVIEW.md contains evidence and difficulty proposal. MULTIPLAYER-553-REVIEW.md
+records lockstep review and remaining integration-test limits. Do not mistake old547
+telemetry for results from these changes. No game restarted, commit or push.
+
+Build553: attack commitment20–100% of eligible AVAILABLE ground force, deterministic
+Uint32 mix of match seed/cycle/house/player. Excludes hunters, forced, damaged, retreat,
+base-defender and escort units. Existing attack threshold unchanged; fixed force ratio
+INI setting no longer determines main attack size. Logs percent/availablevalue/seed.
+QBot aircraft favour visible reactor with half ready wing within12tiles and no visible
+AA covering sampled straight approaches. Early distance filter bounds extra work.
+
+Base defenders10% of active ground combat count (floor), prefer launchers; harvester
+escorts20%, max2 per active harvester. Derived each check, excludes ongoing hunters/
+forced/retreat/damaged, moves beside harvesters, bypasses old rally and attack allocation.
+Base damage response restricted to base pool; harvester reactive scramble increased50%.
+No claim of full tactical integration testing. defence_allocation logs targets/assigned.
+
+Crime: removed250 and intermediate300 clamps; uint16 crime layer, overlay colour
+saturates255 while query/SQL retain real values. Three Unit_Trooper individuals per
+outbreak, per-owner16x16district. Timers~176sec at201,90sec250,60sec300+; reset if<=200.
+Uses existing living opposing faction, rotating deterministic selection; no newhouse.
+Respects unit capacity, enabled flag and local free space. No enemy => no spawn.
+crime_unrest logs origin/owner/district/crime/spawned/hostilehouse/members/failure.
+Save9825 appends district progress; older saves initialize zero.
+
+Hostile armed visible units within4tiles of a property's footprint reduce landvalue:
+max80 atcontact,64/48/32/16 at1/2/3/4tiles; strongest only, no cumulative army blob
+penalty, floor1. Friendly/unarmed units excluded. Recomputed, no lingering loss.
+Diagnostic hostile_value_penalty map and growthfield/SQLite city_growth column.
+
+Network handshake now hard-rejects different game versions; mod sync cannot fix
+executable differences. Tests cover acceptance/rejection and reproducible attack rolls.
+Full two-peer play/save/load test remains. Existing foreign-player command validation
+and whole-state checksums are separately documented follow-up concerns.
+
+Validation logs build/unrest-{build,tests,analytics-tests}.log. Latest expected baseline:
+CTest412passed,2preexisting parseDouble(nan) failures,3skipped; Python8passed.
+Source/plist1.0.553. Previous growth/low-power timing recommendation remains UNIMPLEMENTED.
+
+# Stalemate, crime, redevelopment and UI — 1.0.551 (2026-09-06)
+
+Built successfully. CTest407passed,2known parseDouble(nan) failures,3skipped; analytics
+Python8passed. Logs build/crime-coverage-{build,tests}.log. Metadata/plist1.0.551,
+no HEAD tag, no commit/push/live restart. Visual and match behaviour need next-launch test.
+
+AI-STALEMATE-547-REVIEW.md records live snapshot through40.74minutes,207,915SQLiteevents,
+auditclean. 3,998power-associated declines; successive decline median1.248sec versus
+growth19.968sec. Recommendations:30-45sec outage grace then~60sec perlevel; growth
+45-60sec L1->2 /90-120sec L2->3, decoupled from taxation. NOT IMPLEMENTED timing changes.
+
+Micropolis stacking verified in simulate.cpp1545 and scan.cpp415-432. Fixed duplicate
+per-worldtile police stamping into2x2cells; distinct sources still add, existing16tile
+falloff retained (not Micropolis diffusion). Wide basecrime300 then coverage then final250.
+New derived, unsaved crime_before_police and police_coverage layers/snapshot/growthfields;
+SQLite views upgraded with those and police_cost_milli. Policy crime-coverage-v12.
+
+Human Destroy button in DefaultStructureInterface applies to owned buildings in allmodes;
+new commands appended. Zones clear without explosions/refund, retain roads/concrete;
+other buildings use their ordinary destruction effects, including nuclear blasts. Deliberate
+removal excludes combat loss counters/callbacks; zone_demolished/building_demolished logs.
+Zone density shows /3, turret lines Park:1fountain and Police:15%.
+
+AI may redevelop up to4low-value(<=64) own R/C/I lots when no normal site exists for
+needed heavy factories/windtraps/reactors. Normalized owner demand, density/value and
+rear position rank displacement. No hospital/church removal. Demolition ONLY after
+successful building order; reserved sites, threat, reactor-spacing and road checks remain.
+Concrete is skipped for these redevelopment orders (building can start damaged, normal
+repair applies). redevelopment_committed logs removed IDs/item/demand/value/density.
+
+Soft 2x2 zone-block preference keeps each lot2x2; 5tile repeating block+roadgap and
+completion bonus. CityRoadImpact models the actual automatic perimeter road additions
+so adjacent lots can replace internal road segments without severing connectivity.
+Important next-match watch: avoid immediate rezoning of demolished footprints and verify
+actual factory placement completes, harvester unloading, and crime balance with true15%.
+
+# Overlay buttons — 1.0.550 (2026-09-06)
+
+Added Land Value and Crime buttons directly below Auto Repair in the empty-selection
+DuneCity sidebar. Click an active button to clear the overlay; choosing the other switches
+layers. Pressed states follow keyboard shortcuts too. Hidden in normal Dune mode and
+while the object panel is showing, like Auto Repair. Local presentation only, no simulation
+or save changes. Build log build/overlay-buttons-build.log; CTest402passed,2baseline
+parseDouble(nan) failures,3skipped. Source metadata/plist1.0.550, no tag/commit/push/restart.
+Live visual check remains for next launch.
+
+# Current follow-up — 1.0.549 (2026-09-06)
+
+Uncommitted; live match remains 1.0.547. Do not restart it. 1.0.548 added DuneCity-only
+Harkonnen Ornithopters through both HighTech upgrade discovery and build-list gates;
+normal Dune unchanged, standard IX/tech/upgrade requirements retained.
+
+1.0.549: police sidebar reinforcement labels split into short rows, portrait region
+fixed-height, taller stats rows, correct Police role. Budget now has station/rocket/gun
+counts and separately funded annual costs. Both turrets give ONE fountain bonus (15),
+15% police strength. Station100, rocket15, gun7.5 upkeep; FixPoint billing retains
+fractions at every funding level. Saved legacy integer expense caches remain compatible
+and round the aggregate; telemetry police_cost_milli is exact, police_cost rounded.
+
+Harvester policy harvester-redistribution-v11: actual circular weapon reach instead of
+construction's square range+2 buffer; no 30sec shelter veto, no120sec field veto.
+Prefer reachable-by-corridor safe spice, soft recent-loss penalty, per-harvester destination
+reservations and crowd penalties; if no safe field, disperse nearby without base attraction.
+Escape corridor permits leaving danger but rejects rising danger/re-entry. This is a
+straight-corridor approximation, not a pathfinder guarantee; checks recur every2sec.
+New harvester_safety actions redirect_spice/disperse/no_safe_route log current and old
+destination danger, candidate/rejected-route counts, memory/crowding penalties, cargo.
+
+Live session1788686750413469-0 sampled:82,514 retreat commands,58,832 with zero current
+position danger,900 already at commanded destination. Destination danger was not logged
+in the old decision, so don't infer all58,832 were entirely safe.
+User police house4 object1221 at(118,10),cycle38146: roads on all four footprint sides;
+21 R/C zones within16 tiles before placement allcrime0, ten nearby rocket turrets.
+Good geometric access, poor incremental crime payoff. Don't relocate user's station.
+
+AI police auto-deployment no longer excludes local/spectated AI house (5sec retry).
+Human houses retain manual deployment. Command-number combinations no longer trigger
+city overlays/groups; Shift+5 land value, Shift+1 off remain.
+
+Validation: build successful; CTest402passed,2known parseDouble(nan) failures,3skipped;
+Python analytics8passed. git diff --check clean, three metadata files and app plist1.0.549,
+no HEAD tag. Logs build/civic-harvester-{build,tests}.log. Panel layout/behaviour awaits
+next-launch visual check; no live restart, commit or push.
+
 # Handover — DuneCity session, 2026-09-06
+
+## City analytics before next match: 1.0.547
+
+User authorized complete city stats logging before starting the next match. Gameplay
+unchanged (policy tactical-safety-v10), telemetry4. Added30sec crime bands/threshold
+counts, initial/120sec full QBot building snapshots, city level-change causal records,
+~120sec unchanged growth evaluations, and global terrain/roads/effect-layer snapshots.
+See AI-DECISION-TELEMETRY.md for fields, cadence, raw population scale and phase caveats.
+JSONL limit256MiB. scripts/ai-decisions.py has city_buildings/city_growth SQLite views.
+Build1.0.547 successful; CTest400passed, same2nan failures,3skipped. Python8passed.
+Logs build/city-analytics-{build,tests}.log. No gameplay tweaks, restart, commit or push.
+Next match had not started at last check; prior completed session1788680806413568-0.
+Heartbeat review-next-dunecity-match active every5min, waits quietly for first new
+match, audits/analyzes at completion then pauses. Progress build/next-match-monitor.json.
+
+
+## Police eligibility correction (analysis only; executable still1.0.546)
+
+User explicitly rejects building police at low crime or for troop payoff. Removed
+previous automatic-first-station proposal from AI-TACTICAL-STRATEGY.md.
+AI-POLICE-VS-TURRETS.md compares actual costs and proposes persistent harmful crime
++ marginal benefit/payback against legal turret alternatives. One/two extra turrets
+normally win; police niche is wide severe residual crime requiring several extra
+turrets without significant additional turret amenity/defense value. Coverage must
+model coarse stamps, not flat100/15. No police construction code added this turn.
+
+
+## Strategy clarification and police assessment (no executable change)
+
+User wants the proposed base response force to favour rocket launchers for air.
+AI-TACTICAL-STRATEGY.md updated: launcher-heavy anti-air reserve with ground screen.
+Army role allocation remains a proposal, not implemented. Source confirms QBot has
+no PoliceStation construction rule, though AI-owned stations auto-spawn units.
+Documented default economics:500build,20power,100upkeep per60game seconds;1400full
+batch purchase value every5/10min. Proposed one station after essential power/initial
+heavy production, extras for uncovered harmful crime or actual reinforcement need.
+No police-building rule added in this analysis turn. Executable remains1.0.546.
+
+
+## Tactical safety, factory pressure and reactor defense: 1.0.546
+
+Implemented user-approved items from old-match analysis. See AI-TACTICAL-STRATEGY.md
+for exact rules, limitations and the proposed70/20/10 army-role split (proposal only).
+QBot caches visible weapon danger every2seconds; checks build and final placement.
+Five-minute decaying overlapping structure-loss memory; previous60sec exclusion kept.
+Reactors favour rear relative to visible enemy bases, four clear tiles from reactors/
+HF/RY/CY (including queued reservations), and seek2rocket-turret coverage, weight2.
+Factory target adds2..4 lanes under75% utilisation/recent2min HF losses with>=8000cash;
+queued factories count, ceiling24, existing unit/army caps remain.
+Harvesters proactively retreat, shelter30sec, blacklist fields120sec, assign safe fields
+or wait; immediate damage reaction covers empty harvesters. Straight corridor danger
+is a heuristic, actual pathfinding unchanged. Escorted formations are not implemented.
+Runtime caches/memories are not serialized (save9824 unchanged).
+
+Telemetry tactical-safety-v10: threat snapshots, placement risk/rejection counts,
+heavy_losses_2min, harvester_safety actions. TacticalSafetyPolicy helpers tested.
+Build1.0.546 successful, metadata/plist agree. Ctest400passed, same2nan failures,
+3skipped; Python importer7passed. build/tactical-{build,tests}.log. No game restart,
+commit or push. Needs same-map live test to assess survival and possible over-caution.
+
+
+## Completed old-match analysis and police batch: 1.0.545
+
+See AI-FINISHED-539-ANALYSIS.md for session1788680806413568-0 (75.94min).
+54908 events audit clean; Harkonnen lost with170069credits; 344/627 completed R
+zones died within60sec. Engine log preserved build/finished-539-engine.log.
+Remaining proposals are analysis only. Source audit finds pollution growth/day parity
+coupling, pre-police clamp mismatch, coarse stamp accumulation to investigate.
+
+Police batch now9 individual troopers,1quad,2trikes, within3tiles of station using
+complete nearest-first rings. No distant fallback. Palace and police share
+Palace::getSpecialWeaponCooldownForHouse:5/10min normally, Tornie Rebels7.5min,
+Wildspade10min. Existing save9824 timer layout preserved. UI shows actual seconds.
+New police_unit_spawned logs IDs/positions; batch logs quads and skipped reasons.
+Build1.0.545 successful, versions/plist agree. Ctest396passed, same2nan failures,
+3skipped. build/police-batch-{build,tests}.log. Not restarted or committed.
+
+
+## Factory cap, police budget breakdown and Palace roles: 1.0.544
+
+User approved raising QBot's heavy-factory ceiling from 8 to24 (both city and
+classic paths). City target remains max(1+estimatedTaxPerSec/50,
+1+max(0,credits-2000)/2500), now clamped1..24. Classic keeps /4000 cash formula.
+Queued counts, military80000 limit, prerequisites and other gates unchanged.
+At23000citycredits target9; at59500target24; observed149408treasury nowtarget24.
+Policy factory-cap24-v9. Boundary/current-match regression assertions updated.
+
+City Budget now has two full-width rows beneath Police Services total: Police
+stations count + annual paid cost, Rocket turrets count + annual paid cost.
+Counts are live completed local-house items. Cost scales with pending funding,
+uses actual CityEffects cost constants (100/15) and components sum to displayed
+total. Forecast nominal uses the same live counts to avoid stale census mismatch.
+Window height380->424 to fit44 extra pixels; width420 unchanged.
+
+Palace changed from2R+2C population to one residential and one commercial zone:
+raw R16/24/40 and C1/3/5 at occupancy1/2/3. Both share existing Palace occupancy,
+capped3. Added commercial supply for Palace, previously missing despite its
+commercial population; now both supply/population match one ordinary R/C zone.
+No save layout change from9824. Existing Palace sidebar displays both portions.
+
+Built app1.0.544, metadata/plist agree. Ctest396passed, same2nan baseline failures,
+3skipped. Logs build/factory-cap24-{build,tests}.log. No restart/commit/push;
+UI presentation and live AI effects await user's next launch.
+
+
+## Auto repair, police reinforcements and city siting: 1.0.543
+
+This supersedes the zero-police rocket behavior in 1.0.542: user now wants
+rocket coverage AND annual budget upkeep at 15% of a police station. Values are
+15 coverage / 15 yearly cost vs station 100/100. Rocket land-value strength 30,
+intersection road connectivity and weighted asset defense siting are retained.
+
+New Auto repair on/off sidebar button below Ornithopter (below Chemical Carryall
+in Tornie), visible when nothing is selected, for normal Dune and all mods.
+House-wide setting defaults off. Enabling starts normal paid repairs for living
+damaged structures with >=5 credits; insufficient funds pause and funded future
+updates restart. Off prevents new automatic starts; already-started/manual repairs
+finish normally (tooltip says this). Command is attributed to the issuing player's
+house, not a caller-supplied house ID, and runs through the command manager.
+QBot starts reactor repairs for any damage whenever >=5 planning credits; existing
+health-proportional power is unchanged. Fixed rich/turret repair branches starting
+repairs on already-full structures. reactor_repair telemetry records health/cash.
+
+Police stations gain the Palace/TechCenter READY picture-button and cooldown UI.
+Default batch 3 trikes +6 individual troopers, interleaved, free, deployed around
+the station in GUARD mode. Five-minute initial and repeat recharge (Fremen Palace
+cadence). Respect unit limits, enabled unit types and deployment space. A partial
+batch starts full cooldown; total failure keeps ability ready, AI retries every
+five seconds. AI houses auto-deploy like Palace. Human commands check station
+ownership. police_reinforcements logs actual counts, zero charge and cooldown.
+
+Save format 9824: House bool after team ID; PoliceStation timer after base fields.
+Both reads are version-gated; older saves default auto repair off and fresh police
+cooldown. Existing command IDs are unchanged; two new commands appended before
+CMD_MAX. Tests updated for appended IDs and save version.
+
+City placement now accounts for whole footprints, polluting factories as well as
+I zones, and other construction yards' queued sites. Candidate tiers outrank old
+clustering scores: outside pollution radius (>5 footprint tiles) and within local
+supply reach is preferred; nearby crowded sites are fallback, disconnected sites
+last. Supply uses conservative origin distance <=16, with missing-role allowances
+for bootstrap. R requires jobs; C requires available R/I; I requires R. Existing
+road continuity/frontage checks remain. Local Micropolis source traffic.cpp and
+micropolis.h use MAX_TRAFFIC_DISTANCE=30 road steps; DuneCity TrafficSimulation
+uses 20 road steps and city growth kSupplyRadius=16 with coarse grid aggregation.
+No simulation distances changed, and origin reach is not proof of a road route.
+R/C scoring averages pollution/land value over the footprint and favors adjacent
+open sand/dunes. Severe pollution outweighs sand/value. Clean industrial buildings
+like windtraps do not get a pollution separation requirement. Placement details
+in construction_selection.site.placement_quality include tier, score, supply flag,
+nearest role origins, pollution buffer, mean value/pollution and adjacent sand.
+
+Build 1.0.543 passes 395 C++ cases, same two nan baseline failures, three skipped.
+Build/test logs build/repair-police-{build,tests}.log. Earlier Python importer tests
+pass (7). Source and app plist checked. No user-game restart or GUI playtest; no
+commit/push. New UI, saves and deployment behavior need the user's next launch.
+
+## Live heavy-factory cap diagnosis (after 1.0.543 work)
+
+User asks to explain cap before tweaking. Running match remains 1.0.539 session
+1788680806413568-0. At cycle 239400 Harkonnen:149408 credits, eight actual HF,
+zero queued, six busy, military9630/80000, no ground unit limit, power7200/5180.
+Builders say heavy_target8, heavy_reason target-met. Last five game-minutes had
+four lost HFs and four accepted replacement orders; two newly completed HFs were
+lost almost immediately. Other survivor Rebels has530104credits, eight HF and
+military81310/80000, blocked by military-limit instead.
+Current shipped running formula: min(8, max(1+taxPerSecond/50,
+1+max(0,credits-2000)/5000)). Updated source uses /2500 but still caps at8.
+Neither adapts the cap to threat/losses. No further factory-cap change made yet;
+user requested explanation and discussion of tuning.
+
+
+## Rocket defense and land value: 1.0.542
+
+User replaced rocket-turret crime suppression with twice-strength park amenity
+and critical-asset defense, then R/C intersections. Read local MicropolisCore:
+`../simcity/MicropolisCore/MicropolisEngine/src/tool.cpp` putDownPark picks either
+WOODS2..5 or FOUNTAIN. `scan.cpp` pollutionTerrainLandValueScan adds 15 for terrain
+IDs below RUBBLE, smooths terrain memory, then adds it to land value. FOUNTAIN=840
+is not below RUBBLE=44: the core has no distinct positive fountain coefficient.
+Use the agreed park/terrain reference 15 -> rocket strength 30 in DuneCity's
+existing park stamp/falloff (radius 3). This is an adaptation, not a literal
+port of fountain behavior. Existing block aggregation, land-value caps and tax
+formula are unchanged. Rocket police coverage is now zero; gun turret remains
+25. Higher value still has normal indirect city effects; rockets do not apply
+a direct crime-reduction stamp. Sidebar says Land value +30.
+
+Replaced crime-hotspot search and crime-triggered construction with weighted
+uncovered defense and useful R/C amenity siting. Nuclear weight 2, HeavyFactory
+and RepairYard weight 1. Coverage uses weapon range minus one tile from asset
+center. Existing/queued turrets suppress duplicate coverage; relocation excludes
+its own pending turret. Queued target buildings also count. Defense scores rank
+before junction preference, R/C benefit and closeness. R/C-only sites require
+cross/T/corner junction bonus and an uncovered zone below max land value within
+park range. Once coverage is established, city zoning can continue instead of
+building turrets endlessly. Rocket city siting has no generic crime/perimeter
+fallback; gun turret placement keeps its ordinary defense search.
+
+Existing road connection/render/traffic code retained; continuity and neighboring
+zone-access checks remain. `RocketTurretPolicy.h` holds testable priorities and
+bounded estimated benefit. `turret_site_evaluation` logs reason, position, weighted
+uncovered defense, estimated R/C value benefit, reactor weight and state.
+Policy rocket-amenity-v7 (schema 1, telemetry 3). Ctest: 392 passed, two existing
+nan failures, three skipped; seven Python tests pass. Build/plist version 1.0.542,
+logs build/rocket-amenity-{build,tests}.log. Ready for next launch; no in-game
+placement/tax outcome claim yet. No restart, commit or push.
+
+
+## Funded idle construction yards: 1.0.541
+
+Confirmed in live session 1788680806413568-0 (running 1.0.539, seed 1424269878).
+Harkonnen builder 78 idle with 26,298 credits (seq 6777), power 4,200/1,803,
+maximum R/C/I valves, 15/5/9 zones; heavy target five already met. Zone decisions
+explicitly reject all candidates as spice_economy_priority. The old hedge gate
+requires spiceShare <30,000 or zones <max(6,harvesters), irrespective of cash.
+Preserved 9,761 records through cycle 71,646 in build/city-growth-before.jsonl;
+summary build/city-growth-before-summary.json. SQLite build/current-growth.sqlite
+audit: zero issues. Last five game-minutes: 16/20 CY status samples idle (sampled
+observations, not exact idle duration). Full capture: 129 candidate vetoes.
+
+Removed hedge veto; ongoing city growth follows demand even on spice-rich maps.
+User clarified that needed Dune buildings should retain priority, then idle yards
+should zone whenever demand and a valid site exist. No new priority timer or
+city-before-factories override. Existing affordability and power headroom guards
+remain. Spice/refinery/harvester investment continues independently.
+
+Factory cash step reduced from 5,000 to 2,500 above 2,000 working capital;
+23,000 credits now targets eight factories, previously five. Income target,
+actual-plus-queued counts, military/unit caps and classic AI ratios preserved.
+Telemetry policy city-growth-v6 records independent zoning policy and zone result.
+See AI-DECISION-TELEMETRY.md. 390 C++ tests pass, same two nan baseline failures,
+three skipped; seven importer tests pass. build/city-growth-{build,tests}.log.
+Version source and built plist agree on 1.0.541. Running game was not restarted;
+behavioral playtest remains for next launch. No commit/push.
+
+
+## Windtrap output and clean industry: 1.0.540
+
+WindTrapInterface now shows the selected windtrap's actual health-scaled output,
+using the same getter that updates house power, alongside existing house totals.
+CityStatsBox replaces Coal Power with I-medium and shows Emissions: 0 separately
+from Local pollution (ambient pollution from surrounding industry). The extra
+emissions row is attached only for windtraps, preserving other panels' layout.
+
+Windtraps now have Industrial city role and maximum occupancy level 2, providing
+industrial supply/jobs through existing census, demand and growth code. Explicit
+pollution exemption keeps windtraps clean at all levels despite the new role.
+Power output remains independent of city occupancy. Existing windtraps acquire
+the role on the next city scan after loading with this build.
+
+Rebuilt build/bin/dunecity.app version 1.0.540; metadata and plist agree. Ctest:
+389 passed, 2 known parseDouble nan failures, 3 skipped. Updated city-effects
+regressions cover medium-tier supply/jobs and zero emissions. Build/test logs:
+build/windtrap-{build,tests}.log. No game restart, commit or push; sidebar visual
+confirmation remains for the user's next test.
+
+
+## Nuclear chain reactions: 1.0.539
+
+User requested reactor death explosions with twice palace-missile destruction
+area, reactor HP equal to a Starport, and palace AI targeting reactors.
+New `NuclearBlastPolicy` uses a circular 42-tile equivalent area (2x the existing
+missile's 21 impact tiles), radius ~3.66 tiles /117 pixels. Radial tests are
+integer-only. Structures intersecting the circle and ground units inside receive
+900 damage once (the centered missile's nine 100-damage impacts); terrain/roads
+and visible blasts use the disk's tile centers. Map edges are clipped. Air units
+retain the normal ground-nuclear immunity. Adjacent plants die and detonate on
+their own update, not recursively inside damage iteration.
+
+NuclearPlant::destroy removes remaining power, records trigger/credit owner,
+applies blast, then normal structure teardown. Destructor itself never explodes
+on quit/load. Chain-reaction credit follows the initiating attacker when known;
+direct destruction falls back to reactor owner. Pending credit is runtime-only.
+ObjectBase ignores non-healing hits on already-dead objects to prevent duplicate
+kill awards from a palace missile's multiple impacts.
+
+Default/Tornie reactor HP now 500, same as Starport. INI loading copies each
+house's Starport HP into reactor HP, including overrides. Existing saves retain
+their saved object-data balance table; use a fresh match for the new HP table.
+Centered palace strike already delivers up to 900; missile scatter is unchanged.
+Shared Player targeting selects visible live enemy reactors, prefers clusters,
+aims at their center, then falls back to existing target logic. Used by QuantBot,
+AIPlayer, CampaignAIPlayer and Mentat, without overriding manual player aim.
+
+New telemetry: palace_target (cluster score), palace_missile_launched (aim tiles,
+scattered destination pixels), nuclear_detonation (center pixels, squared radius,
+damage, trigger and credit house). Policy nuclear-chain-v5, telemetry remains 3.
+Built app 1.0.539; 388 C++ cases pass, same two baseline nan failures, three
+skipped. Logs build/nuclear-blast-{build,tests}.log. Full in-game chain/visual
+verification remains for user's fresh match. No commit, push or launch.
+
+## Power reserve follow-up: 1.0.538
+
+User requested more surplus power, especially for large cities. City AI target
+is now ceil(25% of current demand), increased to one owned generator's nominal
+output where useful; this allowance is capped at 50% of demand for small bases.
+Examples: demand 6,000 with a 1,000-output plant -> 1,500 surplus; demand 14,000
+-> 3,500 surplus (formerly 1,400). Existing cross-yard pending-generator guard
+remains, so expansion is reassessed after each generator completes. Zero demand
+adds no reserve. No change to actual power consumption/output or classic AI.
+
+Telemetry policy power-reserve-v4 (schema 1/telemetry 3) logs
+city_power_reserve_target and largest_generator_nominal in decision state.
+Rebuilt app 1.0.538. Validation recorded in build/power-reserve-tests.log.
+
+## Codex follow-up: completed 199-minute match, 1.0.537
+
+User finished the game and requested full analysis, fixes and better capture.
+Read `AI-COMPLETED-MATCH-ANALYSIS.md`. Completed demand-first-v1 session has
+104,867 consecutive valid records; no corrupt tails. Duration 198.98 minutes,
+not the old zero-cycle session_end. Evidence/index/report retained under build/.
+
+Confirmed concurrent overlapping yard plans (Atreides HF and C zone at 98,19
+in cycle 99); total 177 HF orders, 56 completions, 107 placement cancellations.
+No residential selections over stronger normalized jobs demand (8,688 evals).
+Much late support construction replaced losses; Fremen silo lifetime ~7.4 sec
+by location matching. Old capture lacks official result and lethal causes.
+
+New source/runtime policy reserved-sites-v3: shared footprint reservations,
+60-second avoidance of recent economic/production building losses, funded
+factory recovery ahead of city seeding, pending storage/crime-defense guards.
+Retains prior spice/road/concrete/civic/power/UI fixes. Runtime-only planner
+state does not alter save layout. Records actual placement success.
+
+Telemetry v3: final roster/result/cycle; fractional cumulative economy ledger;
+producer progress/gates, harvesters, unit mix; producer/object completions,
+object destruction and lethal attacker; attack new vs existing membership.
+Engine lifecycle events use player -1 and supplement (do not add to) old
+callbacks. Disabled TechCenter text spam suppressed. SQLite match-report,
+economy_samples view, and conflicting-reimport rejection added.
+
+Built source version 1.0.537 with script; all three metadata files agree.
+385 C++ cases pass, same two baseline nan failures, three skipped; seven Python
+tests pass. Logs: build/completed-match-build.log and completed-match-tests.log.
+No full match run on v3 yet; user will test on return. No commit/push/launch.
+
+## Codex follow-up: live audit, placement, spice economy and queue guards
+
+Read `AI-LIVE-ANALYSIS.md` for the running 4-corners match (seed 1034718315,
+session 1788669627998013-0, cutoff ~38:33). 23,375 events audit cleanly. Confirmed
+11 factory and 248 turret placement cancellations, duplicate stadium/nuclear
+orders across yards, and no residential choices over stronger normalized jobs
+demand. Source/build now uses policy spice-road-v2; running match is still v1.
+
+New changes: retain/replan finished buildings without full-concrete gating;
+road-continuity-aware placement, rocket traffic junctions, restoration of road
+surfaces after damage; spice-based harvesters/refineries with city hedge and
+combat/cash constraints; queued civic/power guards; nuclear plant power panel.
+Telemetry v2 adds detailed placement observations, all-producer statuses, crime
+defense reasons, queued civic/power inputs, road scores, spice fleet targets and
+credit provenance. SQLite tool adds audit/report. See telemetry doc for semantics.
+
+Built `build/bin/dunecity.app`, metadata consistently 1.0.536. Validation:
+`build/ai-placement-tests.log`: 382 passed, same two baseline parseDouble("nan")
+failures, three skipped. Five Python importer/audit tests pass. New UI and policy
+still need observation after user restarts; do not interrupt the running match.
+No commit/push. Existing queues/buildings are not rewritten on save load.
+
+## Codex follow-up: demand-first zoning and structured AI telemetry, 2026-09-06
+
+Preserved current game in `build/zoning-before.log`; imported 2,328 logged zone
+selections into `build/ai-decisions.sqlite`. Of 1,576 residential selections,
+1,240 occurred with stronger normalized C/I demand. Root cause: `rankZones`
+used demand only as a positive gate and ranked raw gaps from a fixed 3R:1I:1C
+ratio. It now ranks normalized demand first (R*3, C/I*4), breaking ties by
+weighted counts; bootstrap still seeds missing types. Campaign's duplicated
+zoning branch now calls the same chooser.
+
+Added per-session JSONL telemetry, SQLite importer/reports and tests. Read
+`AI-DECISION-TELEMETRY.md` for event schema, paths, SQL, coverage and limits.
+Captures are local under application support `ai-decisions/<session>/events.jsonl`.
+No external DB service, save-format/RNG changes, commit or push. Snapshot/decision
+inputs, candidate reasons, queue acceptance, placement requests, actual built/loss
+callbacks, and main attack gates are separate records. Capture is bounded at
+128 MiB per session; completed sessions are retained without automatic deletion.
+Set DUNECITY_AI_TELEMETRY=0 to disable. Other AI classes and tactical/pathfinding
+choices are not instrumented by this change.
+
+Local build is now source version 1.0.536 (version files advanced elsewhere during
+this work; this task did not bump them). `build/ai-telemetry-tests.log`: 375 passed,
+the same two pre-existing parseDouble("nan") failures, three skipped. Three Python
+importer tests pass; C++-written fixture imports as valid JSONL into SQLite with
+zero invalid records. The existing open game has not been restarted; save/reload
+in rebuilt `build/bin/dunecity.app` is required for live verification and capture.
 
 ## Codex follow-up: repair/factory balance, 2026-09-06
 

@@ -1,3 +1,4 @@
+#include <stdexcept>
 #include <dunecity/CitySimulation.h>
 #include <dunecity/CityConstants.h>
 #include <dunecity/CityEffects.h>
@@ -32,6 +33,9 @@ void CitySimulation::init(int width, int height) {
     pollutionDensityMap_.init(width, height, 2);
     landValueMap_.init(width, height, 2);
     crimeRateMap_.init(width, height, 2);
+    crimeUnrestProgress_.assign(kMaxCityHouses * ((width+15)/16) * ((height+15)/16), 0);
+    policeCoverageMap_.init(width, height, 2);
+    crimeBeforePoliceMap_.init(width, height, 2);
     populationDensityMap_.init(width, height, 2);
     growthRateMap_.init(width, height, 2);
 
@@ -120,6 +124,11 @@ void CitySimulation::load(InputStream& stream) {
     for (int i = 0; i < NUM_MILESTONES; ++i) {
         milestones_[i] = stream.readBool();
     }
+    if (loadedVersion >= 9825) {
+        const auto count = stream.readUint32();
+        if (count != crimeUnrestProgress_.size()) throw std::runtime_error("Invalid city unrest district count");
+        for (auto& progress : crimeUnrestProgress_) progress = stream.readUint32();
+    }
 }
 
 void CitySimulation::save(OutputStream& stream) const {
@@ -141,6 +150,8 @@ void CitySimulation::save(OutputStream& stream) const {
     for (int i = 0; i < NUM_MILESTONES; ++i) {
         stream.writeBool(milestones_[i]);
     }
+    stream.writeUint32(static_cast<uint32_t>(crimeUnrestProgress_.size()));
+    for (const auto progress : crimeUnrestProgress_) stream.writeUint32(progress);
 }
 
 // --- HouseCityState self-serializing impls ---

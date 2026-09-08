@@ -315,3 +315,12 @@ TEST_CASE_METHOD(ENetFixture, "NetworkManager: Packet stream various int sizes",
     REQUIRE(istream.readUint32() == 0x12345678);
     REQUIRE(istream.readUint64() == 0xDEADBEEFCAFEBABE);
 }
+
+TEST_CASE("Executable mismatch is rejected even when mod sync is available", "[network][handshake]") {
+    int calls = 0;
+    auto disconnect = [&](int cause) { REQUIRE(cause == NETWORKDISCONNECT_PROTOCOL_MISMATCH); ++calls; };
+    REQUIRE_FALSE(rejectIncompatibleGameVersion("1.0.553", "1.0.553", disconnect));
+    REQUIRE(calls == 0);
+    REQUIRE(rejectIncompatibleGameVersion("1.0.547", "1.0.553", disconnect));
+    REQUIRE(calls == 1);
+}

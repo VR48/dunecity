@@ -1,3 +1,4 @@
+#include <players/AIDecisionLog.h>
 /*
  *  This file is part of Dune Legacy.
  */
@@ -187,7 +188,7 @@ bool ZoneStructure::canBePlacedAt(int x, int y, bool torch) const {
     return true;
 }
 
-void ZoneStructure::destroy() {
+void ZoneStructure::clearZoneState() {
     if (registeredZonePower_ != 0 && owner) {
         owner->adjustPowerRequirement(-registeredZonePower_);
         registeredZonePower_ = 0;
@@ -206,7 +207,31 @@ void ZoneStructure::destroy() {
             }
         }
     }
+}
+
+void ZoneStructure::destroy() {
+    clearZoneState();
     StructureBase::destroy();
+}
+
+void ZoneStructure::demolish() {
+    demolishedByOwner_ = true;
+    const Coord pos = getLocation();
+    const auto* sim = currentGame->getCitySimulation();
+    AITelemetry::log().write(currentGame->getGameCycleCount(), owner->getHouseID(), -1,
+        "zone_demolished", AITelemetry::Record().set("object", objectID).set("item", itemID)
+            .set("x",pos.x).set("y",pos.y).set("refund",0)
+            .set("density",currentGameMap->getTile(pos.x,pos.y)->getCityZoneDensity())
+            .set("pollution",sim ? sim->getPollutionDensityMap().worldGet(pos.x,pos.y) : 0)
+            .set("land_value",sim ? sim->getLandValueMap().worldGet(pos.x,pos.y) : 0));
+    clearZoneState();
+    for (int dy=0; dy<structureSize.y; ++dy) for (int dx=0; dx<structureSize.x; ++dx) {
+        if (auto* tile=currentGameMap->getTile(pos.x+dx,pos.y+dy))
+            tile->setDestroyedStructureTile(DestroyedStructure_None);
+    }
+    // Normal destructor unregisters ownership, pathing and selection. Roads and
+    // concrete remain; demolition does not spawn soldiers or combat explosions.
+    delete this;
 }
 
 // --- ResidentialZone ---

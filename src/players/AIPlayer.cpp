@@ -377,7 +377,9 @@ void AIPlayer::build() {
                         if(pBestHouse) {
                             Coord target = pBestHouse->getNumStructures() > 0 ? pBestHouse->getCenterOfMainBase() : pBestHouse->getStrongestUnitPosition();
                             if(target.isValid()) {
-                                doLaunchDeathhand(pPalace, target.x, target.y);
+                                const Coord reactorTarget = findNuclearMissileTarget();
+                        if (reactorTarget.isValid()) target = reactorTarget;
+                        doLaunchDeathhand(pPalace, target.x, target.y);
                             }
                         }
                     } else {
@@ -527,7 +529,7 @@ void AIPlayer::build() {
                             if(getHouse()->getCredits() > 100) {
                                 if((pBuilder->getProductionQueueSize() < 1) && (pBuilder->getBuildListSize() > 0)) {
                                     Uint32 itemID = NONE_ID;
-                                    if(getHouse()->getProducedPower() - getHouse()->getPowerRequirement() < 50 && pBuilder->isAvailableToBuild(Structure_WindTrap)) {
+                                    if((getHouse()->getNumItems(Structure_WindTrap) == 0 || (getHouse()->isPowerRequired() && getHouse()->getProducedPower() - getHouse()->getPowerRequirement() < 50)) && pBuilder->isAvailableToBuild(Structure_WindTrap)) {
                                         itemID = Structure_WindTrap;
                                     } else if(getHouse()->getNumItems(Structure_Refinery) < 3 && pBuilder->isAvailableToBuild(Structure_Refinery)) {
                                         itemID = Structure_Refinery;

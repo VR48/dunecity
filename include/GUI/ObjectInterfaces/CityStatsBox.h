@@ -41,31 +41,38 @@
  */
 class CityStatsBox {
 public:
-    void attachTo(VBox& parent, Uint32 color, bool isZone = false) {
+    void attachTo(VBox& parent, Uint32 color, bool isZone = false, bool showEmissions = false) {
         forceShowPop_ = isZone;
+        // Vanilla has no city roles, population or municipal services.
+        // Do not allocate empty rows or display invented city statistics.
+        if (!currentGame || !currentGame->isCitySimEnabled()) return;
 
         roleLabel_     .setTextFontSize(11);
         populationLabel_.setTextFontSize(11);
         landValueLabel_.setTextFontSize(11);
         pollutionLabel_.setTextFontSize(11);
+        emissionsLabel_.setTextFontSize(11);
         crimeLabel_    .setTextFontSize(11);
 
         roleLabel_     .setTextColor(color);
         populationLabel_.setTextColor(color);
         landValueLabel_.setTextColor(color);
         pollutionLabel_.setTextColor(color);
+        emissionsLabel_.setTextColor(color);
+        emissionsLabel_.setVisible(false);
         crimeLabel_    .setTextColor(color);
 
-        const Sint32 lineH = 16;
+        const Sint32 lineH = 20;
         parent.addWidget(&roleLabel_, lineH);
         parent.addWidget(&populationLabel_, lineH);
         parent.addWidget(&landValueLabel_, lineH);
+        if (showEmissions) parent.addWidget(&emissionsLabel_, lineH);
         parent.addWidget(&pollutionLabel_, lineH);
         parent.addWidget(&crimeLabel_,     lineH);
     }
 
     void update(StructureBase* pStructure) {
-        if (!pStructure) return;
+        if (!pStructure || !currentGame || !currentGame->isCitySimEnabled()) return;
 
         const int itemID = pStructure->getItemID();
         const auto role = DuneCity::getStructureCityRole(itemID);
@@ -87,11 +94,21 @@ public:
 
         roleLabel_.setText(" " + roleStringFor(itemID));
 
+        // Separate clean wind generation from pollution drifting in from nearby industry.
+        const bool isWindtrap = itemID == Structure_WindTrap;
+        emissionsLabel_.setVisible(isWindtrap);
+        if (isWindtrap) {
+            emissionsLabel_.setText(" Emissions: "
+                + std::to_string(DuneCity::getPollutionEmission(itemID, level)));
+        }
+
         // Pop line: shown for any city-role structure (zones AND the
         // non-zone Refinery/Silo/Radar/etc.) — it's the way the player
         // knows that an "empty" factory has nobody working in it yet.
         const bool showPop = forceShowPop_ || (role != DuneCity::CityRole::None);
-        populationLabel_.setVisible(showPop);
+        const bool isTurret = itemID == Structure_RocketTurret || itemID == Structure_GunTurret;
+        populationLabel_.setVisible(showPop || isTurret);
+        if (isTurret) populationLabel_.setText("Police: 15%");
         if (showPop) {
             std::string text;
             if (itemID == Structure_Palace) {
@@ -129,17 +146,19 @@ public:
             // Show this building's own emission alongside the tile total.
             const int ownEmission = DuneCity::getPollutionEmission(itemID, level);
 
-            landValueLabel_.setText(" Value: " + std::to_string(landValue));
+            landValueLabel_.setText(std::string(" Value: ") + DuneCity::landValueCategory(landValue));
             if (ownEmission > 0) {
-                pollutionLabel_.setText(" Pollution: " + std::to_string(pollution)
-                                        + " (+" + std::to_string(ownEmission) + ")");
+                pollutionLabel_.setText(std::string(" Pollution: ")
+                                        + DuneCity::pollutionCategory(pollution) + " (emits)");
             } else {
-                pollutionLabel_.setText(" Pollution: " + std::to_string(pollution));
+                pollutionLabel_.setText(std::string(isWindtrap ? " Local pollution: " : " Pollution: ")
+                                        + DuneCity::pollutionCategory(pollution));
             }
-            crimeLabel_   .setText(" Crime: "  + std::to_string(crimeRate));
+            crimeLabel_   .setText(std::string(" Crime: ") + DuneCity::crimeCategory(crimeRate));
         } else {
             landValueLabel_.setText(" Value: \xE2\x80\x94");
-            pollutionLabel_.setText(" Pollution: \xE2\x80\x94");
+            pollutionLabel_.setText(std::string(isWindtrap ? " Local pollution: " : " Pollution: ")
+                                    + "\xE2\x80\x94");
             crimeLabel_   .setText(" Crime: \xE2\x80\x94");
         }
     }
@@ -161,12 +180,13 @@ private:
             case Structure_RepairYard:       return "Role: I-high";
             case Structure_StarPort:         return "Role: Airport";
             case Structure_Palace:           return "Role: R+C Palace";
-            case Structure_Barracks:         return "Role: Police";
-            case Structure_WOR:              return "Role: Police HQ";
-            case Structure_GunTurret:        return "Role: Park + 1/4 Police";
-            case Structure_RocketTurret:     return "Role: Park + 1/4 Police";
+            case Structure_PoliceStation:    return "Role: Police";
+            case Structure_Barracks:         return "Role: Infantry";
+            case Structure_WOR:              return "Role: Infantry";
+            case Structure_GunTurret:        return "Park: 1 fountain";
+            case Structure_RocketTurret:     return "Park: 1 fountain";
             case Structure_Wall:             return "Role: Park bonus";
-            case Structure_WindTrap:         return "Role: Coal Power";
+            case Structure_WindTrap:         return "Role: I-medium";
             case Structure_NuclearPlant:     return "Role: Nuclear Power";
             default:                         return "Role: \xE2\x80\x94";
         }
@@ -176,6 +196,7 @@ private:
     Label populationLabel_;
     Label landValueLabel_;
     Label pollutionLabel_;
+    Label emissionsLabel_;
     Label crimeLabel_;
     bool  forceShowPop_ = false;
 };

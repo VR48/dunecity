@@ -64,6 +64,9 @@ AboutMenu::AboutMenu() : MenuBase()
         "which are not distributed with Dune Legacy. Shipped map-editor icons are "
         "primarily from the public-domain Tango icon theme. Other contributed graphics "
         "use the Dune Legacy license; maps are CC-BY-SA.\n\n"
+        "Dune Legacy collects gameplay statistics when matches start and end, including "
+        "player display names, houses, results, and unit statistics. These statistics help "
+        "improve game balance and the player experience.\n\n"
         "Dune Legacy is free software released under the GNU General Public License.");
     windowWidget.addWidget(&credits, Point(panelX, panelY + 40), Point(panelWidth, panelHeight - 88));
 
@@ -83,4 +86,3 @@ void AboutMenu::onBack()
 {
     quit();
 }
-

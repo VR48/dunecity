@@ -1,3 +1,4 @@
+#include <dunecity/HouseColors.h>
 /*
  *  This file is part of Dune Legacy.
  *
@@ -266,9 +267,19 @@ int getHouseColorPaletteIndexFromSlot(int colorSlot) {
         : houseColorToPaletteIndex[colorSlot];
 }
 
+bool isDuneCityHouseColorSlot(int colorSlot) {
+    return colorSlot >= HOUSE_HARKONNEN && colorSlot <= HOUSE_REBELS
+        && ModManager::instance().isInitialized()
+        && ModManager::instance().getActiveModName() == "dunecity";
+}
+
 SDL_Color getHouseColorSDL(int colorSlot, int shadeOffset) {
     if(!isValidHouseColorSlot(colorSlot) || shadeOffset < 0 || shadeOffset >= 8) {
         return SDL_Color{ 0, 0, 0, 255 };
+    }
+
+    if(isDuneCityHouseColorSlot(colorSlot)) {
+        return DuneCity::houseColorShade(colorSlot, shadeOffset);
     }
 
     if(isVanillaRebelsColorSlot(colorSlot)) {
