@@ -106,3 +106,12 @@ tmp/
 # Python helper caches
 __pycache__/
 *.py[cod]
+
+# Agent session notes. Codex writes per-version review/analysis scratch into the
+# repo root (AI-599-IMPLEMENTATION.md, MULTIPLAYER-553-REVIEW.md, …). These are
+# working memory for a single session, not project documentation — the durable
+# summary belongs in HANDOVER.md, which IS tracked. See AGENTS.md §Working
+# agreement.
+/AI-*.md
+/*-REVIEW.md
+/*-ANALYSIS.md

@@ -43,7 +43,15 @@ Baseline test result: 362 passed, 2 failed, 3 skipped. The two failures are pre-
 
 ## Working agreement
 
-- Do not commit or push without being asked. The tree currently carries a large body of
-  uncommitted work described in `HANDOVER.md`.
+- Do not push or open a PR without being asked.
 - Any release build, tag, or CI-triggering push must include the version bump in the same commit
   (`scripts/bump-version.sh`); CI verifies the tag against the source metadata.
+- **Every code change you make must end up in git.** When you finish, `git status` should show no
+  untracked `.h`/`.cpp`/`.py` files and no unstaged source edits. Leaving new headers and test
+  cases untracked means a release built from a tree nobody else can reproduce — 1.0.599 was
+  carried as 88 modified plus 23 untracked source files before it was captured. Staging and
+  committing as you go is what keeps `HANDOVER.md` and the tree describing the same thing.
+- **Do not leave analysis markdown in the repo root.** Per-version review notes (`AI-*.md`,
+  `*-REVIEW.md`, `*-ANALYSIS.md`) are session scratch and are gitignored. Fold whatever outlives
+  the session into `HANDOVER.md`; if a note is genuinely reference material, put it under `docs/`
+  with a lowercase name so it is tracked deliberately.
