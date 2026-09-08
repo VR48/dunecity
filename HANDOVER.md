@@ -1,3 +1,37 @@
+# Squad crash, obstructed rallies and desktop release — 1.0.600
+
+Session `1788836338773483-0` crashed on 2026-09-08 in the gather lambda
+of `QuantBot::updateGroundSquad`. `hasATarget()` checks a stored object ID;
+resolving a destroyed target can still return null. The shared engagement
+check now resolves once and verifies health/attackability before reading range.
+The crash regression exercises the null resolution and dead-object cases.
+
+Ordos made nine assemblies but launched once; seven ended `assembly_obstructed`.
+Its 68-member launched force stayed around (159,166) until `wave_complete`.
+Old anchors survived city growth, blocked formation slots collapsed onto one
+tile, and autonomous target changes fought repeated squad orders. Rally selection
+now checks connected terrain and army-sized capacity, ignores temporary friendly
+traffic, and searches reachable clearings out to 48 tiles from the base centre.
+Members receive unique legal destinations; failed assemblies invalidate the rally.
+Rally radius scales with formation size and readiness uses the same square area.
+The main core advances with >=70% cohesion while detached units catch up. Local
+combat/kiting still takes priority; shared AI attack targets are committed so
+individual searches cannot repeatedly replace them and clear paths.
+
+The three-minute timeout now measures lack of movement/combat rather than time
+since launch. SAVEGAMEVERSION 9831 saves its progress cycle/location; old saves
+start with an invalid sample and establish one on the first update. New decisions
+remain simulation-cycle/integer based. Telemetry `connected-army-v39` adds rally
+capacity, assembly readiness, compact count, distance and stalled cycles.
+
+Default maps now include the user's unchanged CC-BY-SA DuneCity 192x192 and
+4 corners 128x128 maps. Stable release publication requires tests and all three
+desktop builds; missing Linux/Mac downloads are no longer ignored. Explicit
+nan/inf text rejection fixes the two Mac fast-math configuration test failures.
+Validation: Release build, dependency audit, full CTest and app signature pass.
+Game effectiveness and live multiplayer remain for gameplay verification; no
+claim of a full match simulation is made by the policy regressions.
+
 # Coordinated army and investment fixes — 1.0.599
 
 Implemented Stefan's approval of the six recommendations in AI-598-TACTICAL-REVIEW.md,
@@ -1732,3 +1766,10 @@ Suggested split, since these are unrelated fixes:
 
 The credits-blit block in `src/GameInterface.cpp` is a temporary probe — remove it once §3.1 is
 solved, but keep the unsigned-arithmetic fix.
+# Bundled user maps — 1.0.599
+
+The user-authored single-player maps `4P - 192x192 - DuneCity.ini` and
+`4P - 128x128 - 4 corners.ini` are now part of the default map set. Their
+source is the local Dune City user-map directory on this Mac. The files are
+kept byte-for-byte unchanged, including their CC-BY-SA metadata, and are
+packaged under `Resources/maps/singleplayer` by the existing data copy step.

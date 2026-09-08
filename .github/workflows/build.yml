@@ -478,9 +478,10 @@ jobs:
   # so creating a release here automatically flips every existing
   # install's "update available" flag the next time they launch.
   release:
-    needs: [verify-version, build-windows, build-linux, build-macos]
-    # Windows is required. Linux and macOS are attached when available.
-    if: always() && startsWith(github.ref, 'refs/tags/v') && needs.verify-version.result == 'success' && needs.build-windows.result == 'success'
+    needs: [verify-version, test-linux, build-windows, build-linux, build-macos]
+    # The website advertises all desktop platforms at this version. Publish only
+    # after tests and every desktop package have actually succeeded.
+    if: success() && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -495,14 +496,12 @@ jobs:
 
       - name: Download macOS artifact
         uses: actions/download-artifact@v8
-        continue-on-error: true
         with:
           name: DuneCity-macOS-DMG
           path: dist/macos
 
       - name: Download Linux artifact
         uses: actions/download-artifact@v8
-        continue-on-error: true
         with:
           name: DuneCity-Linux-Packages
           path: dist/linux
@@ -518,6 +517,10 @@ jobs:
             echo
             echo "Auto-built from tag ${TAG}. See the [CHANGELOG](https://github.com/${GITHUB_REPOSITORY}/commits/${TAG}) for what's in this release."
             echo
+            if [ -f "releases/desktop/${TAG#v}.md" ]; then
+              sed '1,2d' "releases/desktop/${TAG#v}.md"
+              echo
+            fi
             echo "**Downloads** (attached below):"
             echo "- Windows: \`DuneCity-*.zip\`"
             echo "- Linux: \`.AppImage\` (recommended) / \`.deb\` / \`.rpm\` / \`.tar.gz\`"

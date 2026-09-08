@@ -36,7 +36,8 @@ inline bool parseInteger(const std::string& text, int& destination) noexcept {
  * The destination is left unchanged when parsing fails.
  */
 inline bool parseDouble(const std::string& text, double& destination) noexcept {
-    if(text.empty()) {
+    // Keep non-finite configuration values invalid under Release fast-math.
+    if(text.empty() || text.find_first_of("nNiI") != std::string::npos) {
         return false;
     }
 

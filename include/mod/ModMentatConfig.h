@@ -53,7 +53,9 @@ inline bool parseBoolean(const std::string& text, bool& destination) {
 }
 
 inline bool parseDouble(const std::string& text, double& destination) noexcept {
-    if(text.empty()) {
+    // strtod accepts nan/inf without ERANGE. Reject their spellings before
+    // conversion because Release fast-math can optimize isfinite away.
+    if(text.empty() || text.find_first_of("nNiI") != std::string::npos) {
         return false;
     }
 

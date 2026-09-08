@@ -110,6 +110,8 @@ private:
     // Saved simulation state: an entire wave owns its orders until regrouping.
     Uint32 groundSquadPhase = 0, groundSquadStarted = 0, groundSquadNextControl = 0;
     Uint32 groundSquadInitialCount = 0, groundSquadObjective = NONE_ID, groundSquadObjectiveCycle = 0;
+    Uint32 groundSquadProgressCycle = 0;
+    Coord groundSquadProgressLocation = Coord::Invalid();
     UnitMixPolicy::PerformanceWindow performanceWindow;
     std::set<Uint32> groundSquad;
     std::map<Uint32, Uint32> manualUnitOrders, escortAssignments;

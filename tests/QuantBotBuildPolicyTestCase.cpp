@@ -6,6 +6,7 @@
 #include <dunecity/VanillaEconomy.h>
 #include <catch2/catch_test_macros.hpp>
 #include <players/QuantBotBuildPolicy.h>
+#include <set>
 
 using namespace QuantBotBuildPolicy;
 
@@ -569,6 +570,43 @@ TEST_CASE("Balanced small armies still fill idle heavy-factory lanes", "[quantbo
 }
 
 #include <players/GroundSquadPolicy.h>
+TEST_CASE("Squad engagement resolves dead targets before reading them", "[quantbot][squad][regression]") {
+    struct Target { int health=100; int getHealth() const { return health; } } target;
+    struct Unit {
+        const Target* target;
+        mutable int resolutions=0;
+        const Target* getTarget() const { ++resolutions; return target; }
+        bool canAttack(const Target*) const { return true; }
+    } unit{nullptr};
+    bool readTarget=false;
+    auto range=[&](const Target*) { readTarget=true; return true; };
+    // A deleted target resolves to null even while the old ID remains set.
+    REQUIRE_FALSE(GroundSquadPolicy::engaged(&unit,range));
+    REQUIRE_FALSE(readTarget);
+    REQUIRE(unit.resolutions==1);
+    unit.target=&target;
+    REQUIRE(GroundSquadPolicy::engaged(&unit,range));
+    target.health=0; readTarget=false;
+    REQUIRE_FALSE(GroundSquadPolicy::engaged(&unit,range));
+    REQUIRE_FALSE(readTarget);
+}
+TEST_CASE("Large squads get unique connected rally slots outside blocked city lots", "[quantbot][squad][regression]") {
+    const int radius=GroundSquadPolicy::formationRadius(209);
+    auto terrain=[](int x,int y) { return x>=0 && x<40 && y>=0 && y<40 && x!=20; };
+    const auto slots=GroundSquadPolicy::rallySlots(8,20,radius,terrain);
+    REQUIRE(slots.size()>=209);
+    std::set<std::pair<int,int>> unique(slots.begin(),slots.end());
+    REQUIRE(unique.size()==slots.size());
+    for (const auto p:slots) {
+        REQUIRE(p.first<20); // Never assign across the impassable wall.
+        REQUIRE(terrain(p.first,p.second));
+    }
+    REQUIRE(GroundSquadPolicy::rallySlots(20,20,radius,terrain).empty());
+    REQUIRE(slots==GroundSquadPolicy::rallySlots(8,20,radius,terrain));
+    // Temporary friendly traffic does not shrink the terrain-based capacity.
+    REQUIRE_FALSE(GroundSquadPolicy::holdCore(150,209));
+    REQUIRE(GroundSquadPolicy::holdCore(100,209));
+}
 TEST_CASE("Coordinated waves gather a large core and never launch an isolated packet", "[quantbot][squad]") {
     using namespace GroundSquadPolicy;
     REQUIRE(committedCount(200)==160);

@@ -287,6 +287,11 @@ QuantBot::QuantBot(InputStream& stream, House* associatedHouse) : Player(stream,
         }
         performanceWindow.load(stream);
     }
+    if (currentGame->getLoadedSavegameVersion() >= 9831) {
+        groundSquadProgressCycle=stream.readUint32();
+        groundSquadProgressLocation.x=stream.readSint32();
+        groundSquadProgressLocation.y=stream.readSint32();
+    }
     if (supportMode) {
         gameMode = GameMode::Custom;
         attackTimer = std::numeric_limits<Sint32>::max();
@@ -361,6 +366,9 @@ void QuantBot::save(OutputStream& stream) const {
         stream.writeUint32(loss.cycle); stream.writeUint32(loss.item);
     }
     performanceWindow.save(stream);
+    stream.writeUint32(groundSquadProgressCycle);
+    stream.writeSint32(groundSquadProgressLocation.x);
+    stream.writeSint32(groundSquadProgressLocation.y);
 
 }
 
@@ -5861,21 +5869,43 @@ void QuantBot::updateGroundSquad() {
             }
         }
         groundSquad.clear(); groundSquadPhase=0; groundSquadObjective=NONE_ID;
+        // An obstructed rally must not be selected again merely because its
+        // single anchor tile is still empty.
+        squadRallyLocation=Coord::Invalid();
         attackTimer=MILLI2CYCLES(15000);
     };
     if (members.size()<6 || members.size()*2<groundSquadInitialCount) { finish("insufficient_survivors"); return; }
-    int width=1;
-    while (width*width<static_cast<int>(members.size())) ++width;
-    const int radius=width/2+3;
+    const int radius=GroundSquadPolicy::formationRadius(static_cast<int>(members.size()));
     auto inRange=[](const UnitBase* unit) {
-        return unit->hasATarget() && blockDistance(unit->getLocation(),unit->getTarget()->getLocation())<=unit->getWeaponRange();
+        return GroundSquadPolicy::engaged(unit,[&](const auto* target) {
+            return blockDistance(unit->getLocation(),target->getClosestPoint(unit->getLocation()))<=unit->getWeaponRange();
+        });
     };
-    auto gather=[&](const UnitBase* unit,Coord anchor,size_t index) {
+    auto walkable=[&](int x,int y) {
+        return getMap().tileExists(x,y) && !getMap().getTile(x,y)->isMountain()
+            && !getMap().getTile(x,y)->hasAStructure();
+    };
+    auto slots=GroundSquadPolicy::rallySlots(squadRallyLocation.x,squadRallyLocation.y,radius,walkable);
+    std::set<std::pair<int,int>> assignedSlots;
+    auto gather=[&](const UnitBase* unit,size_t index) {
         if (inRange(unit)) return;
-        Coord position=anchor+Coord(static_cast<int>(index)%width-width/2,static_cast<int>(index)/width-width/2);
-        if (!getMap().tileExists(position) || !unit->canPass(position.x,position.y)) position=anchor;
-        if (blockDistance(unit->getLocation(),position)>2) {
-            if (!unit->isMoving() || blockDistance(unit->getDestination(),position)>2)
+        Coord position=Coord::Invalid();
+        // Retain an existing destination while it remains legal. Otherwise use
+        // an unoccupied slot, never collapse blocked slots onto the anchor.
+        const auto destination=unit->getDestination();
+        const std::pair<int,int> existing{destination.x,destination.y};
+        if (std::find(slots.begin(),slots.end(),existing)!=slots.end()
+            && !assignedSlots.count(existing)
+            && (destination==unit->getLocation() || unit->canPass(destination.x,destination.y))) position=destination;
+        for (size_t n=0;position.isInvalid() && n<slots.size();++n) {
+            const auto p=slots[(index+n)%slots.size()];
+            if (!assignedSlots.count(p) && (unit->getLocation()==Coord(p.first,p.second)
+                || unit->canPass(p.first,p.second))) position=Coord(p.first,p.second);
+        }
+        if (position.isInvalid()) return;
+        assignedSlots.emplace(position.x,position.y);
+        if (unit->getLocation()!=position) {
+            if (unit->getDestination()!=position || (!unit->isMoving() && unit->getTarget()))
                 doMove2Pos(unit,position.x,position.y,false);
         } else {
             if (unit->isMoving() || unit->hasATarget()) doSetAttackMode(unit,GUARD);
@@ -5883,9 +5913,15 @@ void QuantBot::updateGroundSquad() {
         }
     };
     int ready=0;
-    for (const auto* unit:members) ready+=blockDistance(unit->getLocation(),squadRallyLocation)<=radius;
+    auto near=[](Coord a,Coord b,int r) { return std::max(std::abs(a.x-b.x),std::abs(a.y-b.y))<=r; };
+    for (const auto* unit:members) ready+=near(unit->getLocation(),squadRallyLocation,radius);
     if (groundSquadPhase==1) {
-        for (size_t i=0;i<members.size();++i) gather(members[i],squadRallyLocation,i);
+        if (slots.size()<members.size()) { finish("rally_capacity_lost"); return; }
+        for (size_t i=0;i<members.size();++i) gather(members[i],i);
+        if ((now-groundSquadStarted)%MILLI2CYCLES(15000)<MILLI2CYCLES(2000))
+            traceDecision("squad_assembly_progress",AITelemetry::Record().set("members",members.size())
+                .set("ready",ready).set("slots",slots.size()).set("radius",radius)
+                .set("x",squadRallyLocation.x).set("y",squadRallyLocation.y));
         // Deadline never sends isolated packets: wait for a substantial gathered core.
         const bool deadline=now-groundSquadStarted>=MILLI2CYCLES(90000);
         const auto decision=GroundSquadPolicy::assembly(ready,static_cast<int>(members.size()),groundSquadInitialCount,deadline);
@@ -5893,11 +5929,12 @@ void QuantBot::updateGroundSquad() {
         if (decision==GroundSquadPolicy::Assembly::Abort) { finish("assembly_obstructed"); return; }
         // Leave stragglers at the rally for the next wave, rather than drip-feeding them.
         for (auto it=members.begin();it!=members.end();) {
-            if (blockDistance((*it)->getLocation(),squadRallyLocation)>radius) {
+            if (!near((*it)->getLocation(),squadRallyLocation,radius)) {
                 groundSquad.erase((*it)->getObjectID()); it=members.erase(it);
             } else ++it;
         }
         groundSquadPhase=2; groundSquadStarted=now;
+        groundSquadProgressLocation=squadRallyLocation; groundSquadProgressCycle=now;
         groundSquadInitialCount=static_cast<Uint32>(members.size());
         traceDecision("attack_launched",AITelemetry::Record().set("units_sent",members.size())
             .set("gathered",ready).set("commitment_percent",80).set("coordinated",true));
@@ -5908,7 +5945,11 @@ void QuantBot::updateGroundSquad() {
     for (const auto* unit:members) { xs.push_back(unit->getX()); ys.push_back(unit->getY()); engaged|=inRange(unit); }
     std::sort(xs.begin(),xs.end()); std::sort(ys.begin(),ys.end());
     const Coord centre(xs[xs.size()/2],ys[ys.size()/2]);
-    if (!engaged && now-groundSquadStarted>=MILLI2CYCLES(180000)) { finish("wave_complete"); return; }
+    if (engaged || groundSquadProgressLocation.isInvalid()
+        || blockDistance(centre,groundSquadProgressLocation)>=3) {
+        groundSquadProgressLocation=centre; groundSquadProgressCycle=now;
+    }
+    if (now-groundSquadProgressCycle>=MILLI2CYCLES(180000)) { finish("advance_stalled"); return; }
     auto enemy=[&](const ObjectBase* object) {
         return object && object->getOwner() && object->getOwner()->getTeamID()!=getHouse()->getTeamID()
             && object->getHealth()>0 && object->isVisible(getHouse()->getTeamID())
@@ -5955,16 +5996,28 @@ void QuantBot::updateGroundSquad() {
             .set("target_item",target->getItemID()).set("members",members.size()).set("force_value",value)
             .set("local_enemy",bestDistance<radius+7).set("x",centre.x).set("y",centre.y));
     }
+    int compact=0;
+    for (const auto* unit:members) compact+=near(unit->getLocation(),centre,radius);
     if ((now-groundSquadStarted)%MILLI2CYCLES(15000)<MILLI2CYCLES(2000))
         traceDecision("squad_progress",AITelemetry::Record().set("members",members.size()).set("value",value)
-            .set("engaged",engaged).set("target",groundSquadObjective).set("x",centre.x).set("y",centre.y));
-    int compact=0;
-    for (const auto* unit:members) compact+=blockDistance(unit->getLocation(),centre)<=radius;
+            .set("engaged",engaged).set("target",groundSquadObjective).set("x",centre.x).set("y",centre.y)
+            .set("compact",compact).set("radius",radius).set("stalled_cycles",now-groundSquadProgressCycle)
+            .set("target_distance",blockDistance(centre,target->getLocation()).lround()));
+    slots=GroundSquadPolicy::rallySlots(centre.x,centre.y,radius,walkable);
+    // The median of a force moving around a building can be inside its walls.
+    // Use the nearest legal gathering anchor instead of leaving stragglers idle.
+    for (int r=1;slots.empty() && r<=radius;++r)
+        for (int dy=-r;dy<=r && slots.empty();++dy)
+            for (int dx=-r;dx<=r && slots.empty();++dx) {
+                if (std::max(std::abs(dx),std::abs(dy))!=r) continue;
+                slots=GroundSquadPolicy::rallySlots(centre.x+dx,centre.y+dy,radius,walkable);
+            }
+    assignedSlots.clear();
     for (size_t i=0;i<members.size();++i) {
         const auto* unit=members[i];
         if (inRange(unit)) continue; // Do not cancel a nearby fight or kiting response.
-        if (compact*100<static_cast<int>(members.size())*80 && !engaged) { gather(unit,centre,i); continue; }
-        if (blockDistance(unit->getLocation(),centre)>radius && !engaged) { gather(unit,centre,i); continue; }
+        if (GroundSquadPolicy::holdCore(compact,static_cast<int>(members.size())) && !engaged) { gather(unit,i); continue; }
+        if (!near(unit->getLocation(),centre,radius) && !engaged) { gather(unit,i); continue; }
         // Fast front-runners wait for the main body instead of sprinting to the target.
         if (GroundSquadPolicy::waitForBody(blockDistance(unit->getLocation(),target->getLocation()).lround(),
                 blockDistance(centre,target->getLocation()).lround(),radius,engaged)) {
@@ -5973,7 +6026,10 @@ void QuantBot::updateGroundSquad() {
             continue;
         }
         if (unit->getAttackMode()!=HUNT) doSetAttackMode(unit,HUNT);
-        if (unit->canAttack(target) && unit->getTarget()!=target) doAttackObject(unit,target,false);
+        // Keep the shared objective. Autonomous target searches otherwise replace
+        // it, and reissuing it every two seconds repeatedly clears the path.
+        // Nearby fights and kiting above still override this AI-owned order.
+        if (unit->canAttack(target) && (unit->getTarget()!=target || !unit->wasForced())) doAttackObject(unit,target,true);
     }
 }
 
@@ -6125,27 +6181,72 @@ void QuantBot::updateHarvesterStrikeTelemetry(bool final) {
 Coord QuantBot::findSquadRallyLocation() {
     if (groundSquadPhase && squadRallyLocation.isValid()) return squadRallyLocation;
     refreshTacticalDanger();
-    if (squadRallyLocation.isValid() && getMap().tileExists(squadRallyLocation)
-        && dangerAt(squadRallyLocation)==0 && !getMap().getTile(squadRallyLocation)->hasAStructure())
-        return squadRallyLocation;
     const UnitBase* ground=nullptr;
+    int count=0;
     for (const auto* unit:getUnitList()) if (unit->getOwner()==getHouse() && unit->isActive()
-        && unit->isAGroundUnit() && unit->canAttack()) { ground=unit; break; }
+        && unit->isAGroundUnit() && unit->canAttack() && !humanControls(unit)) {
+        ++count;
+        if (!ground || (ground->isInfantry() && !unit->isInfantry())) ground=unit;
+    }
     const Coord base=findBaseCentre(getHouse()->getHouseID());
     if (!ground || base.isInvalid()) return Coord::Invalid();
-    Coord best=Coord::Invalid(); int bestScore=std::numeric_limits<int>::max();
-    for (int y=std::max(0,base.y-20);y<std::min(getMap().getSizeY(),base.y+21);++y)
-        for (int x=std::max(0,base.x-20);x<std::min(getMap().getSizeX(),base.x+21);++x) {
+    const int required=std::max(6,GroundSquadPolicy::committedCount(count));
+    const int radius=GroundSquadPolicy::formationRadius(required);
+    auto terrain=[&](int x,int y) {
+        return getMap().tileExists(x,y) && !getMap().getTile(x,y)->isMountain()
+            && !getMap().getTile(x,y)->hasAStructure();
+    };
+    auto safe=[&](int x,int y) { return terrain(x,y) && dangerAt(Coord(x,y))==0; };
+    // Reuse only if the whole assembly area still fits the current army.
+    const int capacity=required+std::max(6,required/4);
+    if (squadRallyLocation.isValid()
+        && static_cast<int>(GroundSquadPolicy::rallySlots(squadRallyLocation.x,squadRallyLocation.y,radius,safe).size())>=capacity)
+        return squadRallyLocation;
+
+    const int width=getMap().getSizeX(),height=getMap().getSizeY();
+    // Flood terrain once, ignoring temporary traffic, so a large clearing on the
+    // other side of a wall is not mistaken for a usable rally.
+    std::vector<bool> reachable(width*height,false);
+    std::vector<Coord> queue{ground->getLocation()};
+    if (!getMap().tileExists(queue.front())) return Coord::Invalid();
+    reachable[queue.front().y*width+queue.front().x]=true;
+    for (size_t i=0;i<queue.size();++i) for (const Coord d : {Coord(0,-1),Coord(1,0),Coord(0,1),Coord(-1,0)}) {
+        const Coord p=queue[i]+d;
+        if (!terrain(p.x,p.y) || reachable[p.y*width+p.x]) continue;
+        reachable[p.y*width+p.x]=true; queue.push_back(p);
+    }
+    auto usable=[&](int x,int y) { return safe(x,y) && reachable[y*width+x]; };
+    // Summed areas keep a capacity-aware full-city search linear in map size.
+    std::vector<int> sums((width+1)*(height+1),0);
+    for (int y=0;y<height;++y) for (int x=0;x<width;++x)
+        sums[(y+1)*(width+1)+x+1]=int(usable(x,y))+sums[y*(width+1)+x+1]
+            +sums[(y+1)*(width+1)+x]-sums[y*(width+1)+x];
+    std::vector<std::pair<int,Coord>> candidates;
+    const Coord mapCentre(width/2,height/2);
+    for (int y=std::max(0,base.y-48);y<std::min(height,base.y+49);++y)
+        for (int x=std::max(0,base.x-48);x<std::min(width,base.x+49);++x) {
+            if (!usable(x,y)) continue;
+            const int left=std::max(0,x-radius),right=std::min(width,x+radius+1);
+            const int top=std::max(0,y-radius),bottom=std::min(height,y+radius+1);
+            const int free=sums[bottom*(width+1)+right]-sums[top*(width+1)+right]
+                -sums[bottom*(width+1)+left]+sums[top*(width+1)+left];
+            if (free<capacity) continue;
             const Coord p(x,y);
-            if (!ground->canPass(x,y) || dangerAt(p)>0) continue;
-            int blocked=0;
-            for (int dy=-3;dy<=3;++dy) for (int dx=-3;dx<=3;++dx)
-                blocked+=!getMap().tileExists(x+dx,y+dy) || !ground->canPass(x+dx,y+dy);
-            const int score=blocked*10+std::abs(blockDistance(p,base).lround()-8)*3;
-            if (score<bestScore) {bestScore=score;best=p;}
+            const int score=((2*radius+1)*(2*radius+1)-free)*10
+                +blockDistance(p,base).lround()*3+blockDistance(p,mapCentre).lround();
+            candidates.emplace_back(score,p);
         }
-    if (best.isValid()) rallySelectedCycle=getGameCycleCount();
-    return best;
+    std::stable_sort(candidates.begin(),candidates.end(),[](const auto& a,const auto& b) { return a.first<b.first; });
+    for (const auto& candidate:candidates) {
+        const Coord p=candidate.second;
+        const auto slots=GroundSquadPolicy::rallySlots(p.x,p.y,radius,usable);
+        if (static_cast<int>(slots.size())<capacity) continue;
+        rallySelectedCycle=getGameCycleCount();
+        traceDecision("squad_rally_selected",AITelemetry::Record().set("x",p.x).set("y",p.y)
+            .set("members",required).set("slots",slots.size()).set("radius",radius));
+        return p;
+    }
+    return Coord::Invalid();
 }
 
 Coord QuantBot::findSquadRetreatLocation() {

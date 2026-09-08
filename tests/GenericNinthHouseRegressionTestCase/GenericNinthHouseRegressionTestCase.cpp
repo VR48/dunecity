@@ -62,8 +62,8 @@ TEST_CASE("Mod Mentat numeric parsing is nonthrowing and rejects malformed value
     REQUIRE(ModMentatConfig::parseDouble("5.25", frameRate));
     REQUIRE(frameRate == Catch::Approx(5.25));
 
-    const std::array<std::string, 5> malformedValues = {
-        "", "not-a-number", "5.0trailing", "nan", "1e9999"
+    const std::array<std::string, 8> malformedValues = {
+        "", "not-a-number", "5.0trailing", "nan", "1e9999", "NaN", "+inf", "-INFINITY"
     };
     for(const std::string& malformedValue : malformedValues) {
         CAPTURE(malformedValue);
@@ -121,8 +121,8 @@ TEST_CASE("Custom-house presentation numbers parse safely and remain bounded",
     REQUIRE_FALSE(CustomHouseConfig::isValidVoicePlaybackRate(0.0));
     REQUIRE_FALSE(CustomHouseConfig::isValidVoiceGain(5.0));
 
-    const std::array<std::string, 5> malformedValues = {
-        "", "not-a-number", "1.0trailing", "nan", "1e9999"
+    const std::array<std::string, 8> malformedValues = {
+        "", "not-a-number", "1.0trailing", "nan", "1e9999", "NaN", "+inf", "-INFINITY"
     };
     for(const std::string& malformedValue : malformedValues) {
         CAPTURE(malformedValue);
