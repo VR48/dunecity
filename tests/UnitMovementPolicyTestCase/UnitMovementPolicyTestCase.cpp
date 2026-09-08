@@ -60,3 +60,11 @@ TEST_CASE("Non-CARRYALLREQUESTED attack modes are preserved on cancellation", "[
     REQUIRE(attackModeAfterCancellingPickup(HUNT,      false) == HUNT);
     REQUIRE(attackModeAfterCancellingPickup(STOP,      false) == STOP);
 }
+
+TEST_CASE("Legacy AI harvesters restart while qBot and human STOP orders persist", "[unit-movement][harvester]") {
+    using UnitMovementPolicy::resumeStoppedHarvester;
+    REQUIRE(resumeStoppedHarvester(true, false));  // Original/Smart AI deployment.
+    REQUIRE_FALSE(resumeStoppedHarvester(true, true));  // qBot evacuation hold.
+    REQUIRE_FALSE(resumeStoppedHarvester(false, false)); // Human stop.
+    REQUIRE_FALSE(resumeStoppedHarvester(false, true)); // Human with qBot coplayer.
+}

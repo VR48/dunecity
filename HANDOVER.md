@@ -1,3 +1,18 @@
+# Restore legacy AI harvester restart — 1.0.611
+
+Stefan reported Original AI harvesters stranded in Vanilla610. Logs show empty,
+respondable harvesters with mode6(STOP), no target/path, stationary30seconds.
+610 removed native auto-resume for every AI; Original/Smart controllers rely on
+that restart and only issue early-return orders themselves. The scope was wrong.
+Harvester::checkPos now restores STOP->HARVEST for AI houses without a QuantBot
+controller. A qBot co-controller retains responsibility for safety holds/resumption;
+human STOP remains preserved. Runtime checks the house player list, not display
+names or mod flags. The empty-refinery-loop fix remains. No save layout changes.
+Regression covers legacy AI, qBot, human and human+qBot restart decisions.
+Local611 built on MacBook Air: pre/post dependency audits passed, CTest495passed/
+3optional skipped, deep strict signature and bundle version611 verified. Not
+launched or pushed. Logs /tmp/dunecity-611-build.log and /tmp/dunecity-611-tests.log.
+
 # Harvester empty-refinery oscillation — 1.0.610
 
 Current Vanilla609 session1788874105288417-0 showed repeated retreat_refinery
