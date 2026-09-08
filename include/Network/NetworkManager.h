@@ -81,6 +81,13 @@ inline bool rejectIncompatibleNetworkProtocol(Uint32 peerProtocolVersion, Discon
     return true;
 }
 
+template<typename DisconnectFunction>
+inline bool rejectIncompatibleGameVersion(const std::string& peer, const std::string& local, DisconnectFunction&& disconnect) {
+    if (peer == local) return false;
+    disconnect(NETWORKDISCONNECT_PROTOCOL_MISMATCH);
+    return true;
+}
+
 // Mod transfer limits
 #define MAX_MOD_TRANSFER_SIZE   (10 * 1024 * 1024)  // 10MB max mod size
 #define MOD_CHUNK_SIZE          (64 * 1024)          // 64KB per chunk

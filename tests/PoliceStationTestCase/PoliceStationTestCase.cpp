@@ -38,7 +38,7 @@ TEST_CASE("PoliceStation: not a city-role structure (R/C/I)",
 TEST_CASE("PoliceStation: provides full police coverage",
           "[police-station][police][regression]") {
     REQUIRE(getPoliceCoverage(Structure_PoliceStation) == kPoliceCoverageFull);
-    REQUIRE(getPoliceCoverage(Structure_PoliceStation) == 100);
+    REQUIRE(getPoliceCoverage(Structure_PoliceStation) == 1000);
 }
 
 TEST_CASE("PoliceStation: annual upkeep is 100 (designer-tuned from SC's 500)",

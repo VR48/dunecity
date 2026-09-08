@@ -1,3 +1,4 @@
+#include <structures/ZoneStructure.h>
 /*
  *  This file is part of Dune Legacy.
  *
@@ -21,6 +22,9 @@
 
 #include <Game.h>
 #include <House.h>
+#include <players/HumanPlayer.h>
+#include <players/QuantBot.h>
+#include <structures/PoliceStation.h>
 
 #include <misc/exceptions.h>
 
@@ -115,6 +119,20 @@ void Command::save(OutputStream& stream) const {
 }
 
 void Command::executeCommand() const {
+    // This path is replayed on every peer. AI do* helpers bypass it, so these
+    // leases distinguish actual player control from old forced AI movement.
+    const bool unitOrder=commandID==CMD_UNIT_MOVE2POS || commandID==CMD_UNIT_MOVE2OBJECT
+        || commandID==CMD_UNIT_ATTACKPOS || commandID==CMD_UNIT_ATTACKOBJECT
+        || commandID==CMD_UNIT_SETMODE || commandID==CMD_UNIT_SENDTOREPAIR
+        || commandID==CMD_UNIT_REQUESTCARRYALLDROP || commandID==CMD_UNIT_HEAL;
+    const auto* human=dynamic_cast<const HumanPlayer*>(currentGame->getPlayerByID(playerID));
+    if (unitOrder && human && !parameter.empty()) {
+        const auto* unit=dynamic_cast<const UnitBase*>(currentGame->getObjectManager().getObject(parameter[0]));
+        if (unit && unit->getOwner()==human->getHouse())
+            for (const auto& player:unit->getOwner()->getPlayerList())
+                if (auto* bot=dynamic_cast<QuantBot*>(player.get())) bot->onHumanUnitOrder(unit->getObjectID());
+    }
+
     switch(commandID) {
 
         case CMD_PLACE_STRUCTURE: {
@@ -483,6 +501,35 @@ case CMD_INFANTRY_CAPTURE: {
                 parameter.size() > 0 ? parameter[0] : 0,
                 parameter.size() > 1 ? parameter[1] : 0,
                 parameter.size() > 2 ? parameter[2] : 0);
+        } break;
+
+        case CMD_STRUCTURE_DEMOLISH: {
+            if (parameter.size() != 1) return;
+            const auto* issuer = currentGame->getPlayerByID(playerID);
+            auto* structure = dynamic_cast<StructureBase*>(currentGame->getObjectManager().getObject(parameter[0]));
+            if (issuer && structure && issuer->getHouse() == structure->getOwner()) structure->demolish();
+        } break;
+
+        case CMD_ZONE_DEMOLISH: {
+            if (parameter.size() != 1 || !currentGame->isCitySimEnabled()) return;
+            const auto* issuer = currentGame->getPlayerByID(playerID);
+            auto* zone = dynamic_cast<ZoneStructure*>(currentGame->getObjectManager().getObject(parameter[0]));
+            if (issuer && zone && issuer->getHouse() == zone->getOwner()) zone->demolish();
+        } break;
+
+        case CMD_POLICE_REINFORCEMENTS: {
+            if (parameter.size() != 1) return;
+            const auto* issuer = currentGame->getPlayerByID(playerID);
+            auto* station = dynamic_cast<PoliceStation*>(currentGame->getObjectManager().getObject(parameter[0]));
+            if (issuer && station && issuer->getHouse() == station->getOwner()) station->doSpawnVehicles();
+        } break;
+
+        case CMD_HOUSE_AUTO_REPAIR: {
+            if (parameter.size() != 1 || parameter[0] > 1) return;
+            const auto* issuer = currentGame->getPlayerByID(playerID);
+            if (!issuer || !issuer->getHouse()) return;
+            auto* house = currentGame->getHouse(issuer->getHouse()->getHouseID());
+            if (house) house->setAutoRepairEnabled(parameter[0] != 0);
         } break;
 
         default: {

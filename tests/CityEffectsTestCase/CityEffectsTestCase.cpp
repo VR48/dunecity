@@ -1,3 +1,5 @@
+#include <DataTypes.h>
+#include <dunecity/HouseColors.h>
 /*
  *  CityEffectsTestCase.cpp
  *
@@ -36,8 +38,8 @@ TEST_CASE("getStructureCityRole categorises mapped buildings", "[city-effects][r
     // Barracks/WOR are residential (infantry garrison = population)
     REQUIRE(getStructureCityRole(Structure_Barracks)         == CityRole::Residential);
     REQUIRE(getStructureCityRole(Structure_WOR)              == CityRole::Residential);
+    REQUIRE(getStructureCityRole(Structure_WindTrap)         == CityRole::Industrial);
     // Non-role structures
-    REQUIRE(getStructureCityRole(Structure_WindTrap)         == CityRole::None);
     REQUIRE(getStructureCityRole(Structure_Wall)             == CityRole::None);
 }
 
@@ -55,7 +57,7 @@ TEST_CASE("getStructureMaxLevel matches structure tier", "[city-effects][role]")
     REQUIRE(getStructureMaxLevel(Structure_Refinery)         == 3);  // I-high
     REQUIRE(getStructureMaxLevel(Structure_Barracks)         == 3);  // R-high
     REQUIRE(getStructureMaxLevel(Structure_WOR)              == 3);  // R-high
-    REQUIRE(getStructureMaxLevel(Structure_WindTrap)         == 0);  // not a role
+    REQUIRE(getStructureMaxLevel(Structure_WindTrap)         == 2);  // clean I-medium
 }
 
 // --- Pollution ---------------------------------------------------------------
@@ -169,11 +171,11 @@ TEST_CASE("All city-role structures contribute zero supply at level 0",
 
 // --- Police coverage ---------------------------------------------------------
 
-TEST_CASE("Police coverage: PoliceStation full, gun turrets quarter, rocket turrets 10%",
+TEST_CASE("Police coverage: PoliceStation full, gun turrets 15%, rocket turrets 15%",
           "[city-effects][police]") {
-    REQUIRE(getPoliceCoverage(Structure_PoliceStation) == 100);
-    REQUIRE(getPoliceCoverage(Structure_GunTurret)     == 25);
-    REQUIRE(getPoliceCoverage(Structure_RocketTurret)  == 25);
+    REQUIRE(getPoliceCoverage(Structure_PoliceStation) == 1000);
+    REQUIRE(getPoliceCoverage(Structure_GunTurret)     == 150);
+    REQUIRE(getPoliceCoverage(Structure_RocketTurret)  == 150);
     REQUIRE(getPoliceCoverage(Structure_Wall)          == 0);
     REQUIRE(getPoliceCoverage(Structure_HeavyFactory)  == 0);
 }
@@ -194,11 +196,9 @@ TEST_CASE("Police annual cost mirrors coverage; PoliceStation costs 100 (designe
           "[city-effects][police]") {
     // Originally matched SC's gCostOf[TOOL_POLICESTATION] = 500; reduced to 100.
     REQUIRE(getPoliceAnnualCost(Structure_PoliceStation) == 100);
-    // GunTurret and RocketTurret keep their fractional police coverage
-    // as a garrison adjacency effect, but contribute zero to the police
-    // bill — base defenses shouldn't drain the city budget.
-    REQUIRE(getPoliceAnnualCost(Structure_GunTurret)     == 0);
-    REQUIRE(getPoliceAnnualCost(Structure_RocketTurret)  == 0);
+    // Gun turrets remain free; rocket turrets cost 15% of station upkeep.
+    REQUIRE(getPoliceAnnualCost(Structure_GunTurret) * 2 == 15);
+    REQUIRE(getPoliceAnnualCost(Structure_RocketTurret)  == 15);
     REQUIRE(getPoliceAnnualCost(Structure_Wall)          == 0);
     REQUIRE(getPoliceAnnualCost(Structure_HeavyFactory)  == 0);
 }
@@ -208,8 +208,9 @@ TEST_CASE("Police annual cost mirrors coverage; PoliceStation costs 100 (designe
 TEST_CASE("Park land-value bonus: Wall, Turrets, Palace, Stadium contribute",
           "[city-effects][park]") {
     REQUIRE(getParkLandValueBonus(Structure_Wall)         == kParkLandValueBonus);
-    REQUIRE(getParkLandValueBonus(Structure_GunTurret)    == 5);
-    REQUIRE(getParkLandValueBonus(Structure_RocketTurret) == 5);
+    REQUIRE(getParkLandValueBonus(Structure_GunTurret)    == kParkLandValueBonus);
+    REQUIRE(getParkLandValueBonus(Structure_RocketTurret) == kParkLandValueBonus);
+    REQUIRE(getParkLandValueRadius(Structure_RocketTurret) == kRocketTurretParkBonusRadius);
     REQUIRE(getParkLandValueBonus(Structure_Palace)       == kStadiumLandValueBonus);
     REQUIRE(getParkLandValueBonus(Structure_Stadium)      == kStadiumLandValueBonus);
     REQUIRE(getParkLandValueBonus(Structure_HeavyFactory) == 0);
@@ -265,8 +266,9 @@ TEST_CASE("Non-zone city-role buildings ALSO contribute population at their leve
     REQUIRE(getZonePopulation(Structure_WOR, 3)            == 40);
     // Vacant — contributes nothing
     REQUIRE(getZonePopulation(Structure_Refinery, 0)       == 0);
-    // Non-role structure — never contributes
-    REQUIRE(getZonePopulation(Structure_WindTrap, 3)       == 0);
+    REQUIRE(getZonePopulation(Structure_WindTrap, 0)       == 0);
+    REQUIRE(getZonePopulation(Structure_WindTrap, 1)       == 1);
+    REQUIRE(getZonePopulation(Structure_WindTrap, 2)       == 3);
 }
 
 TEST_CASE("Residential zones contribute people, scaled with level (SC Classic values)",
@@ -678,18 +680,18 @@ TEST_CASE("getTaxTableEntry: low tax is positive, high tax is strongly negative"
 
 // --- Palace role and population ----------------------------------------------
 
-TEST_CASE("Palace is residential role with 2x residential population, plus commercial",
+TEST_CASE("Palace hosts one residential and one commercial zone",
           "[city-effects][role][palace]") {
     REQUIRE(getStructureCityRole(Structure_Palace) == CityRole::Residential);
     REQUIRE(getStructureMaxLevel(Structure_Palace) == 3);
-    // Palace residential portion = 2× zone R values: 32/48/80
-    REQUIRE(getZonePopulation(Structure_Palace, 1) == 32);
-    REQUIRE(getZonePopulation(Structure_Palace, 2) == 48);
-    REQUIRE(getZonePopulation(Structure_Palace, 3) == 80);
-    // Palace commercial portion = 2× zone C values: 2/6/10
-    REQUIRE(getPalaceCommercialPopulation(1) == 2);
-    REQUIRE(getPalaceCommercialPopulation(2) == 6);
-    REQUIRE(getPalaceCommercialPopulation(3) == 10);
+    // Palace residential portion = one zone: 16/24/40
+    REQUIRE(getZonePopulation(Structure_Palace, 1) == 16);
+    REQUIRE(getZonePopulation(Structure_Palace, 2) == 24);
+    REQUIRE(getZonePopulation(Structure_Palace, 3) == 40);
+    // Palace commercial portion = one zone: 1/3/5
+    REQUIRE(getPalaceCommercialPopulation(1) == 1);
+    REQUIRE(getPalaceCommercialPopulation(2) == 3);
+    REQUIRE(getPalaceCommercialPopulation(3) == 5);
     REQUIRE(getPalaceCommercialPopulation(0) == 0);
 }
 
@@ -842,11 +844,11 @@ TEST_CASE("Regression: Stadium/Palace raises residential cap",
 
 TEST_CASE("Regression: Palace provides dual R+C population per spec",
           "[city-effects][regression][scenario]") {
-    // Palace is residential-role with 2× R pop plus 2× C pop.
+    // Palace is residential-role with one R and one C contribution.
     REQUIRE(getStructureCityRole(Structure_Palace) == CityRole::Residential);
-    REQUIRE(getZonePopulation(Structure_Palace, 1) == 32);   // 2× R L1 (16)
-    REQUIRE(getZonePopulation(Structure_Palace, 3) == 80);   // 2× R L3 (40)
-    REQUIRE(getPalaceCommercialPopulation(3) == 10);          // 2× C L3 (5)
+    REQUIRE(getZonePopulation(Structure_Palace, 1) == 16);   // One R L1
+    REQUIRE(getZonePopulation(Structure_Palace, 3) == 40);   // One R L3
+    REQUIRE(getPalaceCommercialPopulation(3) == 5);          // One C L3
     // Palace provides a stadium-level land-value bonus.
     REQUIRE(getParkLandValueBonus(Structure_Palace) == kStadiumLandValueBonus);
 }
@@ -878,4 +880,147 @@ TEST_CASE("Church count: auto-created 1 per 256 res pop",
     CHECK(computeChurchCount(0)   == 0);
     CHECK(computeChurchCount(256) == 1);
     CHECK(computeChurchCount(512) == 2);
+}
+
+TEST_CASE("Windtraps provide medium industrial jobs without emissions", "[city-effects][windtrap]") {
+    const int maxLevel = getStructureMaxLevel(Structure_WindTrap);
+    REQUIRE(maxLevel == 2);
+    REQUIRE(getIndustrialSupply(Structure_WindTrap, maxLevel) == 25);
+    REQUIRE(getZonePopulation(Structure_WindTrap, maxLevel) == 3);
+    for (int level = 0; level <= 3; ++level) {
+        REQUIRE(getPollutionEmission(Structure_WindTrap, level) == 0);
+        REQUIRE(getCommercialSupply(Structure_WindTrap, level) == 0);
+        REQUIRE(getResidentialSupply(Structure_WindTrap, level) == 0);
+    }
+}
+
+TEST_CASE("Rocket coverage and upkeep are fifteen percent of a police station", "[city-effects][police]") {
+    REQUIRE(getPoliceCoverage(Structure_RocketTurret) * 100 == getPoliceCoverage(Structure_PoliceStation) * 15);
+    REQUIRE(getPoliceAnnualCost(Structure_RocketTurret) * 100 == getPoliceAnnualCost(Structure_PoliceStation) * 15);
+}
+
+TEST_CASE("Palace population and local supply match one R and C zone through level three", "[city-effects][palace]") {
+    for (int level = 0; level <= 4; ++level) {
+        REQUIRE(getZonePopulation(Structure_Palace, level) == getZonePopulation(Structure_ZoneResidential, level));
+        REQUIRE(getPalaceCommercialPopulation(level) == getZonePopulation(Structure_ZoneCommercial, level));
+        REQUIRE(getResidentialSupply(Structure_Palace, level) == getResidentialSupply(Structure_ZoneResidential, level));
+        REQUIRE(getCommercialSupply(Structure_Palace, level) == getCommercialSupply(Structure_ZoneCommercial, level));
+    }
+    REQUIRE(getStructureMaxLevel(Structure_Palace) == 3);
+}
+
+TEST_CASE("Fractional turret upkeep survives aggregation and funding", "[city][budget]") {
+    const auto guns = DuneCity::getPoliceAnnualCost(Structure_GunTurret);
+    const auto rocket = DuneCity::getPoliceAnnualCost(Structure_RocketTurret);
+    REQUIRE(guns + guns == rocket);
+    REQUIRE((guns + rocket + DuneCity::getPoliceAnnualCost(Structure_PoliceStation)).toDouble() == 122.5);
+    REQUIRE((guns * 50 / 100).toDouble() == 3.75);
+}
+
+#include <dunecity/PoliceCoveragePolicy.h>
+TEST_CASE("Service placement predictions match coverage and capped crime", "[city][crime]") {
+    DuneCity::CityMapLayer<int32_t> coverage;
+    coverage.init(40,40,DuneCity::kPoliceMapBlockSize);
+    DuneCity::addPoliceCoverage(coverage,40,40,7,9,100);
+    DuneCity::smoothPoliceCoverage(coverage,40,40);
+    for (int y=0;y<40;++y) for (int x=0;x<40;++x)
+        REQUIRE(DuneCity::policeCoverageAt(7,9,x,y,2,100,40,40)==coverage.worldGet(x,y));
+    // A small turret cannot lower displayed crime while the underlying value
+    // remains over the cap; a station must not receive credit twice for plans.
+    REQUIRE(DuneCity::marginalCrimeReduction(300,0,15)==0);
+    REQUIRE(DuneCity::marginalCrimeReduction(300,0,100)==50);
+    REQUIRE(DuneCity::marginalCrimeReduction(150,140,100)==10);
+    REQUIRE(DuneCity::marginalCrimeReduction(150,200,100)==0);
+}
+TEST_CASE("Police contributions are counted once per coarse cell", "[city][crime]") {
+    DuneCity::CityMapLayer<int32_t> coverage;
+    coverage.init(32,32,2);
+    DuneCity::addPoliceCoverage(coverage,32,32,10,10,15);
+    REQUIRE(coverage.worldGet(10,10)==15);
+    REQUIRE(coverage.worldGet(11,11)==15);
+    DuneCity::addPoliceCoverage(coverage,32,32,10,10,15);
+    REQUIRE(coverage.worldGet(10,10)==30);
+    coverage.init(32,32,2);
+    DuneCity::addPoliceCoverage(coverage,32,32,0,0,100);
+    REQUIRE(coverage.worldGet(0,0)==100);
+    REQUIRE(coverage.worldGet(18,0)==0);
+}
+TEST_CASE("Micropolis police sources stack before diffusion", "[city][crime]") {
+    REQUIRE(DuneCity::policeSourceStrength(1000,100,true,true)==1000);
+    REQUIRE(DuneCity::policeSourceStrength(1000,50,true,true)==500);
+    REQUIRE(DuneCity::policeSourceStrength(1000,100,false,true)==500);
+    REQUIRE(DuneCity::policeSourceStrength(1000,100,false,false)==250);
+    DuneCity::CityMapLayer<int32_t> single, stacked;
+    single.init(60,60,6); stacked.init(60,60,6);
+    DuneCity::addPoliceCoverage(single,60,60,30,30,1000);
+    DuneCity::addPoliceCoverage(stacked,60,60,30,30,1000);
+    DuneCity::addPoliceCoverage(stacked,60,60,31,31,1000);
+    DuneCity::smoothPoliceCoverage(single,60,60);
+    DuneCity::smoothPoliceCoverage(stacked,60,60);
+    // Source arithmetic: center 1000 -> 500 -> 312 -> 218.
+    REQUIRE(single.worldGet(30,30)==218);
+    REQUIRE(stacked.worldGet(30,30)==437);
+    REQUIRE(single.worldGet(54,30)==0);
+    REQUIRE(stacked.worldGet(36,30)>single.worldGet(36,30));
+}
+TEST_CASE("Crime uses Micropolis intermediate and final caps", "[city][crime]") {
+    REQUIRE(DuneCity::computeCrimeBeforePolice(1,255)==300);
+    REQUIRE(DuneCity::computeCrimeAfterPolice(1,255,100)==200);
+    REQUIRE(DuneCity::computeCrimeAfterPolice(1,0,42)==85);
+    REQUIRE(DuneCity::computeCrimeAfterPolice(1,0,150)==0);
+    REQUIRE(DuneCity::computeCrimeAfterPolice(0,255,0)==0);
+}
+
+TEST_CASE("Micropolis display categories use their original thresholds", "[city][crime]") {
+    REQUIRE(std::string{DuneCity::landValueCategory(29)} == "Slum");
+    REQUIRE(std::string{DuneCity::landValueCategory(30)} == "Lower Class");
+    REQUIRE(std::string{DuneCity::landValueCategory(80)} == "Middle Class");
+    REQUIRE(std::string{DuneCity::landValueCategory(150)} == "High");
+    REQUIRE(std::string{DuneCity::crimeCategory(63)} == "Safe");
+    REQUIRE(std::string{DuneCity::crimeCategory(64)} == "Light");
+    REQUIRE(std::string{DuneCity::crimeCategory(128)} == "Moderate");
+    REQUIRE(std::string{DuneCity::crimeCategory(192)} == "Dangerous");
+    REQUIRE(std::string{DuneCity::pollutionCategory(0)} == "None");
+    REQUIRE(std::string{DuneCity::pollutionCategory(1)} == "Moderate");
+    REQUIRE(std::string{DuneCity::pollutionCategory(128)} == "Heavy");
+    REQUIRE(std::string{DuneCity::pollutionCategory(192)} == "Very Heavy");
+}
+
+TEST_CASE("Crime unrest accelerates within Micropolis dangerous band", "[city][crime]") {
+    REQUIRE(DuneCity::cityCrimeUnrestRate(250, 1240) == 0);
+    REQUIRE(DuneCity::cityCrimeUnrestRate(250, 4999) == 0);
+    REQUIRE(DuneCity::cityCrimeUnrestRate(250, 5000) == 216);
+    REQUIRE(DuneCity::cityCrimeUnrestRate(191, 50000) == 0);
+    REQUIRE(DuneCity::crimeUnrestRate(191) == 0);
+    REQUIRE(DuneCity::crimeUnrestRate(192) == 100);
+    REQUIRE(DuneCity::crimeUnrestRate(250) == 216);
+}
+
+TEST_CASE("Hostile land value penalty fades within four tiles", "[city][value]") {
+    REQUIRE(DuneCity::hostileLandValuePenalty(0) == 80);
+    REQUIRE(DuneCity::hostileLandValuePenalty(4) == 48);
+    REQUIRE(DuneCity::hostileLandValuePenalty(16) == 16);
+    REQUIRE(DuneCity::hostileLandValuePenalty(17) == 0);
+}
+
+TEST_CASE("DuneCity house markers remain distinct from each other and rock", "[city][colors]") {
+    for (int i=0;i<8;++i) {
+        const auto c=DuneCity::houseColorShade(i,0);
+        for (int j=i+1;j<8;++j) {
+            const auto d=DuneCity::houseColorShade(j,0);
+            const int dr=int(c.r)-d.r,dg=int(c.g)-d.g,db=int(c.b)-d.b;
+            REQUIRE(dr*dr+dg*dg+db*db >= 90*90);
+        }
+        for(int shade=1;shade<8;++shade) {
+            const auto a=DuneCity::houseColorShade(i,shade-1),b=DuneCity::houseColorShade(i,shade);
+            REQUIRE(int(a.r)+a.g+a.b > int(b.r)+b.g+b.b);
+            REQUIRE(b.a == 255);
+        }
+    }
+    const auto neutral=DuneCity::houseColorShade(HOUSE_NEUTRAL,0);
+    REQUIRE(neutral.g > 220);
+    REQUIRE(neutral.b > 220);
+    REQUIRE(neutral.r < 60);
+    const auto rock=DuneCity::radarTerrainColor(COLOR_ROCK);
+    REQUIRE(((rock&RMASK)>>RSHIFT) < 100);
 }

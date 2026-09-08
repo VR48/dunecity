@@ -8,6 +8,7 @@
  */
 
 #include <structures/Scoutpost.h>
+#include <dunecity/PowerRules.h>
 
 #include <GUI/ObjectInterfaces/DefaultObjectInterface.h>
 #include <GUI/ObjectInterfaces/WindTrapInterface.h>
@@ -61,7 +62,10 @@ void Scoutpost::init(int newItemID) {
     lastVisibleFrame = 2;
 }
 
-Scoutpost::~Scoutpost() = default;
+Scoutpost::~Scoutpost() {
+    // Rejected placement and demolition must also release generated power.
+    setHealth(0);
+}
 
 bool Scoutpost::canAttack(const ObjectBase* object) const {
     if(itemID == Structure_Chemipost) {
@@ -144,8 +148,7 @@ void Scoutpost::setHealth(FixPoint newHealth) {
 
 int Scoutpost::getProducedPower() const {
     int nominal = abs(currentGame->objectData.data[itemID][originalHouseID].power);
-    FixPoint ratio = getHealth() / getMaxHealth();
-    return lround(ratio * nominal);
+    return DuneCity::generatorOutput(nominal, getHealth(), getMaxHealth(), false);
 }
 bool Scoutpost::isFlamepostUpgradeEligible() const {
     return itemID == Structure_Scoutpost

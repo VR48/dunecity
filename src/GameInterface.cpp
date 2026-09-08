@@ -16,12 +16,15 @@
  */
 
 #include <GameInterface.h>
+#include <cctype>
 
 #include <globals.h>
 
 #include <FileClasses/GFXManager.h>
 #include <FileClasses/FontManager.h>
 #include <House.h>
+#include <Command.h>
+#include <players/Player.h>
 #include <Game.h>
 
 #include <ObjectBase.h>
@@ -161,6 +164,41 @@ GameInterface::GameInterface() : Window(0,0,0,0) {
     windowWidget.addWidget(&chemicalCarryallSelectButton, chemicalCarryallButtonPos, chemicalCarryallButtonSize);
     chemicalCarryallSelectButton.setVisible(ModManager::instance().isTornieContentActive());
 
+    autoRepairButton.setText(_("Auto repair off"));
+    autoRepairButton.setTooltipText(_("Automatically start paid building repairs. Off stops new automatic repairs."));
+    autoRepairButton.setOnClick([]() {
+        if (pLocalHouse && pLocalPlayer) currentGame->getCommandManager().addCommand(
+            Command(pLocalPlayer->getPlayerID(), CMD_HOUSE_AUTO_REPAIR,
+                    pLocalHouse->isAutoRepairEnabled() ? 0u : 1u));
+    });
+    const int autoRepairY = 146 + ornithopterButtonHeight + 4
+        + (ModManager::instance().isTornieContentActive() ? chemicalCarryallButtonHeight + 4 : 0);
+    windowWidget.addWidget(&autoRepairButton,
+        Point(getRendererWidth() - sideBar.getSize().x + 24, autoRepairY),
+        Point(ornithopterButtonWidth, 36));
+
+    // Local display controls: no simulation command or save-state change needed.
+    auto addOverlayButton = [&](TextButton& button, const char* label,
+                                const char* tooltip, DuneCity::CityOverlayMode mode, int y) {
+        button.setText(_(label));
+        button.setTooltipText(_(tooltip));
+        button.setToggleButton(true);
+        button.setOnClick([mode]() {
+            currentGame->setCityOverlayMode(currentGame->getCityOverlayMode() == mode
+                ? DuneCity::CityOverlayMode::None : mode);
+        });
+        button.setVisible(currentGame->isCitySimEnabled());
+        windowWidget.addWidget(&button,
+            Point(getRendererWidth() - sideBar.getSize().x + 24, y),
+            Point(ornithopterButtonWidth, 36));
+    };
+    addOverlayButton(landValueOverlayButton, "Land Value",
+        "Show land value: green is high, red is low. Click again to hide (Shift+5; Shift+1 off).",
+        DuneCity::CityOverlayMode::LandValue, autoRepairY + 40);
+    addOverlayButton(crimeOverlayButton, "Crime",
+        "Show crime: red is high, green is low. Click again to hide (Shift+6; Shift+1 off).",
+        DuneCity::CityOverlayMode::CrimeRate, autoRepairY + 80);
+
     // add chat manager
     windowWidget.addWidget(&chatManager, Point(20, 60), Point(getRendererWidth() - sideBar.getSize().x, 360));
 
@@ -193,13 +231,12 @@ GameInterface::GameInterface() : Window(0,0,0,0) {
                                Point(rciWidth, rciHeight));
     }
 
-    // Bottom-right watermark: <active mod display name> over v<VERSION>.
-    // Mirrors the main menu so the active mod is visible mid-game too.
+    // Compact active-match label in the lower-left corner.
     {
         std::string modDisplayName = "Vanilla";
         ModManager& modManager = ModManager::instance();
         if (modManager.isInitialized()) {
-            ModInfo info = modManager.getModInfo(modManager.getActiveModName());
+            ModInfo info = modManager.getModInfo(currentGame->getGameInitSettings().getModName());
             if (!info.displayName.empty()) {
                 modDisplayName = info.displayName;
             } else if (!info.name.empty()) {
@@ -207,13 +244,15 @@ GameInterface::GameInterface() : Window(0,0,0,0) {
             }
         }
 
-        modVersionLabel.setText(modDisplayName + "\nv" + std::string(VERSION));
-        modVersionLabel.setTextFontSize(14);
+        std::transform(modDisplayName.begin(), modDisplayName.end(), modDisplayName.begin(),
+            [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+        modVersionLabel.setTextFontSize(10);
+        modVersionLabel.setText("MOD: " + modDisplayName + "  v" + std::string(VERSION));
         modVersionLabel.setTextColor(COLOR_WHITE, COLOR_BLACK);
         modVersionLabel.setAlignment(static_cast<Alignment_Enum>(Alignment_Left | Alignment_VCenter));
 
-        const int labelWidth  = 200;
-        const int labelHeight = 44;
+        const int labelWidth  = modVersionLabel.getMinimumSize().x + 4;
+        const int labelHeight = modVersionLabel.getMinimumSize().y + 2;
         const int marginX     = 8;
         const int marginY     = 6;
         windowWidget.addWidget(&modVersionLabel,
@@ -321,7 +360,9 @@ void GameInterface::draw(Point position) {
     int yCount2 = 0;
 
     //draw power level indicator
-    if (pLocalHouse->getPowerRequirement() == 0)    {
+    if (!pLocalHouse->isPowerRequired()) {
+        yCount2 = powerIndicatorPos.h + 1;
+    } else if (pLocalHouse->getPowerRequirement() == 0)    {
         if (pLocalHouse->getProducedPower() > 0) {
             yCount2 = powerIndicatorPos.h + 1;
         } else {
@@ -387,6 +428,16 @@ void GameInterface::draw(Point position) {
 void GameInterface::updateObjectInterface() {
     const auto& selection = currentGame->getSelectedList();
 
+    const std::string repairText = pLocalHouse && pLocalHouse->isAutoRepairEnabled()
+        ? _("Auto repair on") : _("Auto repair off");
+    if (autoRepairButton.getText() != repairText) autoRepairButton.setText(repairText);
+    autoRepairButton.setVisible(selection.empty() && pLocalHouse && pLocalPlayer);
+    const bool showOverlayButtons = selection.empty() && currentGame->isCitySimEnabled();
+    landValueOverlayButton.setVisible(showOverlayButtons);
+    crimeOverlayButton.setVisible(showOverlayButtons);
+    // Keep pressed states in sync with keyboard shortcuts and other overlays.
+    landValueOverlayButton.setToggleState(currentGame->getCityOverlayMode() == DuneCity::CityOverlayMode::LandValue);
+    crimeOverlayButton.setToggleState(currentGame->getCityOverlayMode() == DuneCity::CityOverlayMode::CrimeRate);
     if(selection.empty()) {
         ornithopterSelectButton.setVisible(true);
         chemicalCarryallSelectButton.setVisible(ModManager::instance().isTornieContentActive());

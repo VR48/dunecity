@@ -997,6 +997,14 @@ void NetworkManager::handlePacket(ENetPeer* peer, ENetPacketIStream& packetStrea
                         break;
                     }
                     
+                    // Mod transfer cannot replace executable simulation code.
+                    if (rejectIncompatibleGameVersion(peerData->gameVersion, localVersion,
+                        [peer](int cause) { enet_peer_disconnect_later(peer, static_cast<enet_uint32>(cause)); })) {
+                        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Rejecting game version mismatch: peer=%s local=%s",
+                                     peerData->gameVersion.c_str(), localVersion.c_str());
+                        break;
+                    }
+
                     if(bIsServer) {
                         // Server: verify client matches server config
                         SDL_Log("========== SERVER CONFIG VERIFICATION ==========");

@@ -78,6 +78,9 @@ private:
     HBox forecastPrimaryHBox;
     Label incomeLabel;
     Label policeCostLabel;
+    Label policeStationCostLabel;
+    Label rocketTurretCostLabel;
+    Label gunTurretCostLabel;
     HBox forecastSecondaryHBox;
     Label netLabel;
     Label perSecondLabel;
@@ -91,6 +94,8 @@ private:
     Label comPopLabel;
     Label indPopLabel;
     Label servicesLabel;
+    Label environmentLabel;
+    Label crimeTrafficLabel;
 
     HBox buttonsHBox;
     TextButton confirmButton;

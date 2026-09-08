@@ -2002,7 +2002,9 @@ void Mentat::handleSpecialWeapon(const StructureBase* pStructure, MentatBuildCon
 		if (enemyHouseID != -1) {
 			Coord target = findBestDeathHandTarget(enemyHouseID);
 			if (target.isValid()) {
-				doLaunchDeathhand(pPalace, target.x, target.y);
+				const Coord reactorTarget = findNuclearMissileTarget();
+                        if (reactorTarget.isValid()) target = reactorTarget;
+                        doLaunchDeathhand(pPalace, target.x, target.y);
 			}
 		}
 	}
@@ -2491,7 +2493,7 @@ void Mentat::handleCYProduction(const BuilderBase* pBuilder, const StructureBase
 				doUpgrade(pBuilder);
 				logDebug("PRODUCTION: Upgrading CY to level %d, credits: %d", pBuilder->getCurrentUpgradeLevel() + 1, ctx.money);
 			}
-			else if ((ctx.powerProduced < ctx.powerRequired)
+			else if ((ctx.house->isPowerRequired() && ctx.powerProduced < ctx.powerRequired)
 				&& pBuilder->getProductionQueueSize() == 0) {
 				// Prefer nuclear plant over windtrap
 				if (ctx.isCitySim && pBuilder->isAvailableToBuild(Structure_NuclearPlant)

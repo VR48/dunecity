@@ -68,6 +68,9 @@ public:
     ObjectInterface* getInterfaceContainer() override;
 
     void destroy() override;
+    virtual void demolish();
+    // Roll back a temporary structure that never occupied the map.
+    void cancelPlacement() { demolishedByOwner_ = true; }
     void drawSelectionBox() override;
     void drawOtherPlayerSelectionBox() override;
     virtual void drawGatheringPointLine();
@@ -166,6 +169,7 @@ public:
     void setCityOccupancy(uint8_t v) { cityOccupancy_ = v; }
 
 protected:
+    bool demolishedByOwner_ = false; // transient removal cause; never survives removal
     /**
         Used for updating things that are specific to that particular structure. Is called from
         StructureBase::update() before the check if this structure is still alive.

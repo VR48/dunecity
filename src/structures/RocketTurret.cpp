@@ -1,3 +1,4 @@
+#include <dunecity/PowerRules.h>
 /*
  *  This file is part of Dune Legacy.
  *
@@ -58,8 +59,8 @@ void RocketTurret::init() {
 RocketTurret::~RocketTurret() = default;
 
 void RocketTurret::updateStructureSpecificStuff() {
-    if( ( !currentGame->getGameInitSettings().getGameOptions().rocketTurretsNeedPower || getOwner()->hasPower() )
-        || ( ((currentGame->gameType == GameType::Campaign) || (currentGame->gameType == GameType::Skirmish)) && getOwner()->isAI()) ) {
+    if( ( DuneCity::rocketTurretPowered(currentGame->getGameInitSettings().getGameOptions().rocketTurretsNeedPower, getOwner()->getProducedPower(), getOwner()->getPowerRequirement()) )
+        || ( ((currentGame->gameType == GameType::Campaign) || (currentGame->gameType == GameType::Skirmish)) && getOwner()->isAI() && getOwner()->isPowerRequired()) ) {
         TurretBase::updateStructureSpecificStuff();
     }
 }

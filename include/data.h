@@ -82,7 +82,7 @@ typedef enum {
     Structure_ZoneIndustrial  = 22,  ///< DuneCity: Industrial zone building (100 credits)
     Structure_Road = 23,              ///< DuneCity: Road tile (25 credits)
     Structure_PowerLine = 24,         ///< DuneCity: Power line tile (15 credits)
-    Structure_NuclearPlant = 25,      ///< DuneCity: Nuclear power plant (1500 credits, -1000 power)
+    Structure_NuclearPlant = 25,      ///< DuneCity: Nuclear power plant (2000 credits, -2000 power)
     Structure_PoliceStation = 26,     ///< DuneCity: Police station (500 credits — SC TOOL_POLICESTATION). Sole source of police coverage in city mode.
     Structure_LastID = 26,            ///< End of contiguous structure range (save-compat boundary)
 

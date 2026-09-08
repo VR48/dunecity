@@ -30,6 +30,10 @@ inline bool shouldEnableLoadedCityEffects(bool hasCitySimulation) {
     return hasCitySimulation;
 }
 
+inline bool isTrafficConnector(bool road, Uint32 item) {
+    return road || item == Structure_RocketTurret;
+}
+
 inline bool isCityZoneStructure(int itemID) {
     return itemID == Structure_ZoneResidential
         || itemID == Structure_ZoneCommercial
@@ -61,12 +65,10 @@ inline bool isCityZoneTerrain(uint32_t terrain) {
 
 inline int getCityBuildTime(int itemID, int configuredBuildTime,
                             int concreteBuildTime, int policeBuildTime) {
-    if (itemID == Structure_Road) {
-        return std::max(1, concreteBuildTime / 2);
-    }
-    if (isCityZoneStructure(itemID)) {
-        return std::max(1, policeBuildTime / 2);
-    }
+    // Road and R/C/I zoning are planning tools, not construction projects.
+    // The builder needs one simulation step to process the order, after
+    // which the tile/lot is placed immediately.
+    if (itemID == Structure_Road || isCityZoneStructure(itemID)) return 1;
     return std::max(1, configuredBuildTime);
 }
 

@@ -77,20 +77,11 @@ public:
     bool usesTornieMainRebelsRandomSpecial() const;
     TornieRebelsSpecialWeapon getTornieMainRebelsSpecialWeapon() const;
     bool usesTargetedSpecialWeapon() const;
-    inline int getMaxSpecialWeaponTimer() const {
-        if(usesTornieMainRebelsCooldown()) {
-            // Midpoint between the 5-minute saboteur and 10-minute missile cooldowns.
-            return MILLI2CYCLES(7*60*1000 + 30*1000);
-        }
-        if(originalHouseID == HOUSE_HARKONNEN || originalHouseID == HOUSE_SARDAUKAR
-           || usesGuestWildspadeOrnithopterStrike()) {
-            // 10 min
-            return MILLI2CYCLES(10*60*1000);
-        } else {
-            // 5 min
-            return MILLI2CYCLES(5*60*1000);
-        }
+    static int getSpecialWeaponCooldownForHouse(int houseID);
+    int getMaxSpecialWeaponTimer() const {
+        return getSpecialWeaponCooldownForHouse(originalHouseID);
     }
+
 protected:
     bool callFremen();
     bool callLightVehicles();

@@ -31,6 +31,8 @@
 #include <dunecity/CityConstants.h>
 
 #include <GUI/Label.h>
+#include <GUI/TextButton.h>
+#include <Command.h>
 #include <GUI/VBox.h>
 
 #include <misc/string_util.h>
@@ -47,7 +49,9 @@ public:
 
 protected:
     explicit ZoneStructureInterface(int objectID) : DefaultStructureInterface(objectID) {
-        Uint32 color = getHouseColorRGB(getHouseVisualHouse(pLocalHouse->getHouseID()), 3);
+        // The gold sidebar texture makes faction-coloured and white text wash
+        // out. Zone statistics are always black for readable inspection.
+        constexpr Uint32 color = COLOR_BLACK;
 
         mainHBox.addWidget(&textVBox);
 
@@ -95,7 +99,7 @@ protected:
         if (currentGameMap != nullptr && currentGameMap->tileExists(loc.x, loc.y)) {
             density = currentGameMap->getTile(loc.x, loc.y)->getCityZoneDensity();
         }
-        densityLabel.setText(" " + _("Density") + ": " + std::to_string(density) + "/8");
+        densityLabel.setText(" " + _("Density") + ": " + std::to_string(density) + "/" + std::to_string(DuneCity::getStructureMaxLevel(pZone->getItemID())));
 
         // Per-tile city power grid is still stubbed, so fall back to the
         // owning house's overall power state — same fallback the old hover

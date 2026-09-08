@@ -262,7 +262,8 @@ static size_t curlWriteCallback(void* contents, size_t size, size_t nmemb, void*
 }
 #endif
 
-std::string loadFromHttp(const std::string& url, const std::map<std::string, std::string>& parameters) {
+std::string loadFromHttp(const std::string& url, const std::map<std::string, std::string>& parameters,
+                         long timeoutSeconds) {
     // Build URL with parameters
     std::string fullUrl = url;
     
@@ -307,7 +308,7 @@ std::string loadFromHttp(const std::string& url, const std::map<std::string, std
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &responseData);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L); // Follow redirects (HTTP -> HTTPS)
     curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 5L); // Max 5 redirects
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L); // 30 second timeout
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, std::max(1L, timeoutSeconds));
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "DuneLegacy/1.0");
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L); // Verify SSL certificates
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L); // Verify hostname
@@ -335,6 +336,57 @@ std::string loadFromHttp(const std::string& url, const std::map<std::string, std
         THROW(std::runtime_error, "Server Error: Received HTTP status code " + std::to_string(httpCode));
     }
     
+    return responseData;
+#endif
+}
+
+std::string postToHttp(const std::string& url, const std::map<std::string, std::string>& parameters,
+                       long timeoutSeconds) {
+#ifdef __EMSCRIPTEN__
+    // The synchronous Emscripten wget shim used by this project implements
+    // GET only. Retain a functional fallback there; native clients use POST
+    // so their compact JSON payload is never constrained by a request line.
+    return loadFromHttp(url, parameters, timeoutSeconds);
+#else
+    std::string encodedParameters;
+    for (const auto& param : parameters) {
+        if (!encodedParameters.empty()) encodedParameters += '&';
+        encodedParameters += percentEncode(param.first) + "=" + percentEncode(param.second);
+    }
+
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        THROW(std::runtime_error, "Failed to initialize libcurl");
+    }
+    std::string responseData;
+    std::array<char, CURL_ERROR_SIZE> errorBuffer{};
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errorBuffer.data());
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curlWriteCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &responseData);
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 5L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, std::max(1L, timeoutSeconds));
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "DuneLegacy/1.0");
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
+    curl_easy_setopt(curl, CURLOPT_POST, 1L);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, encodedParameters.c_str());
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, static_cast<long>(encodedParameters.size()));
+    configureCurlCertificates(curl);
+
+    const CURLcode result = curl_easy_perform(curl);
+    if (result != CURLE_OK) {
+        const std::string error = errorBuffer[0] != '\0' ? errorBuffer.data() : curl_easy_strerror(result);
+        curl_easy_cleanup(curl);
+        THROW(std::runtime_error, "HTTP request failed: " + error);
+    }
+    long httpCode = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    curl_easy_cleanup(curl);
+    if (httpCode != 200) {
+        THROW(std::runtime_error, "Server Error: Received HTTP status code " + std::to_string(httpCode));
+    }
     return responseData;
 #endif
 }
@@ -452,5 +504,3 @@ void downloadHttpFile(const std::string& url, const std::string& filename,
     }
 #endif
 }
-
-

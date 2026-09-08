@@ -50,6 +50,8 @@ public:
     ObjectInterface* getInterfaceContainer() override;
 
     void destroy() override;
+    void demolish() override; ///< Clear the selected lot without combat explosions or refund.
+    void clearZoneState(); ///< Shared tile/power cleanup before removal.
 
     /// Recompute zone power from current tile density and apply the delta to
     /// the owner's House::powerRequirement. Idempotent; safe to call from

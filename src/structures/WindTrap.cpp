@@ -16,6 +16,7 @@
  */
 
 #include <structures/WindTrap.h>
+#include <dunecity/PowerRules.h>
 
 #include <globals.h>
 
@@ -50,7 +51,11 @@ void WindTrap::init() {
     lastAnimFrame = 2+NUM_WINDTRAP_ANIMATIONS-1;
 }
 
-WindTrap::~WindTrap() = default;
+WindTrap::~WindTrap() {
+    // Also reached by rejected placement and owner demolition. Remove the
+    // remaining contribution without explosions; lethal damage already set it to zero.
+    setHealth(0);
+}
 
 ObjectInterface* WindTrap::getInterfaceContainer() {
     if((pLocalHouse == owner) || (debug == true)) {
@@ -88,8 +93,6 @@ void WindTrap::setHealth(FixPoint newHealth) {
 }
 
 int WindTrap::getProducedPower() const {
-    int windTrapProducedPower = abs(currentGame->objectData.data[Structure_WindTrap][originalHouseID].power);
-
-    FixPoint ratio = getHealth() / getMaxHealth();
-    return lround(ratio * windTrapProducedPower);
+    const int nominal = abs(currentGame->objectData.data[itemID][originalHouseID].power);
+    return DuneCity::generatorOutput(nominal, getHealth(), getMaxHealth(), false);
 }

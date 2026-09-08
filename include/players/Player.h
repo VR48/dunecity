@@ -25,6 +25,7 @@
 #include <misc/RobustList.h>
 #include <misc/string_util.h>
 
+namespace CombatReward { struct Totals; }
 class GameInitSettings;
 class Random;
 class Map;
@@ -89,6 +90,9 @@ public:
         \param  damage      the damage taken
         \param  damagerID   the shooter of the bullet, rocket, etc. if known; NONE_ID otherwise
     */
+    virtual void finishTelemetry() { }
+    // Observational hook; must never influence command selection or simulation RNG.
+    virtual void onCombatReward(Uint32 attacker, Uint32 target, const CombatReward::Totals& reward) { }
     virtual void onDamage(const ObjectBase* pObject, int damage, Uint32 damagerID) { }
 
     const House* getHouse() const { return pHouse; }
@@ -220,6 +224,7 @@ protected:
         \param  xpos    x coordinate (in tile coordinates)
         \param  ypos    y coordinate (in tile coordinates)
     */
+    Coord findNuclearMissileTarget() const;
     void doLaunchDeathhand(const Palace* pPalace, int x, int y) const;
 
     /**

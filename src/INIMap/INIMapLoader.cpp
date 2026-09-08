@@ -1,3 +1,5 @@
+#include <dunecity/PowerRules.h>
+#include <dunecity/VanillaEconomy.h>
 #include <INIMap/INIMapLoader.h>
 
 #include <FileClasses/FileManager.h>
@@ -618,6 +620,12 @@ void INIMapLoader::loadHouses()
             }
         }
 
+        // Named houses use this path; getOrCreateHouse handles implicit houses.
+        // Both must apply the same vanilla default before constructing the House.
+        if (currentGame->getGameInitSettings().getGameOptions().maximumNumberOfHarvestersOverride < 0
+            && !DuneCity::powerRulesEnabled(currentGame->isCitySimEnabled(), currentGame->getGameInitSettings().getModName()))
+            maxHarvesters = DuneCity::vanillaHarvesterCapacity(maxHarvesters);
+
         int quota = inifile->getIntValue(houseName,"Quota",0);
 
         pGame->house[houseID] = std::make_unique<House>(houseID, startingCredits, maxUnits, maxHarvesters, resolvedHouseInfo.team, quota);
@@ -1119,6 +1127,9 @@ House* INIMapLoader::getOrCreateHouse(int houseID) {
                 maxHarvesters = currentGame->objectData.harvesterLimitHugeMap;
             }
         }
+        if (currentGame->getGameInitSettings().getGameOptions().maximumNumberOfHarvestersOverride < 0
+            && !DuneCity::powerRulesEnabled(currentGame->isCitySimEnabled(), currentGame->getGameInitSettings().getModName()))
+            maxHarvesters = DuneCity::vanillaHarvesterCapacity(maxHarvesters);
         auto pNewHouse = std::make_unique<House>(houseID, 0, maxUnits, maxHarvesters, team, 0);
 
         const GameInitSettings::HouseInfoList& houseInfoList = pGame->getGameInitSettings().getHouseInfoList();

@@ -1,3 +1,4 @@
+#include <vector>
 #ifndef DUNECITY_CITYSIMULATION_H
 #define DUNECITY_CITYSIMULATION_H
 
@@ -35,6 +36,17 @@ struct HouseCityState {
     // loss when the local campaign player is not house zero.
     void save(class OutputStream& stream) const;
     void load(class InputStream& stream);
+};
+
+/// Live environmental summary for one house's developed property. This is
+/// derived from the current effect maps after every scan rather than saved:
+/// it is presentation/diagnostic state, not simulation input.
+struct CityEnvironmentStatus {
+    int averageLandValue = 0;
+    int averagePollution = 0;
+    int averageCrime = 0;
+    int averageTraffic = 0;
+    int sampledStructures = 0;
 };
 
 class CitySimulation {
@@ -117,6 +129,14 @@ public:
     int getHospitalCount() const;
     int getChurchCount() const;
 
+    /// Current city-wide environmental summary for a house. The no-argument
+    /// UI getters above use the local house; this supports spectators and
+    /// QuantBot analytics without treating local UI state as game state.
+    const CityEnvironmentStatus& getEnvironmentStatus(int houseID) const;
+    int getAveragePollution() const;
+    int getAverageCrime() const;
+    int getAverageTraffic() const;
+
     /// Civic building presence flags (refreshed each scan).
     bool getHasStadium() const;
     bool getHasAirport() const;
@@ -130,7 +150,9 @@ public:
     const CityMapLayer<uint8_t>& getTrafficDensityMap() const { return trafficDensityMap_; }
     const CityMapLayer<uint8_t>& getPollutionDensityMap() const { return pollutionDensityMap_; }
     const CityMapLayer<uint8_t>& getLandValueMap() const { return landValueMap_; }
-    const CityMapLayer<uint8_t>& getCrimeRateMap() const { return crimeRateMap_; }
+    const CityMapLayer<int32_t>& getPoliceCoverageMap() const { return policeCoverageMap_; }
+    const CityMapLayer<uint16_t>& getCrimeBeforePoliceMap() const { return crimeBeforePoliceMap_; }
+    const CityMapLayer<uint16_t>& getCrimeRateMap() const { return crimeRateMap_; }
     const CityMapLayer<uint8_t>& getPopulationDensityMap() const { return populationDensityMap_; }
     const CityMapLayer<int8_t>&  getGrowthRateMap() const { return growthRateMap_; }
 
@@ -180,6 +202,8 @@ private:
 
     /// Per-house city state (population, demand, economy, civic buildings).
     HouseCityState houseState_[kMaxCityHouses];
+    CityEnvironmentStatus environmentStatus_[kMaxCityHouses];
+    bool crimeWarningActive_[kMaxCityHouses] = {};
 
     int32_t totalFunds_ = 0;
     int16_t cityTax_ = kDefaultTaxRate;
@@ -190,7 +214,11 @@ private:
     CityMapLayer<uint8_t> trafficDensityMap_;
     CityMapLayer<uint8_t> pollutionDensityMap_;
     CityMapLayer<uint8_t> landValueMap_;
-    CityMapLayer<uint8_t> crimeRateMap_;
+    CityMapLayer<uint8_t> hostileLandValuePenaltyMap_;
+    CityMapLayer<uint16_t> crimeRateMap_;
+    std::vector<uint32_t> crimeUnrestProgress_; // Per-house 16x16 districts; persisted.
+    CityMapLayer<int32_t> policeCoverageMap_; // derived diagnostics, rebuilt on scan/load
+    CityMapLayer<uint16_t> crimeBeforePoliceMap_;
     CityMapLayer<uint8_t> populationDensityMap_;
     CityMapLayer<int8_t>  growthRateMap_;
 

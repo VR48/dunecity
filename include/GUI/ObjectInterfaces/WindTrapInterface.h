@@ -18,6 +18,8 @@
 #ifndef WINDTRAPINTERFACE_H
 #define WINDTRAPINTERFACE_H
 
+#include <structures/NuclearPlant.h>
+#include <structures/WindTrap.h>
 #include "DefaultStructureInterface.h"
 #include "CityStatsBox.h"
 
@@ -48,6 +50,14 @@ protected:
 
         mainHBox.addWidget(&textVBox);
 
+        const auto* selected = currentGame->getObjectManager().getObject(objectID);
+        if (selected && (selected->getItemID() == Structure_NuclearPlant
+                         || selected->getItemID() == Structure_WindTrap)) {
+            plantOutputLabel.setTextFontSize(12);
+            plantOutputLabel.setTextColor(color);
+            textVBox.addWidget(&plantOutputLabel, (Sint32)18);
+        }
+
         requiredEnergyLabel.setTextFontSize(12);
         requiredEnergyLabel.setTextColor(color);
         textVBox.addWidget(&requiredEnergyLabel, (Sint32)18);
@@ -71,7 +81,8 @@ protected:
             textVBox.addWidget(&chemipostUpgradeButton, (Sint32)26);
         }
 
-        cityStats_.attachTo(textVBox, color);
+        cityStats_.attachTo(textVBox, color, false,
+                            selected && selected->getItemID() == Structure_WindTrap);
 
         textVBox.addWidget(Spacer::create(),0.99);
     }
@@ -89,6 +100,11 @@ protected:
         }
 
         House* pOwner = pObject->getOwner();
+        if (const auto* plant = dynamic_cast<const NuclearPlant*>(pObject))
+            plantOutputLabel.setText(" " + _("Output") + ": " + std::to_string(plant->getProducedPower()));
+
+        if (const auto* windtrap = dynamic_cast<const WindTrap*>(pObject))
+            plantOutputLabel.setText(" " + _("Output") + ": " + std::to_string(windtrap->getProducedPower()));
 
         requiredEnergyLabel.setText(" " + _("Required") + ": " + std::to_string(pOwner->getPowerRequirement()));
         producedEnergyLabel.setText(" " + _("Produced") + ": " + std::to_string(pOwner->getProducedPower()));
@@ -136,6 +152,7 @@ private:
 
     VBox       textVBox;
 
+    Label      plantOutputLabel;
     Label      requiredEnergyLabel;
     Label      producedEnergyLabel;
     TextButton flamepostUpgradeButton;

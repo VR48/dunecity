@@ -455,13 +455,13 @@ void Tile::blitGround(int xPos, int yPos) {
         SDL_Texture* cityRoadTex = pGFXManager->getZoomedObjPic(ObjPic_CityRoad, currentZoomlevel);
         if (cityRoadTex) {
             const bool up    = !currentGameMap->tileExists(location.x, location.y - 1)
-                               || currentGameMap->getTile(location.x, location.y - 1)->isRoad();
+                               || currentGameMap->getTile(location.x, location.y - 1)->isRoadConnection();
             const bool right = !currentGameMap->tileExists(location.x + 1, location.y)
-                               || currentGameMap->getTile(location.x + 1, location.y)->isRoad();
+                               || currentGameMap->getTile(location.x + 1, location.y)->isRoadConnection();
             const bool down  = !currentGameMap->tileExists(location.x, location.y + 1)
-                               || currentGameMap->getTile(location.x, location.y + 1)->isRoad();
+                               || currentGameMap->getTile(location.x, location.y + 1)->isRoadConnection();
             const bool left  = !currentGameMap->tileExists(location.x - 1, location.y)
-                               || currentGameMap->getTile(location.x - 1, location.y)->isRoad();
+                               || currentGameMap->getTile(location.x - 1, location.y)->isRoadConnection();
             const int mask = ((int)up) | ((int)right << 1) | ((int)down << 2) | ((int)left << 3);
             SDL_Rect roadSrc = { mask * zoomed_tilesize, 0, zoomed_tilesize, zoomed_tilesize };
             SDL_RenderCopy(renderer, cityRoadTex, &roadSrc, &drawLocation);
@@ -753,6 +753,12 @@ void Tile::update_impl()
         std::end(deadUnits));
 }
 
+
+bool Tile::isRoadConnection() const {
+    if (isRoad_) return true;
+    const auto* object = hasANonInfantryGroundObject() ? getNonInfantryGroundObject() : nullptr;
+    return DuneCity::isTrafficConnector(false, object ? object->getItemID() : NONE_ID);
+}
 
 void Tile::clearTerrain() {
     damage.clear();

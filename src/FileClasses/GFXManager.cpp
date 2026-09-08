@@ -235,7 +235,7 @@ static_assert(sizeof(objPicTiles) / sizeof(objPicTiles[0]) == NUM_OBJPICS,
 
 static void applyRebelsTint(SDL_Surface* surface, int colorSlot);
 static bool usesPrivateVisualColorRamp(int colorSlot) {
-    return isTornieRebelsColorSlot(colorSlot) || isVanillaRebelsColorSlot(colorSlot)
+    return isDuneCityHouseColorSlot(colorSlot) || isTornieRebelsColorSlot(colorSlot) || isVanillaRebelsColorSlot(colorSlot)
         || colorSlot == HOUSE_CUSTOM || isCustomHouseColorSlot(colorSlot)
         || isTornieGuestHouseColorSlot(colorSlot);
 }

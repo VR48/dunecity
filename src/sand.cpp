@@ -1,3 +1,4 @@
+#include <dunecity/HouseColors.h>
 /*
  *  This file is part of Dune Legacy.
  *
@@ -624,10 +625,16 @@ Uint32 getColorByTerrainType(int terrainType) {
         default:                    color = COLOR_ROCK;        break;
     }
 
-    return color;
+    return isDuneCityHouseColorSlot(HOUSE_HARKONNEN) ? DuneCity::radarTerrainColor(color) : color;
 }
 
 Uint32 getHouseRadarColor(HOUSETYPE house) {
+    // Do not derive Neutral's radar marker from PALCOLOR_NEUTRAL. That palette
+    // entry is grey and is indistinguishable from rock on the minimap.
+    if(house == HOUSE_NEUTRAL) {
+        return DuneCity::neutralRadarColor;
+    }
+
     const int visualHouse = getHouseVisualHouse(house);
 
 
