@@ -1,3 +1,57 @@
+# Simpler army control — 1.0.602
+
+Stefan requested removing the formation controller after the live 601 game left
+nearby troops gathering while cities were destroyed and slowed to ~15 FPS.
+Reviewed session `1788846458415706-0`, DuneCity 192x192, seed316409388.
+SQLite snapshot `build/review-601-live.sqlite`:99,644 events through cycle182298
+(~48.6 simulation minutes), audit clean; one incomplete live JSONL tail deferred.
+All four houses repeatedly assembled/regrouped. At cycle181945 house5 had42/150
+members ready; earlier snapshots included185 troops waiting with131 ready and a
+69-member force with zero engaged pursuing a target74tiles away. Code excluded
+squad members from scramble defence and ordinarily limited city defence to a10%
+reserve. These are direct causes of idle armies during nearby attacks.
+
+The most recent1,000 FRAME SPIKE samples at review time had median79.35ms frames,
+55.75ms unit work,16.4ms pathfinding,2.3ms rendering and442 queued paths (max633).
+These are slow-frame samples, not an unbiased FPS average or proof that squad
+logic accounts for all cost. AI itself occasionally spiked to291.2ms.
+
+602 removes the assembly/formation/forced economic-target controller and its
+unused policy/formation tests. Normal ground attacks issue native HUNT once to
+available healthy troops, leaving current fights and human commands alone. No
+readiness percentage, cohesion wait, shared base target or retreat-to-regroup gate.
+Idle combat troops loosely gather around active harvesting centre of mass, offset
+three tiles towards the nearest visible ground threat; base centre is the fallback
+without working harvesters. Anchor search is bounded17x17 and cached30seconds,
+with5tile position tolerance. No global flood fill or per-member connected slots.
+Idle repositioning allows four orders per AI update, eight local candidate slots
+per unit, skips stressed queues (>150), existing movement and queued destinations,
+and never falls back onto an occupied centre. Human control and kiting remain.
+
+Defence now draws from all usable AI troops, including hunters, when a building or
+harvester takes a hit. It estimates the nearby8tile enemy force by health-adjusted
+replacement value, requests125% strength, subtracts existing responders, then
+recruits nearest compatible troops with deterministic ID ties. Engaged troops in
+other fights and human commands are excluded. Local non-forced attacks permit
+nearer target selection; AREAGUARD keeps the response local after the attacker dies.
+Fixed base/escort pools are removed. Repeated hits are debounced2seconds per8tile
+incident district, separately for air/ground. No artificial unit-number ceiling.
+Also fixed the old damage callback sending pixel centre coordinates to a tile move.
+
+SAVEGAMEVERSION9832 appends the small defence debounce map. Legacy squad save
+fields remain readable; old squad orders are released once on the first AI update.
+Rally order budget is local to each check, not unsaved cross-cycle state. Decisions
+use simulation cycles, stable integer iteration and the existing deterministic
+multiplayer path queue. No new random calls. Telemetry policy simple-hunt-v40 adds
+`ground_hunt`, `defence_response`, `harvest_army_rally` in generic SQLite events.
+
+Validation: local Release602 built, dependency audit passed before/after, CTest
+passed (471 cases passed,3optional skipped), app signature and version checked.
+Tests cover defence force sizing, existing responders, insufficient armies,
+deterministic nearest-first selection and bounded blocked rally destinations.
+Live FPS/combat and two-peer save/load still require runtime verification.
+No game launched/restarted; no release/tag/push requested for this change.
+
 # Windows portability correction — 1.0.601
 
 The 1.0.600 tag was not published as a release: its Windows compiler expands

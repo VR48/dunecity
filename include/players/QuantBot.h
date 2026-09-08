@@ -107,7 +107,7 @@ private:
     int harvesterLimit = 4;
     int lastCalculatedSpice = 0;
     bool campaignAIAttackFlag = false;
-    // Saved simulation state: an entire wave owns its orders until regrouping.
+    // Legacy squad fields retained for save compatibility; released on first update.
     Uint32 groundSquadPhase = 0, groundSquadStarted = 0, groundSquadNextControl = 0;
     Uint32 groundSquadInitialCount = 0, groundSquadObjective = NONE_ID, groundSquadObjectiveCycle = 0;
     Uint32 groundSquadProgressCycle = 0;
@@ -115,8 +115,9 @@ private:
     UnitMixPolicy::PerformanceWindow performanceWindow;
     std::set<Uint32> groundSquad;
     std::map<Uint32, Uint32> manualUnitOrders, escortAssignments;
-    void beginGroundSquad();
-    void updateGroundSquad();
+    void launchGroundHunt();
+    void releaseLegacyGroundSquad();
+    std::map<Uint32,Uint32> defenceResponseCycles;
     bool humanControls(const UnitBase* unit) const;
     Coord squadRallyLocation = Coord::Invalid();
     Uint32 rallySelectedCycle = std::numeric_limits<Uint32>::max();
@@ -133,7 +134,6 @@ private:
     std::array<int, 8> lastUnitMixBps{};
     // Diagnostic de-duplication only. These must never affect a game decision,
     // save, or lockstep state.
-    std::map<Uint32, uint64_t> lastRallyMoveTrace;
     std::map<Uint32, uint64_t> lastKiteTrace;
     std::map<Uint32, uint64_t> lastHarvesterSafetyTrace;
     std::map<Uint32, std::pair<uint64_t, Uint32>> lastHeavyAllocationTrace;
@@ -148,7 +148,7 @@ private:
     std::map<Uint32, int> idleHarvesterCounters; ///< Track idle time for each harvester (objectID -> cycle count)
     std::map<Uint32, int> harvesterMovingCounters; ///< Track continuous movement time (objectID -> cycle count)
 
-    void scrambleUnitsAndDefend(const ObjectBase* pIntruder, int numUnits = std::numeric_limits<int>::max(), bool baseOnly = false);
+    void scrambleUnitsAndDefend(const ObjectBase* pIntruder);
 
 
     Coord findMcvPlaceLocation(const MCV* pMCV);
@@ -181,11 +181,9 @@ private:
     };
     std::vector<HarvesterStrikeTrace> harvesterStrikeTraces;
     void updateHarvesterStrikeTelemetry(bool final = false);
-    const UnitBase* findMainHarvesterStrikeTarget(const std::vector<const UnitBase*>& force,
-                                                  int* defenderValue = nullptr);
     Coord findSquadRallyLocation();
     Coord findSquadRetreatLocation();
-    void moveToOptimalSquadPosition(const UnitBase* pUnit, FixPoint squadRadius);
+    void moveToOptimalSquadPosition(const UnitBase* pUnit, FixPoint squadRadius, int* orderBudget = nullptr);
     void kiteAwayFromThreat(const UnitBase* pUnit, const ObjectBase* pThreat, int desiredRange);
 
     bool tryLaunchOrnithopterStrike(const QuantBotConfig::DifficultySettings& diffSettings,
@@ -204,8 +202,6 @@ private:
     Uint32 lastSafetyTrace = std::numeric_limits<Uint32>::max();
     struct HarvesterSafety { Uint32 nextCheck = 0, retreatUntil = 0; Coord lastLocation = Coord::Invalid(), plannedDestination = Coord::Invalid(); bool controlled = false; };
     std::map<Uint32, HarvesterSafety> harvesterSafety;
-    std::set<Uint32> baseDefenderIds;
-    std::set<Uint32> harvesterEscortIds;
     struct UnsafeField { Coord location; Uint32 cycle; };
     std::vector<UnsafeField> unsafeFields;
     void refreshTacticalDanger();

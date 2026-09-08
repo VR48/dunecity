@@ -40,7 +40,7 @@
 // 9828: QuantBot crime-service construction allocation progress.
 // 9829: QuantBot deterministic power-demand forecast samples.
 // 9830: QuantBot coordinated waves, player orders, escorts and placement loss memory.
-#define SAVEGAMEVERSION     9831
+#define SAVEGAMEVERSION     9832
 
 // v1.0.0–v1.0.7 shipped SAVEGAMEVERSION 9810 with Num_ItemID=48.
 // v1.0.8–v1.0.10 also used 9810 but with Num_ItemID=52 (4 items added

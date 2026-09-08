@@ -569,60 +569,6 @@ TEST_CASE("Balanced small armies still fill idle heavy-factory lanes", "[quantbo
     REQUIRE(expansionAllocationHorizon(50000,80000) == 80000);
 }
 
-#include <players/GroundSquadPolicy.h>
-TEST_CASE("Squad engagement resolves dead targets before reading them", "[quantbot][squad][regression]") {
-    struct Target { int health=100; int getHealth() const { return health; } } target;
-    struct Unit {
-        const Target* target;
-        mutable int resolutions=0;
-        const Target* getTarget() const { ++resolutions; return target; }
-        bool canAttack(const Target*) const { return true; }
-    } unit{nullptr};
-    bool readTarget=false;
-    auto range=[&](const Target*) { readTarget=true; return true; };
-    // A deleted target resolves to null even while the old ID remains set.
-    REQUIRE_FALSE(GroundSquadPolicy::engaged(&unit,range));
-    REQUIRE_FALSE(readTarget);
-    REQUIRE(unit.resolutions==1);
-    unit.target=&target;
-    REQUIRE(GroundSquadPolicy::engaged(&unit,range));
-    target.health=0; readTarget=false;
-    REQUIRE_FALSE(GroundSquadPolicy::engaged(&unit,range));
-    REQUIRE_FALSE(readTarget);
-}
-TEST_CASE("Large squads get unique connected rally slots outside blocked city lots", "[quantbot][squad][regression]") {
-    const int radius=GroundSquadPolicy::formationRadius(209);
-    auto terrain=[](int x,int y) { return x>=0 && x<40 && y>=0 && y<40 && x!=20; };
-    const auto slots=GroundSquadPolicy::rallySlots(8,20,radius,terrain);
-    REQUIRE(slots.size()>=209);
-    std::set<std::pair<int,int>> unique(slots.begin(),slots.end());
-    REQUIRE(unique.size()==slots.size());
-    for (const auto p:slots) {
-        REQUIRE(p.first<20); // Never assign across the impassable wall.
-        REQUIRE(terrain(p.first,p.second));
-    }
-    REQUIRE(GroundSquadPolicy::rallySlots(20,20,radius,terrain).empty());
-    REQUIRE(slots==GroundSquadPolicy::rallySlots(8,20,radius,terrain));
-    // Temporary friendly traffic does not shrink the terrain-based capacity.
-    REQUIRE_FALSE(GroundSquadPolicy::holdCore(150,209));
-    REQUIRE(GroundSquadPolicy::holdCore(100,209));
-}
-TEST_CASE("Coordinated waves gather a large core and never launch an isolated packet", "[quantbot][squad]") {
-    using namespace GroundSquadPolicy;
-    REQUIRE(committedCount(200)==160);
-    REQUIRE(assembly(30,160,160,false)==Assembly::Wait);
-    REQUIRE(assembly(30,160,160,true)==Assembly::Abort);
-    REQUIRE(assembly(135,160,160,false)==Assembly::Wait);
-    REQUIRE(assembly(136,160,160,false)==Assembly::Launch);
-    REQUIRE(assembly(112,160,160,true)==Assembly::Launch);
-    REQUIRE(assembly(111,160,160,true)==Assembly::Abort);
-    REQUIRE(assembly(50,50,160,true)==Assembly::Abort); // losses cannot redefine a tiny wave as ready
-}
-TEST_CASE("Front-runners wait for the army but do not stop fighting nearby enemies", "[quantbot][squad]") {
-    REQUIRE(GroundSquadPolicy::waitForBody(10,20,10,false));
-    REQUIRE_FALSE(GroundSquadPolicy::waitForBody(18,20,10,false));
-    REQUIRE_FALSE(GroundSquadPolicy::waitForBody(10,20,10,true));
-}
 TEST_CASE("All factory classes fill the same funded live plus queued army plan", "[quantbot][production]") {
     // Heavy shares are already filled. The remaining money must fund light/air shares
     // against 100k, not fractions of the existing 80k army.
@@ -683,4 +629,41 @@ TEST_CASE("Recent unit evidence fades and resumes identically after save and loa
     REQUIRE(restored.sampled==original.sampled);
     REQUIRE(original.reward[4]==1112500);
     REQUIRE(original.loss[4]==1325000);
+}
+
+#include <players/SimpleArmyPolicy.h>
+TEST_CASE("Local defence scales to the enemy instead of a fixed reserve", "[quantbot][combat]") {
+    using namespace SimpleArmyPolicy;
+    std::vector<Responder> army;
+    for (unsigned i=0;i<100;++i) army.push_back({i+1,300,int(i+1)});
+    // A lone raider needs two tanks, a 6k enemy force needs 25, not all 100.
+    REQUIRE(reinforcements(300,0,army).size()==2);
+    REQUIRE(reinforcements(6000,0,army).size()==25);
+    // Troops already committed prevent each incoming hit recruiting another team.
+    REQUIRE(reinforcements(300,600,army).empty());
+    REQUIRE(reinforcements(6000,6000,army).size()==5);
+    REQUIRE(reinforcements(100000,0,army).size()==100);
+    REQUIRE(reinforcements(0,0,army).empty());
+    REQUIRE(reinforcements(600,0,{}).empty());
+}
+TEST_CASE("Local defence is nearest first with deterministic ties", "[quantbot][combat]") {
+    using namespace SimpleArmyPolicy;
+    const std::vector<Responder> army{{9,300,10},{4,300,2},{3,300,2},{1,300,20}};
+    const auto expected=std::vector<uint32_t>{3,4};
+    REQUIRE(reinforcements(300,0,army)==expected);
+    auto reversed=army; std::reverse(reversed.begin(),reversed.end());
+    REQUIRE(reinforcements(300,0,reversed)==expected);
+}
+
+TEST_CASE("Loose rally search is bounded and never collapses blocked slots onto centre", "[quantbot][combat]") {
+    int probes=0;
+    const auto blocked=SimpleArmyPolicy::rallyOffset(42,12,[&](int,int) { ++probes; return false; });
+    REQUIRE_FALSE(blocked);
+    REQUIRE(probes==8);
+    auto terrain=[](int x,int y) { return x>=0 && y>=0; };
+    for (uint32_t id=0;id<200;++id) {
+        const auto a=SimpleArmyPolicy::rallyOffset(id,12,terrain);
+        REQUIRE(a==SimpleArmyPolicy::rallyOffset(id,12,terrain));
+        if (a) { REQUIRE(terrain(a->first,a->second)); REQUIRE(a->first<=12); REQUIRE(a->second<=12); }
+    }
 }

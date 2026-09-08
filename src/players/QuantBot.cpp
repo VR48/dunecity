@@ -28,7 +28,7 @@
 
 
 #include <players/QuantBot.h>
-#include <players/GroundSquadPolicy.h>
+#include <players/SimpleArmyPolicy.h>
 #include <players/QuantBotConfig.h>
 
 #include <Game.h>
@@ -292,6 +292,13 @@ QuantBot::QuantBot(InputStream& stream, House* associatedHouse) : Player(stream,
         groundSquadProgressLocation.x=stream.readSint32();
         groundSquadProgressLocation.y=stream.readSint32();
     }
+    if (currentGame->getLoadedSavegameVersion() >= 9832) {
+        const Uint32 count=stream.readUint32();
+        for (Uint32 i=0;i<count;++i) {
+            const Uint32 key=stream.readUint32();
+            defenceResponseCycles[key]=stream.readUint32();
+        }
+    }
     if (supportMode) {
         gameMode = GameMode::Custom;
         attackTimer = std::numeric_limits<Sint32>::max();
@@ -369,6 +376,7 @@ void QuantBot::save(OutputStream& stream) const {
     stream.writeUint32(groundSquadProgressCycle);
     stream.writeSint32(groundSquadProgressLocation.x);
     stream.writeSint32(groundSquadProgressLocation.y);
+    writeMap(defenceResponseCycles);
 
 }
 
@@ -881,13 +889,7 @@ void QuantBot::onDamage(const ObjectBase* pObject, int damage, Uint32 damagerID)
         doRepair(pObject);
         // no point scrambling to defend a missile
         if(pDamager->getItemID() != Structure_Palace) {
-            const QuantBotConfig& config = getQuantBotConfig();
-            const QuantBotConfig::DifficultySettings& diffSettings = config.getSettings(static_cast<int>(difficulty));
-            // Before the first allocation (or with a very small army), an
-            // empty reserve must not disable the existing emergency response.
-            const bool hasBaseReserve = !baseDefenderIds.empty();
-            scrambleUnitsAndDefend(pDamager, hasBaseReserve
-                ? static_cast<int>(baseDefenderIds.size()) : diffSettings.structureDefenders, hasBaseReserve);
+            scrambleUnitsAndDefend(pDamager);
         }
 
 	}
@@ -899,10 +901,10 @@ void QuantBot::onDamage(const ObjectBase* pObject, int damage, Uint32 damagerID)
 		}
 
 		// Stop him dead in his tracks if he's going to rally point
-		if (pGroundUnit->wasForced() && (pGroundUnit->getItemID() != Unit_Harvester)) {
+		if (!humanControls(pGroundUnit) && pGroundUnit->wasForced() && (pGroundUnit->getItemID() != Unit_Harvester)) {
 			doMove2Pos(pGroundUnit,
-				pGroundUnit->getCenterPoint().x,
-				pGroundUnit->getCenterPoint().y,
+				pGroundUnit->getLocation().x,
+				pGroundUnit->getLocation().y,
 				false);
 		}
 
@@ -911,9 +913,7 @@ void QuantBot::onDamage(const ObjectBase* pObject, int damage, Uint32 damagerID)
 			// Defend the harvester!
 			const Harvester* pHarvester = static_cast<const Harvester*>(pGroundUnit);
 			if (pHarvester->isActive()) {
-				const QuantBotConfig& config = getQuantBotConfig();
-				const QuantBotConfig::DifficultySettings& diffSettings = config.getSettings(static_cast<int>(difficulty));
-				scrambleUnitsAndDefend(pDamager, (diffSettings.harvesterDefenders * 3 + 1) / 2);
+				scrambleUnitsAndDefend(pDamager);
                 auto& safety = harvesterSafety[pHarvester->getObjectID()];
                 safety.nextCheck = 0;
                 safety.retreatUntil = getGameCycleCount() + MILLI2CYCLES(30000);
@@ -5445,51 +5445,61 @@ void QuantBot::build(int militaryValue) {
 }
 
 
-void QuantBot::scrambleUnitsAndDefend(const ObjectBase* pIntruder, int numUnits, bool baseOnly) {
-	if (supportMode || numUnits <= 0) {
-		return;
-	}
-    std::vector<const UnitBase*> candidates;
-    for (const UnitBase* unit : getUnitList()) {
-        if (unit->getOwner() != getHouse() || !unit->isActive() || !unit->canAttack(pIntruder)
-            || humanControls(unit) || groundSquad.count(unit->getObjectID())
-            || (baseOnly && !baseDefenderIds.count(unit->getObjectID()))) continue;
-        candidates.push_back(unit);
+void QuantBot::scrambleUnitsAndDefend(const ObjectBase* intruder) {
+    if (supportMode || !intruder || intruder->getHealth() <= 0
+        || intruder->getOwner()->getTeamID() == getHouse()->getTeamID()) return;
+    const Coord contact = intruder->getLocation();
+    if (!getMap().tileExists(contact)) return;
+    // Debounce volleys by local district, independently for air and ground.
+    // This state is saved: neither rendering speed nor telemetry affects orders.
+    const Uint32 key = ((contact.y / 8) * ((getMap().getSizeX()+7)/8) + contact.x/8) * 2
+        + (intruder->isAFlyingUnit() ? 1 : 0);
+    const Uint32 now = getGameCycleCount();
+    auto previous = defenceResponseCycles.find(key);
+    if (previous != defenceResponseCycles.end() && now-previous->second < MILLI2CYCLES(2000)) return;
+    defenceResponseCycles[key] = now;
+    auto value = [&](const ObjectBase* object) {
+        const int price = currentGame->objectData.data[object->getItemID()][object->getOriginalHouseID()].price;
+        return std::max(1,(FixPoint(price)*object->getHealth()/object->getMaxHealth()).lround());
+    };
+    int threatValue = value(intruder), committed = 0;
+    std::vector<SimpleArmyPolicy::Responder> candidates;
+    for (const auto* unit : getUnitList()) {
+        if (!unit->isActive() || !unit->canAttack()) continue;
+        if (unit != intruder && unit->getOwner()->getTeamID() != getHouse()->getTeamID()
+            && unit->isVisible(getHouse()->getTeamID())
+            && unit->isAFlyingUnit() == intruder->isAFlyingUnit()
+            && blockDistance(contact,unit->getLocation()) <= 8) threatValue += value(unit);
+        if (unit->getOwner()!=getHouse() || !unit->isRespondable() || humanControls(unit)
+            || !unit->canAttack(intruder) || unit->isBadlyDamaged() || unit->getAttackMode()==RETREAT
+            || unit->getItemID()==Unit_Saboteur || unit->getItemID()==Unit_Harvester) continue;
+        const auto* target=unit->getTarget();
+        const bool hostileTarget=target && target->getHealth()>0
+            && target->getOwner()->getTeamID()!=getHouse()->getTeamID();
+        // Count troops already fighting or travelling to this contact. They do
+        // not need a fresh command on every hit. Do not pull units out of another fight.
+        if (hostileTarget && target->isAFlyingUnit()==intruder->isAFlyingUnit()
+            && blockDistance(contact,target->getLocation())<=8) { committed+=value(unit); continue; }
+        if (hostileTarget && blockDistance(unit->getLocation(),target->getLocation())<=unit->getWeaponRange()) continue;
+        candidates.push_back({unit->getObjectID(),value(unit),blockDistance(contact,unit->getLocation()).lround()});
     }
-    std::stable_sort(candidates.begin(),candidates.end(),[&](const UnitBase* a,const UnitBase* b) {
-        if (pIntruder->isAFlyingUnit() && (a->getItemID()==Unit_Launcher) != (b->getItemID()==Unit_Launcher))
-            return a->getItemID()==Unit_Launcher;
-        return blockDistance(a->getLocation(),pIntruder->getLocation()) < blockDistance(b->getLocation(),pIntruder->getLocation());
-    });
-	for (const UnitBase* pUnit : candidates) {
-		if (pUnit->isRespondable() && (pUnit->getOwner() == getHouse())) {
-			if (!pUnit->hasATarget() && !pUnit->wasForced() && pUnit->canAttack(pIntruder)) {
-				Uint32 itemID = pUnit->getItemID();
-				if ((itemID != Unit_Harvester) && (itemID != Unit_MCV) && (itemID != Unit_Carryall)
-					&& (itemID != Unit_Frigate) && (itemID != Unit_Saboteur) && (itemID != Unit_Sandworm)) {
-
-					doSetAttackMode(pUnit, AREAGUARD);
-					doAttackObject(pUnit, pIntruder, true);
-
-					// Request carryall drop for ground units if far away (except Launchers/Deviators)
-					if (getGameInitSettings().getGameOptions().manualCarryallDrops
-						&& pUnit->isVisible()
-						&& pUnit->isAGroundUnit()
-						&& (itemID != Unit_Deviator)
-						&& (itemID != Unit_Launcher)
-						&& (blockDistance(pUnit->getLocation(), pUnit->getDestination()) >= 10)
-						&& (pUnit->getHealth() / pUnit->getMaxHealth() > BADLYDAMAGEDRATIO)) {
-
-						doRequestCarryallDrop(static_cast<const GroundUnit*>(pUnit));
-					}
-
-					if (--numUnits == 0) {
-						break;
-					}
-				}
-			}
-		}
-	}
+    const auto response=SimpleArmyPolicy::reinforcements(threatValue,committed,candidates);
+    int dispatched=0;
+    for (const auto id:response) {
+        const auto* unit=dynamic_cast<const UnitBase*>(getObject(id));
+        if (!unit) continue;
+        groundSquad.erase(id);
+        // A local, non-forced attack permits nearer enemies and kiting. Area
+        // guard keeps the response at the incident instead of chasing a base afterwards.
+        const_cast<UnitBase*>(unit)->setGuardPoint(contact);
+        doSetAttackMode(unit,AREAGUARD);
+        doAttackObject(unit,intruder,false);
+        ++dispatched;
+    }
+    if (dispatched) traceDecision("defence_response",AITelemetry::Record().set("target",intruder->getObjectID())
+        .set("x",contact.x).set("y",contact.y).set("threat_value",threatValue)
+        .set("already_committed_value",committed).set("required_value",SimpleArmyPolicy::responseValue(threatValue))
+        .set("dispatched",dispatched));
 }
 
 bool QuantBot::tryLaunchOrnithopterStrike(const QuantBotConfig::DifficultySettings& diffSettings,
@@ -5789,7 +5799,7 @@ void QuantBot::attack(int militaryValue) {
 		return;
 	}
 
-    beginGroundSquad();
+    launchGroundHunt();
 }
 
 void QuantBot::onHumanUnitOrder(Uint32 id) {
@@ -5804,279 +5814,38 @@ bool QuantBot::humanControls(const UnitBase* unit) const {
         || unit->wasForced() || unit->isMoving() || unit->hasATarget());
 }
 
-void QuantBot::beginGroundSquad() {
-    if (groundSquadPhase || supportMode) return;
-    std::vector<const UnitBase*> candidates;
-    for (const auto* unit : getUnitList())
-        if (unit->getOwner()==getHouse() && unit->isActive() && unit->isRespondable()
-            && unit->isAGroundUnit() && unit->canAttack() && !unit->isBadlyDamaged()
-            && unit->getAttackMode()!=RETREAT && !humanControls(unit)
-            && unit->getItemID()!=Unit_Saboteur && unit->getItemID()!=Unit_Harvester)
-            candidates.push_back(unit);
-    const Coord rally = findSquadRallyLocation();
-    if (rally.isInvalid()) return;
-    std::stable_sort(candidates.begin(),candidates.end(),[&](const auto* a,const auto* b) {
-        const int da=blockDistance(a->getLocation(),rally).lround();
-        const int db=blockDistance(b->getLocation(),rally).lround();
-        return da!=db ? da<db : a->getObjectID()<b->getObjectID();
-    });
-    const size_t count = GroundSquadPolicy::committedCount(static_cast<int>(candidates.size()));
-    int value=0;
-    for (size_t i=0;i<count;++i) value+=currentGame->objectData.data[candidates[i]->getItemID()][getHouse()->getHouseID()].price;
-    if (count<6 || value<3000) { attackTimer=MILLI2CYCLES(15000); return; }
-    groundSquad.clear();
-    for (size_t i=0;i<count;++i) {
-        const auto* unit=candidates[i];
-        groundSquad.insert(unit->getObjectID());
-        baseDefenderIds.erase(unit->getObjectID()); harvesterEscortIds.erase(unit->getObjectID());
-        escortAssignments.erase(unit->getObjectID());
-        // Clear previous AI forced hunts; human commands were excluded above.
+void QuantBot::launchGroundHunt() {
+    if (supportMode) return;
+    int count=0,value=0;
+    for (const auto* unit:getUnitList()) {
+        if (unit->getOwner()!=getHouse() || !unit->isActive() || !unit->isRespondable()
+            || !unit->isAGroundUnit() || !unit->canAttack() || unit->isBadlyDamaged()
+            || unit->getAttackMode()==RETREAT || humanControls(unit)
+            || unit->getItemID()==Unit_Saboteur || unit->getItemID()==Unit_Harvester) continue;
+        // Existing fights/defensive responses finish first. There is no assembly
+        // quota or forced shared object target to make idle troops ignore neighbours.
+        const auto* target=unit->getTarget();
+        if (target && target->getHealth()>0) continue;
+        if (unit->getAttackMode()==HUNT && !unit->wasForced()) continue;
+        doSetAttackMode(unit,GUARD); // releases any old AI movement order
+        doSetAttackMode(unit,HUNT);
+        ++count;
+        value+=currentGame->objectData.data[unit->getItemID()][getHouse()->getHouseID()].price;
+    }
+    traceDecision("ground_hunt",AITelemetry::Record().set("members",count).set("value",value));
+}
+
+void QuantBot::releaseLegacyGroundSquad() {
+    if (!groundSquadPhase && groundSquad.empty()) return;
+    for (const auto id:groundSquad) {
+        const auto* unit=dynamic_cast<const UnitBase*>(getObject(id));
+        if (!unit || unit->getOwner()!=getHouse() || humanControls(unit)) continue;
         doSetAttackMode(unit,GUARD);
+        doSetAttackMode(unit,groundSquadPhase==2 ? HUNT : AREAGUARD);
     }
-    squadRallyLocation=rally;
-    groundSquadPhase=1;
-    groundSquadStarted=getGameCycleCount();
-    groundSquadNextControl=groundSquadStarted;
-    groundSquadInitialCount=static_cast<Uint32>(count);
-    groundSquadObjective=NONE_ID;
-    groundSquadObjectiveCycle=groundSquadStarted;
-    traceDecision("squad_assembly",AITelemetry::Record().set("members",count).set("value",value)
-        .set("eligible",candidates.size()).set("commitment_percent",80).set("x",rally.x).set("y",rally.y)
-        .set("unit_ids",[&]() { AITelemetry::Record ids; for (const auto id:groundSquad) ids.set(std::to_string(id),1); return ids; }()));
-}
-
-void QuantBot::updateGroundSquad() {
-    if (supportMode || !groundSquadPhase) return;
-    const Uint32 now=getGameCycleCount();
-    if (now<groundSquadNextControl) return;
-    groundSquadNextControl=now+MILLI2CYCLES(2000);
-    std::vector<const UnitBase*> members;
-    int value=0;
-    for (auto it=groundSquad.begin();it!=groundSquad.end();) {
-        const auto* unit=dynamic_cast<const UnitBase*>(currentGame->getObjectManager().getObject(*it));
-        if (!unit || unit->getOwner()!=getHouse() || unit->getHealth()<=0 || humanControls(unit)
-            || unit->isBadlyDamaged() || unit->getAttackMode()==RETREAT) { it=groundSquad.erase(it); continue; }
-        if (unit->isActive()) { members.push_back(unit); value+=currentGame->objectData.data[unit->getItemID()][getHouse()->getHouseID()].price; }
-        ++it;
-    }
-    auto finish=[&](const char* reason) {
-        traceDecision("squad_regroup",AITelemetry::Record().set("reason",reason).set("survivors",members.size())
-            .set("initial_members",groundSquadInitialCount).set("value",value));
-        for (const auto* unit:members) {
-            const auto* target=unit->getTarget();
-            if (!target || blockDistance(unit->getLocation(),target->getLocation())>unit->getWeaponRange()) {
-                doSetAttackMode(unit,GUARD); doSetAttackMode(unit,AREAGUARD);
-            }
-        }
-        groundSquad.clear(); groundSquadPhase=0; groundSquadObjective=NONE_ID;
-        // An obstructed rally must not be selected again merely because its
-        // single anchor tile is still empty.
-        squadRallyLocation=Coord::Invalid();
-        attackTimer=MILLI2CYCLES(15000);
-    };
-    if (members.size()<6 || members.size()*2<groundSquadInitialCount) { finish("insufficient_survivors"); return; }
-    const int radius=GroundSquadPolicy::formationRadius(static_cast<int>(members.size()));
-    auto inRange=[](const UnitBase* unit) {
-        return GroundSquadPolicy::engaged(unit,[&](const auto* target) {
-            return blockDistance(unit->getLocation(),target->getClosestPoint(unit->getLocation()))<=unit->getWeaponRange();
-        });
-    };
-    auto walkable=[&](int x,int y) {
-        return getMap().tileExists(x,y) && !getMap().getTile(x,y)->isMountain()
-            && !getMap().getTile(x,y)->hasAStructure();
-    };
-    auto slots=GroundSquadPolicy::rallySlots(squadRallyLocation.x,squadRallyLocation.y,radius,walkable);
-    std::set<std::pair<int,int>> assignedSlots;
-    auto gather=[&](const UnitBase* unit,size_t index) {
-        if (inRange(unit)) return;
-        Coord position=Coord::Invalid();
-        // Retain an existing destination while it remains legal. Otherwise use
-        // an unoccupied slot, never collapse blocked slots onto the anchor.
-        const auto destination=unit->getDestination();
-        const std::pair<int,int> existing{destination.x,destination.y};
-        if (std::find(slots.begin(),slots.end(),existing)!=slots.end()
-            && !assignedSlots.count(existing)
-            && (destination==unit->getLocation() || unit->canPass(destination.x,destination.y))) position=destination;
-        for (size_t n=0;position.isInvalid() && n<slots.size();++n) {
-            const auto p=slots[(index+n)%slots.size()];
-            if (!assignedSlots.count(p) && (unit->getLocation()==Coord(p.first,p.second)
-                || unit->canPass(p.first,p.second))) position=Coord(p.first,p.second);
-        }
-        if (position.isInvalid()) return;
-        assignedSlots.emplace(position.x,position.y);
-        if (unit->getLocation()!=position) {
-            if (unit->getDestination()!=position || (!unit->isMoving() && unit->getTarget()))
-                doMove2Pos(unit,position.x,position.y,false);
-        } else {
-            if (unit->isMoving() || unit->hasATarget()) doSetAttackMode(unit,GUARD);
-            if (unit->getAttackMode()!=AREAGUARD) doSetAttackMode(unit,AREAGUARD);
-        }
-    };
-    int ready=0;
-    auto withinRallyRadius=[](Coord a,Coord b,int r) { return std::max(std::abs(a.x-b.x),std::abs(a.y-b.y))<=r; };
-    for (const auto* unit:members) ready+=withinRallyRadius(unit->getLocation(),squadRallyLocation,radius);
-    if (groundSquadPhase==1) {
-        if (slots.size()<members.size()) { finish("rally_capacity_lost"); return; }
-        for (size_t i=0;i<members.size();++i) gather(members[i],i);
-        if ((now-groundSquadStarted)%MILLI2CYCLES(15000)<MILLI2CYCLES(2000))
-            traceDecision("squad_assembly_progress",AITelemetry::Record().set("members",members.size())
-                .set("ready",ready).set("slots",slots.size()).set("radius",radius)
-                .set("x",squadRallyLocation.x).set("y",squadRallyLocation.y));
-        // Deadline never sends isolated packets: wait for a substantial gathered core.
-        const bool deadline=now-groundSquadStarted>=MILLI2CYCLES(90000);
-        const auto decision=GroundSquadPolicy::assembly(ready,static_cast<int>(members.size()),groundSquadInitialCount,deadline);
-        if (decision==GroundSquadPolicy::Assembly::Wait) return;
-        if (decision==GroundSquadPolicy::Assembly::Abort) { finish("assembly_obstructed"); return; }
-        // Leave stragglers at the rally for the next wave, rather than drip-feeding them.
-        for (auto it=members.begin();it!=members.end();) {
-            if (!withinRallyRadius((*it)->getLocation(),squadRallyLocation,radius)) {
-                groundSquad.erase((*it)->getObjectID()); it=members.erase(it);
-            } else ++it;
-        }
-        groundSquadPhase=2; groundSquadStarted=now;
-        groundSquadProgressLocation=squadRallyLocation; groundSquadProgressCycle=now;
-        groundSquadInitialCount=static_cast<Uint32>(members.size());
-        traceDecision("attack_launched",AITelemetry::Record().set("units_sent",members.size())
-            .set("gathered",ready).set("commitment_percent",80).set("coordinated",true));
-        for (const auto* unit:members) doSetAttackMode(unit,HUNT);
-    }
-    std::vector<int> xs,ys;
-    bool engaged=false;
-    for (const auto* unit:members) { xs.push_back(unit->getX()); ys.push_back(unit->getY()); engaged|=inRange(unit); }
-    std::sort(xs.begin(),xs.end()); std::sort(ys.begin(),ys.end());
-    const Coord centre(xs[xs.size()/2],ys[ys.size()/2]);
-    if (engaged || groundSquadProgressLocation.isInvalid()
-        || blockDistance(centre,groundSquadProgressLocation)>=3) {
-        groundSquadProgressLocation=centre; groundSquadProgressCycle=now;
-    }
-    if (now-groundSquadProgressCycle>=MILLI2CYCLES(180000)) { finish("advance_stalled"); return; }
-    auto enemy=[&](const ObjectBase* object) {
-        return object && object->getOwner() && object->getOwner()->getTeamID()!=getHouse()->getTeamID()
-            && object->getHealth()>0 && object->isVisible(getHouse()->getTeamID())
-            && object->getLocation().isValid();
-    };
-    // Local combat takes precedence over an economic destination, even mid-march.
-    const ObjectBase* target=nullptr;
-    int bestDistance=radius+7;
-    for (const auto* unit:getUnitList()) if (unit->isActive() && unit->canAttack() && !unit->isAFlyingUnit() && enemy(unit)) {
-        const int distance=blockDistance(centre,unit->getLocation()).lround();
-        if (distance<bestDistance) { bestDistance=distance; target=unit; }
-    }
-    const auto* previous=currentGame->getObjectManager().getObject(groundSquadObjective);
-    if (enemy(previous) && now-groundSquadObjectiveCycle<MILLI2CYCLES(20000)
-        && (!target || (previous->isAUnit() && previous->canAttack() && blockDistance(centre,previous->getLocation())<radius+7))) target=previous;
-    if (!target) {
-        int best=std::numeric_limits<int>::max();
-        auto consider=[&](const ObjectBase* object,int importance) {
-            if (!enemy(object)) return;
-            const Coord p=object->getLocation();
-            const int distance=blockDistance(centre,p).lround();
-            // Exposure is relative to our force, not an absolute harvester raid veto.
-            const int route=TacticalSafetyPolicy::corridorDanger(centre.x,centre.y,p.x,p.y,
-                [&](int x,int y) { return dangerAt(Coord(x,y)); });
-            const int exposure=(dangerAt(p)+route)*10000/std::max(3000,value);
-            const int score=distance*20+exposure-importance;
-            if (score<best) { best=score; target=object; }
-        };
-        const bool economicStrike=QuantBotBuildPolicy::shouldUseMainHarvesterStrike(
-            getGameInitSettings().getRandomSeed(),groundSquadStarted,getHouse()->getHouseID(),getPlayerID());
-        if (economicStrike && lastCalculatedSpice>0)
-            for (const auto* unit:getUnitList()) if (unit->isActive() && unit->getItemID()==Unit_Harvester) consider(unit,100);
-        for (const auto* structure:getStructureList()) {
-            const Uint32 item=structure->getItemID();
-            const int importance=item==Structure_HeavyFactory || item==Structure_NuclearPlant ? 100
-                : item==Structure_Refinery ? 80 : (item==Structure_ZoneResidential || item==Structure_ZoneCommercial || item==Structure_ZoneIndustrial) ? 50 : 20;
-            consider(structure,importance);
-        }
-    }
-    if (!target) { finish("no_visible_objective"); return; }
-    if (target->getObjectID()!=groundSquadObjective) {
-        groundSquadObjective=target->getObjectID(); groundSquadObjectiveCycle=now;
-        traceDecision("squad_objective",AITelemetry::Record().set("target",groundSquadObjective)
-            .set("target_item",target->getItemID()).set("members",members.size()).set("force_value",value)
-            .set("local_enemy",bestDistance<radius+7).set("x",centre.x).set("y",centre.y));
-    }
-    int compact=0;
-    for (const auto* unit:members) compact+=withinRallyRadius(unit->getLocation(),centre,radius);
-    if ((now-groundSquadStarted)%MILLI2CYCLES(15000)<MILLI2CYCLES(2000))
-        traceDecision("squad_progress",AITelemetry::Record().set("members",members.size()).set("value",value)
-            .set("engaged",engaged).set("target",groundSquadObjective).set("x",centre.x).set("y",centre.y)
-            .set("compact",compact).set("radius",radius).set("stalled_cycles",now-groundSquadProgressCycle)
-            .set("target_distance",blockDistance(centre,target->getLocation()).lround()));
-    slots=GroundSquadPolicy::rallySlots(centre.x,centre.y,radius,walkable);
-    // The median of a force moving around a building can be inside its walls.
-    // Use the nearest legal gathering anchor instead of leaving stragglers idle.
-    for (int r=1;slots.empty() && r<=radius;++r)
-        for (int dy=-r;dy<=r && slots.empty();++dy)
-            for (int dx=-r;dx<=r && slots.empty();++dx) {
-                if (std::max(std::abs(dx),std::abs(dy))!=r) continue;
-                slots=GroundSquadPolicy::rallySlots(centre.x+dx,centre.y+dy,radius,walkable);
-            }
-    assignedSlots.clear();
-    for (size_t i=0;i<members.size();++i) {
-        const auto* unit=members[i];
-        if (inRange(unit)) continue; // Do not cancel a nearby fight or kiting response.
-        if (GroundSquadPolicy::holdCore(compact,static_cast<int>(members.size())) && !engaged) { gather(unit,i); continue; }
-        if (!withinRallyRadius(unit->getLocation(),centre,radius) && !engaged) { gather(unit,i); continue; }
-        // Fast front-runners wait for the main body instead of sprinting to the target.
-        if (GroundSquadPolicy::waitForBody(blockDistance(unit->getLocation(),target->getLocation()).lround(),
-                blockDistance(centre,target->getLocation()).lround(),radius,engaged)) {
-            if (unit->isMoving() || unit->hasATarget()) doSetAttackMode(unit,GUARD);
-            doSetAttackMode(unit,AREAGUARD);
-            continue;
-        }
-        if (unit->getAttackMode()!=HUNT) doSetAttackMode(unit,HUNT);
-        // Keep the shared objective. Autonomous target searches otherwise replace
-        // it, and reissuing it every two seconds repeatedly clears the path.
-        // Nearby fights and kiting above still override this AI-owned order.
-        if (unit->canAttack(target) && (unit->getTarget()!=target || !unit->wasForced())) doAttackObject(unit,target,true);
-    }
-}
-
-const UnitBase* QuantBot::findMainHarvesterStrikeTarget(const std::vector<const UnitBase*>& force,
-                                                        int* defenderValue) {
-    refreshTacticalDanger();
-    const UnitBase* target = nullptr;
-    int selectedDefence = 0;
-    int bestScore = std::numeric_limits<int>::min();
-    for (const auto* enemy : getUnitList()) {
-        if (enemy->getItemID() != Unit_Harvester || !enemy->isActive()
-            || enemy->getOwner()->getTeamID() == getHouse()->getTeamID()
-            || !enemy->isVisible(getHouse()->getTeamID())) continue;
-        const auto* harvester = static_cast<const Harvester*>(enemy);
-        if (harvester->isReturning() || (!harvester->isHarvesting()
-            && !getMap().getTile(enemy->getLocation())->hasSpice())) continue;
-        const Coord pos = enemy->getLocation();
-        int defence = 0;
-        bool turret = false;
-        for (const auto* building : getStructureList()) {
-            if (building->getOwner()->getTeamID() != enemy->getOwner()->getTeamID()
-                || !building->isVisible(getHouse()->getTeamID()) || !building->canAttack()) continue;
-            if (blockDistance(pos,building->getLocation()) <= building->getWeaponRange()+3) turret=true;
-        }
-        if (turret) continue;
-        for (const auto* guard : getUnitList()) {
-            if (!guard->isActive() || !guard->canAttack() || !guard->isVisible(getHouse()->getTeamID())
-                || guard->getOwner()->getTeamID() != enemy->getOwner()->getTeamID()) continue;
-            if (blockDistance(pos,guard->getLocation()) <= std::max(6,guard->getWeaponRange()+2))
-                defence += currentGame->objectData.data[guard->getItemID()][guard->getOriginalHouseID()].price;
-        }
-        // A full army can contest a light escort, but should not march straight
-        // into a defended turret position merely to chase one harvester.
-        if (defence > 2000) continue;
-        int closest = std::numeric_limits<int>::max();
-        int attackers = 0;
-        for (const auto* unit : force) {
-            if (!unit->canAttack(enemy)) continue;
-            ++attackers;
-            closest=std::min(closest,blockDistance(unit->getLocation(),pos).lround());
-        }
-        if (attackers == 0) continue;
-        const int score = attackers*1000 - defence*10 - closest;
-        if (score > bestScore) { bestScore=score; target=enemy; selectedDefence=defence; }
-    }
-    if (defenderValue) *defenderValue=selectedDefence;
-    return target;
+    groundSquad.clear(); groundSquadPhase=0; groundSquadObjective=NONE_ID;
+    squadRallyLocation=Coord::Invalid();
+    rallySelectedCycle=std::numeric_limits<Uint32>::max();
 }
 
 void QuantBot::onCombatReward(Uint32 attacker, Uint32 target, const CombatReward::Totals& reward) {
@@ -6179,74 +5948,52 @@ void QuantBot::updateHarvesterStrikeTelemetry(bool final) {
 }
 
 Coord QuantBot::findSquadRallyLocation() {
-    if (groundSquadPhase && squadRallyLocation.isValid()) return squadRallyLocation;
-    refreshTacticalDanger();
-    const UnitBase* ground=nullptr;
-    int count=0;
-    for (const auto* unit:getUnitList()) if (unit->getOwner()==getHouse() && unit->isActive()
-        && unit->isAGroundUnit() && unit->canAttack() && !humanControls(unit)) {
-        ++count;
-        if (!ground || (ground->isInfantry() && !unit->isInfantry())) ground=unit;
+    const Uint32 now=getGameCycleCount();
+    // One bounded search per 30 simulation seconds, including failed searches.
+    if (rallySelectedCycle!=std::numeric_limits<Uint32>::max()
+        && now-rallySelectedCycle<MILLI2CYCLES(30000)) return squadRallyLocation;
+    rallySelectedCycle=now;
+    int x=0,y=0,count=0;
+    for (const auto* unit:getUnitList()) {
+        if (unit->getOwner()!=getHouse() || !unit->isActive() || unit->getItemID()!=Unit_Harvester) continue;
+        const auto* harvester=static_cast<const Harvester*>(unit);
+        if (harvester->isReturning() || !harvester->isHarvesting()) continue;
+        x+=unit->getX(); y+=unit->getY(); ++count;
     }
-    const Coord base=findBaseCentre(getHouse()->getHouseID());
-    if (!ground || base.isInvalid()) return Coord::Invalid();
-    const int required=std::max(6,GroundSquadPolicy::committedCount(count));
-    const int radius=GroundSquadPolicy::formationRadius(required);
-    auto terrain=[&](int x,int y) {
-        return getMap().tileExists(x,y) && !getMap().getTile(x,y)->isMountain()
-            && !getMap().getTile(x,y)->hasAStructure();
-    };
-    auto safe=[&](int x,int y) { return terrain(x,y) && dangerAt(Coord(x,y))==0; };
-    // Reuse only if the whole assembly area still fits the current army.
-    const int capacity=required+std::max(6,required/4);
-    if (squadRallyLocation.isValid()
-        && static_cast<int>(GroundSquadPolicy::rallySlots(squadRallyLocation.x,squadRallyLocation.y,radius,safe).size())>=capacity)
+    Coord centre=count ? Coord(x/count,y/count) : findBaseCentre(getHouse()->getHouseID());
+    if (centre.isInvalid()) return Coord::Invalid();
+    const UnitBase* closest=nullptr;
+    int distance=std::numeric_limits<int>::max();
+    for (const auto* unit:getUnitList()) {
+        if (!unit->isActive() || !unit->canAttack() || unit->isAFlyingUnit()
+            || unit->getOwner()->getTeamID()==getHouse()->getTeamID()
+            || !unit->isVisible(getHouse()->getTeamID())) continue;
+        const int d=blockDistance(centre,unit->getLocation()).lround();
+        if (d<distance) { distance=d; closest=unit; }
+    }
+    // Stand on the enemy-facing side of the working harvesters, without selecting
+    // an enemy base as a compulsory destination for every unit.
+    if (closest) {
+        const Coord delta=closest->getLocation()-centre;
+        const int scale=std::max(1,std::max(std::abs(delta.x),std::abs(delta.y)));
+        centre+=Coord(delta.x*3/scale,delta.y*3/scale);
+    }
+    auto usable=[&](Coord p) { return getMap().tileExists(p) && !getMap().getTile(p)->isMountain()
+        && !getMap().getTile(p)->hasAStructure() && dangerAt(p)==0; };
+    if (squadRallyLocation.isValid() && blockDistance(centre,squadRallyLocation)<=5 && usable(squadRallyLocation))
         return squadRallyLocation;
-
-    const int width=getMap().getSizeX(),height=getMap().getSizeY();
-    // Flood terrain once, ignoring temporary traffic, so a large clearing on the
-    // other side of a wall is not mistaken for a usable rally.
-    std::vector<bool> reachable(width*height,false);
-    std::vector<Coord> queue{ground->getLocation()};
-    if (!getMap().tileExists(queue.front())) return Coord::Invalid();
-    reachable[queue.front().y*width+queue.front().x]=true;
-    for (size_t i=0;i<queue.size();++i) for (const Coord d : {Coord(0,-1),Coord(1,0),Coord(0,1),Coord(-1,0)}) {
-        const Coord p=queue[i]+d;
-        if (!terrain(p.x,p.y) || reachable[p.y*width+p.x]) continue;
-        reachable[p.y*width+p.x]=true; queue.push_back(p);
+    Coord best=Coord::Invalid(); int bestScore=std::numeric_limits<int>::max();
+    for (int dy=-8;dy<=8;++dy) for (int dx=-8;dx<=8;++dx) {
+        const Coord p=centre+Coord(dx,dy);
+        if (!usable(p)) continue;
+        int open=0;
+        for (const Coord d:{Coord(0,-1),Coord(1,0),Coord(0,1),Coord(-1,0)}) open+=usable(p+d);
+        const int score=(std::abs(dx)+std::abs(dy))*2+(4-open)*4;
+        if (score<bestScore) { bestScore=score; best=p; }
     }
-    auto usable=[&](int x,int y) { return safe(x,y) && reachable[y*width+x]; };
-    // Summed areas keep a capacity-aware full-city search linear in map size.
-    std::vector<int> sums((width+1)*(height+1),0);
-    for (int y=0;y<height;++y) for (int x=0;x<width;++x)
-        sums[(y+1)*(width+1)+x+1]=int(usable(x,y))+sums[y*(width+1)+x+1]
-            +sums[(y+1)*(width+1)+x]-sums[y*(width+1)+x];
-    std::vector<std::pair<int,Coord>> candidates;
-    const Coord mapCentre(width/2,height/2);
-    for (int y=std::max(0,base.y-48);y<std::min(height,base.y+49);++y)
-        for (int x=std::max(0,base.x-48);x<std::min(width,base.x+49);++x) {
-            if (!usable(x,y)) continue;
-            const int left=std::max(0,x-radius),right=std::min(width,x+radius+1);
-            const int top=std::max(0,y-radius),bottom=std::min(height,y+radius+1);
-            const int free=sums[bottom*(width+1)+right]-sums[top*(width+1)+right]
-                -sums[bottom*(width+1)+left]+sums[top*(width+1)+left];
-            if (free<capacity) continue;
-            const Coord p(x,y);
-            const int score=((2*radius+1)*(2*radius+1)-free)*10
-                +blockDistance(p,base).lround()*3+blockDistance(p,mapCentre).lround();
-            candidates.emplace_back(score,p);
-        }
-    std::stable_sort(candidates.begin(),candidates.end(),[](const auto& a,const auto& b) { return a.first<b.first; });
-    for (const auto& candidate:candidates) {
-        const Coord p=candidate.second;
-        const auto slots=GroundSquadPolicy::rallySlots(p.x,p.y,radius,usable);
-        if (static_cast<int>(slots.size())<capacity) continue;
-        rallySelectedCycle=getGameCycleCount();
-        traceDecision("squad_rally_selected",AITelemetry::Record().set("x",p.x).set("y",p.y)
-            .set("members",required).set("slots",slots.size()).set("radius",radius));
-        return p;
-    }
-    return Coord::Invalid();
+    if (best.isValid()) traceDecision("harvest_army_rally",AITelemetry::Record().set("x",best.x).set("y",best.y)
+        .set("working_harvesters",count));
+    return best;
 }
 
 Coord QuantBot::findSquadRetreatLocation() {
@@ -6606,72 +6353,28 @@ void QuantBot::kiteAwayFromThreat(const UnitBase* pUnit, const ObjectBase* pThre
  * @param pUnit The unit to potentially move
  * @param squadRadius The acceptable radius around either position (unit won't move if within this radius)
  */
-void QuantBot::moveToOptimalSquadPosition(const UnitBase* pUnit, FixPoint squadRadius) {
-	if (!pUnit || !pUnit->isRespondable()) {
-		return;
-	}
-
-	// Calculate actual squad center (dynamic, based on unit positions)
-	Coord actualSquadCenter = findSquadCenter(getHouse()->getHouseID());
-
-	// Use established rally location (static, set by AI)
-	Coord rallyPoint = squadRallyLocation;
-
-	// If neither location is valid, do nothing
-	if (!actualSquadCenter.isValid() && !rallyPoint.isValid()) {
-		return;
-	}
-
-	Coord unitLocation = pUnit->getLocation();
-	Coord unitDestination = pUnit->getDestination();
-
-	// Calculate distances to both positions
-	FixPoint distToSquadCenter = actualSquadCenter.isValid() ? 
-		blockDistance(unitLocation, actualSquadCenter) : FixPt_MAX;
-	FixPoint distToRallyPoint = rallyPoint.isValid() ? 
-		blockDistance(unitLocation, rallyPoint) : FixPt_MAX;
-
-	// Check if unit is already within acceptable radius of either position
-	bool withinSquadRadius = (distToSquadCenter <= squadRadius);
-	bool withinRallyRadius = (distToRallyPoint <= squadRadius);
-
-	// If within radius of either, don't move
-	if (withinSquadRadius || withinRallyRadius) {
-		return;
-	}
-
-	// Check if unit is already heading to a location within the acceptable radius
-	// This prevents repathing when the unit is already on its way
-	if (unitDestination.isValid()) {
-		FixPoint destToSquadCenter = actualSquadCenter.isValid() ? 
-			blockDistance(unitDestination, actualSquadCenter) : FixPt_MAX;
-		FixPoint destToRallyPoint = rallyPoint.isValid() ? 
-			blockDistance(unitDestination, rallyPoint) : FixPt_MAX;
-
-		if (destToSquadCenter <= squadRadius || destToRallyPoint <= squadRadius) {
-			return;  // Already heading close enough, keep current path
-		}
-	}
-
-	// CRITICAL: Don't add non-essential rally movements when pathfinding is overloaded
-	// If queue is stressed (>300 paths), skip rally repositioning
-	// Combat/retreat movements will still happen via other code paths
-	if (currentGame != nullptr && currentGame->isPathQueueStressed()) {
-		return;  // Queue overloaded, skip non-critical movement
-	}
-
-	// Unit is outside both radii - move to the closer one
-	Coord targetPosition;
-	if (distToSquadCenter < distToRallyPoint) {
-		targetPosition = actualSquadCenter;
-	} else {
-		targetPosition = rallyPoint;
-	}
-
-	// Move to the closer position
-	if (targetPosition.isValid()) {
-		doMove2Pos(pUnit, targetPosition.x, targetPosition.y, false);
-	}
+void QuantBot::moveToOptimalSquadPosition(const UnitBase* unit, FixPoint radius, int* orderBudget) {
+    if (!unit || !unit->isRespondable() || humanControls(unit) || unit->hasATarget()
+        || unit->wasForced() || unit->isMoving() || squadRallyLocation.isInvalid()) return;
+    const_cast<UnitBase*>(unit)->setGuardPoint(squadRallyLocation);
+    if (unit->getAttackMode()!=RETREAT && unit->getAttackMode()!=AREAGUARD) doSetAttackMode(unit,AREAGUARD);
+    if (blockDistance(unit->getLocation(),squadRallyLocation)<=radius) return;
+    // A queued path can exist before isMoving becomes true. Leave its destination
+    // alone as well, instead of submitting a different slot on the next AI tick.
+    const Coord destination=unit->getDestination();
+    if (destination.isValid() && destination!=unit->getLocation()
+        && blockDistance(destination,squadRallyLocation)<=radius*2) return;
+    int reactiveBudget=1;
+    if (!orderBudget) orderBudget=&reactiveBudget;
+    if (*orderBudget<=0 || currentGame->getPathRequestQueueSize()>150) return;
+    const auto offset=SimpleArmyPolicy::rallyOffset(unit->getObjectID(),radius.lround(),[&](int x,int y) {
+        const Coord p=squadRallyLocation+Coord(x,y);
+        return getMap().tileExists(p) && unit->canPass(p.x,p.y) && dangerAt(p)==0;
+    });
+    if (!offset) return;
+    const Coord p=squadRallyLocation+Coord(offset->first,offset->second);
+    doMove2Pos(unit,p.x,p.y,false);
+    --*orderBudget;
 }
 
 /**
@@ -6723,81 +6426,21 @@ void QuantBot::retreatAllUnits() {
         }
 
         refreshTacticalDanger();
-        updateGroundSquad();
-        if (!supportMode && (squadRallyLocation.isInvalid()
-            || (getGameCycleCount() + getHouse()->getHouseID()) % 500 == 0))
-            squadRallyLocation = findSquadRallyLocation();
+        releaseLegacyGroundSquad();
+        if (!supportMode) squadRallyLocation = findSquadRallyLocation();
         const QuantBotConfig& config = getQuantBotConfig();
         const QuantBotConfig::DifficultySettings& diffSettings = config.getSettings(static_cast<int>(difficulty));
-        baseDefenderIds.clear();
-        harvesterEscortIds.clear();
-        std::vector<const UnitBase*> reserves;
-        std::vector<const UnitBase*> harvesters;
-        int combatCount = 0;
-        for (const UnitBase* unit : getUnitList()) {
-            if (unit->getOwner() != getHouse() || !unit->isActive() || humanControls(unit)) continue;
-            if (unit->getItemID() == Unit_Harvester) { harvesters.push_back(unit); continue; }
-            if (!unit->isAGroundUnit() || !unit->canAttack() || !unit->isRespondable()) continue;
-            ++combatCount;
-            if (!groundSquad.count(unit->getObjectID()) && !unit->isBadlyDamaged() && !unit->wasForced() && unit->getAttackMode() != HUNT
-                && unit->getAttackMode() != RETREAT) reserves.push_back(unit);
-        }
-        std::stable_sort(reserves.begin(), reserves.end(), [](const UnitBase* a, const UnitBase* b) {
-            return (a->getItemID() == Unit_Launcher) > (b->getItemID() == Unit_Launcher);
-        });
-        const int baseTarget = QuantBotBuildPolicy::baseDefenderTarget(combatCount);
-        const int escortTarget = std::min(combatCount / 10, static_cast<int>(harvesters.size()) * 2);
-        const Coord base = findBaseCentre(getHouse()->getHouseID());
-        auto guardPosition = [&](const UnitBase* unit, Coord position) {
-            if (position.isInvalid() || unit->hasATarget()) return false;
-            const_cast<UnitBase*>(unit)->setGuardPoint(position);
-            if (unit->getAttackMode() != AREAGUARD) doSetAttackMode(unit, AREAGUARD);
-            if (blockDistance(unit->getLocation(), position) > 3
-                && (!unit->isMoving() || blockDistance(unit->getDestination(), position) > 3)) {
-                doMove2Pos(unit, position.x, position.y, false);
-                return true;
-            }
-            return false;
-        };
-        size_t nextReserve = 0;
-        if (!supportMode && base.isValid()) for (; nextReserve < reserves.size()
-            && static_cast<int>(baseDefenderIds.size()) < baseTarget; ++nextReserve) {
-            const auto* unit = reserves[nextReserve];
-            baseDefenderIds.insert(unit->getObjectID());
-            guardPosition(unit, base);
-        }
-        std::vector<int> assigned(harvesters.size(), 0);
-        if (!supportMode) for (; nextReserve < reserves.size()
-            && static_cast<int>(harvesterEscortIds.size()) < escortTarget; ++nextReserve) {
-            const auto* unit = reserves[nextReserve];
-            int best = -1, bestScore = std::numeric_limits<int>::max();
-            for (size_t i=0; i<harvesters.size(); ++i) {
-                if (assigned[i] >= 2) continue;
-                const Coord p=harvesters[i]->getLocation();
-                const int nearBase = base.isValid() && blockDistance(p,base) <= 8 ? 100 : 0;
-                const int score = assigned[i]*1000 + nearBase + blockDistance(unit->getLocation(),p).lround();
-                if (score < bestScore) { bestScore=score; best=static_cast<int>(i); }
-            }
-            const auto assignment=escortAssignments.find(unit->getObjectID());
-            if (assignment!=escortAssignments.end()) for (size_t i=0;i<harvesters.size();++i)
-                if (harvesters[i]->getObjectID()==assignment->second && assigned[i]<2) best=static_cast<int>(i);
-            if (best < 0) break;
-            escortAssignments[unit->getObjectID()]=harvesters[best]->getObjectID();
-            ++assigned[best];
-            harvesterEscortIds.insert(unit->getObjectID());
-            // Stop beside the harvester rather than occupying its destination.
-            Coord p = harvesters[best]->getLocation();
-            Coord target = p;
-            for (const Coord offset : {Coord(-2,0),Coord(2,0),Coord(0,-2),Coord(0,2)}) {
-                const Coord candidate(p.x+offset.x,p.y+offset.y);
-                if (unit->canPass(candidate.x,candidate.y)) { target=candidate; break; }
-            }
-            guardPosition(unit,target);
-        }
-        if ((getGameCycleCount()+getHouse()->getHouseID()) % 500 == 0)
-            traceDecision("defence_allocation", AITelemetry::Record().set("combat_units",combatCount)
-                .set("base_target",baseTarget).set("base_assigned",static_cast<int>(baseDefenderIds.size()))
-                .set("escort_target",escortTarget).set("escort_assigned",static_cast<int>(harvesterEscortIds.size())));
+        // Defence is sized on contact. No fixed reserve owns troops or prevents
+        // the main body helping when a city/harvester is under attack.
+        escortAssignments.clear();
+        int rallyOrdersRemaining=4;
+        int combatCount=0;
+        for (const auto* unit:getUnitList()) if (unit->getOwner()==getHouse() && unit->isActive()
+            && unit->isAGroundUnit() && unit->canAttack()) ++combatCount;
+        int rallyRadius=3;
+        while (rallyRadius*rallyRadius*2<std::max(1,combatCount)) ++rallyRadius;
+        for (auto it=defenceResponseCycles.begin();it!=defenceResponseCycles.end();)
+            if (getGameCycleCount()-it->second>MILLI2CYCLES(30000)) it=defenceResponseCycles.erase(it); else ++it;
         // Use rally location instead of squad center to avoid constant destination changes
         Coord squadCenterLocation = squadRallyLocation;
         if(!supportMode) {
@@ -6838,7 +6481,7 @@ void QuantBot::retreatAllUnits() {
                         .set("desired_range", tank->getWeaponRange() + 2));
                     continue;
                 }
-                if (!groundSquad.count(pUnit->getObjectID()) && !pUnit->wasForced() && pUnit->getAttackMode() == HUNT) {
+                if (!pUnit->wasForced() && pUnit->getAttackMode() == HUNT) {
                     if (const UnitBase* prey = findLightRaiderTarget(pUnit);
                         prey && prey != pUnit->getTarget()) {
                         doAttackObject(pUnit, prey, false);
@@ -6849,37 +6492,16 @@ void QuantBot::retreatAllUnits() {
                 }
             }
 
-            if (groundSquad.count(pUnit->getObjectID()) && !pUnit->isBadlyDamaged()) continue;
-            if (baseDefenderIds.count(pUnit->getObjectID()) || harvesterEscortIds.count(pUnit->getObjectID())) continue;
             if (!supportMode && pUnit->getOwner() == getHouse() && pUnit->isAGroundUnit()
                 && pUnit->isRespondable() && pUnit->isActive() && pUnit->canAttack()
                 && pUnit->getItemID() != Unit_Harvester && pUnit->getItemID() != Unit_Saboteur
                 && !pUnit->isBadlyDamaged() && !pUnit->hasATarget() && !pUnit->wasForced()
                 && pUnit->getAttackMode() != HUNT && pUnit->getAttackMode() != RETREAT
                 && squadRallyLocation.isValid()) {
-                // Spread the formation beside the field rather than filling a single tile.
-                const Uint32 id = pUnit->getObjectID();
-                Coord position = squadRallyLocation + Coord(int(id % 5)-2, int((id / 5) % 5)-2);
-                if (!pUnit->canPass(position.x, position.y) || dangerAt(position)>0)
-                    position = squadRallyLocation;
-                if (guardPosition(pUnit, position)) {
-                    // Repeated guard orders are transport noise, not new strategy. Log the
-                    // first order for each unit at a newly selected rally anchor.
-                    const uint64_t rallySignature = (uint64_t(rallySelectedCycle) << 32)
-                        | (uint64_t(position.x & 0xffff) << 16) | uint64_t(position.y & 0xffff);
-                    if (lastRallyMoveTrace[id] != rallySignature) {
-                        traceDecision("harvest_rally_move_order",AITelemetry::Record().set("unit",id)
-                            .set("from_x",pUnit->getX()).set("from_y",pUnit->getY())
-                            .set("x",position.x).set("y",position.y).set("anchor_x",squadRallyLocation.x)
-                            .set("anchor_y",squadRallyLocation.y).set("anchor_selected_cycle",rallySelectedCycle));
-                        lastRallyMoveTrace[id] = rallySignature;
-                    }
-                }
+                moveToOptimalSquadPosition(pUnit,rallyRadius,&rallyOrdersRemaining);
                 continue;
             }
 
-
-            // Log saboteur state for debugging
             if (pUnit->getItemID() == Unit_Saboteur && pUnit->getOwner() == getHouse()) {
                 logDebug("SABOTEUR CHECK: At (%d,%d) Mode=%d Target=%s Forced=%d", 
                     pUnit->getLocation().x, pUnit->getLocation().y,
@@ -7047,7 +6669,7 @@ void QuantBot::retreatAllUnits() {
                             }
 
                             // Use small radius (2 tiles) to ensure deviated units actually move to squad
-                            moveToOptimalSquadPosition(pUnit, 2);
+                            moveToOptimalSquadPosition(pUnit, 2,&rallyOrdersRemaining);
                         }
                     }
 					else if ((pUnit->getItemID() == Unit_Launcher || pUnit->getItemID() == Unit_Deviator)
@@ -7070,7 +6692,7 @@ void QuantBot::retreatAllUnits() {
                         if (pUnit->getAttackMode() == AREAGUARD && squadCenterLocation.isValid() && (gameMode != GameMode::Campaign)) {
 							if (!pUnit->hasATarget()) {
                                 // Move to optimal position (closer of squad center or rally point, only if outside radius)
-                                moveToOptimalSquadPosition(pUnit, squadRadius);
+                                moveToOptimalSquadPosition(pUnit, squadRadius,&rallyOrdersRemaining);
                             }
                         }
                         else if (pUnit->getAttackMode() == RETREAT) {
@@ -7079,7 +6701,7 @@ void QuantBot::retreatAllUnits() {
                                     doRepair(pUnit);
                                 }
                                 // Move to optimal position (closer of squad center or rally point, only if outside radius)
-                                moveToOptimalSquadPosition(pUnit, squadRadius + 2);
+                                moveToOptimalSquadPosition(pUnit, squadRadius + 2,&rallyOrdersRemaining);
                             }
 
                             // Check if we've reached the retreat position
