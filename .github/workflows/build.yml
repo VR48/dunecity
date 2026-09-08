@@ -583,15 +583,20 @@ jobs:
             sed -i "s|/v[0-9]\+\.[0-9]\+\.[0-9]\+/dunecity_[0-9]\+\.[0-9]\+\.[0-9]\+_amd64\.deb|/v${VERSION}/dunecity_${VERSION}_amd64.deb|g" "$FILE"
             # Release tag links
             sed -i "s|releases/tag/v[0-9]\+\.[0-9]\+\.[0-9]\+|releases/tag/v${VERSION}|g" "$FILE"
-            # Desktop release copy only. Keep independently versioned Android
-            # and legacy macOS labels intact.
+            # Desktop release copy. Android is versioned independently, so its
+            # labels must not be caught by these patterns.
+            #
+            # Since 1.0.599 all three desktop platforms ship from the same tag —
+            # the Mac mini runner builds a DMG for every release — so the copy
+            # says "Desktop: X.Y.Z" and "Windows, macOS and Linux X.Y.Z" rather
+            # than carrying macOS as a separate, older version. The old
+            # "no X macOS build exists" and "This is not version X" rewrites are
+            # deliberately gone: left in place they would have restated a claim
+            # that is now false, on the same page as a working DMG link.
             sed -i "s|>Dune City [0-9]\+\.[0-9]\+\.[0-9]\+<|>Dune City ${VERSION}<|g" "$FILE"
-            sed -i "s|Windows/Linux: [0-9]\+\.[0-9]\+\.[0-9]\+|Windows/Linux: ${VERSION}|g" "$FILE"
-            sed -i "s|Windows/Linux [0-9]\+\.[0-9]\+\.[0-9]\+|Windows/Linux ${VERSION}|g" "$FILE"
-            sed -i "s|Windows and Linux [0-9]\+\.[0-9]\+\.[0-9]\+|Windows and Linux ${VERSION}|g" "$FILE"
-            sed -i "s|This is not version [0-9]\+\.[0-9]\+\.[0-9]\+|This is not version ${VERSION}|g" "$FILE"
-            sed -i "s|no [0-9]\+\.[0-9]\+\.[0-9]\+ macOS build exists|no ${VERSION} macOS build exists|g" "$FILE"
-            # Desktop hero button text; the Mac button includes a DMG suffix.
+            sed -i "s|Desktop: [0-9]\+\.[0-9]\+\.[0-9]\+|Desktop: ${VERSION}|g" "$FILE"
+            sed -i "s|Windows, macOS and Linux [0-9]\+\.[0-9]\+\.[0-9]\+|Windows, macOS and Linux ${VERSION}|g" "$FILE"
+            # Desktop hero button text.
             sed -i "s|>Download [0-9]\+\.[0-9]\+\.[0-9]\+</a>|>Download ${VERSION}</a>|g" "$FILE"
             # Latest label: "Latest: X.X.X"
             sed -i "s|Latest: [0-9]\+\.[0-9]\+\.[0-9]\+|Latest: ${VERSION}|g" "$FILE"
