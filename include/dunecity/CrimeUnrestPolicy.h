@@ -4,32 +4,37 @@
 #include <cstdint>
 #include <vector>
 #include <stdexcept>
+#include <utility>
 
 namespace DuneCity {
-// Sustained district crime controls timing; accumulated dangerous building-time
-// controls strength. A sudden new cluster cannot inherit a fully grown force.
+// Current occupied density determines wave strength. Vacant/non-city buildings
+// supply no rebels; city levels 1/2/3 correspond to low/medium/high density.
+inline int crimeRebelsForDensity(int level) { return std::clamp(level,0,3); }
 struct CrimeUnrestDistrict {
     uint32_t progress = 0;
-    uint64_t buildingExposure = 0;
+    uint64_t buildingExposure = 0; // Reserved: retain the 9833 save layout.
     void reset() { progress=0; buildingExposure=0; }
-    int advance(int rate, int dangerousBuildings, uint32_t cycles, uint32_t threshold) {
-        if (rate<=0 || dangerousBuildings<=0) { reset(); return 0; }
-        const uint32_t step=cycles*static_cast<uint32_t>(rate);
-        progress+=step;
-        buildingExposure+=uint64_t(step)*dangerousBuildings;
+    int advance(int rate, int troopStrength, uint32_t cycles, uint32_t threshold) {
+        if (rate<=0 || troopStrength<=0) { reset(); return 0; }
+        progress+=cycles*static_cast<uint32_t>(rate);
         if (progress<threshold) return 0;
-        const auto sustainedBuildings=buildingExposure/progress;
-        const int strength=std::max(12,3*static_cast<int>(std::min<uint64_t>(20,sustainedBuildings)));
         reset();
-        return strength;
+        return troopStrength;
     }
 };
-// Spread three-trooper groups across the district, including when the force
-// cap means there are more dangerous buildings than groups.
-inline size_t crimeSpawnOrigin(int trooper, int force, size_t origins) {
-    if (!origins) return 0;
-    const size_t groups=std::min(origins,static_cast<size_t>((force+2)/3));
-    return (static_cast<size_t>(trooper/3)%groups)*origins/groups;
+// Compact, deterministic nearest-first placement around one hotspot. The runtime
+// fills each infantry tile before moving on, and never rescans exhausted slots.
+inline std::vector<std::pair<int,int>> crimeSpawnSites(int cx,int cy,int width,int height) {
+    std::vector<std::pair<int,int>> sites;
+    constexpr int radius=16;
+    for (int y=std::max(0,cy-radius);y<std::min(height,cy+radius+1);++y)
+        for (int x=std::max(0,cx-radius);x<std::min(width,cx+radius+1);++x)
+            sites.emplace_back(x,y);
+    std::stable_sort(sites.begin(),sites.end(),[&](const auto& a,const auto& b) {
+        auto distance=[&](const auto& p) { return (p.first-cx)*(p.first-cx)+(p.second-cy)*(p.second-cy); };
+        return distance(a)<distance(b);
+    });
+    return sites;
 }
 template<class Stream>
 void saveCrimeUnrest(Stream& stream, const std::vector<CrimeUnrestDistrict>& districts) {

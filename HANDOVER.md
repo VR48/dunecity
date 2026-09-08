@@ -1,3 +1,42 @@
+# Density-scaled hotspot outbreaks and idle road repairs — 1.0.606
+
+Stefan corrected 605 outbreaks: one compact group at the worst crime hotspot,
+with 1 trooper per low-density dangerous building, 2 per medium, 3 per high.
+This supersedes the historical-average size, 12 minimum/60 maximum and spread
+across several buildings in 605 below. Current occupied city level supplies the
+weight; vacant zones and non-city-role structures contribute zero. Existing
+per-house 16x16 district scope, dangerous threshold 192, population gate 5000,
+and 4–6 simulation-minute buildup remain. The Micropolis crime formula is unchanged.
+
+The entire district wave uses one highest-crime occupied building as its origin
+and target. Legal infantry slots are filled nearest-first within 16 tiles of that
+hotspot, with stable integer ordering. One advancing cursor avoids rescanning
+blocked/full tiles for every trooper. Engine unit limits and available space can
+still reduce actual deployment; telemetry retains requested versus spawned and
+adds occupied_density_1_2_3 plus hotspot coordinates. The old buildingExposure
+field remains reserved in save format 9833, preserving saved progress and byte
+layout; it no longer affects strength. No wall-clock/random decisions added.
+
+Idle qBot city yards now queue paid road repairs after strategic/city construction
+selects no work. The older independent road helper scanned only 20 tiles from the
+base centre; new maintenance considers edges/corners around all surviving owned
+buildings, including outer-city road gaps and intersections. Broken through-roads
+rank before junction/edge extensions. Only connected, legal, unoccupied terrain
+outside reserved footprints qualifies. Queue at most 8 road segments once per
+planning pass, respecting spendable cash above the economic reserve. Normal
+construction retains priority. Road placement uses the ordinary yard production
+and placement pipeline; no new free road command. Road repairs can reuse recently
+destroyed areas like concrete, and cancel safely if their site becomes blocked
+or has already been repaired. Telemetry: city_road_repair, idle_yard_road_gaps.
+Vanilla is unaffected by these city-only changes.
+
+Built/signed locally as 1.0.606; dependency audits before/after build, version
+metadata and signature verification pass. CTest: 484 passed, 3 optional skipped.
+Tests cover density-weighted totals, uncapped district sizes, 4/6-minute timing,
+reset/population gates, saved legacy fields, stable nearest-hotspot sites and map
+edges, and outer-city road gap prioritisation/deduplication/blocking. Not launched,
+pushed or released. Live wave balance and road maintenance still need gameplay.
+
 # Larger district outbreaks and flexible production — 1.0.605
 
 Stefan requested larger coordinated rebel outbreaks after longer sustained crime,

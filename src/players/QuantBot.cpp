@@ -1,3 +1,4 @@
+#include <players/CityRoadRepairPolicy.h>
 #include <players/UnitMixPolicy.h>
 #include <players/CityServiceInvestmentPolicy.h>
 #include <dunecity/PoliceCoveragePolicy.h>
@@ -3485,6 +3486,7 @@ void QuantBot::build(int militaryValue) {
 	// Track unique structures ordered this tick to prevent multiple CYs
 	// from building the same thing. Zones and turrets are excluded (want multiples).
 	std::set<Uint32> orderedThisTick;
+    bool roadMaintenanceAttempted = false;
 
     // Give city construction first access to this pass's planning budget.
     // Light factories get first troop orders so heavy overflow cannot consume their slots.
@@ -5304,6 +5306,16 @@ void QuantBot::build(int militaryValue) {
 			logDebug("No structure selected to build (money: %d, skipRemaining: %d)", money, skipRemainingStructureLogic);
 		}
 
+        // Only use spare yard capacity, after all strategic/city choices.
+        if (isCitySim && itemID == NONE_ID && !skipRemainingStructureLogic
+            && !roadMaintenanceAttempted && !pBuilder->isUpgrading()
+            && pBuilder->getProductionQueueSize() == 0 && pBuilder->isAvailableToBuild(Structure_Road)) {
+            roadMaintenanceAttempted = true;
+            const int roadPrice = std::max(1,data[Structure_Road][houseID].price);
+            const int repaired = queueCityRoadRepairs(pBuilder,std::min(8,std::max(0,money-economyReserve)/roadPrice));
+            money -= repaired*roadPrice;
+        }
+
 		// City yards use the demand-ranked fallback before placement above.
 		// Outside city mode an otherwise idle yard can extend concrete.
 		if (!isCitySim && money > 500 && pBuilder->getProductionQueueSize() < 1
@@ -5356,17 +5368,19 @@ void QuantBot::build(int militaryValue) {
 
 						// Verify the location is still valid
 						if (getMap().okayToPlaceStructure(location.x, location.y, itemsize.x, itemsize.y, false, getHouse(), false, itemToBePlaced)
+                            && (itemToBePlaced != Structure_Road || !getMap().getTile(location.x,location.y)->isRoadConnection())
                             && cityRoadImpact(getMap(), location.x, location.y, itemsize.x, itemsize.y, itemToBePlaced).preservesConnections
                             && !overlapsReservedStructure(location.x, location.y, itemsize.x, itemsize.y)
                             && (itemToBePlaced == Structure_RocketTurret || itemToBePlaced == Structure_GunTurret
-                                || itemToBePlaced == Structure_Wall || itemToBePlaced == Structure_Slab1 || itemToBePlaced == Structure_Slab4
+                                || itemToBePlaced == Structure_Wall || itemToBePlaced == Structure_Road
+                                || itemToBePlaced == Structure_Slab1 || itemToBePlaced == Structure_Slab4
                                 || (!nearRecentStructureLoss(location.x, location.y, itemsize.x, itemsize.y)
                                     && dangerAt(location,itemsize) == 0 && reactorClearance(itemToBePlaced,location)))) {
 							placeLocations.pop_front();
 							logDebug("PRODUCTION: Using pre-stored location (%d,%d) for itemID: %d", location.x, location.y, itemToBePlaced);
-						} else if (itemToBePlaced == Structure_Slab1 || itemToBePlaced == Structure_Slab4) {
-							// Concrete placement failed (maybe already placed), cancel and move on
-							tracePlacementIssue("placement_cancel", "planned_concrete_invalid", location);
+						} else if (itemToBePlaced == Structure_Road || itemToBePlaced == Structure_Slab1 || itemToBePlaced == Structure_Slab4) {
+							// Road/concrete placement failed (maybe already repaired), cancel and move on
+							tracePlacementIssue("placement_cancel", itemToBePlaced == Structure_Road ? "planned_road_invalid" : "planned_concrete_invalid", location);
                             doCancelItem(pConstYard, itemToBePlaced);
 							placeLocations.pop_front();
 							logDebug("PRODUCTION: Cancelled concrete at (%d,%d) - already placed or invalid", location.x, location.y);
@@ -6767,6 +6781,38 @@ void QuantBot::retreatAllUnits() {
             }
         }
     }
+}
+
+int QuantBot::queueCityRoadRepairs(const BuilderBase* yard, int limit) {
+    if (limit <= 0) return 0;
+    std::vector<CityRoadRepairPolicy::Footprint> buildings;
+    for (const StructureBase* structure:getStructureList()) {
+        if (structure->getOwner()!=getHouse() || !structure->isActive()) continue;
+        const Coord p=structure->getLocation(), size=getStructureSize(structure->getItemID());
+        buildings.push_back({p.x,p.y,size.x,size.y});
+    }
+    const auto sites=CityRoadRepairPolicy::candidates(buildings,[&](int x,int y) {
+        if (!getMap().tileExists(x,y)) return false;
+        const Tile* tile=getMap().getTile(x,y);
+        return !tile->isRoadConnection() && !tile->hasCityZone() && !tile->hasAGroundObject()
+            && tile->isRock() && !tile->isMountain()
+            && !overlapsReservedStructure(x,y,1,1)
+            && getMap().okayToPlaceStructure(x,y,1,1,false,getHouse(),false,Structure_Road);
+    },[&](int x,int y) {
+        return getMap().tileExists(x,y) && getMap().getTile(x,y)->isRoadConnection();
+    });
+    int queued=0;
+    AITelemetry::Record locations;
+    for (const auto& site:sites) {
+        if (queued>=limit) break;
+        builderPlaceLocations[yard->getObjectID()].emplace_back(site.first,site.second);
+        doProduceItem(yard,Structure_Road);
+        locations.set(std::to_string(queued),AITelemetry::Record().set("x",site.first).set("y",site.second));
+        ++queued;
+    }
+    if (queued) traceDecision("city_road_repair",AITelemetry::Record().set("builder",yard->getObjectID())
+        .set("rule","idle_yard_road_gaps").set("segments_queued",queued).set("locations",locations));
+    return queued;
 }
 
 void QuantBot::manageCityBuilding() {

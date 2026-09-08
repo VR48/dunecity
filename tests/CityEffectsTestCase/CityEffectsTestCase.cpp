@@ -1028,6 +1028,7 @@ TEST_CASE("DuneCity house markers remain distinct from each other and rock", "[c
 #include <dunecity/CrimeUnrestPolicy.h>
 #include <misc/OMemoryStream.h>
 #include <misc/IMemoryStream.h>
+#include <set>
 #include <Definitions.h>
 TEST_CASE("District outbreaks require four to six minutes of sustained dangerous crime", "[city][crime]") {
     const uint32_t threshold=MILLI2CYCLES(kCrimeUnrestBuildupMs)*100u;
@@ -1036,24 +1037,24 @@ TEST_CASE("District outbreaks require four to six minutes of sustained dangerous
         CrimeUnrestDistrict district;
         const int rate=cityCrimeUnrestRate(crime,5000);
         const int periods=crime==250 ? 8 : 12;
-        for (int n=1;n<periods;++n) REQUIRE(district.advance(rate,10,step,threshold)==0);
-        REQUIRE(district.advance(rate,10,step,threshold)==30);
+        for (int n=1;n<periods;++n) REQUIRE(district.advance(rate,30,step,threshold)==0);
+        REQUIRE(district.advance(rate,30,step,threshold)==30);
         REQUIRE(district.progress==0);
         REQUIRE(district.buildingExposure==0);
-        REQUIRE(district.advance(rate,10,step,threshold)==0); // No immediate repeat.
+        REQUIRE(district.advance(rate,30,step,threshold)==0); // No immediate repeat.
     }
 }
-TEST_CASE("Larger sustained crime clusters make larger outbreaks, not earlier ones", "[city][crime]") {
+TEST_CASE("Density-weighted crime clusters make larger outbreaks, not earlier ones", "[city][crime]") {
     const uint32_t threshold=MILLI2CYCLES(kCrimeUnrestBuildupMs)*100u;
     const uint32_t step=MILLI2CYCLES(30000);
     for (int count:{1,4,10,20,80}) {
         CrimeUnrestDistrict district;
-        for (int n=1;n<8;++n) REQUIRE(district.advance(150,count,step,threshold)==0);
-        REQUIRE(district.advance(150,count,step,threshold)==std::clamp(3*count,12,60));
+        for (int n=1;n<8;++n) REQUIRE(district.advance(150,3*count,step,threshold)==0);
+        REQUIRE(district.advance(150,3*count,step,threshold)==3*count);
     }
     CrimeUnrestDistrict sudden;
     for (int n=1;n<8;++n) REQUIRE(sudden.advance(150,1,step,threshold)==0);
-    REQUIRE(sudden.advance(150,20,step,threshold)==12); // One late surge cannot mature 60 rebels.
+    REQUIRE(sudden.advance(150,20,step,threshold)==20); // Size uses the current dangerous district, not an old average.
 }
 TEST_CASE("Policing or a small population clears pending district outbreaks", "[city][crime]") {
     const uint32_t threshold=MILLI2CYCLES(kCrimeUnrestBuildupMs)*100u;
@@ -1070,6 +1071,7 @@ TEST_CASE("District crime history survives saves and migrates old timers without
     std::vector<CrimeUnrestDistrict> original(2),restored(2);
     original[0].advance(150,16,MILLI2CYCLES(120000),threshold);
     original[1].advance(100,6,MILLI2CYCLES(90000),threshold);
+    original[0].buildingExposure=123456789; // Former 605 field remains readable and ignored for strength.
     OMemoryStream output; saveCrimeUnrest(output,original); output.writeUint32(123456);
     IMemoryStream input(output.getData(),output.getDataLength());
     loadCrimeUnrest(input,restored,9833);
@@ -1090,12 +1092,52 @@ TEST_CASE("District crime history survives saves and migrates old timers without
     REQUIRE_THROWS(loadCrimeUnrest(wrong,wrongSize,9833));
 }
 
-TEST_CASE("Gang outbreaks spread simultaneous groups across dangerous buildings", "[city][crime]") {
-    for (int n=0;n<12;++n) REQUIRE(crimeSpawnOrigin(n,12,4)==static_cast<size_t>(n/3));
-    for (int n=0;n<60;++n) REQUIRE(crimeSpawnOrigin(n,60,1)==0);
-    std::vector<int> assigned(40);
-    for (int n=0;n<60;++n) ++assigned[crimeSpawnOrigin(n,60,40)];
-    REQUIRE(std::count(assigned.begin(),assigned.end(),3)==20);
-    REQUIRE(assigned[0]==3);
-    REQUIRE(assigned[38]==3); // Cover the district, not just the first twenty buildings.
+TEST_CASE("Crime wave strength follows occupied building density", "[city][crime]") {
+    REQUIRE(crimeRebelsForDensity(0)==0);
+    REQUIRE(crimeRebelsForDensity(1)==1);
+    REQUIRE(crimeRebelsForDensity(2)==2);
+    REQUIRE(crimeRebelsForDensity(3)==3);
+    const int mixedDistrict=4*crimeRebelsForDensity(1)+5*crimeRebelsForDensity(2)+6*crimeRebelsForDensity(3);
+    CrimeUnrestDistrict district;
+    REQUIRE(district.advance(150,mixedDistrict,MILLI2CYCLES(240000),MILLI2CYCLES(kCrimeUnrestBuildupMs)*100u)==32);
+}
+TEST_CASE("Crime waves use one compact hotspot including map edges", "[city][crime]") {
+    for (const auto& center:std::vector<std::pair<int,int>>{{0,0},{30,30},{63,63}}) {
+        const auto sites=crimeSpawnSites(center.first,center.second,64,64);
+        REQUIRE(sites.front()==center);
+        int previous=-1;
+        std::set<std::pair<int,int>> unique;
+        for (const auto& p:sites) {
+            REQUIRE(p.first>=0); REQUIRE(p.first<64);
+            REQUIRE(p.second>=0); REQUIRE(p.second<64);
+            const int distance=(p.first-center.first)*(p.first-center.first)+(p.second-center.second)*(p.second-center.second);
+            REQUIRE(distance>=previous); previous=distance;
+            REQUIRE(unique.insert(p).second);
+        }
+        REQUIRE(sites==crimeSpawnSites(center.first,center.second,64,64));
+        REQUIRE(sites.size()>=289); // Space search accommodates waves larger than the former 60 cap.
+    }
+}
+
+#include <players/CityRoadRepairPolicy.h>
+TEST_CASE("Idle road maintenance finds outer-city gaps and prefers reconnecting roads", "[city][roads]") {
+    using namespace CityRoadRepairPolicy;
+    const std::vector<Footprint> buildings{{50,50,2,2},{53,50,2,2}};
+    std::set<std::pair<int,int>> roads{{52,49},{52,51},{50,48}};
+    auto hasRoad=[&](int x,int y) { return roads.count({x,y})!=0; };
+    auto canPlace=[&](int x,int y) {
+        if(x<0 || y<0 || x>=64 || y>=64 || hasRoad(x,y)) return false;
+        for(const auto& b:buildings) if(x>=b.x && x<b.x+b.width && y>=b.y && y<b.y+b.height) return false;
+        return true;
+    };
+    auto sites=candidates(buildings,canPlace,hasRoad);
+    REQUIRE(!sites.empty());
+    REQUIRE(sites.front()==std::make_pair(52,50)); // Missing road between two buildings.
+    REQUIRE(std::count(sites.begin(),sites.end(),std::make_pair(52,50))==1);
+    roads.emplace(52,50);
+    sites=candidates(buildings,canPlace,hasRoad);
+    REQUIRE(std::find(sites.begin(),sites.end(),std::make_pair(52,50))==sites.end());
+    REQUIRE(candidates(buildings,[](int,int) {return false;},hasRoad).empty()); // Occupied/reserved sites.
+    REQUIRE(candidates(std::vector<Footprint>{},canPlace,hasRoad).empty()); // No owned buildings.
+    REQUIRE(candidates(buildings,canPlace,[](int,int) {return false;}).empty()); // No speculative isolated roads.
 }

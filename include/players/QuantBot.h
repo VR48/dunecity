@@ -223,6 +223,7 @@ private:
     void build(int militaryValue);
     void attack(int militaryValue);
     void manageCityBuilding();
+    int queueCityRoadRepairs(const BuilderBase* yard, int limit);
 
     Sint32 cityBuildTimer = 0;
 };
