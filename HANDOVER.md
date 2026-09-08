@@ -1,3 +1,40 @@
+# Preserve qBot factory exits and ground routes — 1.0.612
+
+Stefan's Vanilla611 screenshots show rear factories surrounded by structures,
+with their free deployment tiles inside sealed courtyards. Placement previously
+checked adjacent open tiles without checking a route out. GroundAccessPolicy
+now builds a deterministic static vehicle graph (mountains and structures block;
+roads, slabs and transient units do not). It selects the largest component and
+an anchor in its widest open area, then preserves routes from own production/
+refinery/repair/police deployment rings (including corners) and active ground
+units. Proposed ground producers require every free deployment-ring component
+to connect outside without passing through their own footprint. This allows a
+small detour around a new factory. Other buildings cannot cover protected lanes.
+Other yards' reserved footprints are included; cached state clears per planning
+pass/reservation/placement and simulation cycle. MCV deployment also checks lanes
+and reservations; MCV positions themselves are exempt because deployment consumes
+that unit. Generic, service/turret, redevelopment, generator fallback and final
+placement paths use the guard. Rear safety scoring is retained. No save fields,
+random draws or non-qBot controller behavior changed. Already enclosed bases are
+not automatically demolished/repaired by this prevention change.
+
+504 test cases passed, 3 optional skipped through CTest. Pre/post Ninja dependency
+audits, deep strict signing and version612 checks passed. Synthetic access-only
+benchmark for eight passes/80000 candidates: 34ms at128x128, 7ms at192x192, 10ms
+at256x256 (not a live FPS measurement). Local build612 ready; not launched/pushed.
+Build/test logs: /tmp/dunecity-612-build.log, /tmp/dunecity-612-tests.log.
+
+Harvester investigation (no economy policy changes in612): Vanilla611 session
+1788876460778739-0, Atreides qBotBrutal, override100. Both AI/engine caps were100;
+actual fleet passed40 and peaked75 at14.21simulation minutes. 738249 spice still
+remained but equal division by5 houses followed by2000 spice/harvester reduced
+target to73. Consecutive samples had46-53 actively harvesting and roughly17-30k
+credits/minute income: the cap worked, but this total-inventory/equal-share
+heuristic is too weak to justify the expansion cutoff. Recommended follow-up is
+usable local field/refinery-throughput demand, subject to explicit cap and cash,
+instead of treating each house as entitled to exactly one-fifth of all spice.
+User asked to evaluate that assumption; replacement policy is not implemented.
+
 # Restore legacy AI harvester restart — 1.0.611
 
 Stefan reported Original AI harvesters stranded in Vanilla610. Logs show empty,

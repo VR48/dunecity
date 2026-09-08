@@ -1013,7 +1013,9 @@ Coord QuantBot::findMcvPlaceLocation(const MCV* pMCV) {
 		for (int placeLocationY = yLo; placeLocationY <= yHi; placeLocationY++) {
 			Coord placeLocation(placeLocationX, placeLocationY);
 
-			if (getMap().okayToPlaceStructure(placeLocationX, placeLocationY, 2, 2, false, nullptr)) {
+			if (getMap().okayToPlaceStructure(placeLocationX, placeLocationY, 2, 2, false, nullptr)
+                && !overlapsReservedStructure(placeLocationX,placeLocationY,2,2)
+                && preservesGroundAccess(Structure_ConstructionYard,placeLocation)) {
 				int locationScore = 0;
 
 				// Calculate distance penalty (closer is better)
@@ -1476,6 +1478,61 @@ bool QuantBot::overlapsReservedStructure(int x, int y, int width, int height) co
     return false;
 }
 
+namespace {
+bool needsGroundExit(Uint32 item) {
+    return item == Structure_HeavyFactory || item == Structure_LightFactory
+        || item == Structure_Refinery || item == Structure_RepairYard
+        || item == Structure_Barracks || item == Structure_WOR
+        || item == Structure_StarPort || item == Structure_PoliceStation;
+}
+bool blocksGroundAccess(Uint32 item) {
+    return item != Structure_Road && item != Structure_Slab1 && item != Structure_Slab4;
+}
+}
+
+void QuantBot::clearPlacementCache() {
+    placementCache.clear();
+    groundAccessReady = false;
+}
+
+bool QuantBot::preservesGroundAccess(Uint32 item, Coord pos) {
+    if (!blocksGroundAccess(item)) return true;
+    if (!pos.isValid()) return false;
+    if (!groundAccessReady || groundAccessCycle != getGameCycleCount()) {
+        const int w=getMap().getSizeX(),h=getMap().getSizeY();
+        std::vector<uint8_t> passable(w*h);
+        for (int y=0;y<h;++y) for (int x=0;x<w;++x) {
+            const auto* tile=getMap().getTile(x,y);
+            passable[y*w+x]=!tile->isMountain() && !tile->hasAStructure();
+        }
+        for (const auto& entry:reservedStructures) {
+            if (entry.first==planningBuilder || !blocksGroundAccess(entry.second.item)) continue;
+            const auto p=entry.second.location, size=getStructureSize(entry.second.item);
+            for (int y=std::max(0,p.y);y<std::min(h,p.y+size.y);++y)
+                for (int x=std::max(0,p.x);x<std::min(w,p.x+size.x);++x) passable[y*w+x]=false;
+        }
+        groundAccess.reset(w,h,passable);
+        auto protect=[&](Uint32 type,Coord p) {
+            if (!needsGroundExit(type)) return;
+            const auto size=getStructureSize(type);
+            groundAccess.protectExits({p.x,p.y,size.x,size.y});
+        };
+        for (const auto* structure:getStructureList())
+            if (structure->getOwner()==getHouse()) protect(structure->getItemID(),structure->getLocation());
+        for (const auto& entry:reservedStructures)
+            if (entry.first!=planningBuilder) protect(entry.second.item,entry.second.location);
+        for (const auto* unit:getUnitList())
+            if (unit->getOwner()==getHouse() && unit->isActive() && unit->isAGroundUnit()
+                && unit->getItemID()!=Unit_MCV) {
+                const auto p=unit->getLocation(); groundAccess.protectUnit(p.x,p.y);
+            }
+        groundAccessReady=true;
+        groundAccessCycle=getGameCycleCount();
+    }
+    const auto size=getStructureSize(item);
+    return groundAccess.allows({pos.x,pos.y,size.x,size.y},needsGroundExit(item));
+}
+
 bool QuantBot::redevelopmentZones(Uint32 item, Coord pos, std::vector<Uint32>& zones) const {
     zones.clear();
     auto* sim = currentGame->isCitySimEnabled() ? currentGame->getCitySimulation() : nullptr;
@@ -1513,7 +1570,7 @@ Coord QuantBot::findRedevelopmentSite(Uint32 item) {
             std::vector<Uint32> zones;
             if (!redevelopmentZones(item,pos,zones) || overlapsReservedStructure(x,y,size.x,size.y)
                 || nearRecentStructureLoss(x,y,size.x,size.y) || dangerAt(pos,size)>0
-                || !reactorClearance(item,pos) || !cityRoadImpact(getMap(),x,y,size.x,size.y,item).preservesConnections) continue;
+                || !reactorClearance(item,pos) || !preservesGroundAccess(item,pos) || !cityRoadImpact(getMap(),x,y,size.x,size.y,item).preservesConnections) continue;
             int score=static_cast<int>(zones.size())*100;
             for (Uint32 id : zones) {
                 const auto* zone=static_cast<const ZoneStructure*>(currentGame->getObjectManager().getObject(id));
@@ -1537,6 +1594,7 @@ Coord QuantBot::findRedevelopmentSite(Uint32 item) {
 
 Coord QuantBot::findPlaceLocation(Uint32 itemID) {
     refreshTacticalDanger();
+    int accessRejected = 0;
 	// Check per-build-cycle cache first
 	auto cacheIt = placementCache.find(itemID);
 	if (cacheIt != placementCache.end()) {
@@ -1628,6 +1686,7 @@ Coord QuantBot::findPlaceLocation(Uint32 itemID) {
 
                 ++candidates;
                 if (overlapsReservedStructure(placeLocationX, placeLocationY, newSizeX, newSizeY)) continue;
+                if (!preservesGroundAccess(itemID,Coord(placeLocationX,placeLocationY))) { ++accessRejected; continue; }
                 if (itemID != Structure_RocketTurret && itemID != Structure_GunTurret && itemID != Structure_Wall
                     && nearRecentStructureLoss(placeLocationX, placeLocationY, newSizeX, newSizeY)) { ++lossRejected; continue; }
                 if (itemID != Structure_RocketTurret && itemID != Structure_GunTurret && itemID != Structure_Wall) {
@@ -2114,7 +2173,8 @@ Coord QuantBot::findPlaceLocation(Uint32 itemID) {
     }
 	placementCache[itemID] = bestLocation;
     bestQuality.set("legal_candidates",candidates).set("threat_rejections",threatRejected)
-        .set("blast_rejections",blastRejected).set("recent_loss_rejections",lossRejected);
+        .set("blast_rejections",blastRejected).set("recent_loss_rejections",lossRejected)
+        .set("ground_access_rejections",accessRejected);
     placementScoreDetails[itemID] = bestQuality;
 	return bestLocation;
 }
@@ -2240,7 +2300,8 @@ Coord QuantBot::findTurretPlaceLocation(Uint32 itemID) {
 			if (getMap().okayToPlaceStructure(x, y, newSizeX, newSizeY, false,
 				(itemID == Structure_ConstructionYard) ? nullptr : getHouse(), false, itemID)) {
 
-                if (overlapsReservedStructure(x, y, newSizeX, newSizeY)) continue;
+                if (overlapsReservedStructure(x, y, newSizeX, newSizeY)
+                    || !preservesGroundAccess(itemID,Coord(x,y))) continue;
                 const auto roads = cityRoadImpact(getMap(), x, y, newSizeX, newSizeY, itemID);
                 if (!roads.preservesConnections) continue;
 				FixPoint score = 0;
@@ -2415,7 +2476,8 @@ bool QuantBot::selectCityServiceInvestment(const BuilderBase* builder, int money
         }
         for (int y=0;y<=h-size.y;++y) for (int x=0;x<=w-size.x;++x) {
             if (!candidates[y*w+x] || overlapsReservedStructure(x,y,size.x,size.y)
-                || !getMap().okayToPlaceStructure(x,y,size.x,size.y,false,getHouse(),false,item)) continue;
+                || !getMap().okayToPlaceStructure(x,y,size.x,size.y,false,getHouse(),false,item)
+                || !preservesGroundAccess(item,Coord(x,y))) continue;
             const auto road = cityRoadImpact(getMap(),x,y,size.x,size.y,item);
             if (!road.preservesConnections || (item == Structure_RocketTurret && road.junctionBonus <= 0)
                 || wouldLandlockNeighbouringZone(getMap(),house,x,y,size.x,size.y)) continue;
@@ -2563,6 +2625,7 @@ Coord QuantBot::findCityCrimeServicePlaceLocation(Uint32 itemID, int* crimeBenef
     for (int y = 0; y <= height - size.y; ++y) for (int x = 0; x <= width - size.x; ++x) {
         if (!candidates[y * width + x] || overlapsReservedStructure(x, y, size.x, size.y)) continue;
         if (!getMap().okayToPlaceStructure(x, y, size.x, size.y, false, getHouse(), false, itemID)) continue;
+        if (!preservesGroundAccess(itemID,Coord(x,y))) continue;
         const auto roads = cityRoadImpact(getMap(), x, y, size.x, size.y, itemID);
         if (!roads.preservesConnections || wouldLandlockNeighbouringZone(getMap(), getHouse()->getHouseID(), x, y, size.x, size.y)) continue;
 
@@ -2709,6 +2772,7 @@ Coord QuantBot::findCityTurretPlaceLocation(Uint32 itemID, int* defenseScore, in
     for (int y = 0; y < h; ++y) for (int x = 0; x < w; ++x) {
         if (!candidates[y*w+x] || overlapsReservedStructure(x, y, 1, 1)) continue;
         if (!getMap().okayToPlaceStructure(x, y, 1, 1, false, getHouse(), false, itemID)) continue;
+        if (!preservesGroundAccess(itemID,Coord(x,y))) continue;
         const auto roads = cityRoadImpact(getMap(), x, y, 1, 1, itemID);
         if (!roads.preservesConnections
             || wouldLandlockNeighbouringZone(getMap(), getHouse()->getHouseID(), x, y, 1, 1)) continue;
@@ -2775,6 +2839,7 @@ Coord QuantBot::findPlaceLocationSimple(Uint32 itemID) {
 			// First check if this location is valid for building
 			if (getMap().okayToPlaceStructure(x, y, newSizeX, newSizeY, false,
 				(itemID == Structure_ConstructionYard) ? nullptr : getHouse(), false, itemID)) {
+                if (!preservesGroundAccess(itemID,Coord(x,y))) continue;
 
 				FixPoint score = 0;
 
@@ -2853,7 +2918,7 @@ void QuantBot::build(int militaryValue) {
     planningBuilder = NONE_ID;
     recentStructureLosses.erase(std::remove_if(recentStructureLosses.begin(), recentStructureLosses.end(),
         [&](const auto& loss) { return getGameCycleCount() - loss.cycle >= MILLI2CYCLES(900000); }), recentStructureLosses.end());
-    placementCache.clear();
+    clearPlacementCache();
     for (auto it = reservedStructures.begin(); it != reservedStructures.end();) {
         const auto* builder = dynamic_cast<const BuilderBase*>(currentGame->getObjectManager().getObject(it->first));
         if (!builder || builder->getOwner() != getHouse() || builder->getProductionQueueSize() == 0)
@@ -3610,7 +3675,7 @@ void QuantBot::build(int militaryValue) {
 			if (pStructure->isABuilder()) {
 				const BuilderBase* pBuilder = static_cast<const BuilderBase*>(pStructure);
                 planningBuilder = pBuilder->getObjectID();
-                placementCache.clear();
+                clearPlacementCache();
 
 				// Log all builder status for campaign AIs (not just CY)
 				if (gameMode == GameMode::Campaign && !supportMode && pStructure->getItemID() != Structure_ConstructionYard) {
@@ -4127,7 +4192,7 @@ void QuantBot::build(int militaryValue) {
 				// Each yard owns its concrete/structure placement sequence. Sharing
 				// a single FIFO lets the faster yard consume the other's locations.
 				planningBuilder = pBuilder->getObjectID();
-                placementCache.clear();
+                clearPlacementCache();
                 auto& placeLocations = builderPlaceLocations[pBuilder->getObjectID()];
 				if (pBuilder->getProductionQueueSize() == 0) placeLocations.clear();
 				if (emitStatsLog) {
@@ -5091,6 +5156,7 @@ void QuantBot::build(int militaryValue) {
                                 if (!getMap().okayToPlaceStructure(x,y,size.x,size.y,false,getHouse(),false,Structure_WindTrap)
                                     || overlapsReservedStructure(x,y,size.x,size.y) || dangerAt(site,size)>0
                                     || nearRecentStructureLoss(x,y,size.x,size.y)
+                                    || !preservesGroundAccess(Structure_WindTrap,site)
                                     || !reactorClearance(Structure_WindTrap,site)
                                     || !cityRoadImpact(getMap(),x,y,size.x,size.y,Structure_WindTrap).preservesConnections
                                     || wouldLandlockNeighbouringZone(getMap(),houseID,x,y,size.x,size.y)) continue;
@@ -5294,7 +5360,7 @@ void QuantBot::build(int militaryValue) {
                     itemCount[itemID]++;
 					money -= data[itemID][houseID].price;
 					if (itemID == strategicReserveItem) strategicReserveCost = 0;
-					placementCache.clear();
+					clearPlacementCache();
 				} else {
 					placeLocations.clear();
 				}
@@ -5394,6 +5460,7 @@ void QuantBot::build(int militaryValue) {
                             && (itemToBePlaced != Structure_Road || !getMap().getTile(location.x,location.y)->isRoadConnection())
                             && cityRoadImpact(getMap(), location.x, location.y, itemsize.x, itemsize.y, itemToBePlaced).preservesConnections
                             && !overlapsReservedStructure(location.x, location.y, itemsize.x, itemsize.y)
+                            && preservesGroundAccess(itemToBePlaced,location)
                             && (itemToBePlaced == Structure_RocketTurret || itemToBePlaced == Structure_GunTurret
                                 || itemToBePlaced == Structure_Wall || itemToBePlaced == Structure_Road
                                 || itemToBePlaced == Structure_Slab1 || itemToBePlaced == Structure_Slab4
@@ -5455,6 +5522,7 @@ void QuantBot::build(int militaryValue) {
                                     const Coord site(x,y);
                                     if (!getMap().okayToPlaceStructure(x,y,size.x,size.y,false,getHouse(),false,itemToBePlaced)
                                         || overlapsReservedStructure(x,y,size.x,size.y)
+                                        || !preservesGroundAccess(itemToBePlaced,site)
                                         || !reactorClearance(itemToBePlaced,site)
                                         || !cityRoadImpact(getMap(),x,y,size.x,size.y,itemToBePlaced).preservesConnections
                                         || (currentGame->isCitySimEnabled()
@@ -5475,6 +5543,11 @@ void QuantBot::build(int militaryValue) {
                                     .set("x",location.x).set("y",location.y).set("risk",bestRisk));
                             }
                         }
+                        if (location.isValid() && !preservesGroundAccess(itemToBePlaced,location)) {
+                            tracePlacementIssue("placement_deferred", "ground_exit_blocked", location);
+                            location=Coord::Invalid();
+                            placementIssueHandled=true;
+                        }
 						if (location.isValid()) {
 							traceDecision("placement_request", AITelemetry::Record().set("builder", pConstYard->getObjectID())
                                 .set("item", itemToBePlaced).set("x", location.x).set("y", location.y));
@@ -5486,7 +5559,7 @@ void QuantBot::build(int militaryValue) {
                                 else { reservedStructures[planningBuilder] = {itemToBePlaced, location};
                                     if (placeLocations.empty()) placeLocations.push_front(location); }
                             }
-                            placementCache.clear();
+                            clearPlacementCache();
 							logDebug("PRODUCTION: Placed structure itemID: %d at (%d,%d)", itemToBePlaced, location.x, location.y);
 						}
 						else if (!placementIssueHandled) {
@@ -6605,12 +6678,19 @@ void QuantBot::retreatAllUnits() {
                 case Unit_MCV: {
                     const MCV* pMCV = static_cast<const MCV*>(pUnit);
                     if (pMCV != nullptr) {
+                        if (planningBuilder != NONE_ID) {
+                            planningBuilder=NONE_ID;
+                            clearPlacementCache();
+                        }
                         //logDebug("MCV: forced: %d  moving: %d  canDeploy: %d",
                         //pMCV->wasForced(), pMCV->isMoving(), pMCV->canDeploy());
 
-                        if (pMCV->canDeploy() && !pMCV->wasForced() && !pMCV->isMoving()) {
+                        if (pMCV->canDeploy() && !pMCV->wasForced() && !pMCV->isMoving()
+                            && !overlapsReservedStructure(pMCV->getX(),pMCV->getY(),2,2)
+                            && preservesGroundAccess(Structure_ConstructionYard,pMCV->getLocation())) {
                             //logDebug("MCV: Deployed");
                             doDeploy(pMCV);
+                            clearPlacementCache();
                         }
                         else if (!pMCV->isMoving() && !pMCV->wasForced()) {
                             Coord pos = findMcvPlaceLocation(pMCV);

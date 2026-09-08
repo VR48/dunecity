@@ -20,6 +20,7 @@
 
 #include <players/Player.h>
 #include <players/CombatReward.h>
+#include <players/GroundAccessPolicy.h>
 #include <players/UnitMixPolicy.h>
 #include <units/MCV.h>
 class Harvester;
@@ -153,6 +154,11 @@ private:
 
     Coord findMcvPlaceLocation(const MCV* pMCV);
     Coord findPlaceLocation(Uint32 itemID);
+    bool preservesGroundAccess(Uint32 item, Coord pos);
+    void clearPlacementCache();
+    GroundAccessPolicy groundAccess;
+    bool groundAccessReady = false;
+    Uint32 groundAccessCycle = std::numeric_limits<Uint32>::max();
     Coord findRedevelopmentSite(Uint32 itemID);
     bool redevelopmentZones(Uint32 itemID, Coord pos, std::vector<Uint32>& zones) const;
     Coord findPlaceLocationSimple(Uint32 itemID);
