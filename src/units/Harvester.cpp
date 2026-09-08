@@ -183,9 +183,8 @@ void Harvester::checkPos()
     if(attackMode == STOP) {
         harvestingMode = false;
 
-        if(getOwner()->isAI()){
-            doSetAttackMode(HARVEST);
-        } /*The AI doesn't like STOP*/
+        // STOP may be an AI safety hold. Only an explicit controller order
+        // should resume harvesting; automatic resumption defeats evacuation.
     }
 
     if(active)  {

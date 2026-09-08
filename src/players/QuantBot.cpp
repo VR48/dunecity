@@ -1357,7 +1357,8 @@ bool QuantBot::manageHarvesterSafety(const Harvester* harvester) {
             return true;
         }
     }
-    if (threatened || danger(destination) > 0 || harvester->isReturning()) {
+    if (TacticalSafetyPolicy::needsRefineryRefuge(threatened,danger(destination)>0,
+            harvester->isReturning(),harvester->getAmountOfSpice()>0)) {
         const StructureBase* refuge = nullptr;
         int bestRefineryScore = std::numeric_limits<int>::max();
         for (const auto* structure : getStructureList()) {

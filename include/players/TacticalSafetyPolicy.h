@@ -7,6 +7,12 @@
 #include <players/CityPlacementPolicy.h>
 
 namespace TacticalSafetyPolicy {
+inline bool needsRefineryRefuge(bool threatened,bool unsafeJob,bool returning,bool hasCargo) {
+    // An empty vehicle already in safety needs a new field or a safe hold,
+    // not another unload/deploy loop caused by its old dangerous spice job.
+    return threatened || (hasCargo && (unsafeJob || returning));
+}
+
 inline int harvesterThreatRadius(int item, int range) {
     if (isInfantryUnit(item)) return -1; // Harvesters can crush foot troops.
     return std::max(1,range)+(item==Unit_Launcher ? 3 : 0);

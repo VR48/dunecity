@@ -1,3 +1,26 @@
+# Harvester empty-refinery oscillation — 1.0.610
+
+Current Vanilla609 session1788874105288417-0 showed repeated retreat_refinery
+orders with zero cargo (harvester619 had120 logged orders in the read snapshot).
+Two conflicts: safety requested refinery trips for an empty vehicle whose old
+spice destination was dangerous despite its current location being safe; native
+Harvester::checkPos forcibly changed AI STOP back to HARVEST on every check.
+Removed forced auto-resumption. Safety now requests a new refinery refuge for
+immediate local danger, or cargo plus unsafe-job/return state. Empty safe vehicles
+search safe spice or disperse/hold. Existing valid safe return trips still finish;
+loaded unloading and threatened empty evacuation remain. No new timer/save fields.
+
+Local610 build, pre/post dependency audits, signature and CTest494pass/3skip passed.
+No game restart or remote push. Regression covers retreat then unloaded state,
+unsafe empty job and loaded returns. Live behaviour requires the new process.
+
+Current609 match at24.32simminutes: Harkonnen qBotBrutal71,810/80karmy,credits2888;
+Atreides60, Fremen60, Mercenary2370army. Hark target mix tank12.43%siege14.67%
+launcher54.99%special13.34%quad4.57%; reward/lostcost1.46/1.87/5.01/1.78/.91.
+Merc orni reward/loss.15,target1.55%; launcher3.11,target41.13%.
+These are live snapshots, not final outcomes; buildable-type availability changes
+as factories are lost. Script /tmp/review-live609.py; no balance change beyond bugfix.
+
 # Performance weighting, fair attack timing and local placement lookup — 1.0.609
 
 Stefan approved score^1.5 plus the prior review recommendations and a local build.

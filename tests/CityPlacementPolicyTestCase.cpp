@@ -404,3 +404,15 @@ TEST_CASE("Harvesters avoid launcher approach range before actual weapon reach",
     REQUIRE_FALSE(escapeCorridor(0,0,40,0,danger)); // Safe endpoints cannot justify crossing the launcher.
     REQUIRE(escapeCorridor(9,0,0,0,danger)); // Allow escape out of the warning margin.
 }
+
+TEST_CASE("Empty harvesters do not repeat refuge trips because their old field is unsafe", "[ai][harvester]") {
+    using TacticalSafetyPolicy::needsRefineryRefuge;
+    // Escape first; after unloading at a safe site, find a safe job or hold.
+    REQUIRE(needsRefineryRefuge(true,true,false,false));
+    REQUIRE_FALSE(needsRefineryRefuge(false,true,false,false));
+    REQUIRE_FALSE(needsRefineryRefuge(false,true,true,false));
+    // Carrying spice still warrants safe unloading, even before being hit.
+    REQUIRE(needsRefineryRefuge(false,true,false,true));
+    REQUIRE(needsRefineryRefuge(false,false,true,true));
+    REQUIRE_FALSE(needsRefineryRefuge(false,false,false,true));
+}
