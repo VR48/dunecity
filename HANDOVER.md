@@ -1,3 +1,38 @@
+# Completed 601 match review after simple-controller build
+
+Session1788846458415706-0 ended cleanly at760548cycles/202.81simulation minutes,
+local_result ended_without_result; all four houses alive with999999credits. This
+was the old601 controller throughout, not a602 test. FinalSQLite import266721rows,
+no invalid/deferred tails; auditclean. DBbuild/review-601-live.sqlite and final
+report /tmp/dunecity-601-final-report.txt. Ordinary engine log confirms clean
+teardown and reports metaserver analytics end recorded (not remote verification).
+
+Detailed capture stopped at298448cycles/79.59minutes because the15/16 detail
+allowance of256MiB was exhausted; final summary/session_end survived at203minutes.
+No capture_limit event is emitted at this soft cutoff. Final totals cover the
+full match; allocation/placement timeline claims stop at~80minutes.
+
+Across four houses, credited damage+unit kill bonuses divided by lost replacement
+value:launchers2.880 (6576built/6347lost),siege1.581(2042/1900),tanks1.080(4160/3999),
+ornithopters0.363(4571/4548). Air losses cost2728800credits for991667reward.
+Final heavy factories23–24 each; totals246built/151lost (Mercenary85/62).
+Many unit types can have free/initial/captured spawns, so built minus lost is not
+necessarily final count; do not treat MCV deployment losses as battlefield deaths.
+
+At last detailed snapshots air targets3.60–4.71%; light targets12.06–20.34%.
+Ordos recent air raw score~0.151 was lifted to0.408 by exploredScores uncertainty
+prior. Recent evidence decays~2.6min half-life, making repeatedly poor performers
+look uncertain again. Proposal:retain longer-lived confidence while using recent
+performance for effectiveness, allowing exploration after actual changes without
+repeatedly subsidising known poor matchups. No unit-specific hard cap proposed.
+
+Civic investment60–80min:639rockets versus82police, so turret selection is working.
+Crime means at last snapshots2/2/7/2, existing local hotspots explain some police
+orders. Do not infer global police excess from final count alone. Prioritise602
+battlefield test before further balance changes. Other proposals:protect costly
+factory rebuilding from active fronts; keep compact periodic snapshots throughout
+long games after detail sampling is curtailed. No additional gameplay changes.
+
 # Simpler army control — 1.0.602
 
 Stefan requested removing the formation controller after the live 601 game left
