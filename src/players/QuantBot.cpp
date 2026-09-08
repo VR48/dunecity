@@ -5913,8 +5913,8 @@ void QuantBot::updateGroundSquad() {
         }
     };
     int ready=0;
-    auto near=[](Coord a,Coord b,int r) { return std::max(std::abs(a.x-b.x),std::abs(a.y-b.y))<=r; };
-    for (const auto* unit:members) ready+=near(unit->getLocation(),squadRallyLocation,radius);
+    auto withinRallyRadius=[](Coord a,Coord b,int r) { return std::max(std::abs(a.x-b.x),std::abs(a.y-b.y))<=r; };
+    for (const auto* unit:members) ready+=withinRallyRadius(unit->getLocation(),squadRallyLocation,radius);
     if (groundSquadPhase==1) {
         if (slots.size()<members.size()) { finish("rally_capacity_lost"); return; }
         for (size_t i=0;i<members.size();++i) gather(members[i],i);
@@ -5929,7 +5929,7 @@ void QuantBot::updateGroundSquad() {
         if (decision==GroundSquadPolicy::Assembly::Abort) { finish("assembly_obstructed"); return; }
         // Leave stragglers at the rally for the next wave, rather than drip-feeding them.
         for (auto it=members.begin();it!=members.end();) {
-            if (!near((*it)->getLocation(),squadRallyLocation,radius)) {
+            if (!withinRallyRadius((*it)->getLocation(),squadRallyLocation,radius)) {
                 groundSquad.erase((*it)->getObjectID()); it=members.erase(it);
             } else ++it;
         }
@@ -5997,7 +5997,7 @@ void QuantBot::updateGroundSquad() {
             .set("local_enemy",bestDistance<radius+7).set("x",centre.x).set("y",centre.y));
     }
     int compact=0;
-    for (const auto* unit:members) compact+=near(unit->getLocation(),centre,radius);
+    for (const auto* unit:members) compact+=withinRallyRadius(unit->getLocation(),centre,radius);
     if ((now-groundSquadStarted)%MILLI2CYCLES(15000)<MILLI2CYCLES(2000))
         traceDecision("squad_progress",AITelemetry::Record().set("members",members.size()).set("value",value)
             .set("engaged",engaged).set("target",groundSquadObjective).set("x",centre.x).set("y",centre.y)
@@ -6017,7 +6017,7 @@ void QuantBot::updateGroundSquad() {
         const auto* unit=members[i];
         if (inRange(unit)) continue; // Do not cancel a nearby fight or kiting response.
         if (GroundSquadPolicy::holdCore(compact,static_cast<int>(members.size())) && !engaged) { gather(unit,i); continue; }
-        if (!near(unit->getLocation(),centre,radius) && !engaged) { gather(unit,i); continue; }
+        if (!withinRallyRadius(unit->getLocation(),centre,radius) && !engaged) { gather(unit,i); continue; }
         // Fast front-runners wait for the main body instead of sprinting to the target.
         if (GroundSquadPolicy::waitForBody(blockDistance(unit->getLocation(),target->getLocation()).lround(),
                 blockDistance(centre,target->getLocation()).lround(),radius,engaged)) {

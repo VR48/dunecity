@@ -1,3 +1,11 @@
+# Windows portability correction — 1.0.601
+
+The 1.0.600 tag was not published as a release: its Windows compiler expands
+the legacy Windows-header `near` macro, which collided with a local distance
+predicate. Renamed it to `withinRallyRadius`. All other 600 CI jobs passed;
+the new all-platform release gate correctly blocked publication. Version601
+includes all changes and maps described below; the failed600 tag stays intact.
+
 # Squad crash, obstructed rallies and desktop release — 1.0.600
 
 Session `1788836338773483-0` crashed on 2026-09-08 in the gather lambda
