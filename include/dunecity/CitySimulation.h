@@ -7,6 +7,7 @@
 #include <dunecity/CityConstants.h>
 #include <dunecity/CityMapLayer.h>
 #include <dunecity/CityBudget.h>
+#include <dunecity/CrimeUnrestPolicy.h>
 
 class InputStream;
 class OutputStream;
@@ -216,7 +217,7 @@ private:
     CityMapLayer<uint8_t> landValueMap_;
     CityMapLayer<uint8_t> hostileLandValuePenaltyMap_;
     CityMapLayer<uint16_t> crimeRateMap_;
-    std::vector<uint32_t> crimeUnrestProgress_; // Per-house 16x16 districts; persisted.
+    std::vector<CrimeUnrestDistrict> crimeUnrestProgress_; // Per-house 16x16 districts; persisted.
     CityMapLayer<int32_t> policeCoverageMap_; // derived diagnostics, rebuilt on scan/load
     CityMapLayer<uint16_t> crimeBeforePoliceMap_;
     CityMapLayer<uint8_t> populationDensityMap_;

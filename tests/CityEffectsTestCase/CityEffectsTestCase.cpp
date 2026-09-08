@@ -989,11 +989,11 @@ TEST_CASE("Micropolis display categories use their original thresholds", "[city]
 TEST_CASE("Crime unrest accelerates within Micropolis dangerous band", "[city][crime]") {
     REQUIRE(DuneCity::cityCrimeUnrestRate(250, 1240) == 0);
     REQUIRE(DuneCity::cityCrimeUnrestRate(250, 4999) == 0);
-    REQUIRE(DuneCity::cityCrimeUnrestRate(250, 5000) == 216);
+    REQUIRE(DuneCity::cityCrimeUnrestRate(250, 5000) == 150);
     REQUIRE(DuneCity::cityCrimeUnrestRate(191, 50000) == 0);
     REQUIRE(DuneCity::crimeUnrestRate(191) == 0);
     REQUIRE(DuneCity::crimeUnrestRate(192) == 100);
-    REQUIRE(DuneCity::crimeUnrestRate(250) == 216);
+    REQUIRE(DuneCity::crimeUnrestRate(250) == 150);
 }
 
 TEST_CASE("Hostile land value penalty fades within four tiles", "[city][value]") {
@@ -1023,4 +1023,79 @@ TEST_CASE("DuneCity house markers remain distinct from each other and rock", "[c
     REQUIRE(neutral.r < 60);
     const auto rock=DuneCity::radarTerrainColor(COLOR_ROCK);
     REQUIRE(((rock&RMASK)>>RSHIFT) < 100);
+}
+
+#include <dunecity/CrimeUnrestPolicy.h>
+#include <misc/OMemoryStream.h>
+#include <misc/IMemoryStream.h>
+#include <Definitions.h>
+TEST_CASE("District outbreaks require four to six minutes of sustained dangerous crime", "[city][crime]") {
+    const uint32_t threshold=MILLI2CYCLES(kCrimeUnrestBuildupMs)*100u;
+    const uint32_t step=MILLI2CYCLES(30000);
+    for (int crime:{192,250}) {
+        CrimeUnrestDistrict district;
+        const int rate=cityCrimeUnrestRate(crime,5000);
+        const int periods=crime==250 ? 8 : 12;
+        for (int n=1;n<periods;++n) REQUIRE(district.advance(rate,10,step,threshold)==0);
+        REQUIRE(district.advance(rate,10,step,threshold)==30);
+        REQUIRE(district.progress==0);
+        REQUIRE(district.buildingExposure==0);
+        REQUIRE(district.advance(rate,10,step,threshold)==0); // No immediate repeat.
+    }
+}
+TEST_CASE("Larger sustained crime clusters make larger outbreaks, not earlier ones", "[city][crime]") {
+    const uint32_t threshold=MILLI2CYCLES(kCrimeUnrestBuildupMs)*100u;
+    const uint32_t step=MILLI2CYCLES(30000);
+    for (int count:{1,4,10,20,80}) {
+        CrimeUnrestDistrict district;
+        for (int n=1;n<8;++n) REQUIRE(district.advance(150,count,step,threshold)==0);
+        REQUIRE(district.advance(150,count,step,threshold)==std::clamp(3*count,12,60));
+    }
+    CrimeUnrestDistrict sudden;
+    for (int n=1;n<8;++n) REQUIRE(sudden.advance(150,1,step,threshold)==0);
+    REQUIRE(sudden.advance(150,20,step,threshold)==12); // One late surge cannot mature 60 rebels.
+}
+TEST_CASE("Policing or a small population clears pending district outbreaks", "[city][crime]") {
+    const uint32_t threshold=MILLI2CYCLES(kCrimeUnrestBuildupMs)*100u;
+    for (int rate:{cityCrimeUnrestRate(191,50000),cityCrimeUnrestRate(250,4999)}) {
+        CrimeUnrestDistrict district;
+        REQUIRE(district.advance(150,20,MILLI2CYCLES(210000),threshold)==0);
+        REQUIRE(district.advance(rate,20,MILLI2CYCLES(30000),threshold)==0);
+        REQUIRE(district.progress==0);
+        REQUIRE(district.buildingExposure==0);
+    }
+}
+TEST_CASE("District crime history survives saves and migrates old timers without premature waves", "[city][crime][save-compat]") {
+    const uint32_t threshold=MILLI2CYCLES(kCrimeUnrestBuildupMs)*100u;
+    std::vector<CrimeUnrestDistrict> original(2),restored(2);
+    original[0].advance(150,16,MILLI2CYCLES(120000),threshold);
+    original[1].advance(100,6,MILLI2CYCLES(90000),threshold);
+    OMemoryStream output; saveCrimeUnrest(output,original); output.writeUint32(123456);
+    IMemoryStream input(output.getData(),output.getDataLength());
+    loadCrimeUnrest(input,restored,9833);
+    REQUIRE(input.readUint32()==123456);
+    for (size_t i=0;i<2;++i) {
+        REQUIRE(restored[i].progress==original[i].progress);
+        REQUIRE(restored[i].buildingExposure==original[i].buildingExposure);
+        REQUIRE(restored[i].advance(150,16,MILLI2CYCLES(120000),threshold)
+                ==original[i].advance(150,16,MILLI2CYCLES(120000),threshold));
+    }
+    OMemoryStream legacy; legacy.writeUint32(2); legacy.writeUint32(123); legacy.writeUint32(456); legacy.writeUint32(987);
+    IMemoryStream old(legacy.getData(),legacy.getDataLength());
+    loadCrimeUnrest(old,restored,9832);
+    REQUIRE(old.readUint32()==987);
+    for (const auto& district:restored) { REQUIRE(district.progress==0); REQUIRE(district.buildingExposure==0); }
+    IMemoryStream wrong(output.getData(),output.getDataLength());
+    std::vector<CrimeUnrestDistrict> wrongSize(3);
+    REQUIRE_THROWS(loadCrimeUnrest(wrong,wrongSize,9833));
+}
+
+TEST_CASE("Gang outbreaks spread simultaneous groups across dangerous buildings", "[city][crime]") {
+    for (int n=0;n<12;++n) REQUIRE(crimeSpawnOrigin(n,12,4)==static_cast<size_t>(n/3));
+    for (int n=0;n<60;++n) REQUIRE(crimeSpawnOrigin(n,60,1)==0);
+    std::vector<int> assigned(40);
+    for (int n=0;n<60;++n) ++assigned[crimeSpawnOrigin(n,60,40)];
+    REQUIRE(std::count(assigned.begin(),assigned.end(),3)==20);
+    REQUIRE(assigned[0]==3);
+    REQUIRE(assigned[38]==3); // Cover the district, not just the first twenty buildings.
 }

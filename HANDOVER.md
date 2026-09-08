@@ -1,3 +1,54 @@
+# Larger district outbreaks and flexible production — 1.0.605
+
+Stefan requested larger coordinated rebel outbreaks after longer sustained crime,
+then explicitly shortened the proposed wait to 4–6 simulation minutes. The old
+three-trooper district spawn is replaced by a 12–60 trooper outbreak. Mean crime
+among dangerous buildings controls buildup: 192 takes ~6 minutes, 250 takes ~4,
+quantized to the city scan cadence. Dangerous threshold192 and the existing5000
+population gate remain; the Micropolis crime formula itself is unchanged.
+
+Each house's existing16x16 district timer accumulates dangerous-building exposure
+throughout buildup. Force is3 times the crime-weighted average dangerous-building
+count, bounded12–60. More buildings make a bigger wave, not a shorter timer; a
+last-second surge cannot inherit a fully mature large force. No dangerous buildings
+or population below5000 resets both accumulators. Wave groups of3 emerge together
+around several dangerous buildings, distributed across the district when the force
+cap permits only a subset. A blocked spawn location skips that trooper rather than
+aborting all the other groups. Existing hostile faction selection, engine unit
+limits, deployment cancellation and urgent news warning remain. A wave consumes
+the buildup even when capacity/space limits it, avoiding rapid retries.
+
+Save version9833 appends per-district64bit building exposure after the old progress
+array. Old saves read the old array then reset outbreak timers, since they cannot
+supply exposure history. New saves preserve both accumulators exactly. The codec
+checks district count. This is deterministic simulation state; no wall clock/RNG.
+
+Both Vanilla and DuneCity qBot can now add light factories when at least75% of
+existing lanes are busy and funded light-unit shortage covers the factory cost.
+Unfinished/queued factories block duplicate expansion; reserves, placement and
+engine limits remain. Light backlog expansion comes before optional heavy-factory
+cash expansion. Telemetry adds light busy/backlog/deficit and light_unit_backlog.
+
+When every available heavy type is above its preferred share, heavy factories may
+still fill spare funded army capacity. They choose the least overrepresented type
+relative to its learned share, considering the next unit's cost. Fielded and queued
+value count against the army cap and orders consume money/cap sequentially. No new
+fixed troop ratios. Light factories receive troop-order priority so heavy overflow
+cannot consume their immediate slots; city yards retain their existing first
+priority. Whole-match learning and safer factory placement remain intact.
+
+Policy district-outbreak-production-v42. Heavy telemetry identifies
+available_factory_capacity fallback and no_affordable_capacity. Crime telemetry
+includes dangerous-building count, requested force, mean crime and buildup rate;
+member records identify each spawn-origin building.
+
+Built and signed locally1.0.605. Ninja dependency audits passed, version metadata
+consistent. CTest482passed,3optional skipped. Tests cover4/6minute boundaries,
+cluster size/history, policing/small-population reset, district spread, old/new
+save codecs with trailing sentinels and invalid sizes, heavy overflow balancing,
+parallel cap/cash consumption and light backlog expansion gates. Not pushed,
+released or launched; live balance still needs a gameplay test.
+
 # Police reinforcement ceiling and completed 603 match — 1.0.604
 
 Stefan requested increasing police deployment's per-house count ceiling to 250.

@@ -46,6 +46,23 @@ int fundedDeficit(const std::array<AllocationCandidate,N>& candidates, int commi
     }
     return selected;
 }
+// Shares guide composition; they must not strand funded army capacity when
+// another factory family cannot keep up. Choose the least overrepresented
+// available type relative to its learned share, including this next unit.
+template<size_t N>
+int capacityFill(const std::array<AllocationCandidate,N>& candidates, int committed,
+                 int money, int limit) {
+    int selected=-1;
+    for (size_t i=0;i<N;++i) {
+        const auto& c=candidates[i];
+        if (!c.available || c.targetBps<=0 || c.price<=0 || c.price>money || committed+c.price>limit) continue;
+        if (selected<0 || int64_t(c.committedValue+c.price)*candidates[selected].targetBps
+                < int64_t(candidates[selected].committedValue+candidates[selected].price)*c.targetBps)
+            selected=static_cast<int>(i);
+    }
+    return selected;
+}
+
 template<size_t N>
 int allocationHorizon(const std::array<AllocationCandidate, N>& candidates,
                       int armyValue, int money, int armyLimit) {

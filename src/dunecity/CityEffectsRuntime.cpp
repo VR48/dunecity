@@ -536,6 +536,9 @@ void CitySimulation::runEffectsScans() {
     const int districtsPerHouse = districtWidth * ((mapHeight_ + 15) / 16);
     std::vector<const StructureBase*> unrestOrigins(crimeUnrestProgress_.size(), nullptr);
     std::vector<int> unrestCrime(crimeUnrestProgress_.size(), 0);
+    std::vector<std::vector<const StructureBase*>> dangerousOrigins(crimeUnrestProgress_.size());
+    std::vector<int> dangerousBuildings(crimeUnrestProgress_.size(), 0);
+    std::vector<int> districtCrimeTotal(crimeUnrestProgress_.size(), 0);
     for (const StructureBase* building : structureList) {
         if (!building->isActive()) continue;
         const int h = building->getOwner()->getHouseID();
@@ -543,18 +546,22 @@ void CitySimulation::runEffectsScans() {
         if (h < 0 || h >= kMaxCityHouses || p.x < 0 || p.y < 0 || p.x >= mapWidth_ || p.y >= mapHeight_) continue;
         const auto index = h * districtsPerHouse + (p.y / 16) * districtWidth + p.x / 16;
         const int crime = crimeRateMap_.worldGet(p.x, p.y);
-        if (crime > unrestCrime[index]) { unrestCrime[index] = crime; unrestOrigins[index] = building; }
+        if (crime >= kCrimeDangerousThreshold) {
+            dangerousOrigins[index].push_back(building);
+            ++dangerousBuildings[index];
+            districtCrimeTotal[index] += crime;
+            if (crime > unrestCrime[index]) { unrestCrime[index] = crime; unrestOrigins[index] = building; }
+        }
     }
-    const uint32_t unrestThreshold = MILLI2CYCLES(180000) * 100u;
+    const uint32_t unrestThreshold = MILLI2CYCLES(kCrimeUnrestBuildupMs) * 100u;
     for (size_t index = 0; index < crimeUnrestProgress_.size(); ++index) {
         const int owner = static_cast<int>(index) / districtsPerHouse;
         const int displayedPopulation = houseState_[owner].getTotalPop() * kPopDisplayMultiplier;
-        const int rate = cityCrimeUnrestRate(unrestCrime[index], displayedPopulation);
-        auto& progress = crimeUnrestProgress_[index];
-        if (rate == 0) { progress = 0; continue; }
-        progress += kCyclesPerCityDay * rate;
-        if (progress < unrestThreshold) continue;
-        progress = 0;
+        const int meanCrime = dangerousBuildings[index] ? districtCrimeTotal[index]/dangerousBuildings[index] : 0;
+        const int rate = cityCrimeUnrestRate(meanCrime, displayedPopulation);
+        const int requested = crimeUnrestProgress_[index].advance(rate,dangerousBuildings[index],
+            kCyclesPerCityDay,unrestThreshold);
+        if (!requested) continue;
         const StructureBase* origin = unrestOrigins[index];
         if (!origin) continue;
         // Use an existing opposing faction; never commandeer a playable house
@@ -570,11 +577,14 @@ void CitySimulation::runEffectsScans() {
         }
         int spawned = 0;
         AITelemetry::Record members;
-        if (hostile) for (int n = 0; n < 3; ++n) {
+        if (hostile) for (int n = 0; n < requested; ++n) {
             if (hostile->isUnitLimitReached(Unit_Trooper)) break;
             UnitBase* unit = hostile->createUnit(Unit_Trooper);
             if (!unit) break;
-            const Coord p = origin->getLocation();
+            // One coordinated outbreak, with groups of three emerging around
+            // several dangerous buildings rather than repeating one small spawn.
+            const auto* spawnOrigin = dangerousOrigins[index][crimeSpawnOrigin(n,requested,dangerousOrigins[index].size())];
+            const Coord p = spawnOrigin->getLocation();
             Coord spot = Coord::Invalid();
             for (int radius = 1; radius <= 5 && spot.isInvalid(); ++radius)
                 for (int y = p.y-radius; y <= p.y+radius && spot.isInvalid(); ++y)
@@ -582,20 +592,22 @@ void CitySimulation::runEffectsScans() {
                         if (std::max(std::abs(x-p.x), std::abs(y-p.y)) != radius) continue;
                         if (unit->canPass(x,y)) { spot = Coord(x,y); break; }
                     }
-            if (spot.isInvalid()) { unit->cancelDeployment(); break; }
+            if (spot.isInvalid()) { unit->cancelDeployment(); continue; }
             unit->deploy(spot);
             unit->setGuardPoint(spot);
             unit->doSetAttackMode(HUNT);
-            unit->doAttackObject(origin, true);
-            members.set(std::to_string(unit->getObjectID()), AITelemetry::Record().set("x",spot.x).set("y",spot.y));
+            unit->doAttackObject(spawnOrigin, true);
+            members.set(std::to_string(unit->getObjectID()), AITelemetry::Record().set("x",spot.x).set("y",spot.y).set("origin",spawnOrigin->getObjectID()));
             ++spawned;
         }
         AITelemetry::log().write(currentGame->getGameCycleCount(), origin->getOwner()->getHouseID(), -1,
             "crime_unrest", AITelemetry::Record().set("district", static_cast<int>(index % districtsPerHouse))
                 .set("crime",unrestCrime[index]).set("origin",origin->getObjectID())
                 .set("population", displayedPopulation).set("minimum_population", 5000)
+                .set("dangerous_buildings",dangerousBuildings[index]).set("mean_dangerous_crime",meanCrime)
+                .set("requested",requested).set("buildup_rate",rate).set("base_buildup_ms",kCrimeUnrestBuildupMs)
                 .set("hostile_house",hostile ? hostile->getHouseID() : -1).set("spawned",spawned)
-                .set("members",members).set("reason",!hostile ? "no_enemy_house" : spawned < 3 ? "capacity_or_space" : "high_crime"));
+                .set("members",members).set("reason",!hostile ? "no_enemy_house" : spawned < requested ? "capacity_or_space" : "high_crime"));
         if (spawned > 0 && pLocalHouse == origin->getOwner()) {
             currentGame->addUrgentMessageToNewsTicker(
                 _("CRIMINAL GANGS OUT OF CONTROL: Troopers have taken to the streets!"));

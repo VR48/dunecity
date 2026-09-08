@@ -2847,6 +2847,7 @@ void QuantBot::build(int militaryValue) {
 	}
 
 	int activeHeavyFactoryCount = 0;
+    int activeLightFactoryCount = 0;
 	int activeHighTechFactoryCount = 0;
     int ornithopterFactoryCount = 0;
 	int activeRepairYardCount = 0;
@@ -2882,7 +2883,10 @@ void QuantBot::build(int militaryValue) {
                     if (pBuilder->getItemID() == Structure_HeavyFactory) {
 						activeHeavyFactoryCount++;
 					}
-					else if (pBuilder->getItemID() == Structure_HighTechFactory) {
+					else if (pBuilder->getItemID() == Structure_LightFactory) {
+                        ++activeLightFactoryCount;
+                    }
+                    else if (pBuilder->getItemID() == Structure_HighTechFactory) {
 						activeHighTechFactoryCount++;
                         if (pBuilder->getCurrentProducedItem() == Unit_Ornithopter
                             && !pBuilder->isOnHold() && !pBuilder->isUpgrading()) ++ornithopterFactoryCount;
@@ -3322,7 +3326,7 @@ void QuantBot::build(int militaryValue) {
                     .set("stored_spice_credits", getHouse()->getStoredCredits().lround())
                     .set("city_credit_balance", getHouse()->getCityCredits().lround())
                     .set("starting_credit_balance", getHouse()->getStartingCredits().lround()))
-                .set("heavy_busy", activeHeavyFactoryCount).set("repair_busy", activeRepairYardCount)
+                .set("heavy_busy", activeHeavyFactoryCount).set("light_busy",activeLightFactoryCount).set("repair_busy", activeRepairYardCount)
                 .set("built_value", getHouse()->getUnitBuiltValue()).set("kill_value", getHouse()->getKillValue())
                 .set("loss_value", getHouse()->getLossValue()));
     }
@@ -3483,13 +3487,15 @@ void QuantBot::build(int militaryValue) {
 	std::set<Uint32> orderedThisTick;
 
     // Give city construction first access to this pass's planning budget.
-    // Stable ordering keeps yards deterministic; vanilla retains its original order.
+    // Light factories get first troop orders so heavy overflow cannot consume their slots.
+    // Stable ordering keeps peers deterministic.
     // Keep IDs, not pointers: an earlier yard may demolish a later zone.
-    std::vector<std::pair<bool, Uint32>> planningOrder;
+    std::vector<std::pair<int, Uint32>> planningOrder;
     for (const auto* structure : getStructureList())
         if (structure->getOwner() == getHouse())
-            planningOrder.emplace_back(structure->getItemID() == Structure_ConstructionYard, structure->getObjectID());
-    if (citySimEnabled) std::stable_sort(planningOrder.begin(), planningOrder.end(),
+            planningOrder.emplace_back(citySimEnabled && structure->getItemID() == Structure_ConstructionYard ? 2
+                : structure->getItemID() == Structure_LightFactory ? 1 : 0, structure->getObjectID());
+    std::stable_sort(planningOrder.begin(), planningOrder.end(),
         [](const auto& a, const auto& b) { return a.first > b.first; });
 	for (const auto& entry : planningOrder) {
         const auto* pStructure = dynamic_cast<const StructureBase*>(getObject(entry.second));
@@ -3950,7 +3956,9 @@ void QuantBot::build(int militaryValue) {
                             }
                             int selected = QuantBotBuildPolicy::fundedDeficit(
                                 candidates,militaryValue,money,militaryValueLimit,vehiclePlanValue);
-                            const bool expansionFallback = false;
+                            const bool expansionFallback = selected < 0;
+                            if (expansionFallback) selected = QuantBotBuildPolicy::capacityFill(
+                                candidates,militaryValue,money,militaryValueLimit);
                             // Candidate tables are useful when the choice changes, but logging the
                             // identical no-deficit decision for every idle factory rapidly exhausts
                             // the match capture. Keep a periodic heartbeat for diagnosis.
@@ -3968,12 +3976,12 @@ void QuantBot::build(int militaryValue) {
                                     .set("expansion_horizon",expansionHorizon).set("expansion_fallback",expansionFallback)
                                     .set("spendable",money).set("candidates",choices)
                                     .set("selected",selected<0 ? NONE_ID : types[selected])
-                                    .set("reason",selected<0 ? "no_affordable_positive_deficit"
-                                        : expansionFallback ? "expansion_shortfall" : "largest_affordable_deficit"));
+                                    .set("reason",selected<0 ? "no_affordable_capacity"
+                                        : expansionFallback ? "available_factory_capacity" : "largest_affordable_deficit"));
                                 lastHeavyAllocationTrace[pBuilder->getObjectID()] = {allocationSignature, allocationCycle};
                             }
                             if (selected>=0 && produceItemWithLogging(types[selected],__LINE__,
-                                expansionFallback ? "expansion_shortfall" : "largest_affordable_deficit")) {
+                                expansionFallback ? "available_factory_capacity" : "largest_affordable_deficit")) {
                                 ++itemCount[types[selected]];
                                 money -= candidates[selected].price;
                                 militaryValue += candidates[selected].price;
@@ -4073,6 +4081,11 @@ void QuantBot::build(int militaryValue) {
                     heavyValue += itemCount[unit] * data[unit][houseID].price;
                 const int heavyDeficit = std::max(0,
                     (fundedArmy * (tankPercent + siegePercent + launcherPercent + specialPercent)).lround() - heavyValue);
+                const int lightDeficit = std::max<int64_t>(0,int64_t(fundedArmy)*lightVehicleBps/10000-lightVehicleValue);
+                const bool lightBacklog = !getHouse()->isGroundUnitLimitReached()
+                    && QuantBotBuildPolicy::needsProductionLane(getHouse()->getNumItems(Structure_LightFactory),
+                        itemCount[Structure_LightFactory],activeLightFactoryCount,lightDeficit,
+                        money,economyReserve,data[Structure_LightFactory][houseID].price);
                 const int airDeficit = std::max(0, (fundedArmy * ornithopterPercent).lround()
                     - itemCount[Unit_Ornithopter] * data[Unit_Ornithopter][houseID].price);
                 const bool heavyBacklog = !getHouse()->isGroundUnitLimitReached()
@@ -4119,6 +4132,7 @@ void QuantBot::build(int militaryValue) {
                         .set("heavy_reason", factoryReason).set("heavy_busy", activeHeavyFactoryCount)
                         .set("heavy_deficit", heavyDeficit).set("air_deficit", airDeficit)
                         .set("heavy_backlog", heavyBacklog).set("air_backlog", airBacklog)
+                        .set("light_backlog",lightBacklog).set("light_busy",activeLightFactoryCount).set("light_deficit",lightDeficit)
                         .set("high_tech_busy", activeHighTechFactoryCount)
                         .set("high_tech_building_ornithopters", ornithopterFactoryCount)
                         .set("heavy_economy_target", vanillaEconomy ? std::max(1, getHouse()->getNumItems(Unit_Harvester) / 3) : 0)
@@ -4612,6 +4626,13 @@ void QuantBot::build(int militaryValue) {
 					+ itemCount[Structure_ZoneIndustrial];
 				const bool cityIncomeReady = !isCitySim || kCityZoneCount >= kCityIncomeReadyZones || money > 3000;
 
+                // Expand saturated light production before optional heavy capacity.
+                // Pending factories count, so parallel yards add one lane at a time.
+                if (itemID == NONE_ID && !skipRemainingStructureLogic && lightBacklog
+                    && pBuilder->isAvailableToBuild(Structure_LightFactory)
+                    && findPlaceLocation(Structure_LightFactory).isValid()) {
+                    itemID = Structure_LightFactory; structureRule = "light_unit_backlog";
+                }
                 // Wealthy vanilla openings need parallel MCV/troop production
                 // before optional infrastructure. First/expanding refineries above
                 // keep their priority; queued factories count towards this target.

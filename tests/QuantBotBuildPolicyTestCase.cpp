@@ -725,3 +725,38 @@ TEST_CASE("Loose rally search is bounded and never collapses blocked slots onto 
         if (a) { REQUIRE(terrain(a->first,a->second)); REQUIRE(a->first<=12); REQUIRE(a->second<=12); }
     }
 }
+
+TEST_CASE("Idle heavy factories fill capacity beyond mix quotas without breaking the army cap", "[quantbot][production]") {
+    // Similar to the last match: all heavy shares met, but light factories lag.
+    std::array<AllocationCandidate,3> heavy={{{300,6300,600,true},{600,7800,700,true},{450,33000,3300,true}}};
+    REQUIRE(fundedDeficit(heavy,70000,500000,100000,100000)==-1);
+    REQUIRE(capacityFill(heavy,70000,500000,100000)==2);
+    REQUIRE(capacityFill(heavy,99900,500000,100000)==-1);
+    REQUIRE(capacityFill(heavy,99700,500000,100000)==0); // Only a tank fits.
+    REQUIRE(capacityFill(heavy,70000,299,100000)==-1);
+    heavy[2].available=false;
+    REQUIRE(capacityFill(heavy,70000,500000,100000)==0);
+    heavy[0].targetBps=heavy[1].targetBps=0;
+    REQUIRE(capacityFill(heavy,70000,500000,100000)==-1);
+}
+TEST_CASE("Parallel heavy overflow counts each queued unit and preserves the learned balance", "[quantbot][production]") {
+    std::array<AllocationCandidate,2> heavy={{{300,6000,600,true},{450,40000,4000,true}}};
+    int committed=99000,cash=1000,orders=0;
+    while (true) {
+        const int selected=capacityFill(heavy,committed,cash,100000);
+        if (selected<0) break;
+        committed+=heavy[selected].price; cash-=heavy[selected].price;
+        heavy[selected].committedValue+=heavy[selected].price; ++orders;
+    }
+    REQUIRE(orders==2);
+    REQUIRE(committed==99900);
+    REQUIRE(cash==100);
+}
+TEST_CASE("Light factories expand for a funded backlog with queued capacity accounted for", "[quantbot][production]") {
+    REQUIRE(needsProductionLane(1,1,1,30000,500000,1000,400));
+    REQUIRE(needsProductionLane(8,8,6,12000,500000,1000,400));
+    REQUIRE_FALSE(needsProductionLane(1,2,1,30000,500000,1000,400));
+    REQUIRE_FALSE(needsProductionLane(4,4,1,30000,500000,1000,400));
+    REQUIRE_FALSE(needsProductionLane(4,4,4,300,500000,1000,400));
+    REQUIRE_FALSE(needsProductionLane(1,1,1,30000,2000,1000,400));
+}

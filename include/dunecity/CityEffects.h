@@ -382,8 +382,9 @@ inline int computeBaseCrime(int landValue, int populationDensity = 0) {
 }
 
 // Micropolis calls the 192–250 band "Dangerous". DuneCity unrest uses that
-// source-defined band: ~180 seconds at its threshold and faster thereafter.
+// source-defined band, with long-lived district buildup before a larger outbreak.
 constexpr int kCrimeDangerousThreshold = 192;
+constexpr uint32_t kCrimeUnrestBuildupMs = 6 * 60 * 1000;
 inline int hostileLandValuePenalty(int distanceSquared) {
     if (distanceSquared < 0 || distanceSquared > 16) return 0;
     int distance = 0;
@@ -393,7 +394,7 @@ inline int hostileLandValuePenalty(int distanceSquared) {
 
 inline int crimeUnrestRate(int crime) {
     return crime < kCrimeDangerousThreshold ? 0
-                                             : 100 + 2 * (crime - kCrimeDangerousThreshold);
+                                             : 100 + 50 * std::min(58, crime - kCrimeDangerousThreshold) / 58;
 }
 
 // Gangs are a DuneCity event, separate from Micropolis' local crime formula.
