@@ -1200,6 +1200,7 @@ void QuantBot::refreshTacticalDanger() {
     harvesterDanger.assign(w*h, 0);
     lossDanger.assign(w*h, 0);
     visibleEnemyBases.clear();
+    visibleHarvestLaunchers.clear();
     const bool emitSafety = AITelemetry::log().enabled()
         && (lastSafetyTrace == std::numeric_limits<Uint32>::max() || now-lastSafetyTrace >= MILLI2CYCLES(30000));
     AITelemetry::Record threats;
@@ -1221,15 +1222,17 @@ void QuantBot::refreshTacticalDanger() {
             p += Coord(structure->getStructureSizeX()/2, structure->getStructureSizeY()/2);
         const int radius = std::max(1, object->getWeaponRange()) + 2;
         stamp(tacticalDanger, p, radius, 100);
-        // Harvesters react to actual weapon reach, not the larger construction buffer.
+        // Launchers get an early-warning margin: a harvester must turn before missiles arrive.
         // Tracked harvesters can crush foot troops; do not treat them like tanks.
-        const int harvestRadius = isInfantryUnit(object->getItemID()) ? -1 : std::max(1, object->getWeaponRange());
+        const int harvestRadius = TacticalSafetyPolicy::harvesterThreatRadius(object->getItemID(),object->getWeaponRange());
+        if (object->getItemID()==Unit_Launcher) visibleHarvestLaunchers.push_back(object->getObjectID());
         for (int y = std::max(0,p.y-harvestRadius); y <= std::min(h-1,p.y+harvestRadius); ++y)
             for (int x = std::max(0,p.x-harvestRadius); x <= std::min(w-1,p.x+harvestRadius); ++x)
                 if ((x-p.x)*(x-p.x)+(y-p.y)*(y-p.y) <= harvestRadius*harvestRadius)
                     harvesterDanger[y*w+x] += 100;
         if (emitSafety) threats.set(std::to_string(object->getObjectID()), AITelemetry::Record()
-            .set("item",object->getItemID()).set("x",p.x).set("y",p.y).set("radius_tiles",radius));
+            .set("item",object->getItemID()).set("x",p.x).set("y",p.y).set("radius_tiles",radius)
+            .set("harvester_radius_tiles",harvestRadius));
     };
     for (const auto* unit : getUnitList()) if (unit->isActive()) observe(unit);
     for (const auto* structure : getStructureList()) observe(structure);
@@ -1329,11 +1332,29 @@ bool QuantBot::manageHarvesterSafety(const Harvester* harvester) {
         return TacticalSafetyPolicy::escapeCorridor(origin.x,origin.y,end.x,end.y,
             [&](int x,int y) { return danger(Coord(x,y)); });
     };
+    // Ask for help before the first missile lands. Use the cached visible
+    // launcher list, and one nearest threat per check; incident debounce and
+    // already-committed forces keep many harvesters from recruiting repeatedly.
+    const ObjectBase* clearingTarget=nullptr;
+    int nearestThreat=std::numeric_limits<int>::max();
+    for (Uint32 id:visibleHarvestLaunchers) {
+        const auto* enemy=getObject(id);
+        if (!enemy || enemy->getHealth()<=0 || !enemy->canAttack(harvester)
+            || !enemy->isVisible(getHouse()->getTeamID())
+            || enemy->getOwner()->getTeamID()==getHouse()->getTeamID()) continue;
+        const int radius=TacticalSafetyPolicy::harvesterThreatRadius(enemy->getItemID(),enemy->getWeaponRange());
+        const int fromHarvester=distance(origin,enemy->getLocation());
+        const int fromJob=destination.isValid() ? distance(destination,enemy->getLocation()) : fromHarvester;
+        if (std::min(fromHarvester,fromJob)>radius || fromHarvester>radius+6) continue;
+        if (fromHarvester<nearestThreat) { clearingTarget=enemy; nearestThreat=fromHarvester; }
+    }
+    if (clearingTarget) scrambleUnitsAndDefend(clearingTarget,true);
     // Never replace an active safe unloading trip with another spice order.
     if (harvester->isReturning()) {
         const auto* target = dynamic_cast<const StructureBase*>(harvester->getTarget());
         if (target && target->getOwner() == getHouse() && target->getHealth() > 0
-            && target->acceptsHarvesterDropoff() && danger(target->getClosestPoint(origin)) == 0) {
+            && target->acceptsHarvesterDropoff() && danger(target->getClosestPoint(origin)) == 0
+            && routeSafe(target->getClosestPoint(origin))) {
             state.controlled = true;
             return true;
         }
@@ -5496,7 +5517,7 @@ void QuantBot::build(int militaryValue) {
 }
 
 
-void QuantBot::scrambleUnitsAndDefend(const ObjectBase* intruder) {
+void QuantBot::scrambleUnitsAndDefend(const ObjectBase* intruder, bool clearingSpice) {
     if (supportMode || !intruder || intruder->getHealth() <= 0
         || intruder->getOwner()->getTeamID() == getHouse()->getTeamID()) return;
     const Coord contact = intruder->getLocation();
@@ -5507,13 +5528,20 @@ void QuantBot::scrambleUnitsAndDefend(const ObjectBase* intruder) {
         + (intruder->isAFlyingUnit() ? 1 : 0);
     const Uint32 now = getGameCycleCount();
     auto previous = defenceResponseCycles.find(key);
-    if (previous != defenceResponseCycles.end() && now-previous->second < MILLI2CYCLES(2000)) return;
+    if (previous != defenceResponseCycles.end() && now-previous->second < MILLI2CYCLES(clearingSpice ? 5000 : 2000)) return;
     defenceResponseCycles[key] = now;
     auto value = [&](const ObjectBase* object) {
         const int price = currentGame->objectData.data[object->getItemID()][object->getOriginalHouseID()].price;
         return std::max(1,(FixPoint(price)*object->getHealth()/object->getMaxHealth()).lround());
     };
     int threatValue = value(intruder), committed = 0;
+    constexpr int clearingRadius=18;
+    if (clearingSpice) for (const auto* structure:getStructureList()) {
+        if (structure->getOwner()->getTeamID()!=getHouse()->getTeamID() && structure->getHealth()>0
+            && structure->canAttack() && structure->getItemID()!=Structure_Palace
+            && structure->isVisible(getHouse()->getTeamID())
+            && blockDistance(contact,structure->getLocation())<=8) threatValue+=value(structure);
+    }
     std::vector<SimpleArmyPolicy::Responder> candidates;
     for (const auto* unit : getUnitList()) {
         if (!unit->isActive() || !unit->canAttack()) continue;
@@ -5524,6 +5552,7 @@ void QuantBot::scrambleUnitsAndDefend(const ObjectBase* intruder) {
         if (unit->getOwner()!=getHouse() || !unit->isRespondable() || humanControls(unit)
             || !unit->canAttack(intruder) || unit->isBadlyDamaged() || unit->getAttackMode()==RETREAT
             || unit->getItemID()==Unit_Saboteur || unit->getItemID()==Unit_Harvester) continue;
+        if (clearingSpice && blockDistance(contact,unit->getLocation())>clearingRadius) continue;
         const auto* target=unit->getTarget();
         const bool hostileTarget=target && target->getHealth()>0
             && target->getOwner()->getTeamID()!=getHouse()->getTeamID();
@@ -5534,7 +5563,9 @@ void QuantBot::scrambleUnitsAndDefend(const ObjectBase* intruder) {
         if (hostileTarget && blockDistance(unit->getLocation(),target->getLocation())<=unit->getWeaponRange()) continue;
         candidates.push_back({unit->getObjectID(),value(unit),blockDistance(contact,unit->getLocation()).lround()});
     }
-    const auto response=SimpleArmyPolicy::reinforcements(threatValue,committed,candidates);
+    const auto response=clearingSpice
+        ? SimpleArmyPolicy::clearingForce(threatValue,committed,candidates,clearingRadius)
+        : SimpleArmyPolicy::reinforcements(threatValue,committed,candidates);
     int dispatched=0;
     for (const auto id:response) {
         const auto* unit=dynamic_cast<const UnitBase*>(getObject(id));
@@ -5550,6 +5581,7 @@ void QuantBot::scrambleUnitsAndDefend(const ObjectBase* intruder) {
     if (dispatched) traceDecision("defence_response",AITelemetry::Record().set("target",intruder->getObjectID())
         .set("x",contact.x).set("y",contact.y).set("threat_value",threatValue)
         .set("already_committed_value",committed).set("required_value",SimpleArmyPolicy::responseValue(threatValue))
+        .set("reason",clearingSpice ? "clear_spice_launcher" : "under_attack")
         .set("dispatched",dispatched));
 }
 

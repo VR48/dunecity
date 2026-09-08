@@ -555,14 +555,33 @@ void CitySimulation::runEffectsScans() {
         }
     }
     const uint32_t unrestThreshold = MILLI2CYCLES(kCrimeUnrestBuildupMs) * 100u;
+    constexpr uint32_t gatheringMs=30000;
+    std::vector<int> readyStrength(crimeUnrestProgress_.size(),0);
     for (size_t index = 0; index < crimeUnrestProgress_.size(); ++index) {
         const int owner = static_cast<int>(index) / districtsPerHouse;
         const int displayedPopulation = houseState_[owner].getTotalPop() * kPopDisplayMultiplier;
         const int meanCrime = dangerousBuildings[index] ? districtCrimeTotal[index]/dangerousBuildings[index] : 0;
-        const int rate = cityCrimeUnrestRate(meanCrime, displayedPopulation);
-        const int requested = crimeUnrestProgress_[index].advance(rate,districtTroops[index],
-            kCyclesPerCityDay,unrestThreshold);
-        if (!requested) continue;
+        readyStrength[index] = crimeUnrestProgress_[index].advance(cityCrimeUnrestRate(meanCrime,displayedPopulation),
+            districtTroops[index],kCyclesPerCityDay,unrestThreshold);
+    }
+    const auto outbreaks=crimeOutbreakGroups(crimeUnrestProgress_,readyStrength,districtWidth,(mapHeight_+15)/16,
+        unrestThreshold,MILLI2CYCLES(gatheringMs));
+    for (const auto& group:outbreaks) {
+        size_t index=group.front();
+        int requested=0,buildingCount=0,crimeTotal=0;
+        AITelemetry::Record contributions;
+        for (const auto member:group) {
+            requested+=readyStrength[member];
+            buildingCount+=dangerousBuildings[member];
+            crimeTotal+=districtCrimeTotal[member];
+            if(unrestCrime[member]>unrestCrime[index]) index=member;
+            contributions.set(std::to_string(member%districtsPerHouse),readyStrength[member]);
+            crimeUnrestProgress_[member].reset();
+        }
+        const int owner=static_cast<int>(index)/districtsPerHouse;
+        const int displayedPopulation=houseState_[owner].getTotalPop()*kPopDisplayMultiplier;
+        const int meanCrime=buildingCount ? crimeTotal/buildingCount : 0;
+        const int rate=cityCrimeUnrestRate(meanCrime,displayedPopulation);
         const StructureBase* origin = unrestOrigins[index];
         if (!origin) continue;
         // Use an existing opposing faction; never commandeer a playable house
@@ -601,7 +620,8 @@ void CitySimulation::runEffectsScans() {
             "crime_unrest", AITelemetry::Record().set("district", static_cast<int>(index % districtsPerHouse))
                 .set("crime",unrestCrime[index]).set("origin",origin->getObjectID())
                 .set("population", displayedPopulation).set("minimum_population", 5000)
-                .set("dangerous_buildings",dangerousBuildings[index]).set("mean_dangerous_crime",meanCrime)
+                .set("dangerous_buildings",buildingCount).set("mean_dangerous_crime",meanCrime)
+                .set("contributing_districts",group.size()).set("district_strengths",contributions).set("gathering_ms",gatheringMs)
                 .set("requested",requested).set("strength_rule","occupied_density_1_2_3")
                 .set("hotspot_x",hotspot.x).set("hotspot_y",hotspot.y).set("buildup_rate",rate).set("base_buildup_ms",kCrimeUnrestBuildupMs)
                 .set("hostile_house",hostile ? hostile->getHouseID() : -1).set("spawned",spawned)

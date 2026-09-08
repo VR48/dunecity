@@ -148,7 +148,7 @@ private:
     std::map<Uint32, int> idleHarvesterCounters; ///< Track idle time for each harvester (objectID -> cycle count)
     std::map<Uint32, int> harvesterMovingCounters; ///< Track continuous movement time (objectID -> cycle count)
 
-    void scrambleUnitsAndDefend(const ObjectBase* pIntruder);
+    void scrambleUnitsAndDefend(const ObjectBase* pIntruder, bool clearingSpice = false);
 
 
     Coord findMcvPlaceLocation(const MCV* pMCV);
@@ -198,6 +198,7 @@ private:
     struct RecentStructureLoss { Coord location; Coord size; Uint32 cycle; Uint32 item; };
     std::vector<int> tacticalDanger, harvesterDanger, lossDanger, factoryEnemyClearance;
     std::vector<Coord> visibleEnemyBases;
+    std::vector<Uint32> visibleHarvestLaunchers;
     Uint32 dangerUpdated = std::numeric_limits<Uint32>::max();
     Uint32 lastSafetyTrace = std::numeric_limits<Uint32>::max();
     struct HarvesterSafety { Uint32 nextCheck = 0, retreatUntil = 0; Coord lastLocation = Coord::Invalid(), plannedDestination = Coord::Invalid(); bool controlled = false; };

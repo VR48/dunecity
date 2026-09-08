@@ -7,6 +7,11 @@
 #include <players/CityPlacementPolicy.h>
 
 namespace TacticalSafetyPolicy {
+inline int harvesterThreatRadius(int item, int range) {
+    if (isInfantryUnit(item)) return -1; // Harvesters can crush foot troops.
+    return std::max(1,range)+(item==Unit_Launcher ? 3 : 0);
+}
+
 inline bool productionFactory(int type) {
     return type == Structure_HeavyFactory || type == Structure_LightFactory
         || type == Structure_HighTechFactory || type == Structure_Barracks || type == Structure_WOR;

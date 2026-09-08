@@ -41,7 +41,8 @@
 // 9829: QuantBot deterministic power-demand forecast samples.
 // 9830: QuantBot coordinated waves, player orders, escorts and placement loss memory.
 // 9833: City district gang buildup persists dangerous-building exposure.
-#define SAVEGAMEVERSION     9833
+// 9834: Former crime exposure slot stores mature-outbreak gathering time.
+#define SAVEGAMEVERSION     9834
 
 // v1.0.0–v1.0.7 shipped SAVEGAMEVERSION 9810 with Num_ItemID=48.
 // v1.0.8–v1.0.10 also used 9810 but with Num_ItemID=52 (4 items added

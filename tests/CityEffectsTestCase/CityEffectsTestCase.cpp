@@ -1039,9 +1039,12 @@ TEST_CASE("District outbreaks require four to six minutes of sustained dangerous
         const int periods=crime==250 ? 8 : 12;
         for (int n=1;n<periods;++n) REQUIRE(district.advance(rate,30,step,threshold)==0);
         REQUIRE(district.advance(rate,30,step,threshold)==30);
-        REQUIRE(district.progress==0);
-        REQUIRE(district.buildingExposure==0);
-        REQUIRE(district.advance(rate,30,step,threshold)==0); // No immediate repeat.
+        REQUIRE(district.progress==threshold);
+        REQUIRE(district.readyCycles==0);
+        REQUIRE(district.advance(rate,30,step,threshold)==30); // Mature force held for grouping.
+        REQUIRE(district.readyCycles==step);
+        district.reset();
+        REQUIRE(district.advance(rate,30,step,threshold)==0); // No immediate repeat after release.
     }
 }
 TEST_CASE("Density-weighted crime clusters make larger outbreaks, not earlier ones", "[city][crime]") {
@@ -1063,30 +1066,35 @@ TEST_CASE("Policing or a small population clears pending district outbreaks", "[
         REQUIRE(district.advance(150,20,MILLI2CYCLES(210000),threshold)==0);
         REQUIRE(district.advance(rate,20,MILLI2CYCLES(30000),threshold)==0);
         REQUIRE(district.progress==0);
-        REQUIRE(district.buildingExposure==0);
+        REQUIRE(district.readyCycles==0);
     }
 }
 TEST_CASE("District crime history survives saves and migrates old timers without premature waves", "[city][crime][save-compat]") {
     const uint32_t threshold=MILLI2CYCLES(kCrimeUnrestBuildupMs)*100u;
     std::vector<CrimeUnrestDistrict> original(2),restored(2);
-    original[0].advance(150,16,MILLI2CYCLES(120000),threshold);
+    original[0].advance(150,16,MILLI2CYCLES(240000),threshold);
     original[1].advance(100,6,MILLI2CYCLES(90000),threshold);
-    original[0].buildingExposure=123456789; // Former 605 field remains readable and ignored for strength.
+    original[0].readyCycles=123; // Preserve a partially gathered outbreak.
     OMemoryStream output; saveCrimeUnrest(output,original); output.writeUint32(123456);
     IMemoryStream input(output.getData(),output.getDataLength());
-    loadCrimeUnrest(input,restored,9833);
+    loadCrimeUnrest(input,restored,9834);
     REQUIRE(input.readUint32()==123456);
     for (size_t i=0;i<2;++i) {
         REQUIRE(restored[i].progress==original[i].progress);
-        REQUIRE(restored[i].buildingExposure==original[i].buildingExposure);
+        REQUIRE(restored[i].readyCycles==original[i].readyCycles);
         REQUIRE(restored[i].advance(150,16,MILLI2CYCLES(120000),threshold)
                 ==original[i].advance(150,16,MILLI2CYCLES(120000),threshold));
     }
+    IMemoryStream exposureSave(output.getData(),output.getDataLength());
+    loadCrimeUnrest(exposureSave,restored,9833);
+    REQUIRE(restored[0].progress==original[0].progress);
+    REQUIRE(restored[0].readyCycles==0); // Never interpret former building exposure as elapsed time.
+    REQUIRE(exposureSave.readUint32()==123456);
     OMemoryStream legacy; legacy.writeUint32(2); legacy.writeUint32(123); legacy.writeUint32(456); legacy.writeUint32(987);
     IMemoryStream old(legacy.getData(),legacy.getDataLength());
     loadCrimeUnrest(old,restored,9832);
     REQUIRE(old.readUint32()==987);
-    for (const auto& district:restored) { REQUIRE(district.progress==0); REQUIRE(district.buildingExposure==0); }
+    for (const auto& district:restored) { REQUIRE(district.progress==0); REQUIRE(district.readyCycles==0); }
     IMemoryStream wrong(output.getData(),output.getDataLength());
     std::vector<CrimeUnrestDistrict> wrongSize(3);
     REQUIRE_THROWS(loadCrimeUnrest(wrong,wrongSize,9833));
@@ -1140,4 +1148,34 @@ TEST_CASE("Idle road maintenance finds outer-city gaps and prefers reconnecting 
     REQUIRE(candidates(buildings,[](int,int) {return false;},hasRoad).empty()); // Occupied/reserved sites.
     REQUIRE(candidates(std::vector<Footprint>{},canPlace,hasRoad).empty()); // No owned buildings.
     REQUIRE(candidates(buildings,canPlace,[](int,int) {return false;}).empty()); // No speculative isolated roads.
+}
+
+TEST_CASE("Neighbouring mature crime districts release together after a bounded gathering window", "[city][crime]") {
+    std::vector<CrimeUnrestDistrict> districts(18);
+    std::vector<int> strengths(18,0);
+    constexpr uint32_t threshold=1000,wait=30;
+    districts[0]={threshold,29}; strengths[0]=3;
+    districts[1]={threshold,1}; strengths[1]=6;
+    districts[2]={threshold-1,0}; strengths[2]=10; // Nearby, but cannot join early.
+    REQUIRE(crimeOutbreakGroups(districts,strengths,3,3,threshold,wait).empty());
+    districts[0].readyCycles=30;
+    const auto groups=crimeOutbreakGroups(districts,strengths,3,3,threshold,wait);
+    REQUIRE(groups==std::vector<std::vector<size_t>>{{0,1}});
+    REQUIRE(strengths[groups[0][0]]+strengths[groups[0][1]]==9);
+    for(auto i:groups[0]) districts[i].reset();
+    REQUIRE(crimeOutbreakGroups(districts,strengths,3,3,threshold,wait).empty());
+    REQUIRE(districts[2].progress==threshold-1);
+}
+TEST_CASE("Crime grouping respects house boundaries and does not wrap map rows", "[city][crime]") {
+    std::vector<CrimeUnrestDistrict> districts(18);
+    std::vector<int> strengths(18,0);
+    for(size_t i:{2u,3u,8u,9u}) { districts[i]={1000,30}; strengths[i]=3; }
+    const auto groups=crimeOutbreakGroups(districts,strengths,3,3,1000,30);
+    REQUIRE(groups==std::vector<std::vector<size_t>>{{2},{3},{8},{9}});
+}
+TEST_CASE("Policing cancels an already mature outbreak before gathering completes", "[city][crime]") {
+    CrimeUnrestDistrict district{1000,20};
+    REQUIRE(district.advance(0,30,10,1000)==0);
+    REQUIRE(district.progress==0);
+    REQUIRE(district.readyCycles==0);
 }

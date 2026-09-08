@@ -1,3 +1,62 @@
+# Road completion, launcher safety and grouped outbreaks — 1.0.607
+
+Stefan approved all three findings from the completed 606 review. ConstructionYard
+now recognises successful tile placement when House::placeStructure consumes the
+completed queue entry, even though it returns nullptr for roads/concrete. This
+fixes false failures and stale road reservations/retries in qBot. Snapshot the
+queue length before placement so several identical queued roads are handled
+correctly. Failed placement with unchanged queue still reports failure. Tile
+mutation remains in House; no road-routing responsibility moves into the yard.
+
+qBot's shared harvester danger grid adds 3 tiles beyond visible launcher weapon
+range. Other weapons retain existing reach; crushable foot troops remain excluded.
+Before missiles hit, threatened harvesters request a clearing team against the
+nearest relevant visible launcher using the cached threat list. Proactive responses
+use troops within 18 tiles and require enough total local/committed health-adjusted
+value for the existing 125% threat budget; nearby defending turrets also count as
+threats. Insufficient local strength sends no sacrificial partial team. Already
+committed responders count, human orders/retreats/other live fights remain protected.
+Proactive incident checks debounce at 5 seconds; actual damage responses retain
+2 seconds and existing emergency behaviour. Both Vanilla and DuneCity qBot benefit.
+Returning harvesters now validate the refinery corridor as well as its endpoint,
+so they cannot keep an unloading trip through launcher fire merely because the
+refinery itself is safe. Existing safe-refinery preference and field redirection
+remain; paths use the existing corridor estimate, not a full pathfinding proof.
+Telemetry includes clear_spice_launcher response reason and harvester threat radius.
+
+City gangs retain each district's 4–6 minute crime buildup and occupied density
+1/2/3 strengths, threshold192 and population gate5000. Once mature, an outbreak
+waits up to approximately30 extra simulation seconds (city-scan quantisation) to
+combine neighbouring ready districts. Eight-neighbour connected components are
+restricted to the same house; only fully mature districts join. Any member's
+expired gathering window releases the component together at its highest-crime
+origin. Policing/vacancy/small population cancels pending readiness. Contributing
+districts all reset once, even if engine capacity/space limits actual deployment.
+This is bounded district-grid work, not per-trooper graph searches. Telemetry adds
+contributing_districts, district_strengths and gathering_ms.
+
+Save version9834 reuses the old64bit exposure slot for readyCycles. Loading9833
+retains buildup progress but discards old exposure; older timers retain their
+existing reset migration. Current saves preserve grouping delay; simulation cycles
+and stable ordering only. Policy grouped-unrest-harvester-safety-v43.
+
+Verified local Release1.0.607: dependency audits, version consistency, signature
+and CTest490passed/3optional skipped. Regression checks cover tile queue success
+versus rejection, launcher margin/crossing/escape, sufficient nearby clearing
+forces, gathering delay/immature exclusion/house+row boundaries/policing, and saved
+readiness/legacy exposure. Not launched, pushed or released. Live balance needs a
+new game; no claim of measured FPS improvement.
+
+Evidence prompting these fixes: completed606 session1788866702844001-0 lasted
+34.023simminutes, both qBotHard cap70000 and both alive. SQLitebuild/review-606.sqlite
+104213events, auditclean. Fremen harvester losses3 versus Harkonnen39;20of38 logged
+Harkonnen harvester lethal events identify known-built launchers. All1753heavy
+no_affordable_capacity decisions had<300remaining cap. Road placement189events
+allfalse;353road cancellations allshow existingroad,175reservedoverlap. Gang141
+outbreaks1402troopers,max54,39waves<=3;1969/3083defenceresponses targeted exactgang
+IDs. Final32police each versus177/194rocket turrets,meancrime12/8. Reviewnotes at
+/tmp/dunecity-606-review.md. No further army-limit/service-ratio change requested.
+
 # Density-scaled hotspot outbreaks and idle road repairs — 1.0.606
 
 Stefan corrected 605 outbreaks: one compact group at the worst crime hotspot,

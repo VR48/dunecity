@@ -760,3 +760,12 @@ TEST_CASE("Light factories expand for a funded backlog with queued capacity acco
     REQUIRE_FALSE(needsProductionLane(4,4,4,300,500000,1000,400));
     REQUIRE_FALSE(needsProductionLane(1,1,1,30000,2000,1000,400));
 }
+
+TEST_CASE("Spice clearing recruits a complete nearby force without distant reinforcements", "[quantbot][harvester]") {
+    using namespace SimpleArmyPolicy;
+    const std::vector<Responder> army{{1,300,3},{2,300,8},{3,600,25}};
+    REQUIRE(clearingForce(450,0,army,18)==std::vector<uint32_t>{1,2});
+    REQUIRE(clearingForce(1000,0,army,18).empty()); // Nearby force insufficient; keep harvesters safe.
+    REQUIRE(clearingForce(1000,1000,army,18)==std::vector<uint32_t>{1});
+    REQUIRE(clearingForce(450,600,army,18).empty()); // Already covered; no repeated recruitment.
+}

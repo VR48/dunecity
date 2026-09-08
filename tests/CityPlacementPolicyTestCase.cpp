@@ -393,3 +393,14 @@ TEST_CASE("Police purchases value actual harm instead of repeatedly polishing sa
     REQUIRE(crimeHarm(101,Structure_ZoneResidential,20)>crimeHarm(100,Structure_ZoneResidential,20));
     REQUIRE(crimeHarm(121,Structure_ZoneCommercial,10)>crimeHarm(120,Structure_ZoneCommercial,10));
 }
+
+TEST_CASE("Harvesters avoid launcher approach range before actual weapon reach", "[tactical][harvester]") {
+    using namespace TacticalSafetyPolicy;
+    REQUIRE(harvesterThreatRadius(Unit_Launcher,9)==12);
+    REQUIRE(harvesterThreatRadius(Unit_Tank,4)==4);
+    REQUIRE(harvesterThreatRadius(Unit_Trooper,5)==-1);
+    auto danger=[](int x,int) { return std::abs(x-20)<=harvesterThreatRadius(Unit_Launcher,9) ? 100 : 0; };
+    REQUIRE_FALSE(escapeCorridor(0,0,9,0,danger)); // Destination outside weapon range but too close.
+    REQUIRE_FALSE(escapeCorridor(0,0,40,0,danger)); // Safe endpoints cannot justify crossing the launcher.
+    REQUIRE(escapeCorridor(9,0,0,0,danger)); // Allow escape out of the warning margin.
+}
