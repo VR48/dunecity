@@ -76,3 +76,27 @@ non-fast-forward branch stops publication for investigation rather than forcing 
 
 - [SourceForge file releases](https://sourceforge.net/p/forge/documentation/Release%20Files%20for%20Download/)
 - [SourceForge release API](https://sourceforge.net/p/forge/documentation/Using%20the%20Release%20API/)
+
+## SourceForge project presentation and legacy website
+
+On 2026-09-10 the project display name became **Dune Legacy & Dune City**
+(shortname stays `dunelegacy`). Metadata now describes Dune City and Vanilla,
+links to dunelegacy.com and lists current city/RTS features. SourceForge reuses
+this description on its download overview page; both were verified in-browser.
+
+The legacy website is also in the old SourceForge `master` checkout at
+`/Users/stefan/Documents/projects/dunelegacy-code/sourceforge_website`.
+Commit `dc69c5a` replaces the stale downloads page with a Dune City introduction,
+a version-independent latest-download link, platform selection on the main site,
+installation help and classic-release archive links. The same page is retained
+in this GitHub repository's `sourceforge_website` directory.
+
+Web hosting uses SFTP `svan058@web.sourceforge.net`, path
+`/home/project-web/dunelegacy/htdocs/website/`. The dedicated deployment key works;
+the web host ED25519 fingerprint was verified against SourceForge documentation.
+Upload only intended files, then read back and compare bytes. This deployment
+used a temporary filename and rename; the prior HTML is backed up locally at
+`/tmp/dunecity-sf-web-backup/downloads.html`. No PHP settings changed.
+
+The CDN may briefly show the old page at the plain URL. The deployed HTML was
+verified by SFTP readback and browser rendering with `?updated=20260910`.
