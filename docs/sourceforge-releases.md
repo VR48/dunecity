@@ -5,6 +5,13 @@ SourceForge release** workflow runs after a successful stable-tag **Build Dune
 Legacy** workflow. It can also be dispatched manually with a published tag, such
 as `v1.0.612`, to backfill or retry without rebuilding the game.
 
+## Verified deployment
+
+Configured and first published on 2026-09-10. [Run 34416472472](https://github.com/VR48/dunecity/actions/runs/34416472472)
+successfully mirrored [1.0.612](https://sourceforge.net/projects/dunelegacy/files/dunecity/1.0.612/),
+verified all nine files, pushed the source refs and confirmed all three OS defaults.
+The setup below is retained for credential rotation or migration.
+
 ## Published layout
 
 - Files: `dunelegacy` project, `dunecity/<version>/` directory.

@@ -6,12 +6,16 @@ verify uploaded checksums by readback, then publish namespaced source tags and
 advance the dedicated `dunecity` branch/platform defaults for the latest release.
 Legacy master and old files are preserved. Manual dispatch supports backfills.
 
-Prepared all six 1.0.612 packages plus source, notes and checksums locally at
-`/tmp/dunecity-sourceforge-1.0.612`; six Python safeguard tests pass. YAML parses.
-SourceForge's existing public Git master was verified accessible. Publication is
-**pending authentication**, not completed: GitHub lacks the SourceForge username,
-dedicated SSH key, pinned known hosts and Releases API key. The in-app SourceForge
-session was signed out. Setup is in `docs/sourceforge-releases.md`.
+SourceForge setup completed 2026-09-10: account svan058, dedicated SSH key and
+pinned host keys, Releases API key and GitHub variable/secrets configured.
+Workflow run https://github.com/VR48/dunecity/actions/runs/34416472472 succeeded
+in 2m15s. All nine files read back with matching SHA256; public Files page lists
+six packages, source archive, notes and checksums. API confirmed Windows ZIP,
+macOS DMG and Linux AppImage defaults at 1.0.612. Source branch `dunecity` and
+peeled `dunecity-v1.0.612` resolve to b949be92a1f44233c1964e3b1b3995088ac3a76e;
+Legacy master remains a3810102bd00a03c618bb7414d353a337c732fc6. Future stable-tag
+builds trigger the mirror automatically. Setup/operations documentation is in
+`docs/sourceforge-releases.md`. Do not print or commit credential contents.
 This is infrastructure-only, pushed with `[skip ci]`; game version remains 1.0.612.
 
 # Preserve qBot factory exits and ground routes — 1.0.612
