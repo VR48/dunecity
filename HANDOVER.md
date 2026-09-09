@@ -1,3 +1,19 @@
+## SourceForge release automation — 2026-09-09
+
+Added `.github/workflows/sourceforge.yml` and `scripts/sourceforge-release.py`.
+They mirror successful stable GitHub releases to SourceForge `dunecity/<version>`,
+verify uploaded checksums by readback, then publish namespaced source tags and
+advance the dedicated `dunecity` branch/platform defaults for the latest release.
+Legacy master and old files are preserved. Manual dispatch supports backfills.
+
+Prepared all six 1.0.612 packages plus source, notes and checksums locally at
+`/tmp/dunecity-sourceforge-1.0.612`; six Python safeguard tests pass. YAML parses.
+SourceForge's existing public Git master was verified accessible. Publication is
+**pending authentication**, not completed: GitHub lacks the SourceForge username,
+dedicated SSH key, pinned known hosts and Releases API key. The in-app SourceForge
+session was signed out. Setup is in `docs/sourceforge-releases.md`.
+This is infrastructure-only, pushed with `[skip ci]`; game version remains 1.0.612.
+
 # Preserve qBot factory exits and ground routes — 1.0.612
 
 Stefan's Vanilla611 screenshots show rear factories surrounded by structures,

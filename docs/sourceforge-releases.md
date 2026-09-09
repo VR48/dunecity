@@ -1,0 +1,71 @@
+# SourceForge release mirror
+
+GitHub remains the source of truth and builds desktop releases. The **Sync
+SourceForge release** workflow runs after a successful stable-tag **Build Dune
+Legacy** workflow. It can also be dispatched manually with a published tag, such
+as `v1.0.612`, to backfill or retry without rebuilding the game.
+
+## Published layout
+
+- Files: `dunelegacy` project, `dunecity/<version>/` directory.
+- Six unchanged GitHub desktop packages, tagged source `.tar.gz`, `README.md`
+  release notes and `SHA256SUMS`.
+- Source: existing `ssh://USER@git.code.sf.net/p/dunelegacy/code` repository,
+  dedicated `dunecity` branch and `dunecity-vX.Y.Z` tags.
+- No forced Git pushes, deletion of old releases, or changes to Legacy master.
+
+Every uploaded file is downloaded through authenticated rsync and SHA256 checked
+before source refs or download defaults are changed. Only the current GitHub
+latest stable release advances the branch and Windows/macOS/Linux defaults.
+Historical backfills publish files and a namespaced source tag only. Runs are
+serialized. Failed verification leaves download defaults unchanged.
+
+## One-time setup
+
+A SourceForge account needs file release and Git write access to the Dune Legacy
+project. Create the `dunecity` parent directory in the project's Files interface.
+Create a dedicated SSH key for this automation and add its public key to that
+SourceForge account. Do not reuse unrelated deployment keys.
+
+In GitHub repository Settings → Secrets and variables → Actions, configure:
+
+| Kind | Name | Value |
+| --- | --- | --- |
+| Variable | `SOURCEFORGE_USER` | SourceForge username |
+| Secret | `SOURCEFORGE_SSH_KEY` | Dedicated SSH private key |
+| Secret | `SOURCEFORGE_KNOWN_HOSTS` | Verified SSH host entries for `frs.sourceforge.net` and `git.code.sf.net` |
+| Secret | `SOURCEFORGE_API_KEY` | Account's Releases API Key |
+
+Check SSH fingerprints against SourceForge's published host keys before trusting
+host entries. The workflow enforces strict host-key checking. Enter secrets
+directly into GitHub settings or via `gh secret set`; never paste them into chat,
+commit them, or include them in logs. Account login alone does not provide CI
+credentials.
+
+Then run **Sync SourceForge release**, tag `v1.0.612`. A missing credential fails
+explicitly and does not affect the completed GitHub release or website deploy.
+After success, inspect the SourceForge Files page and platform download defaults.
+GitHub Actions logs include checksum verification and confirmed default filenames.
+
+## Local preparation and tests
+
+Run from the repository with authenticated GitHub CLI:
+
+```sh
+python3 -m unittest discover -s scripts/tests -p 'test_sourceforge_release.py'
+python3 scripts/sourceforge-release.py v1.0.612 --directory /tmp/sourceforge-1.0.612
+```
+
+The output directory must not already exist. Without `--publish`, this only
+prepares a bundle. Publication additionally needs the environment variables above
+and `GIT_SSH_COMMAND` pointing to the dedicated key and pinned known-hosts file.
+Prefer the workflow for publication so concurrent uploads are serialized.
+
+Retry by dispatching the same tag. rsync checks content and resumes the mirror;
+it never removes historical releases. An existing conflicting source tag or a
+non-fast-forward branch stops publication for investigation rather than forcing it.
+
+## References
+
+- [SourceForge file releases](https://sourceforge.net/p/forge/documentation/Release%20Files%20for%20Download/)
+- [SourceForge release API](https://sourceforge.net/p/forge/documentation/Using%20the%20Release%20API/)
