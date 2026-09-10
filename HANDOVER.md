@@ -1,3 +1,11 @@
+# Windtrap sidebar label — 1.0.624
+
+Corrected the remaining hard-coded `Role: I-medium` text in CityStatsBox to
+`Role: I-light`. Simulation was already light in 1.0.623 (population 1,
+maximum level 1, industrial supply 10); power and emissions are unchanged.
+Local app rebuilt as 1.0.624. Full CTest and before/after dependency audits
+passed. No game launch, push or release.
+
 # Occupancy-based traffic, individual houses and city AI priorities — 1.0.623
 
 User screenshots of tiny 1.0.622 settlements showed widespread heavy traffic.

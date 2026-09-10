@@ -187,7 +187,7 @@ private:
             case Structure_GunTurret:        return "Park: 1 fountain";
             case Structure_RocketTurret:     return "Park: 1 fountain";
             case Structure_Wall:             return "Role: Park bonus";
-            case Structure_WindTrap:         return "Role: I-medium";
+            case Structure_WindTrap:         return "Role: I-light";
             case Structure_NuclearPlant:     return "Role: Nuclear Power";
             default:                         return "Role: \xE2\x80\x94";
         }
