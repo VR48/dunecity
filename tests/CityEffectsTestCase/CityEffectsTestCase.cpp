@@ -1,3 +1,4 @@
+#include <dunecity/CityDemandNoticePolicy.h>
 #include <DataTypes.h>
 #include <dunecity/HouseColors.h>
 /*
@@ -1178,4 +1179,69 @@ TEST_CASE("Policing cancels an already mature outbreak before gathering complete
     REQUIRE(district.advance(0,30,10,1000)==0);
     REQUIRE(district.progress==0);
     REQUIRE(district.readyCycles==0);
+}
+
+
+TEST_CASE("Demand uses worker-equivalent residential history", "[city-effects][valves][regression]") {
+    ValveInputs in;
+    in.resPop = in.prevResPop = 800; // 100 workers
+    in.comPop = in.prevComPop = 100;
+    in.indPop = in.prevIndPop = 100; // 200 jobs: labour shortage
+    in.hasStadium = in.hasAirport = in.hasStarport = true;
+    in.comValve = in.indValve = 1500;
+    const auto first = computeDemandValves(in);
+    CHECK(first.comValve < 1500);
+    CHECK(first.indValve == 1260); // 0.5 labour * 1.2 external market
+    for (int tick = 0; tick < 10; ++tick) {
+        const auto out = computeDemandValves(in);
+        in.resValve = out.resValve;
+        in.comValve = out.comValve;
+        in.indValve = out.indValve;
+    }
+    CHECK(in.comValve < 0);
+    CHECK(in.indValve < 0);
+
+    // Jobs equal workers: no artificial 1.3 labour multiplier.
+    in.resPop = in.prevResPop = 1600;
+    in.indValve = 0;
+    CHECK(computeDemandValves(in).indValve >= 119);
+    CHECK(computeDemandValves(in).indValve <= 120);
+}
+
+TEST_CASE("Civic demand notices match actual caps and respect Palace substitute", "[city-effects][valves]") {
+    ValveInputs in;
+    in.resPop = in.prevResPop = 800;
+    in.comPop = in.prevComPop = 101;
+    in.indPop = in.prevIndPop = 71;
+    in.resValve = in.comValve = in.indValve = 1000;
+    const auto out = computeDemandValves(in);
+    CHECK(out.civicDemandBlocked == (NeedStadium | NeedAirport | NeedStarport));
+    CHECK(out.resValve == 0);
+    CHECK(out.comValve == 0);
+    CHECK(out.indValve == 0);
+    in.hasPalace = true;
+    CHECK_FALSE(computeDemandValves(in).civicDemandBlocked & NeedStadium);
+    in.hasAirport = in.hasStarport = true;
+    CHECK(computeDemandValves(in).civicDemandBlocked == 0);
+    in = ValveInputs{};
+    in.resPop = 500; in.comPop = 100; in.indPop = 70;
+    CHECK(missingDemandCivics(in) == 0);
+    in.resPop++; in.comPop++; in.indPop++;
+    in.resValve = in.comValve = in.indValve = -1500;
+    CHECK(computeDemandValves(in).civicDemandBlocked == 0);
+}
+
+TEST_CASE("Civic notices are spaced, deduplicated and rearmed after resolution", "[city-effects][messages]") {
+    CityDemandNoticePolicy notices;
+    const uint8_t all = NeedStadium | NeedAirport | NeedStarport;
+    CHECK(notices.update(all, all, 0, 10) == NeedStadium);
+    CHECK(notices.update(all, all, 1, 10) == 0);
+    CHECK(notices.update(all, 0, 10, 10) == NeedAirport);
+    CHECK(notices.update(all, 0, 20, 10) == NeedStarport);
+    CHECK(notices.update(all, all, 30, 10) == 0);
+    CHECK(notices.update(0, 0, 31, 10) == 0);
+    CHECK(notices.update(NeedStadium, NeedStadium, 32, 10) == NeedStadium);
+    CityDemandNoticePolicy cancelled;
+    CHECK(cancelled.update(all, all, 0, 10) == NeedStadium);
+    CHECK(cancelled.update(NeedStadium, 0, 10, 10) == 0);
 }

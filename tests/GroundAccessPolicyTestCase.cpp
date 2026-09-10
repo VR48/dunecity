@@ -53,9 +53,11 @@ TEST_CASE("Placement inspection is bounded independently of map size", "[ai][pla
     }));
     REQUIRE(reads==20);
 }
-TEST_CASE("Residential gaps outrank expansion but retain safety preference", "[ai][placement]") {
+TEST_CASE("Residential gaps only outrank equally suitable expansion sites", "[ai][placement]") {
     using CityPlacementPolicy::preferCitySite;
-    REQUIRE(preferCitySite(true,2,0,0,true,0,2,500));
+    REQUIRE_FALSE(preferCitySite(true,2,0,0,true,0,2,500));
+    REQUIRE(preferCitySite(true,2,2,0,true,0,2,500));
     REQUIRE_FALSE(preferCitySite(false,3,2,500,true,0,0,0));
-    REQUIRE_FALSE(preferCitySite(true,0,2,500,true,2,0,0));
+    REQUIRE(preferCitySite(true,0,2,500,true,2,0,0));
+    REQUIRE_FALSE(preferCitySite(true,0,2,500,true,2,2,0));
 }

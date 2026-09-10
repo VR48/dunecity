@@ -1619,7 +1619,7 @@ Coord QuantBot::findRedevelopmentSite(Uint32 item) {
 
 Coord QuantBot::findPlaceLocation(Uint32 itemID) {
     refreshTacticalDanger();
-    int accessRejected = 0;
+    int accessRejected = 0, pollutionRejected = 0;
 	// Check per-build-cycle cache first
 	auto cacheIt = placementCache.find(itemID);
 	if (cacheIt != placementCache.end()) {
@@ -1713,6 +1713,13 @@ Coord QuantBot::findPlaceLocation(Uint32 itemID) {
 
                 ++candidates;
                 if (overlapsReservedStructure(placeLocationX, placeLocationY, newSizeX, newSizeY)) continue;
+                // Use the same origin sample and role-specific gate as zone growth.
+                // Industry tolerates pollution; R/C must not become vacant dead lots.
+                if (citySim && cityZonePlacement && DuneCity::isPollutionBlockingGrowth(
+                    citySim->getPollutionDensityMap().worldGet(placeLocationX, placeLocationY), newRole, 1)) {
+                    ++pollutionRejected;
+                    continue;
+                }
                 if (!preservesGroundAccess(itemID,Coord(placeLocationX,placeLocationY))) { ++accessRejected; continue; }
                 if (itemID != Structure_RocketTurret && itemID != Structure_GunTurret && itemID != Structure_Wall
                     && nearRecentStructureLoss(placeLocationX, placeLocationY, newSizeX, newSizeY)) { ++lossRejected; continue; }
@@ -2206,7 +2213,7 @@ Coord QuantBot::findPlaceLocation(Uint32 itemID) {
 	placementCache[itemID] = bestLocation;
     bestQuality.set("legal_candidates",candidates).set("threat_rejections",threatRejected)
         .set("blast_rejections",blastRejected).set("recent_loss_rejections",lossRejected)
-        .set("ground_access_rejections",accessRejected);
+        .set("ground_access_rejections",accessRejected).set("pollution_rejections",pollutionRejected);
     placementScoreDetails[itemID] = bestQuality;
 	return bestLocation;
 }

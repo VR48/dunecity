@@ -738,7 +738,7 @@ struct ValveInputs {
     int resPop = 0;
     int comPop = 0;
     int indPop = 0;
-    int prevResPop = 0;   // previous tick (SC uses resHist[1])
+    int prevResPop = 0;   // raw previous population; normalize by 8 for SC resHist[1]
     int prevComPop = 0;   // previous tick (SC uses comHist[1])
     int prevIndPop = 0;   // previous tick (SC uses indHist[1])
     int16_t resValve = 0; // current valve to accumulate onto
@@ -755,7 +755,16 @@ struct ValveOutputs {
     int16_t resValve = 0;
     int16_t comValve = 0;
     int16_t indValve = 0;
+    uint8_t civicDemandBlocked = 0; // positive demand stopped by missing civics
 };
+
+enum CivicRequirement : uint8_t { NeedStadium = 1, NeedAirport = 2, NeedStarport = 4 };
+
+inline uint8_t missingDemandCivics(const ValveInputs& in) {
+    return (in.resPop > 500 && !in.hasStadium && !in.hasPalace ? NeedStadium : 0)
+         | (in.comPop > 100 && !in.hasAirport ? NeedAirport : 0)
+         | (in.indPop > 70 && !in.hasStarport ? NeedStarport : 0);
+}
 
 /// Valve ranges matching Micropolis: R=2000, C=1500, I=1500
 constexpr int kResValveRange = 2000;
@@ -822,7 +831,9 @@ inline ValveOutputs computeDemandValves(const ValveInputs& in) {
     // A jobs-only history must not produce laborBase=0: that collapses both
     // projected job populations and floors the C/I valves before R can start.
     if (prevJobs > 0.0 && in.prevResPop > 0) {
-        laborBase = static_cast<double>(in.prevResPop) / prevJobs;
+        // Micropolis stores resHist in worker-equivalents (resPop / 8).
+        // Our saved history is raw population, so normalize at this boundary.
+        laborBase = (static_cast<double>(in.prevResPop) / resPopDenom) / prevJobs;
     } else {
         laborBase = 1.0;
     }
@@ -877,13 +888,18 @@ inline ValveOutputs computeDemandValves(const ValveInputs& in) {
     //   resCap: resPop > 500 && no stadium/palace → valve capped to 0
     //   comCap: comPop > 100 && no airport        → valve capped to 0
     //   indCap: indPop > 70  && no seaport/starport → valve capped to 0
-    if (in.resPop > 500 && !in.hasStadium && !in.hasPalace && newRes > 0) {
+    const uint8_t missingCivics = missingDemandCivics(in);
+    uint8_t blockedCivics = 0;
+    if ((missingCivics & NeedStadium) && newRes > 0) {
+        blockedCivics |= NeedStadium;
         newRes = 0;
     }
-    if (in.comPop > 100 && !in.hasAirport && newCom > 0) {
+    if ((missingCivics & NeedAirport) && newCom > 0) {
+        blockedCivics |= NeedAirport;
         newCom = 0;
     }
-    if (in.indPop > 70 && !in.hasStarport && newInd > 0) {
+    if ((missingCivics & NeedStarport) && newInd > 0) {
+        blockedCivics |= NeedStarport;
         newInd = 0;
     }
 
@@ -897,7 +913,7 @@ inline ValveOutputs computeDemandValves(const ValveInputs& in) {
 
     return { static_cast<int16_t>(newRes),
              static_cast<int16_t>(newCom),
-             static_cast<int16_t>(newInd) };
+             static_cast<int16_t>(newInd), blockedCivics };
 }
 
 // --- Traffic pollution -------------------------------------------------------

@@ -8,6 +8,7 @@
 #include <dunecity/CityMapLayer.h>
 #include <dunecity/CityBudget.h>
 #include <dunecity/CrimeUnrestPolicy.h>
+#include <dunecity/CityDemandNoticePolicy.h>
 
 class InputStream;
 class OutputStream;
@@ -205,6 +206,7 @@ private:
     HouseCityState houseState_[kMaxCityHouses];
     CityEnvironmentStatus environmentStatus_[kMaxCityHouses];
     bool crimeWarningActive_[kMaxCityHouses] = {};
+    CityDemandNoticePolicy civicDemandNotices_[kMaxCityHouses];
 
     int32_t totalFunds_ = 0;
     int16_t cityTax_ = kDefaultTaxRate;

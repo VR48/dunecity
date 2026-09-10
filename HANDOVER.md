@@ -1,3 +1,36 @@
+# Zone suitability, labour demand and civic notices — 1.0.616
+
+Reviewed completed 1.0.614 4 Corners session1789019169404635-0. In the
+last building snapshots, all212 vacant R/C zones had pollution>=160. C/I
+were capped in all280 state samples after5simminutes. Verified against local
+Micropolis simulate.cpp: resHist stores resPop/8, but our saved prevResPop is
+raw. computeDemandValves now divides previous residential population by8 at
+the labour boundary; save fields and startup safeguards remain unchanged.
+This removes the artificial1.3 labour saturation, not all legitimate positive
+demand. Existing accumulated valves adjust through subsequent simulation ticks.
+
+AI R/C sites are rejected when their origin pollution blocks growth, using the
+same role-specific gate as runZoneGrowth. Industry still tolerates pollution.
+Environmental/commute tier now precedes residential infill; safety stays first.
+Positive residential demand still prioritizes usable infill, and no-site results
+fall back to other demanded zone types. Rejections are logged as
+pollution_rejections. No new path searches or pollution formula changes.
+
+The demand calculation reports which positive valves were capped by missing
+Stadium (or Palace substitute), Airport, or Starport. Local-house UI notices
+name the required building. UI-only state deduplicates notices until resolved,
+keeps simultaneous requests pending, spaces them10simseconds apart, and drops
+pending requests if the requirement is satisfied. No save-format changes.
+
+Regression tests cover oversupplied jobs draining capped C/I demand into negative
+values, civic thresholds/Palace substitution, no false notices for negative
+demand, notification spacing/resolution, and suitability before infill. Full
+CTest and before/after Ninja dependency audits passed. Version1.0.616 built at
+build/bin/dunecity.app, metadata verified. No game launch, /Applications copy,
+remote push or release. Logs: /tmp/dunecity-demand-{build,tests}.log.
+Pollution spreading still needs a separate audit against Micropolis; not changed
+in this task. Live-game balance after the normalization fix is not yet measured.
+
 # Roads are prepared foundations; reuse spare lanes — 1.0.615
 
 Stefan's double-road screenshots showed factories wasting space and concrete.

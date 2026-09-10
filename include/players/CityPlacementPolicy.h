@@ -56,13 +56,13 @@ inline bool fourZoneGridSlot(int x, int y, int baseX, int baseY) {
     return (gx==0 || gx==2) && (gy==0 || gy==2);
 }
 
-// Safety first, then use gaps within existing neighbourhoods before expanding.
+// Safety and environmental suitability first; infill breaks ties between comparable sites.
 inline bool preferCitySite(bool safe,int sides,int tier,int score,
                            bool bestSafe,int bestSides,int bestTier,int bestScore) {
     if (safe!=bestSafe) return safe;
+    if (tier!=bestTier) return tier>bestTier;
     const bool infill=sides>=2,bestInfill=bestSides>=2;
     if (infill!=bestInfill) return infill;
-    if (tier!=bestTier) return tier>bestTier;
     return score>bestScore;
 }
 

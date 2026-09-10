@@ -911,6 +911,25 @@ void CitySimulation::runZoneGrowth() {
         hs.comValve = vo.comValve;
         hs.indValve = vo.indValve;
 
+        // Announce actual demand caps to the human controlling this house.
+        // Space notices so simultaneous requirements cannot erase each other.
+        if (pLocalHouse && pLocalHouse->getHouseID() == h) {
+            const uint8_t notice = civicDemandNotices_[h].update(
+                missingDemandCivics(vi), vo.civicDemandBlocked,
+                currentGame->getGameCycleCount(), kCyclesPerCityYear / 6);
+            if (notice == NeedStadium) {
+                currentGame->addUrgentMessageToNewsTicker(
+                    _("Residents demand a Stadium. Build one to unlock residential growth."));
+            } else if (notice == NeedAirport) {
+                currentGame->addUrgentMessageToNewsTicker(
+                    _("Commerce demands an Airport. Build one to unlock commercial growth."));
+            } else if (notice == NeedStarport) {
+                currentGame->addUrgentMessageToNewsTicker(
+                    _("Industry demands a Starport (seaport). Build one to unlock industrial growth."));
+            }
+        }
+
+
         // Diagnostic: log per-tick valve deltas for the local player's house so
         // future logs can confirm the fix (grep for "[CitySim] valve-debug").
         if (h == localHouseID()) {
