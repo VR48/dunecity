@@ -1,3 +1,4 @@
+import io
 import json
 import importlib.util
 from pathlib import Path
@@ -84,3 +85,16 @@ class ReleaseTests(unittest.TestCase):
             self.assertIn('https://github.com/VR48/dunecity/tree/v1.0.612',
                 (output/'README.md').read_text())
             self.assertNotIn('-source.tar.gz',(output/'SHA256SUMS').read_text())
+
+    def test_republish_does_not_reset_correct_defaults(self):
+        defaults={'platform_releases': {platform: {'filename': '/dunecity/1.0.612/'+name}
+            for platform,name in zip(['windows','mac','linux'],sf.expected_files('v1.0.612')[:3])}}
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(sf.os.environ, {'SOURCEFORGE_USER':'release-user',
+                    'SOURCEFORGE_API_KEY':'test', 'GIT_SSH_COMMAND':'ssh'}), \
+                 patch.object(sf.subprocess,'run'), \
+                 patch.object(sf,'run',return_value='{"tag_name":"v1.0.612"}'), \
+                 patch.object(sf.urllib.request,'urlopen',return_value=io.StringIO(json.dumps(defaults))) as request:
+                sf.publish('v1.0.612',Path(tmp),'abc')
+                self.assertEqual(request.call_count,1)
+                self.assertEqual(request.call_args.args[0].get_method(),'GET')

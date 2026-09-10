@@ -106,3 +106,8 @@ used a temporary filename and rename; the prior HTML is backed up locally at
 
 The CDN may briefly show the old page at the plain URL. The deployed HTML was
 verified by SFTP readback and browser rendering with `?updated=20260910`.
+
+Repeat publishing checks `best_release.json` and skips PUTs for defaults already
+pointing at the requested files. A retry on 2026-09-10 verified all eight uploads
+but received HTTP 400 on a repeated default PUT; checking current defaults avoids
+that redundant mutation. Do not treat a failed default update as a failed upload.

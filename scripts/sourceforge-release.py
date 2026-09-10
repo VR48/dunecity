@@ -109,7 +109,16 @@ def publish(tag, folder, commit):
     # Fast-forward only. Never force-push or mirror-delete the Legacy repository.
     subprocess.run(['git', 'push', git_remote, f'{commit}:refs/heads/dunecity'], check=True)
     defaults = dict(zip(['windows', 'mac', 'linux'], expected_files(tag)[:3]))
+    req = urllib.request.Request(
+        f'https://sourceforge.net/projects/{PROJECT}/best_release.json',
+        headers={'Accept': 'application/json'})
+    with urllib.request.urlopen(req, timeout=60) as response:
+        current_defaults = json.load(response).get('platform_releases', {})
     for platform, name in defaults.items():
+        expected_path = f'/dunecity/{version(tag)}/{name}'
+        if current_defaults.get(platform, {}).get('filename') == expected_path:
+            print(f'Confirmed existing {platform} default: {name}')
+            continue
         url = f'https://sourceforge.net/projects/{PROJECT}/files/dunecity/{version(tag)}/{name}'
         data = urllib.parse.urlencode({'api_key': api_key, 'default': platform}).encode()
         req = urllib.request.Request(url, data=data, method='PUT', headers={'Accept': 'application/json'})
