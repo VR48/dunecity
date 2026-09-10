@@ -24,6 +24,11 @@ confuse pushing website source with publishing it to SourceForge web hosting.
 2. If a local build was requested, build and verify it separately. Remote CI
    success does not update the app on Stefan's Mac. Use dependency audits and
    CTest as described in `AGENTS.md`; do not launch a game merely to check version.
+   If local deployment is requested, also inspect `/Applications/dunecity.app`:
+   it may be an independent stale installation rather than a link to the build.
+   Preserve the old app, stage the new bundle, verify its signature, replace it,
+   and compare version/binary SHA256 against `build/bin/dunecity.app`. Do not
+   interrupt a running game or launch it merely for verification.
 3. Push the authorized release and its `vX.Y.Z` tag. **Build Dune Legacy** in
    `.github/workflows/build.yml` gates publication on tests and Windows, Linux
    and macOS success. Verify all six assets: ZIP, DMG, AppImage, DEB, RPM, tar.gz.

@@ -1,3 +1,24 @@
+# Verified desktop deployment — 1.0.626 (2026-09-10)
+
+- Released tag `v1.0.626` at `d1b30c3` to GitHub main and the working branch.
+  Build run `34473274658` succeeded: Linux tests and Windows/Linux/macOS builds;
+  all six desktop packages are uploaded. Redundant main build was cancelled.
+- Local build and `/Applications/dunecity.app` both report 1.0.626. The old
+  Applications copy was stale (plist 0.01); replaced after preserving a backup
+  under `/tmp/dunecity-before-626.*`. Installed binary SHA256 matches the tested
+  build; ad-hoc signature verification passed. No game launch/log truncation.
+- Main website release links and new feature copy are deployed, website commit
+  `e466be2`, successful deploy `34474219132`. Both public pages returned HTTP200,
+  version 1.0.626 and new road/police text. Android remains independently 0.2.25.
+- SourceForge mirror run `34474087516` verified all eight files (six packages,
+  README, SHA256SUMS), advanced `dunecity` and `dunecity-v1.0.626`, and confirmed
+  Windows ZIP, Mac DMG and Linux AppImage defaults. No source archive uploaded.
+- SourceForge website copy committed to Legacy master as `91b6b9a`, pushed,
+  backed up, deployed by SFTP temporary upload/rename and compared byte-for-byte
+  after readback. Public browser confirmed new copy using
+  `downloads.html?updated=20260910-626`; curl was blocked by Cloudflare and the
+  plain web-tool URL returned stale cached HTML. Both tracked HTML copies match.
+
 # Starter-city road exemption — 1.0.626
 
 Road upkeep is waived while an individual house's displayed total population is
@@ -8,7 +29,7 @@ ownership rules from 1.0.625 remain. Police patrols remain 3 troopers + 1 trike.
 Local 1.0.626 build and before/after dependency audits passed. Full CTest:
 539 cases, 536 passed, 3 optional skips, including population threshold/reversal
 and per-house checks. Game not launched. User subsequently authorized remote
-release, both websites and SourceForge; publication is tracked below when verified.
+release, both websites and SourceForge; publication is verified above.
 
 # Road upkeep and smaller police patrols — 1.0.625
 
