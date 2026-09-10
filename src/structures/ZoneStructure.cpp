@@ -14,6 +14,7 @@
 #include <dunecity/ZoneSimulation.h>
 #include <dunecity/CityConstants.h>
 #include <dunecity/CityEffects.h>
+#include <dunecity/CitySpritePolicy.h>
 #include <dunecity/ZonePower.h>
 #include <FileClasses/GFXManager.h>
 
@@ -54,10 +55,8 @@ void ZoneStructure::setLocation(int xPos, int yPos) {
 }
 
 void ZoneStructure::updateStructureSpecificStuff() {
-    // Map the current tile density + sampled land-value tier to the right
-    // cell in this zone's sprite atlas (columns = density, rows = value
-    // tier). Done every tick so the building art tracks growth and value
-    // changes without needing explicit notify hooks from runZoneGrowth.
+    // Stable site variants select among all original models. Industrial
+    // animation uses prebuilt phases and does not consume simulation randomness.
     if (!currentGameMap) return;
     const Coord pos = getLocation();
     if (pos.isInvalid()) return;
@@ -90,8 +89,8 @@ void ZoneStructure::updateStructureSpecificStuff() {
         default: return;
     }
     graphic = pGFXManager->getObjPic(graphicID, getOwner()->getHouseID());
-    numImagesX = 4;
-    numImagesY = zoneType_ == DuneCity::ZoneType::Industrial ? 2 : 4;
+    numImagesX = DuneCity::CitySprites::zoneColumns(zoneType_);
+    numImagesY = zoneType_ == DuneCity::ZoneType::Industrial ? DuneCity::CitySprites::industrialRows : 4;
 
     int valueT = 0;
     if (auto* citySim = currentGame ? currentGame->getCitySimulation() : nullptr;
@@ -99,11 +98,12 @@ void ZoneStructure::updateStructureSpecificStuff() {
         const auto& lvMap = citySim->getLandValueMap();
         const int bs = std::max(1, lvMap.getBlockSize());
         const int landValue = lvMap.get(pos.x / bs, pos.y / bs);
-        valueT = DuneCity::getZoneValueTier(landValue, numImagesY);
+        valueT = DuneCity::getZoneValueTier(landValue, zoneType_ == DuneCity::ZoneType::Industrial ? 2 : 4);
     }
 
-    const int frame = DuneCity::computeZoneSpriteFrame(
-        density, valueT, numImagesX, numImagesY);
+    const int frame = DuneCity::CitySprites::zoneFrame(
+        zoneType_, density, valueT, pos.x, pos.y,
+        currentGame->getGameCycleCount(), owner->hasPower());
     firstAnimFrame = lastAnimFrame = curAnimFrame = frame;
 }
 
@@ -253,11 +253,8 @@ void ResidentialZone::init() {
 
     graphicID = ObjPic_ZoneResidential;
     graphic = pGFXManager->getObjPic(graphicID, getOwner()->getHouseID());
-    // Atlas layout: columns = density (0..3), rows = value tier (0..3).
-    // Must match the (numDensity × numValue) layout built by GFXManager
-    // so blitToScreen samples a single 2x2 cell instead of squashing the
-    // entire atlas into one zone footprint.
-    numImagesX = 4;
+    // Layout must match the prebuilt atlas and GFXManager metadata.
+    numImagesX = DuneCity::CitySprites::residentialColumns;
     numImagesY = 4;
     firstAnimFrame = lastAnimFrame = curAnimFrame = 0;
 }
@@ -281,7 +278,7 @@ void CommercialZone::init() {
 
     graphicID = ObjPic_ZoneCommercial;
     graphic = pGFXManager->getObjPic(graphicID, getOwner()->getHouseID());
-    numImagesX = 4;  // density columns 0..3
+    numImagesX = DuneCity::CitySprites::commercialColumns;
     numImagesY = 4;  // value-tier rows 0..3
     firstAnimFrame = lastAnimFrame = curAnimFrame = 0;
 }
@@ -305,7 +302,7 @@ void IndustrialZone::init() {
 
     graphicID = ObjPic_ZoneIndustrial;
     graphic = pGFXManager->getObjPic(graphicID, getOwner()->getHouseID());
-    numImagesX = 4;  // density columns 0..3
-    numImagesY = 2;  // value-tier rows 0..1 (Industrial only ships 2 tiers)
+    numImagesX = DuneCity::CitySprites::industrialColumns;
+    numImagesY = DuneCity::CitySprites::industrialRows;
     firstAnimFrame = lastAnimFrame = curAnimFrame = 0;
 }

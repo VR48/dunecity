@@ -6,7 +6,7 @@
 /**
  * Airport — DuneCity economic building.
  *
- * 3x3 footprint, no animation. Provides commercial/transport boost to
+ * 3x3 footprint, powered Micropolis animation. Provides commercial/transport boost to
  * the city economy. Maps to CityRole::Commercial so it generates jobs
  * and tax revenue, similar to SimCity Classic's airport zone.
  */
@@ -19,6 +19,7 @@ public:
 
 private:
     void init();
+    void updateStructureSpecificStuff() override;
 };
 
 #endif // AIRPORT_H

@@ -23,6 +23,8 @@
 
 #include <sand.h>
 #include <Game.h>
+#include <dunecity/CitySimulation.h>
+#include <dunecity/CitySpritePolicy.h>
 #include <Map.h>
 #include <House.h>
 #include <SoundPlayer.h>
@@ -463,7 +465,12 @@ void Tile::blitGround(int xPos, int yPos) {
             const bool left  = !currentGameMap->tileExists(location.x - 1, location.y)
                                || currentGameMap->getTile(location.x - 1, location.y)->isRoadConnection();
             const int mask = ((int)up) | ((int)right << 1) | ((int)down << 2) | ((int)left << 3);
-            SDL_Rect roadSrc = { mask * zoomed_tilesize, 0, zoomed_tilesize, zoomed_tilesize };
+            const auto* city = currentGame->getCitySimulation();
+            const int traffic = city && city->isInitialized()
+                ? city->getTrafficDensityMap().worldGet(location.x, location.y) : 0;
+            const int row = DuneCity::CitySprites::roadRow(traffic,
+                currentGame->getGameCycleCount(), !isFoggedByTeam(pLocalHouse->getTeamID()));
+            SDL_Rect roadSrc = { mask * zoomed_tilesize, row * zoomed_tilesize, zoomed_tilesize, zoomed_tilesize };
             SDL_RenderCopy(renderer, cityRoadTex, &roadSrc, &drawLocation);
         }
     }

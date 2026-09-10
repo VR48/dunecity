@@ -1,5 +1,6 @@
 #include <structures/NuclearPlant.h>
 #include <dunecity/PowerRules.h>
+#include <dunecity/CitySpritePolicy.h>
 
 #include <globals.h>
 #include <dunecity/NuclearBlastPolicy.h>
@@ -37,10 +38,9 @@ void NuclearPlant::init() {
     structureSize.y = 3;
     graphicID = ObjPic_NuclearPlant;
     graphic = pGFXManager->getObjPic(graphicID, getOwner()->getHouseID());
-    numImagesX = 8;
+    numImagesX = DuneCity::CitySprites::specialFrames;
     numImagesY = 1;
-    firstAnimFrame = 2;
-    lastAnimFrame = 3;
+    firstAnimFrame = lastAnimFrame = curAnimFrame = 0;
 }
 
 NuclearPlant::~NuclearPlant() {
@@ -55,6 +55,8 @@ ObjectInterface* NuclearPlant::getInterfaceContainer() {
 }
 
 bool NuclearPlant::update() {
+    firstAnimFrame = lastAnimFrame = curAnimFrame =
+        DuneCity::CitySprites::poweredFrame(currentGame->getGameCycleCount(), getHealth() > 0);
     return StructureBase::update();
 }
 

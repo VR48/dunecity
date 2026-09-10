@@ -1,3 +1,38 @@
+# Micropolis building models and animations — 1.0.619
+
+Restored all16 apartment models +12 house styles,20 commercial models,8
+industrial models. Prior GFX runtime skipped inhabited d0 variants, highest
+commercial d4, and all houses. Stable coordinate hash selects among appropriate
+visual models within existing3 inhabited density levels. R/C/I gameplay2x2,
+roads1x1 and specials3x3 unchanged; no population/effects/AI/save/RNG changes.
+
+New scripts/build-city-atlases.py assembles tracked raw tiles into seven compact
+runtime atlases (Pillow authoring only). Full importer invokes it and fixes
+category bounds/omitted full stadium:800 is centre, base795. Factory smoke uses
+corrected documented chimney IDs/positions, never the upstream vacant620 bug
+or overwritten second chimney. Powered radar, periodic full stadium/football,
+nuclear swirl and light/heavy traffic sequences restored. Traffic thresholds
+64/192 match original doRoad. Preserve black vehicle pixels; old road recolour
+andcentre dot erased cars. No live traffic through fog. Simulation-cycle visual
+clock freezes on pause; stadium8of32seconds is an adapted presentation cadence.
+See scripts/SPRITE-IMPORT.md for IDs/layouts/source links and regeneration.
+
+GFXManager loads prepared atlases, validates dimensions, scales once and shares
+surfaces/textures across houses; eliminates per-house duplication for these
+seven larger sheets. Max dimension at3xzoom1728px. Constant-time source-frame
+selection, no map scans/per-frame images. Missing/stale atlas data produces a
+clear startup error; all assets are tracked and existing platform packaging
+copies imported_sprites. Build-menu/editor icons use inhabited static models.
+
+Full CTest passed (518cases,515passed/3optional skipped), before/after Ninja
+dependency checks passed. PNG tests verify dimensions, real animation frames,
+vacancy/power/traffic gating, all models reachable and clamped frame bounds.
+Fresh full Micropolis import into/tmp reproduced all seven atlases pixel-for-
+pixel; generated contact sheet inspected. All eight atlas directory files in
+local app bundle match source. Version1.0.619 metadata verified. Live-game FPS
+not measured; no app launch, /Applications install, push or remote release.
+Build/test logs:/tmp/dunecity-animation-{build,tests}.log.
+
 # Micropolis park terrain for walls/turrets — 1.0.618
 
 Replaced walls/gun turrets/rocket turrets radial +15 land-value stamps with one

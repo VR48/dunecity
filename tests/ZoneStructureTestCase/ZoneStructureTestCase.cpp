@@ -384,41 +384,6 @@ TEST_CASE("ZoneStructure: GFXManager creates zone placeholder graphics",
 // derived PNGs are absent.
 // =============================================================================
 
-TEST_CASE("ZoneStructure: GFXManager loads derived 2x2 zone composites with fallback",
-          "[zone][graphics][sprites]") {
-    std::string src = readSourceFile("src/FileClasses/GFXManager.cpp");
-    REQUIRE_FALSE(src.empty());
-
-    INFO("GFXManager must reference composites_2x2/ directory for derived assets");
-    REQUIRE(src.find("composites_2x2/") != std::string::npos);
-
-    // Atlas builder names each cell via snprintf("<prefix>_v%d_d%d_2x2.png"),
-    // so the format string (with both %d slots) is what we look for rather
-    // than a single hard-coded variant.
-    INFO("GFXManager must build zone sprite filenames from prefix + value + density");
-    REQUIRE(src.find("_v%d_d%d_2x2.png") != std::string::npos);
-    INFO("GFXManager must include the residential prefix");
-    REQUIRE(src.find("\"res\"") != std::string::npos);
-    INFO("GFXManager must include the commercial prefix");
-    REQUIRE(src.find("\"com\"") != std::string::npos);
-    INFO("GFXManager must include the industrial prefix");
-    REQUIRE(src.find("\"ind\"") != std::string::npos);
-
-    INFO("GFXManager must NOT regress to loading raw 3x3 composites at runtime");
-    // The old pipeline loaded _3x3.png and downscaled at runtime; the improved
-    // pipeline pre-generates _2x2.png so runtime never references _3x3 files.
-    REQUIRE(src.find("_3x3.png") == std::string::npos);
-
-    INFO("GFXManager must use LoadPNG_RW for imported sprite loading");
-    REQUIRE(src.find("LoadPNG_RW") != std::string::npos);
-
-    INFO("GFXManager must fall back to makeZonePlaceholder when PNGs are absent");
-    REQUIRE(src.find("makeZonePlaceholder") != std::string::npos);
-
-    INFO("GFXManager must use SDL_BlitScaled for zoom level generation");
-    REQUIRE(src.find("SDL_BlitScaled") != std::string::npos);
-}
-
 TEST_CASE("ZoneStructure: derived 2x2 sprite files exist on disk",
           "[zone][graphics][sprites]") {
     const char* env = std::getenv("DUNE_CITY_SOURCE_DIR");
@@ -450,7 +415,7 @@ TEST_CASE("ZoneStructure: GFXManager pre-generates all zoom levels for zone spri
     REQUIRE_FALSE(src.empty());
 
     // Find the zone sprite loading block
-    auto blockStart = src.find("makeZonePlaceholder");
+    auto blockStart = src.find("auto scaleRGBASurface");
     REQUIRE(blockStart != std::string::npos);
 
     // The block must set objPic[...][0], [1], and [2] for zone sprites
@@ -460,10 +425,10 @@ TEST_CASE("ZoneStructure: GFXManager pre-generates all zoom levels for zone spri
     std::string block = src.substr(blockStart, blockEnd - blockStart);
 
     INFO("Zone block must pre-generate zoom level 1 (2x) to bypass 8-bit scaler");
-    REQUIRE(block.find("[HOUSE_HARKONNEN][1]") != std::string::npos);
+    REQUIRE(block.find("z = 1; z < NUM_ZOOMLEVEL") != std::string::npos);
 
     INFO("Zone block must pre-generate zoom level 2 (3x) to bypass 8-bit scaler");
-    REQUIRE(block.find("[HOUSE_HARKONNEN][2]") != std::string::npos);
+    REQUIRE(block.find("scaleRGBASurface(objPic[spec.id][HOUSE_HARKONNEN][0].get(), z + 1)") != std::string::npos);
 
     INFO("Zone block must use format-agnostic scaling (SDL_BlitScaled), not the paletted Scaler");
     REQUIRE(block.find("SDL_BlitScaled") != std::string::npos);
@@ -520,8 +485,8 @@ TEST_CASE("ZoneStructure: civic art survives the renderer texture refresh",
     REQUIRE(restore.find("graphicID = ObjPic_ZoneResidential") != std::string::npos);
     REQUIRE(restore.find("graphicID = ObjPic_ZoneCommercial") != std::string::npos);
     REQUIRE(restore.find("graphicID = ObjPic_ZoneIndustrial") != std::string::npos);
-    REQUIRE(restore.find("numImagesX = 4") != std::string::npos);
-    REQUIRE(restore.find("ZoneType::Industrial ? 2 : 4") != std::string::npos);
+    REQUIRE(restore.find("numImagesX = DuneCity::CitySprites::zoneColumns(zoneType_)") != std::string::npos);
+    REQUIRE(restore.find("ZoneType::Industrial ? DuneCity::CitySprites::industrialRows : 4") != std::string::npos);
 }
 
 // Zone animation frame regression tests
@@ -543,11 +508,11 @@ TEST_CASE("ZoneStructure: init sets animation frame to 0 and matches atlas size"
     // empty-lot d0/v0 placeholder) and (b) declare the atlas grid dims that
     // match the GFXManager builder. updateStructureSpecificStuff() then
     // walks curAnimFrame around the grid based on density + value tier.
-    struct ZoneInit { const char* sig; int nx; int ny; };
+    struct ZoneInit { const char* sig; const char* nx; const char* ny; };
     const ZoneInit zones[] = {
-        { "void ResidentialZone::init()", 4, 4 },
-        { "void CommercialZone::init()",  4, 4 },
-        { "void IndustrialZone::init()",  4, 2 },
+        { "void ResidentialZone::init()", "DuneCity::CitySprites::residentialColumns", "4" },
+        { "void CommercialZone::init()", "DuneCity::CitySprites::commercialColumns", "4" },
+        { "void IndustrialZone::init()", "DuneCity::CitySprites::industrialColumns", "DuneCity::CitySprites::industrialRows" },
     };
     for (const auto& z : zones) {
         auto body = extractFunctionBodyByName(src, z.sig);
@@ -559,8 +524,8 @@ TEST_CASE("ZoneStructure: init sets animation frame to 0 and matches atlas size"
         INFO(std::string(z.sig) + " must set curAnimFrame = 0");
         REQUIRE(body.find("curAnimFrame") != std::string::npos);
 
-        const std::string xExpect = "numImagesX = " + std::to_string(z.nx);
-        const std::string yExpect = "numImagesY = " + std::to_string(z.ny);
+        const std::string xExpect = std::string("numImagesX = ") + z.nx;
+        const std::string yExpect = std::string("numImagesY = ") + z.ny;
         INFO(std::string(z.sig) + " must set " + xExpect);
         REQUIRE(body.find(xExpect) != std::string::npos);
         INFO(std::string(z.sig) + " must set " + yExpect);

@@ -1,3 +1,60 @@
+# Runtime city animations and model inventory (1.0.619)
+
+The runtime now loads **tracked, prebuilt atlases** from
+`imported_sprites/micropolis/atlases/`. Pillow is an authoring dependency only;
+normal builds and releases copy these PNGs without running Python. The older
+individual composites below remain useful for inspection and civic icons.
+
+```sh
+python3 scripts/build-city-atlases.py          # regenerate from tracked raw tiles
+python3 scripts/build-city-atlases.py --check  # compare every pixel and manifest
+```
+
+A full `import-micropolis.py` run also invokes the atlas builder. It reads the
+original tile IDs and assembles the full source footprint before downscaling:
+2x2 R/C/I, 3x3 airport/stadium/nuclear, 1x1 road. Original art attribution is in
+`imported_sprites/micropolis/NOTICE.txt`; no simulation footprint changed.
+
+| Atlas | Columns x rows | Content |
+|---|---:|---|
+| residential | 8 x 4 | vacant + three house styles + four apartments, per value tier |
+| commercial | 6 x 4 | vacant + all five commercial sizes, per value tier |
+| industrial | 5 x 18 | vacant + four factories; two value tiers, each static + eight phases |
+| roads | 16 x 9 | connection masks; static + four light + four heavy traffic phases |
+| airport | 9 x 1 | static + eight rotating radar phases |
+| stadium | 9 x 1 | empty + eight full-stadium football phases |
+| nuclear | 9 x 1 | static + eight phases (four-frame swirl repeated) |
+
+All 16 apartment models, 12 single-house styles, 20 commercial models and eight
+industrial models are reachable. The original free residential lot fills eight
+perimeter sites with houses. Stable coordinate hashing chooses visual variants
+within our three inhabited density levels; no gameplay RNG or save fields are
+added. Animated frames do not change the chosen building model.
+
+Source references: [Micropolis animation sequences](https://github.com/SimHacker/micropolis/blob/master/MicropolisCore/src/MicropolisEngine/doc/AnimationSequences.txt),
+`simulate.cpp::doRoad/doSpecialZone/drawStadium` and `zone.cpp::setSmoke`.
+`FULLSTADIUM=800` is the centre; its 4x4 graphic starts at795, not800.
+Smoke uses corrected tile621 rather than empty industry's tile620, and both
+chimney positions are animated (upstream setSmoke overwrites the same position
+twice; we use the documented IND2..IND9 sequence positions). Airport radar is
+711->832..839, football panels932..939/940..947, nuclear swirl820->952..955.
+
+Traffic uses the original **0..63 none,64..191 light,192..255 heavy** display
+thresholds. Vehicle pixels stay intact: the former broad recolour/centre-dot
+stamp erased black cars. Only grass/peach curb pixels become Dune asphalt.
+Hidden roads display no live traffic. Power gates factory smoke and radar;
+stadiums show eight seconds of matches in each32-second visual cycle, offset
+by site. Animation phases advance every128 simulation milliseconds, so pause
+freezes them. This cadence is a visual adaptation, not a calendar/simulation port.
+
+`CitySpritePolicy.h` and GFXManager's layout metadata must agree with the atlas
+builder. Seven atlases share their house-independent surfaces/textures instead
+of being cloned18times. All zoomed dimensions stay <=2048. Tests decode the
+shipped PNGs, check reachable models, frame bounds, real frame differences,
+nonanimated vacant factories, traffic thresholds, power gating and match cycles.
+
+---
+
 # Sprite Import Scripts
 
 Scripts to extract building sprites from a local copy of the original Dune II

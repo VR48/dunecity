@@ -58,30 +58,33 @@ CATEGORY_RANGES = [
     (224, 239, "rail"),
     (240, 249, "residential_empty"),
     (249, 261, "houses"),
-    (265, 409, "residential_zones"),
-    (409, 418, "hospital"),
-    (418, 423, "church"),
-    (423, 436, "commercial_empty"),
-    (436, 612, "commercial_zones"),
-    (612, 625, "industrial_empty"),
-    (625, 693, "industrial_zones"),
+    (261, 405, "residential_zones"),
+    (405, 414, "hospital"),
+    (414, 423, "church"),
+    (423, 432, "commercial_empty"),
+    (432, 612, "commercial_zones"),
+    (612, 621, "industrial_empty"),
+    (621, 693, "industrial_zones"),
     (693, 709, "seaport"),
     (709, 745, "airport"),
     (745, 761, "coal_power"),
     (761, 770, "fire_station"),
     (770, 779, "police_station"),
-    (779, 800, "stadium"),
-    (800, 811, "stadium_full"),
+    (779, 795, "stadium"),
+    (795, 811, "stadium_full"),
     (811, 827, "nuclear_power"),
     (827, 828, "lightning"),
     (828, 832, "h_bridge_special"),
     (832, 840, "radar_anim"),
     (840, 844, "fountain"),
     (844, 852, "telecom"),
-    (852, 868, "explosion"),
+    (852, 860, "industrial_smoke_small"),
+    (860, 884, "explosion"),
+    (884, 916, "industrial_smoke"),
     (916, 932, "coal_smoke"),
     (932, 948, "football"),
     (948, 952, "v_bridge_special"),
+    (952, 956, "nuclear_animation"),
 ]
 
 # Named multi-tile buildings: (name, center_tile_id, grid_width, grid_height)
@@ -120,7 +123,7 @@ BUILDINGS_SPECIAL = [
     ("coal_power_plant", 745, 4, 4),
     ("nuclear_power_plant", 811, 4, 4),
     ("stadium",          779, 4, 4),
-    # stadium_full omitted: only 11 tiles (800-810), 4x4 needs 16; bleeds into nuclear_plant
+    ("stadium_full",     795, 4, 4),  # FULLSTADIUM=800 is the centre, not the base
     ("airport",          709, 6, 6),
 ]
 # fmt: on
@@ -441,6 +444,8 @@ def main():
         + 2  # manifest + NOTICE
     )
     print(f"\nTotal files generated: {total_files}")
+    subprocess.run([sys.executable, str(Path(__file__).with_name("build-city-atlases.py")),
+                    "--root", str(out)], check=True)
     print("Done.")
 
 

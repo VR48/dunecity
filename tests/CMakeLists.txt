@@ -10,6 +10,7 @@ add_executable(dunelegacy_tests)
 # Note: Catch2WithMain provides main(), no testmain.cpp needed
 target_sources(dunelegacy_tests
     PRIVATE
+        CitySpritePolicyTestCase.cpp
         RendererSizeTestCase.cpp
         QuantBotBuildPolicyTestCase.cpp
         AIDecisionLogTestCase.cpp

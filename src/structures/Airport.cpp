@@ -5,6 +5,7 @@
 #include <FileClasses/GFXManager.h>
 #include <House.h>
 #include <Game.h>
+#include <dunecity/CitySpritePolicy.h>
 
 Airport::Airport(House* newOwner) : StructureBase(newOwner) {
     Airport::init();
@@ -23,7 +24,7 @@ void Airport::init() {
     structureSize.y = 3;
     graphicID = ObjPic_Airport;
     graphic   = pGFXManager->getObjPic(graphicID, getOwner()->getHouseID());
-    numImagesX = 4;
+    numImagesX = DuneCity::CitySprites::specialFrames;
     numImagesY = 1;
     firstAnimFrame = 0;
     lastAnimFrame  = 0;
@@ -31,3 +32,8 @@ void Airport::init() {
 }
 
 Airport::~Airport() = default;
+
+void Airport::updateStructureSpecificStuff() {
+    firstAnimFrame = lastAnimFrame = curAnimFrame =
+        DuneCity::CitySprites::poweredFrame(currentGame->getGameCycleCount(), owner->hasPower());
+}

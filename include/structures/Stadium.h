@@ -6,7 +6,7 @@
 /**
  * Stadium — DuneCity civic building.
  *
- * 3x3 footprint, no animation. Provides a large land-value boost to
+ * 3x3 footprint, powered Micropolis animation. Provides a large land-value boost to
  * surrounding residential/commercial areas via getParkLandValueBonus().
  * Does not count as R/C/I — it's a civic amenity like parks in SimCity.
  */
@@ -19,6 +19,7 @@ public:
 
 private:
     void init();
+    void updateStructureSpecificStuff() override;
 };
 
 #endif // STADIUM_H
