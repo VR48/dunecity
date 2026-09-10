@@ -1,6 +1,7 @@
 #include <units/UnitBase.h>
 #include <dunecity/PoliceCoveragePolicy.h>
 #include <players/AIDecisionLog.h>
+#include <dunecity/CityTrafficPolicy.h>
 /*
  *  CityEffectsRuntime.cpp
  *
@@ -648,35 +649,10 @@ void CitySimulation::runEffectsScans() {
     for (int h=0; h<kMaxCityHouses; ++h) houseState_[h].nominalPoliceCost = nominalCosts[h].lround();
 
     phase.next("city.effects.traffic_status");
-    // Traffic density map — now driven by actual BFS connectivity results
-    // during runZoneGrowth(). The overlay starts from a base stamp (every
-    // city-role structure radiates proportional to level) then BFS-connected
-    // paths add density on top, and roads absorb load.
-    trafficDensityMap_.init(mapWidth_, mapHeight_, trafficDensityMap_.getBlockSize());
-    forEachStructureOrigin(map, [&](int x, int y, const StructureBase* pStruct) {
-        const Tile* originTile = map.getTile(x, y);
-        const int level = cityLevelOf(originTile, pStruct);
-        if (level <= 0) return;
-        if (getStructureCityRole(pStruct->getItemID()) == CityRole::None) return;
-        const int trafficValue = level * 25;
-        stampFalloff(trafficDensityMap_, x, y,
-                     /*radius*/ 3, trafficValue, /*max*/ 255);
-    });
-
-    // Roads absorb traffic.
-    const int trafficBlockSize = trafficDensityMap_.getBlockSize();
-    for (int wy = 0; wy < mapHeight_; ++wy) {
-        for (int wx = 0; wx < mapWidth_; ++wx) {
-            const Tile* t = map.getTile(wx, wy);
-            if (!t || !t->isRoad()) continue;
-            const int bx = wx / trafficBlockSize;
-            const int by = wy / trafficBlockSize;
-            int v = trafficDensityMap_.get(bx, by);
-            v -= 15;
-            if (v < 0) v = 0;
-            trafficDensityMap_.set(bx, by, static_cast<uint8_t>(v));
-        }
-    }
+    // Keep accumulated trips and decay each 2x2 cell once per city day.
+    // Building proximity does not generate traffic. The following growth
+    // phase adds sampled successful journeys to this persistent layer.
+    CityTraffic::decay(trafficDensityMap_,mapWidth_,mapHeight_);
 
     // Compute city-wide environmental summaries at each house's structure
     // positions. These are shown in the budget, used for the crime warning,
@@ -1050,17 +1026,12 @@ void CitySimulation::runZoneGrowth() {
                 else if (trafResult == 0) traffic = TrafficResult::NoDestination;
                 else                      traffic = TrafficResult::Connected;
 
-                // Successful traffic stamps density along all visited road
-                // tiles, matching SC's addToTrafficDensityMap() pattern.
                 if (traffic == TrafficResult::Connected) {
-                    const int tbs = trafficDensityMap_.getBlockSize();
-                    for (const auto& pt : trafficSim.getLastPath()) {
-                        const int tbx = pt.x / tbs;
-                        const int tby = pt.y / tbs;
-                        int tv = trafficDensityMap_.get(tbx, tby) + 50;
-                        if (tv > 240) tv = 240;  // SC cap
-                        trafficDensityMap_.set(tbx, tby, static_cast<uint8_t>(tv));
-                    }
+                    CityTraffic::addJourney(trafficDensityMap_,trafficSim.getLastPath(),
+                        [&](int x,int y) {
+                            const auto* tile = currentGameMap->getTile(x,y);
+                            return tile && tile->isRoad();
+                        });
                 }
             }
         }

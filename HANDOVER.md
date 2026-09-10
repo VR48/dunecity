@@ -1,3 +1,41 @@
+# Route-based traffic density and Micropolis decay — 1.0.621
+
+Fixed the traffic animation's inflated input rather than raising sprite
+thresholds. In the620 game1789031518687887-0 snapshot59905,5150of6491road
+tiles were heavy (79.3%). Root causes: BFS discovered branches were all stamped,
+successful destination duplicated, every visited tile added50into2x2cells,
+and city-role buildings emitted a radial level*25 traffic halo.
+
+TrafficSimulation now uses CityTrafficPolicy::RouteFinder, which preserves
+existing deterministic N/E/S/W BFS connectivity/distance limit but reconstructs
+only the successful route with parent links. Failure/NoRoad clears previous
+path. Reusable generation stamps and vector queue avoid full-map visited clears
+and per-call queue allocations across zone searches. No RNG or unit A* changes.
+
+CityTraffic::addJourney samples moves2,4,6,... from perimeter start (route[0]),
+matching original Micropolis tryDrive's dist&1 sampling for2x2traffic cells.
+Actual road samples add50 capped240; turret connectors remain traversable but
+only road tiles receive density. No extra global cell deduplication: sampling
+matches original, including turns which can revisit a density cell.
+runEffectsScans retains accumulated traffic and calls decay once per city day,
+once per cell: <=24→0, >200→minus34, otherwise minus24. Removed full layer reset,
+building halos and per-road minus15. Growth phase adds journeys after decay.
+Original refs: MicropolisEngine/src/traffic.cpp and simulate.cpp::decTrafficMap.
+
+This ports density sampling/decay, not original random-walk route selection,
+probabilistic journey frequency or absolute calendar cadence. Existing BFS,
+2x2zones,1x1roads, zone connectivity/growth checks, animation thresholds64/192
+and animation speed remain. Traffic pollution/status use corrected density.
+Traffic layer remains derived/unserialized: loading rebuilds it from journeys;
+it warms up over subsequent days. No save format change.
+
+New shared-policy tests exercise branched/looped road networks, deterministic
+ties, distance bounds, failure/reset/map resize, exact sample positions, true
+congestion/cap, nonroad connectors, decay thresholds and partial edge cells.
+Full CTest523cases520passed/3optional skips; dependency audits and621version/app
+metadata passed. Logs /tmp/dunecity-traffic-{build,tests}.log. Local app built,
+no live game launch/Applications copy/remote push/release. Restart to load621.
+
 # Performance investigation and session telemetry — 1.0.620
 
 Last completed game1789026476214205-0 ran1.0.618,192x192 SimCity map,
