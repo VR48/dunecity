@@ -1105,8 +1105,27 @@ const StructureBase* ownZoneAt(const Map& map, int houseID, int x, int y) {
 	return pStructure;
 }
 
+// Count nearby R/C/I on each side, including across a single road tile.
+// Two or more occupied sides identify an infill gap, independently of zone type.
+int residentialInfillSides(const Map& map,int house,int x,int y,int w,int h) {
+    int sides=0;
+    for (int side=0;side<4;++side) {
+        bool found=false;
+        for (int gap=1;gap<=2 && !found;++gap) {
+            const int length=side<2 ? w : h;
+            for (int offset=0;offset<length;++offset) {
+                const int tx=side<2 ? x+offset : (side==2 ? x-gap : x+w-1+gap);
+                const int ty=side>=2 ? y+offset : (side==0 ? y-gap : y+h-1+gap);
+                found |= ownZoneAt(map,house,tx,ty)!=nullptr;
+            }
+        }
+        sides+=found;
+    }
+    return sides;
+}
+
 // Prefer filling a four-zone block, but only where its perimeter can carry roads.
-int fourZoneBlockBonus(const Map& map, int house, Uint32 item, int x, int y) {
+int fourZoneBlockBonus(const Map& map, int house, int x, int y) {
     int best=0;
     for (int oy : {0,2}) for (int ox : {0,2}) {
         const int bx=x-ox, by=y-oy;
@@ -1116,7 +1135,7 @@ int fourZoneBlockBonus(const Map& map, int house, Uint32 item, int x, int y) {
             const int zx=bx+sx, zy=by+sy;
             if (zx==x && zy==y) continue;
             const auto* zone=ownZoneAt(map,house,zx,zy);
-            if (zone && zone->getLocation()==Coord(zx,zy) && zone->getItemID()==item) { ++neighbours; continue; }
+            if (zone && zone->getLocation()==Coord(zx,zy)) { ++neighbours; continue; }
             for (int dy=0; dy<2; ++dy) for (int dx=0; dx<2; ++dx) {
                 const auto* tile=map.getTile(zx+dx,zy+dy);
                 if (!tile || tile->hasAStructure() || !DuneCity::isCityZoneTerrain(tile->getType())) valid=false;
@@ -1492,45 +1511,51 @@ bool blocksGroundAccess(Uint32 item) {
 
 void QuantBot::clearPlacementCache() {
     placementCache.clear();
-    groundAccessReady = false;
 }
 
 bool QuantBot::preservesGroundAccess(Uint32 item, Coord pos) {
     if (!blocksGroundAccess(item)) return true;
     if (!pos.isValid()) return false;
-    if (!groundAccessReady || groundAccessCycle != getGameCycleCount()) {
-        const int w=getMap().getSizeX(),h=getMap().getSizeY();
-        std::vector<uint8_t> passable(w*h);
-        for (int y=0;y<h;++y) for (int x=0;x<w;++x) {
-            const auto* tile=getMap().getTile(x,y);
-            passable[y*w+x]=!tile->isMountain() && !tile->hasAStructure();
-        }
+    const auto size=getStructureSize(item);
+    auto passable=[&](int x,int y) {
+        if (!getMap().tileExists(x,y)) return false;
+        const auto* tile=getMap().getTile(x,y);
+        if (tile->isMountain() || tile->hasAStructure()) return false;
         for (const auto& entry:reservedStructures) {
             if (entry.first==planningBuilder || !blocksGroundAccess(entry.second.item)) continue;
-            const auto p=entry.second.location, size=getStructureSize(entry.second.item);
-            for (int y=std::max(0,p.y);y<std::min(h,p.y+size.y);++y)
-                for (int x=std::max(0,p.x);x<std::min(w,p.x+size.x);++x) passable[y*w+x]=false;
+            const auto p=entry.second.location, extent=getStructureSize(entry.second.item);
+            if (x>=p.x && x<p.x+extent.x && y>=p.y && y<p.y+extent.y) return false;
         }
-        groundAccess.reset(w,h,passable);
-        auto protect=[&](Uint32 type,Coord p) {
-            if (!needsGroundExit(type)) return;
-            const auto size=getStructureSize(type);
-            groundAccess.protectExits({p.x,p.y,size.x,size.y});
-        };
-        for (const auto* structure:getStructureList())
-            if (structure->getOwner()==getHouse()) protect(structure->getItemID(),structure->getLocation());
-        for (const auto& entry:reservedStructures)
-            if (entry.first!=planningBuilder) protect(entry.second.item,entry.second.location);
-        for (const auto* unit:getUnitList())
-            if (unit->getOwner()==getHouse() && unit->isActive() && unit->isAGroundUnit()
-                && unit->getItemID()!=Unit_MCV) {
-                const auto p=unit->getLocation(); groundAccess.protectUnit(p.x,p.y);
-            }
-        groundAccessReady=true;
-        groundAccessCycle=getGameCycleCount();
+        return true;
+    };
+    if (!GroundAccessPolicy::allows({pos.x,pos.y,size.x,size.y},needsGroundExit(item),passable,
+            item==Structure_RocketTurret)) return false;
+    auto keepsExit=[&](Coord p,Coord extent) {
+        for (int ey=p.y-1;ey<=p.y+extent.y;++ey) for (int ex=p.x-1;ex<=p.x+extent.x;++ex) {
+            if (ex>=p.x && ex<p.x+extent.x && ey>=p.y && ey<p.y+extent.y) continue;
+            if (ex>=pos.x && ex<pos.x+size.x && ey>=pos.y && ey<pos.y+size.y) continue;
+            if (passable(ex,ey)) return true;
+        }
+        return false;
+    };
+    // Check only producers touching this placement, so its last deployment
+    // opening cannot be covered. No scan of all factories or moving units.
+    std::set<Uint32> checked;
+    for (int y=pos.y-1;y<=pos.y+size.y;++y) for (int x=pos.x-1;x<=pos.x+size.x;++x) {
+        if (x>=pos.x && x<pos.x+size.x && y>=pos.y && y<pos.y+size.y) continue;
+        if (!getMap().tileExists(x,y)) continue;
+        const auto* object=getMap().getTile(x,y)->getNonInfantryGroundObject();
+        if (!object || !object->isAStructure() || !needsGroundExit(object->getItemID())
+            || !checked.insert(object->getObjectID()).second) continue;
+        if (!keepsExit(object->getLocation(),getStructureSize(object->getItemID()))) return false;
     }
-    const auto size=getStructureSize(item);
-    return groundAccess.allows({pos.x,pos.y,size.x,size.y},needsGroundExit(item));
+    for (const auto& entry:reservedStructures) {
+        if (entry.first==planningBuilder || !needsGroundExit(entry.second.item)) continue;
+        const auto p=entry.second.location, extent=getStructureSize(entry.second.item);
+        if (CityPlacementPolicy::overlaps(pos.x-1,pos.y-1,size.x+2,size.y+2,p.x,p.y,extent.x,extent.y)
+            && !keepsExit(p,extent)) return false;
+    }
+    return true;
 }
 
 bool QuantBot::redevelopmentZones(Uint32 item, Coord pos, std::vector<Uint32>& zones) const {
@@ -1610,6 +1635,8 @@ Coord QuantBot::findPlaceLocation(Uint32 itemID) {
 	int bestLocationScore = std::numeric_limits<int>::min();
 	Coord bestLocation = Coord::Invalid();
     int bestSiteTier = -1;
+    int bestInfill=0;
+    bool bestSafe=false;
     const bool factoryPlacement = TacticalSafetyPolicy::productionFactory(itemID);
     auto bestFactoryRank = TacticalSafetyPolicy::factorySiteRank(1,-1,-1,0);
     AITelemetry::Record bestQuality;
@@ -1698,7 +1725,7 @@ Coord QuantBot::findPlaceLocation(Uint32 itemID) {
                 if (currentGame && currentGame->isCitySimEnabled()
                     && wouldLandlockNeighbouringZone(getMap(), houseID, placeLocationX, placeLocationY, newSizeX, newSizeY)) continue;
 				int locationScore = 0;
-                const int blockBonus = cityZonePlacement ? fourZoneBlockBonus(getMap(),houseID,itemID,placeLocationX,placeLocationY) : 0;
+                const int blockBonus = cityZonePlacement ? fourZoneBlockBonus(getMap(),houseID,placeLocationX,placeLocationY) : 0;
                 locationScore += roads.junctionBonus - roads.roadsCovered * 20;
 				int placeLocationEndX = placeLocationX + newSizeX;
 				int placeLocationEndY = placeLocationY + newSizeY;
@@ -2141,6 +2168,9 @@ Coord QuantBot::findPlaceLocation(Uint32 itemID) {
                     }
                 }
 
+                const int infill = cityZonePlacement && itemID==Structure_ZoneResidential
+                    ? residentialInfillSides(getMap(),houseID,placeLocationX,placeLocationY,newSizeX,newSizeY) : 0;
+                quality.set("residential_infill_sides",infill);
                 const int lossRisk = dangerAt(Coord(placeLocationX, placeLocationY), Coord(newSizeX, newSizeY), true);
                 // Safety outranks pollution/grid preferences; losses decay over five minutes.
                 siteTier += lossRisk == 0 ? 6 : 0;
@@ -2156,9 +2186,11 @@ Coord QuantBot::findPlaceLocation(Uint32 itemID) {
 
 				// Pick this location if it has the best score
 				if (factoryPlacement ? factoryRank > bestFactoryRank
-                    : siteTier > bestSiteTier || (siteTier == bestSiteTier && locationScore > bestLocationScore)) {
+                    : CityPlacementPolicy::preferCitySite(lossRisk==0,infill,siteTier,locationScore,
+                        bestSafe,bestInfill,bestSiteTier,bestLocationScore)) {
                     bestFactoryRank = factoryRank;
                     bestSiteTier = siteTier;
+                    bestSafe=lossRisk==0; bestInfill=infill;
                     bestQuality = quality.set("tier", siteTier).set("score", locationScore);
 					bestLocationScore = locationScore;
 					bestLocation = Coord(placeLocationX, placeLocationY);
@@ -3204,9 +3236,15 @@ void QuantBot::build(int militaryValue) {
     };
 
 	auto chooseCityZone = [&](const BuilderBase* builder, bool bootstrap) {
-		const auto ranked = QuantBotBuildPolicy::rankZones(
+		auto ranked = QuantBotBuildPolicy::rankZones(
 			itemCount[Structure_ZoneResidential], itemCount[Structure_ZoneCommercial],
 			itemCount[Structure_ZoneIndustrial], ownResValve, ownComValve, ownIndValve, bootstrap);
+        bool residentialInfill=false;
+        if (!bootstrap && ownResValve>0 && builder->isAvailableToBuild(Structure_ZoneResidential)) {
+            const auto site=findPlaceLocation(Structure_ZoneResidential);
+            residentialInfill=site.isValid() && residentialInfillSides(getMap(),houseID,site.x,site.y,2,2)>=2;
+            QuantBotBuildPolicy::prioritizeResidentialInfill(ranked,ownResValve,residentialInfill);
+        }
         Uint32 selected = NONE_ID;
         AITelemetry::Record candidates;
         for (Uint32 candidate : {Structure_ZoneResidential, Structure_ZoneCommercial, Structure_ZoneIndustrial}) {
@@ -3237,7 +3275,7 @@ void QuantBot::build(int militaryValue) {
             lastZoneTraceCycle[builder->getObjectID()] = getGameCycleCount();
             zoneDecisionIds[builder->getObjectID()] = traceDecision("zone_evaluation", AITelemetry::Record()
                 .set("builder", builder->getObjectID()).set("bootstrap", bootstrap)
-                .set("rule", "normalized_demand_then_weighted_count").set("selected", selected)
+                .set("rule", residentialInfill ? "residential_infill" : "normalized_demand_then_weighted_count").set("selected", selected)
                 .set("expansion_policy", "demand_led_independent_of_spice")
                 .set("result", selected != NONE_ID ? "selected"
                     : ranked[0] == NONE_ID ? "no_positive_demand" : "no_available_site_or_building")

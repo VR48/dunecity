@@ -1,3 +1,32 @@
+# Local road access and residential infill — 1.0.614
+
+Supersedes 613's global connectivity search at Stefan's request. GroundAccessPolicy
+now checks only a candidate footprint and its one-tile border, preserving local
+passage between surviving border tiles. No full-map reset/flood, anchor, protected
+unit paths or scan of all producers. A 3x2 candidate reads20 occupancy tiles.
+QuantBot separately checks deployment openings only for touching producers and
+nearby other-yard reservations; roads/slabs remain passable, transient units do
+not reserve space. Rocket turrets allow diagonal local passage at road junctions.
+Existing city road-perimeter planning and road-connection safeguards remain.
+This incremental local rule does not diagnose/repair pre-existing distant traps.
+
+Residential sites with R/C/I on at least two nearby sides (touching or across one
+road tile) count as infill. Safe infill ranks above outward expansion; existing
+safety checks stay in force. If positive R demand and a buildable infill site exist,
+choose R before normal demand/count balancing. Bootstrap and C/I fallback remain
+when no residential infill is available or R has no demand. Telemetry identifies
+residential_infill and residential_infill_sides. Four-zone block scoring now
+permits mixed R/C/I rather than only identical zone types.
+
+Full CTest and dependency audits passed. Tests cover touching blocks, closing a
+local lane, reservations/terrain, map edges, junctions, bounded occupancy reads,
+and residential demand/infill priority. Synthetic placement-only comparison was
+13.1ms for613 versus10.4ms for614 over11907 checks; not an FPS claim. Recent runtime
+logs had AI updates up to310.7ms and separate unit path costs around20ms/frame;
+live-game performance after this change remains unverified. Local614 built;
+no remote release or game launch performed. Build/test logs are under
+/tmp/dunecity-local-placement-{build,tests}.log.
+
 # Preserve connectivity rather than fixed lanes — 1.0.613
 
 Current 612 game 1789013651529445-0 (4 corners, city mode) showed the ground

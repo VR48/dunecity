@@ -815,3 +815,17 @@ TEST_CASE("Local service property lookup matches full scans at map and bucket ed
         REQUIRE(actual==expected);
     }
 }
+
+TEST_CASE("Residential infill takes priority only with positive housing demand", "[quantbot][city]") {
+    auto ranked=rankZones(60,4,9,1,1500,1500,false);
+    REQUIRE(ranked[0]==Structure_ZoneCommercial);
+    prioritizeResidentialInfill(ranked,1,true);
+    REQUIRE(ranked[0]==Structure_ZoneResidential);
+    REQUIRE(ranked[1]==Structure_ZoneCommercial);
+    ranked=rankZones(60,4,9,0,1500,1500,false);
+    prioritizeResidentialInfill(ranked,0,true);
+    REQUIRE(ranked[0]==Structure_ZoneCommercial);
+    ranked=rankZones(60,4,9,1,1500,1500,false);
+    prioritizeResidentialInfill(ranked,1,false);
+    REQUIRE(ranked[0]==Structure_ZoneCommercial);
+}

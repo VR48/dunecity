@@ -56,6 +56,16 @@ inline bool fourZoneGridSlot(int x, int y, int baseX, int baseY) {
     return (gx==0 || gx==2) && (gy==0 || gy==2);
 }
 
+// Safety first, then use gaps within existing neighbourhoods before expanding.
+inline bool preferCitySite(bool safe,int sides,int tier,int score,
+                           bool bestSafe,int bestSides,int bestTier,int bestScore) {
+    if (safe!=bestSafe) return safe;
+    const bool infill=sides>=2,bestInfill=bestSides>=2;
+    if (infill!=bestInfill) return infill;
+    if (tier!=bestTier) return tier>bestTier;
+    return score>bestScore;
+}
+
 struct RoadImpact { bool preservesConnections = true; int roadsCovered = 0; int junctionBonus = 0; };
 
 template<class IsRoad, class CanPave = std::nullptr_t>

@@ -201,6 +201,14 @@ inline std::array<Uint32, 3> rankZones(int residential, int commercial, int indu
     return result;
 }
 
+// Infill housing while R demand exists; retain bootstrap and demand balancing
+// when no residential gap is available.
+inline void prioritizeResidentialInfill(std::array<Uint32,3>& ranked,int demand,bool infill) {
+    if (demand<=0 || !infill) return;
+    const auto it=std::find(ranked.begin(),ranked.end(),Structure_ZoneResidential);
+    if (it!=ranked.end()) std::rotate(ranked.begin(),it,it+1);
+}
+
 // Divide the remaining map spice between active houses before investing.
 inline int desiredSpiceHarvesters(int spice, int competitors, int limit) {
     return std::clamp(std::max(0, spice) / std::max(1, competitors) / 3000, 0, std::max(0, limit));
