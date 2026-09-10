@@ -1,3 +1,15 @@
+# Starter-city road exemption — 1.0.626
+
+Road upkeep is waived while an individual house's displayed total population is
+below 2,000. It starts at exactly 2,000 and stops again if population drops below
+that threshold. Billing, budget forecast and AI telemetry use the same rule;
+the budget explicitly says roads are free below 2,000. Existing road census and
+ownership rules from 1.0.625 remain. Police patrols remain 3 troopers + 1 trike.
+Local 1.0.626 build and before/after dependency audits passed. Full CTest:
+539 cases, 536 passed, 3 optional skips, including population threshold/reversal
+and per-house checks. Game not launched. User subsequently authorized remote
+release, both websites and SourceForge; publication is tracked below when verified.
+
 # Road upkeep and smaller police patrols — 1.0.625
 
 - Added road maintenance using Micropolis `simulate.cpp::collectTax/doRoad`:

@@ -319,8 +319,12 @@ void CityBudgetWindow::updateDisplay() {
     const FixPoint rocketPaying = DuneCity::getPoliceAnnualCost(Structure_RocketTurret) * rocketCount * pendingPolicePercent / 100;
     const FixPoint gunPaying = DuneCity::getPoliceAnnualCost(Structure_GunTurret) * gunCount * pendingPolicePercent / 100;
     const auto& roads = citySim->getHouseState(pLocalHouse ? pLocalHouse->getHouseID() : 0).roads;
-    const FixPoint paying = stationPaying + rocketPaying + gunPaying + roads.annualCost();
-    roadCostLabel.setText(fmt::sprintf("Roads: %d (%d heavy) | -%d/yr", roads.tiles, roads.heavyTiles, roads.annualCost()));
+    const int displayedPopulation = citySim->getDisplayTotalPop();
+    const int roadCost = roads.annualCost(displayedPopulation);
+    const FixPoint paying = stationPaying + rocketPaying + gunPaying + roadCost;
+    roadCostLabel.setText(displayedPopulation < 2000
+        ? fmt::sprintf("Roads: %d | Free below 2,000 pop", roads.tiles)
+        : fmt::sprintf("Roads: %d (%d heavy) | -%d/yr", roads.tiles, roads.heavyTiles, roadCost));
     auto credits = [](FixPoint amount) {
         std::string text = fmt::sprintf("%.3f", amount.toDouble());
         while (!text.empty() && text.back() == '0') text.pop_back();

@@ -1506,13 +1506,13 @@ void CitySimulation::runDailyBudget() {
         // smoothly (credits tick up like a harvester unloading spice).
         const FixPoint tickRevenue = FixPoint(annualRevenue) / kBudgetTicksPerYear;
         const FixPoint tickPaid    = FixPoint(annualPaid)    / kBudgetTicksPerYear;
-        const FixPoint tickRoadPaid = FixPoint(hs.roads.annualCost()) / kBudgetTicksPerYear;
+        const FixPoint tickRoadPaid = FixPoint(hs.roads.annualCost(hs.getTotalPop() * kPopDisplayMultiplier)) / kBudgetTicksPerYear;
         const FixPoint net = tickRevenue - tickPaid - tickRoadPaid;
 
         house->addCityCredits(tickRevenue - tickPaid);
         // Road upkeep must also draw on spice/starting funds when tax income
         // is insufficient; addCityCredits alone clamps its own balance to zero.
-        const FixPoint roadCharged = house->takeCredits(tickRoadPaid);
+        const FixPoint roadCharged = tickRoadPaid > 0 ? house->takeCredits(tickRoadPaid) : FixPoint(0);
         AITelemetry::log().account(hID, "city_gross", tickRevenue.getRawValue());
         AITelemetry::log().account(hID, "police_charged", tickPaid.getRawValue());
         AITelemetry::log().account(hID, "roads_due", tickRoadPaid.getRawValue());

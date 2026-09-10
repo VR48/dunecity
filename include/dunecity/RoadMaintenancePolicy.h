@@ -18,7 +18,11 @@ struct RoadMaintenanceCensus {
         if (trafficDensity >= 192) ++heavyTiles;
     }
 
-    int annualCost() const { return (tiles + heavyTiles) * 7 / 10; }
+    // DuneCity starter-city exemption, measured in the population shown in UI.
+    // Re-evaluated each census: losing population restores the exemption.
+    int annualCost(int displayedPopulation) const {
+        return displayedPopulation < 2000 ? 0 : (tiles + heavyTiles) * 7 / 10;
+    }
 };
 
 inline bool validRoadOwner(int owner) { return owner >= 0 && owner < NUM_HOUSES; }
