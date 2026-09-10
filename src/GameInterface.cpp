@@ -198,6 +198,9 @@ GameInterface::GameInterface() : Window(0,0,0,0) {
     addOverlayButton(crimeOverlayButton, "Crime",
         "Show crime: red is high, green is low. Click again to hide (Shift+6; Shift+1 off).",
         DuneCity::CityOverlayMode::CrimeRate, autoRepairY + 80);
+    addOverlayButton(pollutionOverlayButton, "Pollution",
+        "Show pollution: green is clean, purple is polluted. Click again to hide (Shift+4; Shift+1 off).",
+        DuneCity::CityOverlayMode::Pollution, autoRepairY + 120);
 
     // add chat manager
     windowWidget.addWidget(&chatManager, Point(20, 60), Point(getRendererWidth() - sideBar.getSize().x, 360));
@@ -435,9 +438,11 @@ void GameInterface::updateObjectInterface() {
     const bool showOverlayButtons = selection.empty() && currentGame->isCitySimEnabled();
     landValueOverlayButton.setVisible(showOverlayButtons);
     crimeOverlayButton.setVisible(showOverlayButtons);
+    pollutionOverlayButton.setVisible(showOverlayButtons);
     // Keep pressed states in sync with keyboard shortcuts and other overlays.
     landValueOverlayButton.setToggleState(currentGame->getCityOverlayMode() == DuneCity::CityOverlayMode::LandValue);
     crimeOverlayButton.setToggleState(currentGame->getCityOverlayMode() == DuneCity::CityOverlayMode::CrimeRate);
+    pollutionOverlayButton.setToggleState(currentGame->getCityOverlayMode() == DuneCity::CityOverlayMode::Pollution);
     if(selection.empty()) {
         ornithopterSelectButton.setVisible(true);
         chemicalCarryallSelectButton.setVisible(ModManager::instance().isTornieContentActive());

@@ -1,3 +1,14 @@
+# Pollution sidebar overlay button — 1.0.617
+
+Added Pollution below Land Value and Crime, using existing CityOverlayMode::Pollution.
+Click toggles off/on, selected state tracks Shift+4, and visibility matches other
+city-only buttons when selection is empty. Existing green-to-purple renderer and
+legend reused; no simulation change. Local617 built and full CTest/dependency
+checks passed. No remote release, app launch or /Applications copy.
+Also verified user query: Micropolis scan.cpp subtracts pollution from land value;
+our computeBaseLandValue does too. DuneCity adds park/turret/sand bonuses afterward,
+so positive bonuses can offset pollution. No change to this formula requested.
+
 # Zone suitability, labour demand and civic notices — 1.0.616
 
 Reviewed completed 1.0.614 4 Corners session1789019169404635-0. In the

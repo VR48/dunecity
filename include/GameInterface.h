@@ -136,6 +136,7 @@ private:
     TextButton          autoRepairButton;
     TextButton          landValueOverlayButton;
     TextButton          crimeOverlayButton;
+    TextButton          pollutionOverlayButton;
     TextButton          ornithopterSelectButton;///< Button that selects all owned ornithopters
     TextButton          chemicalCarryallSelectButton;///< Button that selects all owned chemical carryalls
 
