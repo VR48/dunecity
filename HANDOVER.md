@@ -13,7 +13,16 @@ and both website updates, including accumulated 1.0.627–629 fixes.
   No path searches or new map-wide scans. Regression cases cover owners, modes,
   foundation/occupancy wiring. Policy shared-road-access-v52, save layout unchanged.
 - Before/after dependency audits passed; CTest 547 passed, three optional skips.
-  Release publication/installation verification will be recorded below.
+- Local 1.0.630 installed at /Applications/dunecity.app, signature verified;
+  executable matches build/bin/dunecity.app with SHA256
+  fa704a707098914af1e82bd6159249123b3c548dda8484d0d249ed036c0bee82.
+- SourceForge legacy downloads copy committed to old Git master e5fe423 and
+  pushed. SFTP atomic upload backed up previous HTML under
+  /tmp/dunecity-sf-web-630/, verified readback SHA256
+  ecf6869ee156ac79918ba4ca93705173464a8ceee6f767796f01372a3992ee8d.
+  Public browser page verified with ?updated=1.0.630.
+- Game release tag v1.0.630 is 1339839, pushed to GitHub main and working branch.
+  Remote publication verification will be recorded below.
 
 # Repair-yard crash and earlier QuantBot repair support — 1.0.629
 
