@@ -81,6 +81,7 @@ private:
     Label policeStationCostLabel;
     Label rocketTurretCostLabel;
     Label gunTurretCostLabel;
+    Label roadCostLabel;
     HBox forecastSecondaryHBox;
     Label netLabel;
     Label perSecondLabel;

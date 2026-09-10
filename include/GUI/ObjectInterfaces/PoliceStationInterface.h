@@ -59,7 +59,7 @@ protected:
 
         spawnSelectButton.setTextures(convertSurfaceToTexture(pReady.get()));
         spawnSelectButton.setVisible(false);
-        spawnSelectButton.setTooltipText(_("Deploy 9 troopers, 1 quad and 2 trikes near this station"));
+        spawnSelectButton.setTooltipText(_("Deploy 3 troopers and 1 trike near this station"));
         spawnSelectButton.setOnClick(std::bind(&PoliceStationInterface::onSpawn, this));
         unitLimitLabel.setText("Unit limit\nreached");
         unitLimitLabel.setTextFontSize(11);
@@ -99,8 +99,8 @@ protected:
             spawnSelectButton.setVisible(pPoliceStation->canSpawnVehicles());
             unitLimitLabel.setVisible(pPoliceStation->isReinforcementLimitReached());
 
-            levelLabel.setText("9 Troopers");
-            vehiclesLabel.setText("1 Quad + 2 Trikes");
+            levelLabel.setText("3 Troopers");
+            vehiclesLabel.setText("1 Trike");
             poweredLabel.setText("Free / " + std::to_string(pPoliceStation->getMaxSpawnTimer() / MILLI2CYCLES(1000)) + "s");
 
             cityStats_.update(pPoliceStation);

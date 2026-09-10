@@ -10,6 +10,7 @@
 #include <catch2/catch_all.hpp>
 #include <data.h>
 #include <dunecity/CitySimulation.h>
+#include <dunecity/CityEffects.h>
 
 // =============================================================================
 // spendCityFunds: Sufficient Funds Tests
@@ -208,4 +209,59 @@ TEST_CASE("CityBudget: Alternating roads and power lines correct total", "[cityb
     REQUIRE(sim.spendCityFunds(25) == true);  // 160 -> 135
     REQUIRE(sim.spendCityFunds(15) == true);  // 135 -> 120
     REQUIRE(sim.getTotalFunds() == 120);
+}
+
+
+TEST_CASE("Road upkeep follows Micropolis weighting and aggregate rounding", "[citybudget][roads]") {
+    DuneCity::RoadMaintenanceCensus roads;
+    REQUIRE(roads.annualCost() == 0);
+    for (int i = 0; i < 80; ++i) roads.add(true, 191);
+    for (int i = 0; i < 20; ++i) roads.add(true, 192);
+    // 100 physical road tiles + 20 extra heavy weights, at 0.7/year.
+    REQUIRE(roads.tiles == 100);
+    REQUIRE(roads.heavyTiles == 20);
+    REQUIRE(roads.annualCost() == 84);
+    roads.add(false, 255); // Concrete, destroyed roads and building footprints are free.
+    REQUIRE(roads.annualCost() == 84);
+    roads = {};
+    roads.add(true, 0);
+    REQUIRE(roads.annualCost() == 0); // Truncate the annual total, not individual tiles.
+    roads.add(true, 64);
+    REQUIRE(roads.annualCost() == 1);
+}
+
+TEST_CASE("Road placement preserves existing owners and assigns new roads", "[citybudget][roads]") {
+    REQUIRE(DuneCity::roadOwnerAfterPlacement(false, -1, 2) == 2);
+    REQUIRE(DuneCity::roadOwnerAfterPlacement(false, 1, 2) == 2);
+    REQUIRE(DuneCity::roadOwnerAfterPlacement(true, 1, 2) == 1);
+    REQUIRE(DuneCity::roadOwnerAfterPlacement(true, -1, 2) == 2);
+}
+
+TEST_CASE("Legacy roads inherit only adjacent structure ownership", "[citybudget][roads]") {
+    auto ownerAt = [](int x, int y) {
+        if (x == 9 && y == 9) return 0; // Diagonal loses to direct neighbors.
+        if (x == 10 && y == 9) return 2;
+        if (x == 11 && y == 10) return 1; // Stable house-ID tie break.
+        return -1;
+    };
+    REQUIRE(DuneCity::legacyRoadOwner(-1, 10, 10, ownerAt) == 1);
+    REQUIRE(DuneCity::legacyRoadOwner(3, 10, 10, ownerAt) == 3);
+    REQUIRE(DuneCity::legacyRoadOwner(-1, 50, 50, ownerAt) == -1);
+}
+
+TEST_CASE("Road census is per house and fractional upkeep accumulates over a year", "[citybudget][roads]") {
+    DuneCity::HouseCityState houses[2];
+    for (int i = 0; i < 100; ++i) {
+        houses[0].roads.add(true, 0);
+        houses[1].roads.add(true, 240);
+    }
+    REQUIRE(houses[0].roads.annualCost() == 70);
+    REQUIRE(houses[1].roads.annualCost() == 140);
+    const FixPoint tick = FixPoint(houses[0].roads.annualCost()) / DuneCity::kBudgetTicksPerYear;
+    FixPoint charged = 0;
+    for (int i = 0; i < DuneCity::kBudgetTicksPerYear; ++i) charged += tick;
+    REQUIRE(charged.toDouble() == Catch::Approx(70.0).margin(0.001));
+    houses[0].roads = {}; // Removed roads disappear in the next census.
+    REQUIRE(houses[0].roads.annualCost() == 0);
+    REQUIRE(houses[1].roads.annualCost() == 140);
 }

@@ -7,6 +7,7 @@
 #include <dunecity/CityConstants.h>
 #include <dunecity/CityMapLayer.h>
 #include <dunecity/CityBudget.h>
+#include <dunecity/RoadMaintenancePolicy.h>
 #include <dunecity/CrimeUnrestPolicy.h>
 #include <dunecity/CityDemandNoticePolicy.h>
 #include <dunecity/ParkTerrainPolicy.h>
@@ -32,6 +33,7 @@ struct HouseCityState {
     int32_t nominalPoliceCost = 0;
     int32_t lastPoliceExpense = 0;
     CityBudget budget;
+    RoadMaintenanceCensus roads; // Derived from owned road tiles; not serialized.
 
     int getTotalPop() const { return resPop + comPop + indPop; }
 

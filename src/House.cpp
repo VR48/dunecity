@@ -1,3 +1,4 @@
+#include <dunecity/RoadMaintenancePolicy.h>
 #include <dunecity/PowerRules.h>
 #include <players/AIDecisionLog.h>
 /*
@@ -1012,6 +1013,7 @@ StructureBase* House::placeStructure(Uint32 builderID, int itemID, int xPos, int
                         Tile* t = currentGameMap->getTile(tx, ty);
                         if (t->hasAGroundObject()) continue;
                         if (!DuneCity::isCityBuildableTerrain(t->getType())) continue;
+                        t->setOwner(DuneCity::roadOwnerAfterPlacement(t->isRoad(), t->getOwner(), getHouseID()));
                         t->setRoad(true);
                     }
                 }

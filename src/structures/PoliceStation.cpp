@@ -87,12 +87,12 @@ void PoliceStation::doSpawnVehicles() {
     if (!canSpawnVehicles()) return;
     int trikes = 0, troopers = 0, quads = 0;
     int blocked = 0, capped = 0, disabled = 0;
-    // Interleave the batch so limited space/capacity can still produce a mix.
-    for (int i = 0; i < 12; ++i) {
-        // Three groups of three troopers, with two trikes and one quad.
-        const Uint32 item = i % 4 != 0 ? Unit_Trooper : (i == 4 ? Unit_Quad : Unit_Trike);
+    // One patrol: a trike followed by three individual troopers.
+    constexpr int patrolSize = 4;
+    for (int i = 0; i < patrolSize; ++i) {
+        const Uint32 item = i == 0 ? Unit_Trike : Unit_Trooper;
         // Recheck each batch member so the player's military count cannot exceed 250.
-        if (isReinforcementLimitReached()) { capped += 12 - i; break; }
+        if (isReinforcementLimitReached()) { capped += patrolSize - i; break; }
         bool militaryCapped = false;
         for (const auto& player : owner->getPlayerList()) {
             const auto* bot = dynamic_cast<const QuantBot*>(player.get());

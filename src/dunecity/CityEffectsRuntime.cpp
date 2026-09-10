@@ -725,6 +725,15 @@ void CitySimulation::reconcileLoadedMapState(uint32_t gameCycleCount) {
     for (int y = 0; y < map.getSizeY(); ++y) {
         for (int x = 0; x < map.getSizeX(); ++x) {
             Tile* t = map.getTile(x, y);
+            if (t && t->isRoad() && !validRoadOwner(t->getOwner())) {
+                t->setOwner(legacyRoadOwner(t->getOwner(), x, y, [&](int nx, int ny) {
+                    const Tile* neighbor = map.getTile(nx, ny);
+                    if (!neighbor || !neighbor->hasANonInfantryGroundObject()) return -1;
+                    const ObjectBase* object = neighbor->getNonInfantryGroundObject();
+                    return object && object->isAStructure() && object->getOwner()
+                        ? object->getOwner()->getHouseID() : -1;
+                }));
+            }
             if (!t || !t->hasANonInfantryGroundObject()) continue;
             ObjectBase* pObj = t->getNonInfantryGroundObject();
             if (!pObj || !pObj->isAStructure()) continue;
@@ -1426,12 +1435,9 @@ void CitySimulation::runDailyBudget() {
     if (!currentGameMap) return;
     const Map& map = *currentGameMap;
 
-    // Per-house aggregation: total city population (for tax) and total
-    // police annual cost (for the bill). Walked once across the map so
-    // each owner's bill is independent of the others — every player,
-    // human or AI, pays for their own police and collects their own
-    // taxes. Revenue and costs are divided by kBudgetTicksPerYear (50)
-    // so each 1-second tick delivers 1/50th of the annual amount.
+    // One map walk collects population, police and owned road upkeep.
+    // All annual amounts are paid fractionally over kBudgetTicksPerYear.
+    for (auto& hs : houseState_) hs.roads = {};
     struct HouseBudget {
         int     pop       = 0;
         FixPoint policeCost = 0;
@@ -1446,7 +1452,7 @@ void CitySimulation::runDailyBudget() {
         return houseBudgets.back().second;
     };
 
-    forEachStructureOrigin(map, [&](int x, int y, const StructureBase* pStruct) {
+    auto accumulateStructure = [&](int x, int y, const StructureBase* pStruct) {
         const House* constOwner = pStruct->getOwner();
         if (!constOwner) return;
         House* owner = currentGame->getHouse(constOwner->getHouseID());
@@ -1460,10 +1466,35 @@ void CitySimulation::runDailyBudget() {
             hb.pop += getStructurePopulation(pStruct, level);
         }
         hb.policeCost += getPoliceAnnualCost(itemID);
-    });
+    };
+    const int trafficBlockSize = trafficDensityMap_.getBlockSize();
+    for (int y = 0; y < map.getSizeY(); ++y) {
+        for (int x = 0; x < map.getSizeX(); ++x) {
+            const Tile* tile = map.getTile(x, y);
+            if (!tile) continue;
+            const int ownerID = tile->getOwner();
+            if (tile->isRoad() && validRoadOwner(ownerID)) {
+                houseState_[ownerID].roads.add(true,
+                    trafficDensityMap_.get(x / trafficBlockSize, y / trafficBlockSize));
+            }
+            if (!tile->hasANonInfantryGroundObject()) continue;
+            const ObjectBase* object = tile->getNonInfantryGroundObject();
+            if (!object || !object->isAStructure()) continue;
+            const auto* structure = static_cast<const StructureBase*>(object);
+            if (structure->getLocation().x == x && structure->getLocation().y == y)
+                accumulateStructure(x, y, structure);
+        }
+    }
+
+    // Include road-only owners once, without a house lookup for every road tile.
+    for (int h = 0; h < kMaxCityHouses; ++h) {
+        if (houseState_[h].roads.tiles > 0) {
+            if (House* house = currentGame->getHouse(h)) findOrAdd(house);
+        }
+    }
 
     for (auto& [house, hb] : houseBudgets) {
-        // Annual values divided by days-per-year for smooth daily payout.
+        // Annual values divided by cycles-per-year for smooth payout.
         // Revenue scales with the house's own average land value.
         const int hID = house->getHouseID();
         const auto& hs = houseState_[hID >= 0 && hID < kMaxCityHouses ? hID : 0];
@@ -1475,11 +1506,17 @@ void CitySimulation::runDailyBudget() {
         // smoothly (credits tick up like a harvester unloading spice).
         const FixPoint tickRevenue = FixPoint(annualRevenue) / kBudgetTicksPerYear;
         const FixPoint tickPaid    = FixPoint(annualPaid)    / kBudgetTicksPerYear;
-        const FixPoint net = tickRevenue - tickPaid;
+        const FixPoint tickRoadPaid = FixPoint(hs.roads.annualCost()) / kBudgetTicksPerYear;
+        const FixPoint net = tickRevenue - tickPaid - tickRoadPaid;
 
-        house->addCityCredits(net);
+        house->addCityCredits(tickRevenue - tickPaid);
+        // Road upkeep must also draw on spice/starting funds when tax income
+        // is insufficient; addCityCredits alone clamps its own balance to zero.
+        const FixPoint roadCharged = house->takeCredits(tickRoadPaid);
         AITelemetry::log().account(hID, "city_gross", tickRevenue.getRawValue());
         AITelemetry::log().account(hID, "police_charged", tickPaid.getRawValue());
+        AITelemetry::log().account(hID, "roads_due", tickRoadPaid.getRawValue());
+        AITelemetry::log().account(hID, "roads_charged", roadCharged.getRawValue());
 
         // Store per-house budget figures
         if (hID >= 0 && hID < kMaxCityHouses) {

@@ -3379,6 +3379,8 @@ void QuantBot::build(int militaryValue) {
             }
             cityHealth.set("unemployment", hs.unemploymentRate).set("tax_rate", sim->getCityTax())
                 .set("last_tax_revenue", hs.budget.getLastTaxRevenue()).set("police_expense", hs.lastPoliceExpense)
+                .set("road_tiles", hs.roads.tiles).set("heavy_road_tiles", hs.roads.heavyTiles)
+                .set("road_expense", hs.roads.annualCost())
                 .set("zone_origin_samples", samples).set("pollution_mean", samples ? pollution / samples : 0)
                 .set("crime_mean", samples ? crime / samples : 0).set("traffic_mean", samples ? traffic / samples : 0)
                 .set("res_crime_above100",resCrime).set("com_crime_above80",comCrime).set("crime_above190",extremeCrime)

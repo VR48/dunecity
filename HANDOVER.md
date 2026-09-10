@@ -1,3 +1,33 @@
+# Road upkeep and smaller police patrols — 1.0.625
+
+- Added road maintenance using Micropolis `simulate.cpp::collectTax/doRoad`:
+  annual cost is `floor((road tiles + heavy road tiles) * 0.7)`. This uses
+  Micropolis's default EASY city rate (DuneCity has no city difficulty selector).
+  Heavy traffic begins at 192, matching the road animation. Roads remain 1x1,
+  so the 2x2 zone conversion does not scale their cost. Funding is fixed at 100%;
+  this change does not add underfunding controls or deterioration.
+- Census shares the existing budget map walk; no additional per-cycle map scan
+  or UI map scan. Derived per-house counts are not serialized. The budget shows
+  physical/heavy road counts and annual cost, included in Services and Cash Flow.
+  Road charges use `House::takeCredits` after the existing tax/police settlement,
+  so upkeep can consume city, spice and starting funds. No debt is introduced
+  when funds run out. Telemetry records `roads_due` and actual `roads_charged`
+  (also included in `spent_total`), plus road counts/expense in AI city health.
+- Automatic perimeter roads and the legacy road tool now set existing Tile owner
+  metadata; existing owned roads keep their owner. On load, old unowned roads
+  infer ownership only from adjacent structures (nearest, house-ID tie break).
+  Isolated unowned map roads remain public/unbilled. Saved owner metadata needs
+  no save format change. Removing/building over a road removes it from the bill.
+- Police deploy 3 individual Unit_Troopers and 1 Unit_Trike (four units total),
+  replacing 9 troopers, 2 trikes and 1 quad. Tooltip and sidebar match. Existing
+  cooldown, per-unit 250 military unit checks, QuantBot military value cap and
+  blocked-spawn behavior are unchanged. Policy tag: road-upkeep-police-patrol-v47.
+- Local app built as 1.0.625. Before/after Ninja dependency audits passed;
+  full CTest: 538 cases, 535 passed, 3 optional skips. New regressions cover
+  rates, traffic threshold, aggregate rounding, ownership/migration and fractional
+  charges. Game not launched, so live visual/gameplay verification remains.
+  No push or release requested.
+
 # Windtrap sidebar label — 1.0.624
 
 Corrected the remaining hard-coded `Role: I-medium` text in CityStatsBox to

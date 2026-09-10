@@ -33,7 +33,7 @@
 namespace {
 
 constexpr int kBudgetWindowWidth = 420;
-constexpr int kBudgetWindowHeight = 490;
+constexpr int kBudgetWindowHeight = 512;
 
 Uint32 centeredCoordinate(int available, int extent) {
     return static_cast<Uint32>(std::max(0, (available - extent) / 2));
@@ -162,6 +162,9 @@ CityBudgetWindow::CityBudgetWindow()
     configureValueLabel(gunTurretCostLabel);
     gunTurretCostLabel.setText("Gun turrets: 0 | -0/yr");
     mainVBox.addWidget(&gunTurretCostLabel, 22);
+    configureValueLabel(roadCostLabel);
+    roadCostLabel.setText("Roads: 0 | -0/yr");
+    mainVBox.addWidget(&roadCostLabel, 22);
     mainVBox.addWidget(&forecastSecondaryHBox, 22);
     mainVBox.addWidget(VSpacer::create(6));
 
@@ -315,7 +318,9 @@ void CityBudgetWindow::updateDisplay() {
     const FixPoint stationPaying = DuneCity::getPoliceAnnualCost(Structure_PoliceStation) * stationCount * pendingPolicePercent / 100;
     const FixPoint rocketPaying = DuneCity::getPoliceAnnualCost(Structure_RocketTurret) * rocketCount * pendingPolicePercent / 100;
     const FixPoint gunPaying = DuneCity::getPoliceAnnualCost(Structure_GunTurret) * gunCount * pendingPolicePercent / 100;
-    const FixPoint paying = stationPaying + rocketPaying + gunPaying;
+    const auto& roads = citySim->getHouseState(pLocalHouse ? pLocalHouse->getHouseID() : 0).roads;
+    const FixPoint paying = stationPaying + rocketPaying + gunPaying + roads.annualCost();
+    roadCostLabel.setText(fmt::sprintf("Roads: %d (%d heavy) | -%d/yr", roads.tiles, roads.heavyTiles, roads.annualCost()));
     auto credits = [](FixPoint amount) {
         std::string text = fmt::sprintf("%.3f", amount.toDouble());
         while (!text.empty() && text.back() == '0') text.pop_back();
