@@ -22,7 +22,23 @@ and both website updates, including accumulated 1.0.627–629 fixes.
   ecf6869ee156ac79918ba4ca93705173464a8ceee6f767796f01372a3992ee8d.
   Public browser page verified with ?updated=1.0.630.
 - Game release tag v1.0.630 is 1339839, pushed to GitHub main and working branch.
-  Remote publication verification will be recorded below.
+- Remote build 34485222429 succeeded: Linux tests and all three desktop builds,
+  six GitHub release assets verified (ZIP, DMG, AppImage, DEB, RPM, tar.gz).
+  Redundant main build 34485222489 cancelled; tag build performed required checks.
+- Release notes published from releases/desktop/1.0.630.md (added in follow-up
+  docs commit f45314b; immutable release tag remains 1339839).
+- SourceForge auto mirror 34486418547 succeeded. After release-note polishing,
+  idempotent mirror retry 34486748145 verified eight uploads and all three OS
+  defaults. Source branch dunecity and tag dunecity-v1.0.630 point to 1339839.
+  No source archive uploaded.
+- Main website automation commit 3a2b5a1 updates versions/links; prose commit
+  e05c679 rebased onto it and pushed. Deploy 34486697186 succeeded. Both live
+  pages returned HTTP 200 with new prose, desktop 1.0.630, Android 0.2.25 and
+  all six package URLs matching the published assets. SourceForge web deployment
+  and browser verification noted above. Completed 2026-09-11 Australia/Sydney.
+- Restart the local game to load 1.0.630; no running match was interrupted or
+  launched for verification. Automated validation passed; no full-match replay
+  of the final release was performed.
 
 # Repair-yard crash and earlier QuantBot repair support — 1.0.629
 
