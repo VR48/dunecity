@@ -924,3 +924,57 @@ TEST_CASE("City zone priorities switch to C and I below the 500 demand threshold
     prioritizeResidentialInfill(ranked,500,true);
     REQUIRE(ranked[0]==Structure_ZoneResidential);
 }
+
+TEST_CASE("Air gets funds before ground factories without changing city yard precedence", "[quantbot][production][air]") {
+    for (bool city : {false,true}) {
+        REQUIRE(productionPlanningPriority(city,Structure_HighTechFactory,false)
+            > productionPlanningPriority(city,Structure_LightFactory,false));
+        REQUIRE(productionPlanningPriority(city,Structure_LightFactory,false)
+            > productionPlanningPriority(city,Structure_HeavyFactory,false));
+    }
+    REQUIRE(productionPlanningPriority(true,Structure_ConstructionYard,true)==3);
+    REQUIRE(productionPlanningPriority(true,Structure_ConstructionYard,false)==2);
+    REQUIRE(productionPlanningPriority(true,Structure_HighTechFactory,false)==1);
+}
+
+TEST_CASE("Unmet combat air wins over expanding carryall targets", "[quantbot][production][air]") {
+    AirProductionState s;
+    s.ornithopterAvailable=s.carryallAvailable=true;
+    s.ornithopterPrice=600; s.carryallPrice=800;
+    s.spendable=7976; s.carryalls=13; s.carryallTarget=20;
+    s.armyValue=20000; s.armyLimit=80000;
+    s.vehiclePlanValue=27000; s.airTargetBps=1440;
+    REQUIRE(chooseAirProduction(s).order==AirOrder::Ornithopter);
+    s.carryalls=0;
+    REQUIRE(chooseAirProduction(s).order==AirOrder::Carryall); // First transport still bootstraps.
+    s.carryalls=13; s.airCommittedValue=4200;
+    REQUIRE(chooseAirProduction(s).order==AirOrder::Carryall); // Air share already covered.
+    s.carryalls=20;
+    REQUIRE(chooseAirProduction(s).order==AirOrder::None);
+}
+
+TEST_CASE("Aircraft use actual price after reserves and respect queues and caps", "[quantbot][production][air]") {
+    AirProductionState s;
+    s.ornithopterAvailable=true; s.ornithopterPrice=600;
+    s.spendable=spendableCredits(2600,2000); // Old >1200 gate rejected this funded aircraft.
+    s.armyValue=7400; s.armyLimit=8000;
+    s.vehiclePlanValue=8000; s.airTargetBps=1440;
+    REQUIRE(chooseAirProduction(s).order==AirOrder::Ornithopter);
+    SECTION("insufficient funds") { s.spendable=599; REQUIRE(chooseAirProduction(s).order==AirOrder::None); }
+    SECTION("military cap including queues") { s.armyValue=7401; REQUIRE(chooseAirProduction(s).order==AirOrder::None); }
+    SECTION("air cap") { s.airLimit=true; REQUIRE(chooseAirProduction(s).order==AirOrder::None); }
+    SECTION("busy") { s.busy=true; REQUIRE(chooseAirProduction(s).order==AirOrder::None); }
+    SECTION("upgrading") { s.upgrading=true; REQUIRE(chooseAirProduction(s).order==AirOrder::None); }
+    SECTION("unavailable") { s.ornithopterAvailable=false; REQUIRE(chooseAirProduction(s).order==AirOrder::None); }
+    SECTION("queued air fills target") { s.airCommittedValue=1200; REQUIRE(chooseAirProduction(s).order==AirOrder::None); }
+    SECTION("no air target") { s.airTargetBps=0; REQUIRE(chooseAirProduction(s).order==AirOrder::None); }
+}
+
+TEST_CASE("Air prerequisite upgrades proceed without displacing available combat aircraft", "[quantbot][production][air]") {
+    AirProductionState s;
+    s.canUpgrade=true; s.spendable=800; s.ornithopterPrice=600;
+    s.armyValue=0; s.armyLimit=80000; s.vehiclePlanValue=8000; s.airTargetBps=1440;
+    REQUIRE(chooseAirProduction(s).order==AirOrder::Upgrade);
+    s.ornithopterAvailable=true;
+    REQUIRE(chooseAirProduction(s).order==AirOrder::Ornithopter);
+}

@@ -142,6 +142,47 @@ inline int spendableCredits(int credits, int strategicCost) {
     return std::max(0, credits - std::max(0, strategicCost));
 }
 
+// Keep city construction first; then fund air before ground factories can
+// repeatedly consume its allocation. Light factories still precede heavy ones.
+inline int productionPlanningPriority(bool city, Uint32 item, bool waitingToPlace) {
+    if (city && item == Structure_ConstructionYard) return waitingToPlace ? 3 : 2;
+    if (item == Structure_HighTechFactory) return 1;
+    if (item == Structure_LightFactory) return 0;
+    return -1;
+}
+
+struct AirProductionState {
+    bool busy = false, upgrading = false, airLimit = false;
+    bool ornithopterAvailable = false, carryallAvailable = false, canUpgrade = false;
+    int spendable = 0, ornithopterPrice = 0, carryallPrice = 0;
+    int carryalls = 0, carryallTarget = 0;
+    int armyValue = 0, armyLimit = 0, vehiclePlanValue = 0;
+    int airCommittedValue = 0, airTargetBps = 0;
+};
+enum class AirOrder { None, Ornithopter, Carryall, Upgrade };
+struct AirDecision { AirOrder order; const char* reason; };
+inline AirDecision chooseAirProduction(const AirProductionState& s) {
+    if (s.upgrading) return {AirOrder::None, "factory_upgrading"};
+    if (s.busy) return {AirOrder::None, "factory_busy"};
+    if (s.airLimit) return {AirOrder::None, "air_unit_limit"};
+    const bool carryallDue = s.carryallAvailable && s.carryalls < s.carryallTarget
+        && s.carryallPrice > 0 && s.spendable >= s.carryallPrice;
+    // Bootstrap transport, but a growing carryall target must not starve combat air.
+    if (carryallDue && s.carryalls == 0) return {AirOrder::Carryall, "first_carryall"};
+    const bool airDue = int64_t(s.vehiclePlanValue) * s.airTargetBps
+        > int64_t(s.airCommittedValue) * 10000;
+    const bool fitsArmy = int64_t(s.armyValue) + s.ornithopterPrice <= s.armyLimit;
+    if (s.ornithopterAvailable && airDue && fitsArmy && s.ornithopterPrice > 0
+        && s.spendable >= s.ornithopterPrice)
+        return {AirOrder::Ornithopter, "ornithopter_order_due"};
+    if (s.canUpgrade && s.spendable > 500) return {AirOrder::Upgrade, "upgrade_or_repair_priority"};
+    if (carryallDue) return {AirOrder::Carryall, "carryall_target"};
+    if (!s.ornithopterAvailable) return {AirOrder::None, "ornithopter_unavailable"};
+    if (!airDue) return {AirOrder::None, "air_target_met"};
+    if (!fitsArmy) return {AirOrder::None, "military_value_limit"};
+    return {AirOrder::None, "spendable_below_air_price"};
+}
+
 inline int cityConstructionYardTarget(int credits, int residentialDemand,
                                       int commercialDemand, int industrialDemand) {
     const int activeDemand = (residentialDemand > 0) + (commercialDemand > 0) + (industrialDemand > 0);

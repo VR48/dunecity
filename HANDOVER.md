@@ -1,3 +1,43 @@
+# Fund ornithopter production before ground overflow — 1.0.627
+
+Reviewed last completed session `1789043602798877-0`: Vanilla 1.0.626,
+`5P - 128x128 - All against Atreides`, 99,898 cycles (26m38s), ended manually.
+Atreides built 0 ornithopters, despite 14.4% target when first available (7.60min)
+and final 11.42%. IX completed at 7.15min. Of 42 sampled high-tech decisions:
+22 spendable-below-air-threshold, 13 unavailable, 6 factory-busy, 1 carryall-priority.
+All 18 accepted high-tech orders were carryalls. Carryalls took priority while
+rich; queued/ground spending plus the 2,000 reserve then starved the >1,200 air
+cash gate despite aircraft costing 600. Two destroyed high-tech factories also
+caused temporary unavailability. Enemy house 3 sonic tanks were identified by
+object-ID/type records as attackers in 62/76 Atreides harvester lethal-hit events.
+
+- Priority: city ready/idle yards retain 3/2; high-tech factories 1, light 0,
+  remaining structures -1. City yard rotation remains unchanged. Aircraft now
+  access their share before ground factories' overflow spends it.
+- Pure AirProductionState/chooseAirProduction policy: bootstrap first carryall;
+  otherwise unmet affordable combat air precedes additional carryalls. Retain
+  prerequisites, upgrades, queue, air and military caps, economy/strategic reserves.
+  Use actual unit price after reserves instead of fixed >1,200 threshold. Once
+  air target is filled (including queued aircraft), continue carryall production.
+- Only accepted orders update planned counts/cash/military. Carryall orders now
+  deduct planned cost too. Diagnostic reasons match policy, include availability
+  and military cap, and report the same vehicle-plan air target used for selection.
+  Policy version is `fund-air-allocation-v49`; no save format change.
+- Regression cases cover ordering, carryall starvation, exact-price affordability,
+  queued air saturation, both caps, reserves, busy/upgrading and tech prerequisites.
+  Local 1.0.627 build, before/after dependency audits and CTest passed: 543 cases,
+  540 passed, 3 optional skips. No game launched; live-match behavior still needs
+  observation. Installed `/Applications/dunecity.app` 1.0.627; signature verified
+  and executable SHA-256 matches the tested build. No new remote release performed.
+
+Final Atreides production / reward-to-lost-value / vehicle-value target:
+Launcher 255 / 3.16 / 51.52%; Sonic 122 / 1.76 / 21.61%; Siege 38 / 0.79 / 6.59%;
+Tank 56 / 0.70 / 5.47%; Quad 48 / 0.34 / 2.16%; Trike 37 / 0.19 / 1.23%; Orni
+0 / no evidence / 11.42%. Also 79 harvesters, 18 carryalls and 7 MCVs produced.
+Soldiers/troopers had zero production events but 255/39 losses from starting/free
+units; those losses must not be presented as paid infantry production. Counts
+were cross-checked against unit_produced and final game_summary.
+
 # Verified desktop deployment — 1.0.626 (2026-09-10)
 
 - Released tag `v1.0.626` at `d1b30c3` to GitHub main and the working branch.

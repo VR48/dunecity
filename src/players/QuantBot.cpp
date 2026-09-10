@@ -3637,15 +3637,15 @@ void QuantBot::build(int militaryValue) {
     bool roadMaintenanceAttempted = false;
 
     // Give city construction first access to this pass's planning budget.
-    // Light factories get first troop orders so heavy overflow cannot consume their slots.
+    // Air gets its allocation before ground production, then light precedes heavy overflow.
     // Stable ordering keeps peers deterministic.
     // Keep IDs, not pointers: an earlier yard may demolish a later zone.
     std::vector<std::pair<int, Uint32>> planningOrder;
     for (const auto* structure : getStructureList())
         if (structure->getOwner() == getHouse())
-            planningOrder.emplace_back(citySimEnabled && structure->getItemID() == Structure_ConstructionYard
-                ? (static_cast<const ConstructionYard*>(structure)->isWaitingToPlace() ? 3 : 2)
-                : structure->getItemID() == Structure_LightFactory ? 1 : 0, structure->getObjectID());
+            planningOrder.emplace_back(QuantBotBuildPolicy::productionPlanningPriority(citySimEnabled,
+                structure->getItemID(), structure->getItemID() == Structure_ConstructionYard
+                    && static_cast<const ConstructionYard*>(structure)->isWaitingToPlace()), structure->getObjectID());
     std::stable_sort(planningOrder.begin(), planningOrder.end(),
         [](const auto& a, const auto& b) { return a.first > b.first; });
     cityReadyYardCount = std::max(1,int(std::count_if(planningOrder.begin(),planningOrder.end(),
@@ -3908,61 +3908,56 @@ void QuantBot::build(int militaryValue) {
 			}
 		} break;
 
-				case Structure_HighTechFactory: {
-					int ornithopterValue = data[Unit_Ornithopter][houseID].price * itemCount[Unit_Ornithopter];
-
+                case Structure_HighTechFactory: {
+                    const int ornithopterPrice = data[Unit_Ornithopter][houseID].price;
+                    const int carryallPrice = data[Unit_Carryall][houseID].price;
+                    const int ornithopterValue = ornithopterPrice * itemCount[Unit_Ornithopter];
                     const int carryallTarget = (militaryValue + itemCount[Unit_Harvester] * 500) / 3000;
-                    const bool carryallPriority = pBuilder->isAvailableToBuild(Unit_Carryall)
-                        && itemCount[Unit_Carryall] < carryallTarget
-                        && pBuilder->getProductionQueueSize() < 1 && money > 1000
-                        && !getHouse()->isAirUnitLimitReached();
-                    const bool upgradePriority = money > 500 && !pBuilder->isUpgrading()
-                        && pBuilder->getCurrentUpgradeLevel() < pBuilder->getMaxUpgradeLevel();
-                    const bool airDemand = vehiclePlanValue * ornithopterPercent > ornithopterValue;
+                    QuantBotBuildPolicy::AirProductionState air;
+                    air.busy = pBuilder->getProductionQueueSize() > 0;
+                    air.upgrading = pBuilder->isUpgrading();
+                    air.airLimit = getHouse()->isAirUnitLimitReached();
+                    air.ornithopterAvailable = pBuilder->isAvailableToBuild(Unit_Ornithopter);
+                    air.carryallAvailable = pBuilder->isAvailableToBuild(Unit_Carryall);
+                    air.canUpgrade = pBuilder->getCurrentUpgradeLevel() < pBuilder->getMaxUpgradeLevel();
+                    air.spendable = money; // Economy/strategic reserves were removed above.
+                    air.ornithopterPrice = ornithopterPrice;
+                    air.carryallPrice = carryallPrice;
+                    air.carryalls = itemCount[Unit_Carryall];
+                    air.carryallTarget = carryallTarget;
+                    air.armyValue = militaryValue;
+                    air.armyLimit = militaryValueLimit;
+                    air.vehiclePlanValue = vehiclePlanValue;
+                    air.airCommittedValue = ornithopterValue;
+                    air.airTargetBps = unitMix[4];
+                    const auto decision = QuantBotBuildPolicy::chooseAirProduction(air);
                     if (emitStatsLog && AITelemetry::log().enabled()) {
-                        const char* reason = carryallPriority ? "carryall_priority"
-                            : upgradePriority ? "upgrade_or_repair_priority"
-                            : !pBuilder->isAvailableToBuild(Unit_Ornithopter) ? "ornithopter_unavailable"
-                            : !airDemand ? "air_target_met"
-                            : pBuilder->getProductionQueueSize() > 0 ? "factory_busy"
-                            : getHouse()->isAirUnitLimitReached() ? "air_unit_limit"
-                            : money <= 1200 ? "spendable_below_air_threshold" : "ornithopter_order_due";
                         traceDecision("air_production_decision", AITelemetry::Record()
-                            .set("builder",pBuilder->getObjectID()).set("reason",reason)
+                            .set("builder",pBuilder->getObjectID()).set("reason",decision.reason)
                             .set("credits",getHouse()->getCredits()).set("planning_spendable",money)
                             .set("economy_reserve",economyReserve).set("strategic_reserve",strategicReserveCost)
-                            .set("cash_threshold",1200).set("ornithopter_price",data[Unit_Ornithopter][houseID].price)
-                            .set("air_target_value",(militaryValue*ornithopterPercent).lround())
-                            .set("air_committed_value",ornithopterValue).set("air_target_bps",(ornithopterPercent*10000).lround())
+                            .set("cash_threshold",ornithopterPrice).set("ornithopter_price",ornithopterPrice)
+                            .set("air_target_value",(vehiclePlanValue*ornithopterPercent).lround())
+                            .set("air_committed_value",ornithopterValue).set("air_target_bps",unitMix[4])
+                            .set("military_value",militaryValue).set("military_limit",militaryValueLimit)
+                            .set("ornithopter_available",air.ornithopterAvailable)
                             .set("carryall_target",carryallTarget).set("carryalls_committed",itemCount[Unit_Carryall])
                             .set("queue",pBuilder->getProductionQueueSize()).set("current_item",pBuilder->getCurrentProducedItem())
                             .set("upgrading",pBuilder->isUpgrading()).set("hold",pBuilder->isOnHold()));
                     }
-                    if (carryallPriority) {
-						produceItemWithLogging(Unit_Carryall, __LINE__);
-						itemCount[Unit_Carryall]++;
-					}
-					else if (upgradePriority) {
-						if (pBuilder->getHealth() >= pBuilder->getMaxHealth()) {
-							doUpgrade(pBuilder);
-						}
-						else {
-							doRepair(pBuilder);
-						}
-					}
-					else if (pBuilder->isAvailableToBuild(Unit_Ornithopter)
-						&& airDemand && militaryValue + data[Unit_Ornithopter][houseID].price <= militaryValueLimit
-						&& (pBuilder->getProductionQueueSize() < 1)
-						&& !getHouse()->isAirUnitLimitReached()
-						&& money > 1200) {
-						// Current value and what percentage of military we want used to determine
-						// whether to build an additional unit.
-						produceItemWithLogging(Unit_Ornithopter, __LINE__);
-						itemCount[Unit_Ornithopter]++;
-						money -= data[Unit_Ornithopter][houseID].price;
-						militaryValue += data[Unit_Ornithopter][houseID].price;
-					}
-				} break;
+                    using AirOrder = QuantBotBuildPolicy::AirOrder;
+                    if (decision.order == AirOrder::Upgrade) {
+                        if (pBuilder->getHealth() >= pBuilder->getMaxHealth()) doUpgrade(pBuilder);
+                        else doRepair(pBuilder);
+                    } else if (decision.order == AirOrder::Ornithopter || decision.order == AirOrder::Carryall) {
+                        const Uint32 item = decision.order == AirOrder::Ornithopter ? Unit_Ornithopter : Unit_Carryall;
+                        if (produceItemWithLogging(item, __LINE__)) {
+                            ++itemCount[item];
+                            money -= data[item][houseID].price;
+                            if (item == Unit_Ornithopter) militaryValue += ornithopterPrice;
+                        }
+                    }
+                } break;
 
 				case Structure_HeavyFactory: {
 					// Log HF status when idle with money (Custom mode diagnostics)
