@@ -1,3 +1,47 @@
+# Repair-yard crash and earlier QuantBot repair support — 1.0.629
+
+Crash evidence: `~/Library/Logs/DiagnosticReports/dunecity-2026-09-10-232316.ips`
+(copied to `/tmp/dunecity-repair-yard-crash-20260910.ips`). Main thread crashed
+with SIGSEGV at address 0xa0 in RepairYard::updateStructureSpecificStuff()+88.
+The executable UUID 826D9D79-4767-3BA0-AB13-FF448179719F matches the saved 1.0.627
+binary in `/tmp/dunecity-before-628.8MFLeK/`, despite the report's bundle metadata
+saying 1.0.628: the running 627 binary remained mapped when its on-disk build
+bundle was updated. Screenshot and crashed telemetry session agree on 1.0.627.
+
+Crashed city session `1789045974757020-0`, Sardaukar Base, ends at cycle149250
+with reactor9573 detonating and destroying launcher8051, the object ID held in
+crash register x8. Nuclear damage walked inactive ground units, including repair
+occupants still holding old map positions. RepairYard dereferenced the expired
+ObjectPointer without checking it. The current Dune City.log was already replaced
+by a later launch; use the macOS report and immutable session above for evidence.
+
+- Nuclear blasts now target active ground units only. Cargo in repair/refinery/
+  carryall storage is not independently hit at stale positions; a destroyed host
+  retains its existing occupant-destruction behavior.
+- Repair yards resolve a valid GroundUnit before update, deployment or destruction.
+  Missing occupants clear repair state/animation and release the booking once.
+  Late carryall pickup is safe; booking decrements cannot underflow. Clear state
+  before handing off/destroying a unit. Save layout unchanged.
+- Regression tests exercise disappearing occupants, repeated cleanup, other booked
+  arrivals, subsequent reuse, empty booking counts and stored-unit blast exclusion.
+
+Latest ongoing Vanilla session `1789046664718549-0` showed Atreides at3.07min
+with one heavy factory/6,100 army value and no repair yard; at6.11min nine heavy
+factories/71,468 credits and still no yard. First repair order6.16min.
+- Custom QuantBot now selects feasible affordable baseline repair capacity before
+  repeated factory/tech expansion after an operational heavy factory and refinery.
+  Keep 1,000 credits beyond yard cost. First yard does not wait for saturation.
+- Baseline is bounded by the existing one-per-two-heavy-factories, max-four cap,
+  and increases with army value (one additional slot for each >8,000 value).
+  Built and queued yards count. Existing saturation rule can still add capacity.
+  Latest-game examples: one heavy/6,100 -> one yard; four heavy/8,050 -> two;
+  fifteen heavy/29,050 -> four. Added regression cases and repair_baseline telemetry.
+  Policy `early-repair-capacity-v51`. Includes prior ornithopter/harvester fixes.
+- Validation: before/after dependency audits and CTest passed (545 passed, three
+  optional skips). Signed local build and Applications install both 1.0.629,
+  executable hashes match. Current game left running; fixes apply next launch.
+  No full-match replay validation and no remote push/release performed.
+
 # Less conservative adaptive spice fleet — 1.0.628
 
 Stefan explicitly requested a modest adjustment to calculated harvester targets,

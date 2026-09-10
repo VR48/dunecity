@@ -18,6 +18,7 @@ target_sources(dunelegacy_tests
         CityPlacementPolicyTestCase.cpp
         GroundAccessPolicyTestCase.cpp
         NuclearBlastPolicyTestCase.cpp
+        RepairYardJobTestCase.cpp
         ${CMAKE_SOURCE_DIR}/src/players/AIDecisionLog.cpp
         PathBudgetTestCase/PathBudgetTestCase.cpp
         NetworkManagerTestCase/NetworkManagerTestCase.cpp

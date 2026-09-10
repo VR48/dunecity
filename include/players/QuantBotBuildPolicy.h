@@ -373,14 +373,21 @@ inline int repairYardCap(int heavyFactories) {
     return std::clamp((heavyFactories + 1) / 2, 1, 4);
 }
 
+// Anticipate repair needs as vehicle production scales instead of waiting for
+// every bay to be occupied on the same planning tick. Existing cap still bounds it.
+inline int baselineRepairYards(int heavyFactories, int militaryValue) {
+    if (heavyFactories <= 0) return 0;
+    return std::min(repairYardCap(heavyFactories),
+        1 + std::max(0, militaryValue - 1) / 8000);
+}
+
 inline bool needsExtraRepairYard(int yardsIncludingQueued, int busyYards,
                                 int heavyFactories, int militaryValue) {
-    // A queued yard counts as spare capacity, preventing multiple CYs from
-    // expanding repair simultaneously. The first yard has its own tech rule.
-    return yardsIncludingQueued > 0
-        && busyYards >= yardsIncludingQueued
-        && yardsIncludingQueued < repairYardCap(heavyFactories)
-        && militaryValue > yardsIncludingQueued * 6000;
+    // Queued yards count towards both the baseline and load-triggered expansion.
+    return yardsIncludingQueued < baselineRepairYards(heavyFactories, militaryValue)
+        || (yardsIncludingQueued > 0 && busyYards >= yardsIncludingQueued
+            && yardsIncludingQueued < repairYardCap(heavyFactories)
+            && militaryValue > yardsIncludingQueued * 6000);
 }
 
 } // namespace QuantBotBuildPolicy

@@ -16,6 +16,7 @@
  */
 
 #include <structures/RepairYard.h>
+#include <structures/RepairYardJob.h>
 
 #include <globals.h>
 
@@ -63,10 +64,22 @@ void RepairYard::init() {
 }
 
 RepairYard::~RepairYard() {
-    if(repairingAUnit) {
-        unBook();
-        repairUnit.getUnitPointer()->destroy();
-    }
+    auto* unit = resolveRepairUnit();
+    clearRepairJob();
+    if (unit) unit->destroy();
+}
+
+GroundUnit* RepairYard::resolveRepairUnit() {
+    return RepairYardJob::resolve(repairingAUnit,
+        [&] { return dynamic_cast<GroundUnit*>(repairUnit.getObjPointer()); },
+        [&] { clearRepairJob(); });
+}
+
+void RepairYard::clearRepairJob() {
+    RepairYardJob::finish(repairingAUnit, bookings);
+    repairUnit.pointTo(NONE_ID);
+    firstAnimFrame = curAnimFrame = 2;
+    lastAnimFrame = 3;
 }
 
 void RepairYard::save(OutputStream& stream) const {
@@ -87,12 +100,12 @@ ObjectInterface* RepairYard::getInterfaceContainer() {
 }
 
 void RepairYard::deployRepairUnit(Carryall* pCarryall) {
-    unBook();
-    repairingAUnit = false;
-    firstAnimFrame = 2;
-    lastAnimFrame = 3;
-
-    UnitBase* pRepairUnit = repairUnit.getUnitPointer();
+    UnitBase* pRepairUnit = resolveRepairUnit();
+    clearRepairJob();
+    if (!pRepairUnit) {
+        if (pCarryall) pCarryall->setTarget(nullptr);
+        return;
+    }
     if(pCarryall != nullptr) {
         pCarryall->giveCargo(pRepairUnit);
         pCarryall->setTarget(nullptr);
@@ -107,14 +120,13 @@ void RepairYard::deployRepairUnit(Carryall* pCarryall) {
         pRepairUnit->setDestination(pRepairUnit->getLocation());
     }
 
-    repairUnit.pointTo(NONE_ID);
-
     if(getOwner() == pLocalHouse) {
         soundPlayer->playVoice(VehicleRepaired,getOwner()->getHouseID());
     }
 }
 
 void RepairYard::updateStructureSpecificStuff() {
+    GroundUnit* pRepairUnit = resolveRepairUnit();
     if(repairingAUnit) {
         if(curAnimFrame < 6) {
             firstAnimFrame = 6;
@@ -129,8 +141,7 @@ void RepairYard::updateStructureSpecificStuff() {
         }
     }
 
-    if (repairingAUnit == true) {
-        GroundUnit* pRepairUnit = static_cast<GroundUnit*>(repairUnit.getUnitPointer());
+    if (pRepairUnit) {
 
         if (pRepairUnit->getHealth() * 100 / pRepairUnit->getMaxHealth() < 100) {
             if (owner->takeCredits(UNIT_REPAIRCOST) > 0) {

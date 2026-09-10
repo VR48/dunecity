@@ -97,7 +97,9 @@ void NuclearPlant::destroy() {
     // object's normal update, including further reactor detonations.
     std::set<Uint32> targets;
     for (const auto* structure : structureList) targets.insert(structure->getObjectID());
-    for (const auto* unit : unitList) if (!unit->isAFlyingUnit()) targets.insert(unit->getObjectID());
+    for (const auto* unit : unitList)
+        if (DuneCity::NuclearBlastPolicy::exposedUnit(unit->isActive(), unit->isAFlyingUnit()))
+            targets.insert(unit->getObjectID());
     for (Uint32 id : targets) {
         auto* target = currentGame->getObjectManager().getObject(id);
         if (!target || id == source || target->getHealth() <= 0) continue;

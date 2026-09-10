@@ -56,3 +56,10 @@ TEST_CASE("Every generator releases power on noncombat removal without a blast",
         REQUIRE(destructor.find("handleDamage(") == std::string::npos);
     }
 }
+
+TEST_CASE("Reactor blast cannot hit stored vehicles at their old ground coordinates", "[city][nuclear][regression]") {
+    REQUIRE(exposedUnit(true, false));
+    REQUIRE_FALSE(exposedUnit(false, false)); // Repair bay, refinery or carryall cargo.
+    REQUIRE_FALSE(exposedUnit(true, true));
+    REQUIRE_FALSE(exposedUnit(false, true));
+}

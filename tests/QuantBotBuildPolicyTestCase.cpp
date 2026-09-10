@@ -79,9 +79,9 @@ TEST_CASE("QuantBot repair expansion follows load and heavy production capacity"
     REQUIRE_FALSE(needsExtraRepairYard(1, 1, 2, 19520));
     // Productive army with a busy repair yard can add a second.
     REQUIRE(needsExtraRepairYard(1, 1, 3, 19520));
-    REQUIRE_FALSE(needsExtraRepairYard(1, 0, 3, 19520));
+    REQUIRE(needsExtraRepairYard(1, 0, 3, 19520)); // Fleet already warrants a second bay.
     // One busy yard plus another queued must not trigger a third order.
-    REQUIRE_FALSE(needsExtraRepairYard(2, 1, 6, 30000));
+    REQUIRE_FALSE(needsExtraRepairYard(2, 1, 6, 12000));
     REQUIRE(needsExtraRepairYard(2, 2, 6, 30000));
     REQUIRE_FALSE(needsExtraRepairYard(2, 2, 6, 12000));
     REQUIRE_FALSE(needsExtraRepairYard(0, 0, 0, 30000));
@@ -996,4 +996,17 @@ TEST_CASE("Spice fleet targets retain runway without retiring workers too early"
     REQUIRE(desiredSpiceHarvesters(711263, 5, 40) == 40);
     REQUIRE(desiredSpiceHarvesters(-1, 0, 120) == 0);
     REQUIRE(desiredSpiceHarvesters(711263, 5, 0) == 0);
+}
+
+TEST_CASE("QuantBot establishes repair support before expanding the opening vehicle fleet", "[quantbot][repair]") {
+    REQUIRE(baselineRepairYards(0, 5100) == 0);
+    REQUIRE(baselineRepairYards(1, 6100) == 1); // Latest game 3:04: no yard yet.
+    REQUIRE(baselineRepairYards(4, 8050) == 2); // Latest game 5:06: still zero yards.
+    REQUIRE(baselineRepairYards(9, 10300) == 2);
+    REQUIRE(baselineRepairYards(15, 29050) == 4);
+    REQUIRE(baselineRepairYards(30, 80000) == 4);
+    REQUIRE(baselineRepairYards(1, 80000) == 1);
+    REQUIRE(needsExtraRepairYard(0, 0, 1, 6100));
+    REQUIRE(needsExtraRepairYard(1, 0, 4, 8050));
+    REQUIRE_FALSE(needsExtraRepairYard(2, 0, 4, 8050)); // Both built/queued slots covered.
 }

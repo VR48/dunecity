@@ -3240,6 +3240,8 @@ void QuantBot::build(int militaryValue) {
             .set("harvester_target", spiceHarvesterTarget).set("refinery_harvester_target",
                 QuantBotBuildPolicy::refineryThroughputHarvesterTarget(spiceShare, 0,
                     getHouse()->getNumItems(Structure_Refinery), harvesterLimit))
+            .set("repair_baseline", QuantBotBuildPolicy::baselineRepairYards(
+                getHouse()->getNumItems(Structure_HeavyFactory), militaryValue))
             .set("harvester_ai_limit", harvesterLimit)
             .set("harvester_engine_limit", getHouse()->getMaxHarvesters())
             .set("funded_harvester_target", vanillaEconomy ? spiceHarvesterTarget : fundedHarvesterTarget)
@@ -4722,6 +4724,20 @@ void QuantBot::build(int militaryValue) {
 						itemCount[Unit_Harvester]++;
 					}
 				}
+
+                // Establish repairs before more factories/tech consume the opening
+                // grant. Count queued yards to avoid duplicate orders from parallel CYs.
+                if (itemID == NONE_ID && !skipRemainingStructureLogic
+                    && gameMode == GameMode::Custom
+                    && itemCount[Structure_RepairYard] < QuantBotBuildPolicy::baselineRepairYards(
+                        getHouse()->getNumItems(Structure_HeavyFactory), militaryValue)
+                    && getHouse()->getNumItems(Structure_Refinery) > 0
+                    && money >= data[Structure_RepairYard][houseID].price + 1000
+                    && pBuilder->isAvailableToBuild(Structure_RepairYard)
+                    && findPlaceLocation(Structure_RepairYard).isValid()) {
+                    itemID = Structure_RepairYard;
+                    structureRule = "early_repair_capacity";
+                }
 
                 // Unlock carryalls and air production once the first heavy
                 // factory is operational, before repeating the expansion loop.

@@ -13,6 +13,9 @@ constexpr int plantBlastDamage = 9 * missileDamagePerTile;
 // keep the geometry integer-only for deterministic simulation.
 constexpr int radiusSquared = 2 * missileImpactTiles * TILESIZE * TILESIZE * 113 / 355;
 constexpr int searchTiles = 4;
+// Stored/refining/repairing units retain old coordinates but are off the map.
+// Their host structure handles destruction of its cargo if the host dies.
+inline bool exposedUnit(bool active, bool flying) { return active && !flying; }
 inline bool contains(int dx, int dy) {
     return int64_t{dx} * dx + int64_t{dy} * dy <= radiusSquared;
 }
