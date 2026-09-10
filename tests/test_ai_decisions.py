@@ -158,6 +158,26 @@ class ImportTest(unittest.TestCase):
                 self.assertEqual(data['res_demand'],319)
                 self.assertTrue(data['observed_only'])
 
+class PerformanceAnalyticsTest(unittest.TestCase):
+    def test_performance_views_preserve_units_houses_and_idempotence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'events.jsonl'
+            metric=dict(scope='ai.build',house=4,item=-1,unit='us',count=3,sum=350000,
+                        max=300000,max_cycle=20,over_33ms=2,over_100ms=1,over_250ms=1)
+            row=dict(schema_version=1,session='performance',seq=1,cycle=30,house=-1,player=-1,
+                     event='performance_window',data=dict(start_cycle=0,elapsed_us=5000000,
+                     worst_frame_cycle=20,worst_frame_us=350000,worst_frame={'worst_house':4},
+                     metrics={'0':metric}))
+            path.write_text(json.dumps(row)+'\n')
+            with ai.connect(':memory:') as db:
+                self.assertEqual(ai.import_jsonl(db,path)[0],1)
+                self.assertEqual(ai.import_jsonl(db,path)[0],0)
+                self.assertEqual(db.execute('select scope,house,unit,samples,total,maximum,max_cycle,over_100ms '
+                                            'from performance_metrics').fetchall(),
+                                 [('ai.build',4,'us',3,350000,300000,20,1)])
+                self.assertEqual(db.execute('select wall_seconds,worst_frame_ms,worst_frame_cycle '
+                                            'from performance_windows').fetchall(),[(5.0,350.0,20)])
+
 class CityAnalyticsTest(unittest.TestCase):
     def test_city_views_keep_local_stats_and_causal_labels(self):
         with tempfile.TemporaryDirectory() as tmp:

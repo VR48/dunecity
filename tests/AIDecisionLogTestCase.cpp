@@ -78,3 +78,43 @@ TEST_CASE("Telemetry thins repeated growth observations without dropping actual 
     REQUIRE(contents.str().find("\"event\":\"session_end\"")!=std::string::npos);
     std::filesystem::remove_all(root);
 }
+
+TEST_CASE("Performance capture aggregates every sample and flushes partial windows on stop", "[ai][telemetry][performance]") {
+    const auto root=std::filesystem::temp_directory_path()/("dunecity-performance-"+
+        std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    AITelemetry::DecisionLog writer;
+    REQUIRE(writer.start(root.string(),AITelemetry::Record()));
+    const auto file=writer.path();
+    writer.performance(10,4,"ai.build",10000);
+    writer.performance(20,4,"ai.build",300000);
+    writer.performance(30,4,"ai.build",40000);
+    writer.performance(30,0,"ai.build",2000); // separate house
+    writer.performance(30,4,"path.nodes",999999,33,false); // work is not a duration
+    writer.slowFrame(20,350000,AITelemetry::Record().set("worst_house",4));
+    writer.slowFrame(30,50000,AITelemetry::Record().set("worst_house",0));
+    REQUIRE_FALSE(writer.isWorstFrame(340000));
+    REQUIRE(writer.isWorstFrame(360000));
+    writer.stop();
+    std::ifstream in(file); std::string line, window, last;
+    int windows=0;
+    while(std::getline(in,line)) {
+        if(line.find("\"event\":\"performance_window\"")!=std::string::npos) { window=line; ++windows; }
+        last=line;
+    }
+    REQUIRE(windows==1);
+    REQUIRE(window.find("\"count\":3,\"sum\":350000,\"max\":300000,\"max_cycle\":20")!=std::string::npos);
+    REQUIRE(window.find("\"over_33ms\":2,\"over_100ms\":1,\"over_250ms\":1")!=std::string::npos);
+    REQUIRE(window.find("\"unit\":\"count\",\"count\":1,\"sum\":999999,\"max\":999999,\"max_cycle\":30,\"over_33ms\":0")!=std::string::npos);
+    REQUIRE(window.find("\"worst_frame_cycle\":20,\"worst_frame_us\":350000,\"worst_frame\":{\"worst_house\":4}")!=std::string::npos);
+    REQUIRE(last.find("\"event\":\"session_end\"")!=std::string::npos);
+    REQUIRE(last.find("\"cycle\":30")!=std::string::npos);
+    REQUIRE(writer.start(root.string(),AITelemetry::Record()));
+    const auto second=writer.path();
+    REQUIRE(writer.isWorstFrame(1));
+    writer.stop();
+    std::ifstream secondIn(second); std::stringstream contents; contents<<secondIn.rdbuf();
+    REQUIRE(contents.str().find("ai.build")==std::string::npos);
+    if(const char* artifact=std::getenv("DUNECITY_PERFORMANCE_TEST_EXPORT"))
+        std::filesystem::copy_file(file,artifact,std::filesystem::copy_options::overwrite_existing);
+    std::filesystem::remove_all(root);
+}

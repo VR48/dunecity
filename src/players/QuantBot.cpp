@@ -985,6 +985,7 @@ void QuantBot::onDamage(const ObjectBase* pObject, int damage, Uint32 damagerID)
 }
 
 Coord QuantBot::findMcvPlaceLocation(const MCV* pMCV) {
+    AITelemetry::PerformanceScope perfScope("ai.findMcvPlaceLocation", getGameCycleCount(), getHouse()->getHouseID());
 	// Always search for best location near the MCV's current position
 	// This works for both first MCV and expansion MCVs.
 	//
@@ -1210,6 +1211,7 @@ bool alignedWithNeighbouringZone(const Map& map, int houseID, int x, int y, int 
 } // namespace
 
 void QuantBot::refreshTacticalDanger() {
+    AITelemetry::PerformanceScope perfScope("ai.refreshTacticalDanger", getGameCycleCount(), getHouse()->getHouseID());
     const Uint32 now = getGameCycleCount();
     if (dangerUpdated != std::numeric_limits<Uint32>::max()
         && now - dangerUpdated < MILLI2CYCLES(2000)) return;
@@ -1581,6 +1583,7 @@ bool QuantBot::redevelopmentZones(Uint32 item, Coord pos, std::vector<Uint32>& z
 }
 
 Coord QuantBot::findRedevelopmentSite(Uint32 item) {
+    AITelemetry::PerformanceScope perfScope("ai.findRedevelopmentSite", getGameCycleCount(), getHouse()->getHouseID());
     if (!currentGame->isCitySimEnabled()
         || (item != Structure_HeavyFactory && item != Structure_NuclearPlant && item != Structure_WindTrap)) return Coord::Invalid();
     const Coord size=getStructureSize(item), base=findBaseCentre(getHouse()->getHouseID());
@@ -1618,6 +1621,7 @@ Coord QuantBot::findRedevelopmentSite(Uint32 item) {
 }
 
 Coord QuantBot::findPlaceLocation(Uint32 itemID) {
+    AITelemetry::PerformanceScope perfScope("ai.findPlaceLocation", getGameCycleCount(), getHouse()->getHouseID(), itemID);
     refreshTacticalDanger();
     int accessRejected = 0, pollutionRejected = 0;
 	// Check per-build-cycle cache first
@@ -2306,6 +2310,7 @@ Coord QuantBot::findSlabPlaceLocation(Uint32 itemID) {
 }
 
 Coord QuantBot::findTurretPlaceLocation(Uint32 itemID) {
+    AITelemetry::PerformanceScope perfScope("ai.findTurretPlaceLocation", getGameCycleCount(), getHouse()->getHouseID(), itemID);
 	int newSizeX = getStructureSize(itemID).x;
 	int newSizeY = getStructureSize(itemID).y;
 
@@ -2416,6 +2421,7 @@ Coord QuantBot::findTurretPlaceLocation(Uint32 itemID) {
 
 bool QuantBot::selectCityServiceInvestment(const BuilderBase* builder, int money, bool emergency,
                                          Uint32& selectedItem, Coord& selectedSite, bool landValueOnly) {
+    AITelemetry::PerformanceScope perfScope("ai.selectCityServiceInvestment", getGameCycleCount(), getHouse()->getHouseID());
     using CityServiceInvestmentPolicy::Value;
     const auto* sim = currentGame->getCitySimulation();
     if (!sim || !sim->isInitialized()) return false;
@@ -2506,6 +2512,7 @@ bool QuantBot::selectCityServiceInvestment(const BuilderBase* builder, int money
         properties.push_back({p,item,std::min(250,value+plannedValue),crime,base,coverage,pop,nextPop,demand,
             sim->getPollutionDensityMap().worldGet(p.x,p.y),threat});
     }
+    AITelemetry::log().performance(getGameCycleCount(),house,"service.properties",properties.size(),-1,false);
     LocalPointIndex propertyIndex(w,h);
     for (size_t i=0;i<properties.size();++i) propertyIndex.add(properties[i].p.x,properties[i].p.y,i);
     Value bestValue;
@@ -2523,6 +2530,8 @@ bool QuantBot::selectCityServiceInvestment(const BuilderBase* builder, int money
             for (int y=std::max(0,p.p.y-23); y<=std::min(h-size.y,p.p.y+23); ++y)
                 for (int x=std::max(0,p.p.x-23); x<=std::min(w-size.x,p.p.x+23); ++x) candidates[y*w+x]=true;
         }
+        AITelemetry::PerformanceScope itemScope("ai.service_site_search",getGameCycleCount(),house,item);
+        int scoredSites = 0;
         for (int y=0;y<=h-size.y;++y) for (int x=0;x<=w-size.x;++x) {
             if (!candidates[y*w+x] || overlapsReservedStructure(x,y,size.x,size.y)
                 || !getMap().okayToPlaceStructure(x,y,size.x,size.y,false,getHouse(),false,item)
@@ -2530,6 +2539,7 @@ bool QuantBot::selectCityServiceInvestment(const BuilderBase* builder, int money
             const auto road = cityRoadImpact(getMap(),x,y,size.x,size.y,item);
             if (!road.preservesConnections || (item == Structure_RocketTurret && road.junctionBonus <= 0)
                 || wouldLandlockNeighbouringZone(getMap(),house,x,y,size.x,size.y)) continue;
+            ++scoredSites;
             Value value;
             value.buildCost = data[item][house].price;
             // Placement-only cost discourages another station beside one already
@@ -2595,6 +2605,7 @@ bool QuantBot::selectCityServiceInvestment(const BuilderBase* builder, int money
                 bestSite = Coord(x,y); bestItem = item; bestValue = value;
             }
         }
+        AITelemetry::log().performance(getGameCycleCount(),house,"service.scored_sites",scoredSites,item,false);
         traceDecision("city_service_candidate", AITelemetry::Record().set("builder",builder->getObjectID())
             .set("item",item).set("eligible",itemSite.isValid()).set("x",itemSite.x).set("y",itemSite.y)
             .set("crime_reduction",itemBest.crime).set("annual_tax_gain",itemBest.tax)
@@ -2619,6 +2630,7 @@ bool QuantBot::selectCityServiceInvestment(const BuilderBase* builder, int money
 }
 
 Coord QuantBot::findCityCrimeServicePlaceLocation(Uint32 itemID, int* crimeBenefit, int* crimeHotspot) {
+    AITelemetry::PerformanceScope perfScope("ai.findCityCrimeServicePlaceLocation", getGameCycleCount(), getHouse()->getHouseID(), itemID);
     if (crimeBenefit) *crimeBenefit = 0;
     if (crimeHotspot) *crimeHotspot = 0;
     auto* citySim = currentGame ? currentGame->getCitySimulation() : nullptr;
@@ -2730,6 +2742,7 @@ Coord QuantBot::findCityCrimeServicePlaceLocation(Uint32 itemID, int* crimeBenef
 
 Coord QuantBot::findCityTurretPlaceLocation(Uint32 itemID, int* defenseScore, int* amenityScore,
                                             int* crimeBenefit, int* crimeHotspot) {
+    AITelemetry::PerformanceScope perfScope("ai.findCityTurretPlaceLocation", getGameCycleCount(), getHouse()->getHouseID(), itemID);
     if (defenseScore) *defenseScore = 0;
     if (amenityScore) *amenityScore = 0;
     if (crimeBenefit) *crimeBenefit = 0;
@@ -2975,6 +2988,7 @@ Coord QuantBot::findPlaceLocationSimple(Uint32 itemID) {
 
 
 void QuantBot::build(int militaryValue) {
+    AITelemetry::PerformanceScope perfScope("ai.build", getGameCycleCount(), getHouse()->getHouseID());
     refreshTacticalDanger();
     planningBuilder = NONE_ID;
     recentStructureLosses.erase(std::remove_if(recentStructureLosses.begin(), recentStructureLosses.end(),
@@ -5656,6 +5670,7 @@ void QuantBot::build(int militaryValue) {
 
 
 void QuantBot::scrambleUnitsAndDefend(const ObjectBase* intruder, bool clearingSpice) {
+    AITelemetry::PerformanceScope perfScope("ai.scrambleUnitsAndDefend", getGameCycleCount(), getHouse()->getHouseID());
     if (supportMode || !intruder || intruder->getHealth() <= 0
         || intruder->getOwner()->getTeamID() == getHouse()->getTeamID()) return;
     const Coord contact = intruder->getLocation();
@@ -5967,6 +5982,7 @@ bool QuantBot::tryLaunchOrnithopterStrike(const QuantBotConfig::DifficultySettin
 
 
 void QuantBot::attack(int militaryValue) {
+    AITelemetry::PerformanceScope perfScope("ai.attack", getGameCycleCount(), getHouse()->getHouseID());
 	if (supportMode) {
 		attackTimer = std::numeric_limits<Sint32>::max();
 		return;
@@ -6084,6 +6100,7 @@ void QuantBot::onCombatReward(Uint32 attacker, Uint32 target, const CombatReward
 void QuantBot::finishTelemetry() { updateHarvesterStrikeTelemetry(true); }
 
 void QuantBot::updateHarvesterStrikeTelemetry(bool final) {
+    AITelemetry::PerformanceScope perfScope("ai.updateHarvesterStrikeTelemetry", getGameCycleCount(), getHouse()->getHouseID());
     if (!AITelemetry::log().enabled()) { harvesterStrikeTraces.clear(); return; }
     const Uint32 now=getGameCycleCount();
     for (auto it=harvesterStrikeTraces.begin(); it!=harvesterStrikeTraces.end();) {
@@ -6641,6 +6658,7 @@ void QuantBot::retreatAllUnits() {
 
 */
     void QuantBot::checkAllUnits() {
+    AITelemetry::PerformanceScope perfScope("ai.checkAllUnits", getGameCycleCount(), getHouse()->getHouseID());
         // Safety check: if our house is null (e.g., during game cleanup), don't check units
         if (getHouse() == nullptr) {
             return;
@@ -6993,6 +7011,7 @@ int QuantBot::queueCityRoadRepairs(const BuilderBase* yard, int limit) {
 }
 
 void QuantBot::manageCityBuilding() {
+    AITelemetry::PerformanceScope perfScope("ai.manageCityBuilding", getGameCycleCount(), getHouse()->getHouseID());
     if (!currentGame) return;
     auto* citySim = currentGame->getCitySimulation();
     if (!citySim || !citySim->isInitialized()) return;

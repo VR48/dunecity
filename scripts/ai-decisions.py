@@ -17,6 +17,25 @@ CREATE TABLE IF NOT EXISTS events (
  schema_version INTEGER NOT NULL, source TEXT NOT NULL, record TEXT,
  PRIMARY KEY(session, seq));
 CREATE INDEX IF NOT EXISTS events_kind ON events(event, session, house, cycle);
+CREATE VIEW IF NOT EXISTS performance_windows AS
+ SELECT session,seq,cycle,json_extract(data,'$.start_cycle') AS start_cycle,
+ json_extract(data,'$.elapsed_us')/1000000.0 AS wall_seconds,
+ json_extract(data,'$.worst_frame_cycle') AS worst_frame_cycle,
+ json_extract(data,'$.worst_frame_us')/1000.0 AS worst_frame_ms,
+ json_extract(data,'$.worst_frame') AS worst_frame,
+ json_extract(data,'$.dropped_samples') AS dropped_samples
+ FROM events WHERE event='performance_window';
+CREATE VIEW IF NOT EXISTS performance_metrics AS
+ SELECT e.session,e.seq,e.cycle,json_extract(e.data,'$.start_cycle') AS start_cycle,
+ json_extract(e.data,'$.elapsed_us')/1000000.0 AS wall_seconds,
+ json_extract(m.value,'$.scope') AS scope,json_extract(m.value,'$.house') AS house,
+ json_extract(m.value,'$.item') AS item,json_extract(m.value,'$.unit') AS unit,
+ json_extract(m.value,'$.count') AS samples,json_extract(m.value,'$.sum') AS total,
+ json_extract(m.value,'$.max') AS maximum,json_extract(m.value,'$.max_cycle') AS max_cycle,
+ json_extract(m.value,'$.over_33ms') AS over_33ms,
+ json_extract(m.value,'$.over_100ms') AS over_100ms,
+ json_extract(m.value,'$.over_250ms') AS over_250ms
+ FROM events e,json_each(e.data,'$.metrics') m WHERE e.event='performance_window';
 CREATE VIEW IF NOT EXISTS economy_samples AS
  SELECT session,seq,cycle,house,player,
  json_extract(data,'$.state.credits') AS credits,

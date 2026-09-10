@@ -6,6 +6,7 @@
 #include <string>
 #include <chrono>
 #include <map>
+#include <tuple>
 
 namespace AITelemetry {
 
@@ -35,8 +36,29 @@ public:
     // Accumulate Q32 credit amounts without dropping fractional payouts.
     void account(int house, const std::string& category, int64_t rawCredits);
     Record economyTotals(int house) const;
+    // Inclusive scope timings, aggregated in memory; never drive simulation decisions.
+    // "count" samples are gauges/work counters; "us" samples are durations.
+    void performance(uint32_t cycle, int house, const std::string& scope,
+                     int64_t value, int item = -1, bool duration = true);
+    bool isWorstFrame(int64_t us) const { return enabled() && us > worstFrameUs; }
+    void slowFrame(uint32_t cycle, int64_t microseconds, const Record& context);
+    bool performanceDue() const;
+    void flushPerformance(uint32_t cycle, bool force = false);
     const std::string& path() const { return filename; }
 private:
+    struct Metric {
+        uint64_t count = 0;
+        int64_t sum = 0, maximum = 0;
+        uint32_t maxCycle = 0;
+        uint64_t over33ms = 0, over100ms = 0, over250ms = 0;
+    };
+    using MetricKey = std::tuple<std::string, int, int, bool>;
+    std::map<MetricKey, Metric> performanceMetrics;
+    std::chrono::steady_clock::time_point performanceStart, sessionStart;
+    uint32_t performanceCycle = 0, worstFrameCycle = 0;
+    uint64_t performanceDropped = 0;
+    int64_t worstFrameUs = -1;
+    Record worstFrame;
     std::ofstream stream;
     std::string session, filename;
     uint64_t sequence = 0, bytes = 0, limit = 0;
@@ -48,5 +70,20 @@ private:
 
 DecisionLog& log();
 void startGame(const Record& metadata);
+
+class PerformanceScope {
+public:
+    PerformanceScope(const char* scope, uint32_t cycle, int house = -1, int item = -1);
+    ~PerformanceScope();
+    void next(const char* nextScope);
+    PerformanceScope(const PerformanceScope&) = delete;
+    PerformanceScope& operator=(const PerformanceScope&) = delete;
+private:
+    const char* scope;
+    uint32_t cycle;
+    int house, item;
+    bool active;
+    std::chrono::steady_clock::time_point start;
+};
 } // namespace AITelemetry
 #endif

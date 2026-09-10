@@ -1,3 +1,36 @@
+# Performance investigation and session telemetry — 1.0.620
+
+Last completed game1789026476214205-0 ran1.0.618,192x192 SimCity map,
+Harkonnen0 vs Sardaukar4,109737cycles. It predates the619 animation port.
+Last full120s performance window:14.9FPS/67.09ms frames, path32.86ms,
+AI15.21ms,render7.83ms. Worst frame559.37ms; house update494.8ms.
+Path budget5000 vs actual16106nodes/tick: budget enforced between complete
+searches, no remaining-budget argument to resolver. Five ticks per frame
+multiply that cost. Service evaluations repeat across yards at severe AI
+spikes (7/16/18 evaluations in examples), but precise attribution was missing.
+City phases also spike10–30ms. No gameplay optimization claimed this turn.
+
+Added bounded five-second in-memory performance aggregation to existing JSONL
+session logger, offline SQLite performance_windows/performance_metrics views.
+Every frame counted, worst-frame full context, per-house AI build/search/combat
+scopes, service site counts, city subphases, paths by unit type/owner, actual
+budget/overshoot, queues and logging costs. Inclusive scopes must not be summed
+across nesting. Normal stop flushes partial window; telemetry version11,
+policy unchanged. Optional existing256MB cap and disabling env var retained.
+No SQLite writes in the game loop, no wall timing changes simulation decisions.
+Fixed worst-house overwrite across frame ticks, unreset per-frame path-node
+and failure counters, stale empty-queue cycle metrics. See
+[performance telemetry](docs/performance-telemetry.md) for evidence and queries.
+
+Validated CTest519cases (516passed/3optional skips),12 Python importer tests,
+real C++ capture→SQLite import, dependency audits and local620app metadata.
+Original legacy text preserved alongside game session as performance-legacy.log.
+Analysis database /tmp/dunecity-last-game-performance.sqlite contains80456
+structured events plus7836 legacy slow-frame samples and1221 house spikes.
+Logs /tmp/dunecity-performance-{build,tests,python-tests}.log.
+Local app build only; not launched, no /Applications copy, remote push or release.
+Live overhead/FPS improvements need the next game; no such measurement claimed.
+
 # Micropolis building models and animations — 1.0.619
 
 Restored all16 apartment models +12 house styles,20 commercial models,8

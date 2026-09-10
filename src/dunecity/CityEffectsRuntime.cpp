@@ -171,6 +171,7 @@ bool CitySimulation::spendCityFunds(int32_t amount) {
 
 void CitySimulation::runEffectsScans() {
     if (!currentGameMap) return;
+    AITelemetry::PerformanceScope phase("city.effects.pollution",currentGame->getGameCycleCount());
 
     // Reset pollution and land value at scan start. Crime is intentionally
     // NOT reset here: SC's land-value scan reads crime from the previous
@@ -228,6 +229,7 @@ void CitySimulation::runEffectsScans() {
         smoothPass();
     }
 
+    phase.next("city.effects.terrain_value");
     // ---- Land value, SimCity Classic style ---------------------------------
     //
     // SC formula (scan.cpp::pollutionTerrainLandValueScan):
@@ -452,6 +454,7 @@ void CitySimulation::runEffectsScans() {
         if (value > 0) landValueMap_.set(bx,by,std::max(1,value-hostileLandValuePenaltyMap_.get(bx,by)));
     }
 
+    phase.next("city.effects.population");
     // Population density is needed by the crime formula below (SC's
     // `z += populationDensityMap.worldGet(x, y)` term), so populate it
     // BEFORE clearing and recomputing crime. Micropolis includes every
@@ -475,6 +478,7 @@ void CitySimulation::runEffectsScans() {
     });
     smoothPopulationDensity(populationDensityMap_,mapWidth_,mapHeight_);
 
+    phase.next("city.effects.crime_rebels");
     // Base crime, SC-Classic style:
     //   z = 128 - landValue + popDensity; clamp to 300;
     //   subtract police coverage; clamp to 0–250.
@@ -643,6 +647,7 @@ void CitySimulation::runEffectsScans() {
     // Preserve the legacy integer save cache, rounding only the aggregate.
     for (int h=0; h<kMaxCityHouses; ++h) houseState_[h].nominalPoliceCost = nominalCosts[h].lround();
 
+    phase.next("city.effects.traffic_status");
     // Traffic density map — now driven by actual BFS connectivity results
     // during runZoneGrowth(). The overlay starts from a base stamp (every
     // city-role structure radiates proportional to level) then BFS-connected

@@ -1,4 +1,5 @@
 #include <stdexcept>
+#include <players/AIDecisionLog.h>
 #include <dunecity/CitySimulation.h>
 #include <dunecity/CityConstants.h>
 #include <dunecity/CityEffects.h>
@@ -229,7 +230,10 @@ void CitySimulation::advancePhase(uint32_t gameCycleCount) {
     const uint32_t budgetTick = gameCycleCount / kCyclesPerBudgetTick;
     if (budgetTick > lastBudgetTick_) {
         lastBudgetTick_ = budgetTick;
-        runDailyBudget();
+        {
+            AITelemetry::PerformanceScope perfScope("city.budget", gameCycleCount);
+            runDailyBudget();
+        }
     }
 
     // Day tick: run effects scans and zone growth on SEPARATE cycles to
@@ -237,12 +241,18 @@ void CitySimulation::advancePhase(uint32_t gameCycleCount) {
     // zone growth runs on the next game cycle via pendingGrowthPhase_.
     if (pendingGrowthPhase_) {
         pendingGrowthPhase_ = false;
-        runZoneGrowth();
+        {
+            AITelemetry::PerformanceScope perfScope("city.growth", gameCycleCount);
+            runZoneGrowth();
+        }
     }
 
     if (totalDays > lastProcessedDay_) {
         lastProcessedDay_ = totalDays;
-        runEffectsScans();
+        {
+            AITelemetry::PerformanceScope perfScope("city.effects", gameCycleCount);
+            runEffectsScans();
+        }
         pendingGrowthPhase_ = true;
 
         // Diagnostic snapshot every 8 city days (~1/6 city year). Logs

@@ -449,6 +449,7 @@ void Game::closePerformanceLog() {
 }
 
 void Game::logPerformance(const char* format, ...) {
+    AITelemetry::PerformanceScope perfScope("telemetry.text_flush",gameCycleCount);
     std::lock_guard<std::mutex> lock(performanceLogMutex);
     
     if(!performanceLogFile.is_open()) {
@@ -845,10 +846,12 @@ void Game::processObjects()
     frameTiming.pathfindingMs += pathMs;
     frameTiming.pathfindingMsThisFrame += pathMs;
 
-    // update all tiles
-    for(int y = 0; y < currentGameMap->getSizeY(); y++) {
-        for(int x = 0; x < currentGameMap->getSizeX(); x++) {
-            currentGameMap->getTile(x,y)->update();
+    {
+        AITelemetry::PerformanceScope perfScope("objects.tiles",gameCycleCount);
+        for(int y = 0; y < currentGameMap->getSizeY(); y++) {
+            for(int x = 0; x < currentGameMap->getSizeX(); x++) {
+                currentGameMap->getTile(x,y)->update();
+            }
         }
     }
 
@@ -887,6 +890,7 @@ void Game::processObjects()
 }
 
 void Game::processTargetRequests() {
+    AITelemetry::PerformanceScope perfScope("objects.target_queue",gameCycleCount);
     if(targetRequestQueue.empty()) {
         return;
     }
@@ -1036,6 +1040,9 @@ void Game::logPathInstrumentationIfNeeded() {
 }
 
 void Game::processPathRequests() {
+    frameTiming.pathsProcessedThisCycle = 0;
+    frameTiming.pathfindingMsThisCycle = 0.0;
+    frameTiming.pathTokensThisCycle = 0;
     if(pathRequestQueue.empty()) {
         frameTiming.pathsPerCycleStats.add(0.0);
         frameTiming.pathTokensPerCycleStats.add(0.0);
@@ -1048,10 +1055,6 @@ void Game::processPathRequests() {
     // Timing is still measured for profiling, but does NOT affect execution
 
     const Uint64 start = SDL_GetPerformanceCounter();  // PROFILING ONLY
-
-    frameTiming.pathsProcessedThisCycle = 0;
-    frameTiming.pathfindingMsThisCycle = 0.0;
-    frameTiming.pathTokensThisCycle = 0;
 
     // Track queue depth
     const int queueDepth = static_cast<int>(pathRequestQueue.size());
@@ -1083,7 +1086,12 @@ void Game::processPathRequests() {
 
         auto* unit = dynamic_cast<UnitBase*>(objectManager.getObject(request.objectId));
         if(unit != nullptr) {
+            const Uint64 requestStart = SDL_GetPerformanceCounter();
             UnitBase::PathRequestStats stats = unit->resolvePendingPathRequest();
+            auto& perf = AITelemetry::log();
+            const int owner = unit->getOwner() ? unit->getOwner()->getHouseID() : -1;
+            perf.performance(gameCycleCount,owner,"path.search",static_cast<int64_t>(getElapsedMs(requestStart,SDL_GetPerformanceCounter())*1000),unit->getItemID());
+            perf.performance(gameCycleCount,owner,stats.invalidDestination ? "path.invalid_nodes" : stats.pathFound ? "path.found_nodes" : "path.failed_nodes",stats.nodesExpanded,unit->getItemID(),false);
             
             frameTiming.pathsProcessedThisCycle++;
             frameTiming.totalPathsProcessedThisFrame++;
@@ -1124,6 +1132,12 @@ void Game::processPathRequests() {
         }
     }
     
+    auto& perf = AITelemetry::log();
+    perf.performance(gameCycleCount,-1,"path.nodes",tokensUsedThisCycle,-1,false);
+    perf.performance(gameCycleCount,-1,"path.effective_budget",budget,-1,false);
+    perf.performance(gameCycleCount,-1,"path.budget_overshoot",tokensUsedThisCycle > budget ? tokensUsedThisCycle-budget : 0,-1,false);
+    perf.performance(gameCycleCount,-1,"path.queue",pathRequestQueue.size(),-1,false);
+
     // PHASE 1.2: BANK UNUSED TOKENS FOR NEXT CYCLE
     // MULTIPLAYER FIX: Disable carry-over in multiplayer to prevent desync
     // Carry-over can accumulate drift if pathfinding is even slightly non-deterministic
@@ -2717,6 +2731,8 @@ void Game::runMainLoop() {
         const Uint64 frameStartPerf = SDL_GetPerformanceCounter();
         frameTiming.gameCyclesThisFrame = 0;
         frameTiming.totalPathsProcessedThisFrame = 0;
+        frameTiming.pathTokensThisFrame = 0;
+        frameTiming.pathsFailedThisFrame = 0;
         
         // Reset per-frame accumulators
         frameTiming.aiMsThisFrame = 0.0;
@@ -2939,6 +2955,36 @@ void Game::runMainLoop() {
         frameTiming.turretScanMs += frameTiming.turretScanMsThisFrame;
         frameTiming.frameCount++;
 
+        auto& perf = AITelemetry::log();
+        if (perf.enabled()) {
+            const auto us = [](double ms) { return static_cast<int64_t>(ms*1000); };
+            const auto record = [&](const char* name, double ms) { perf.performance(gameCycleCount,-1,name,us(ms)); };
+            record("frame",thisFrameMs);
+            record("frame.ai",frameTiming.aiMsThisFrame);
+            record("frame.city",frameTiming.citySimMsThisFrame);
+            record("frame.path",frameTiming.pathfindingMsThisFrame);
+            record("frame.units",frameTiming.unitsMsThisFrame);
+            record("frame.structures",frameTiming.structuresMsThisFrame);
+            record("frame.render",frameTiming.renderingMsThisFrame);
+            record("frame.network",frameTiming.networkWaitMsThisFrame);
+            perf.performance(gameCycleCount,-1,"frame.cycles",frameTiming.gameCyclesThisFrame,-1,false);
+            perf.performance(gameCycleCount,-1,"frame.units_count",unitList.size(),-1,false);
+            perf.performance(gameCycleCount,-1,"frame.structures_count",structureList.size(),-1,false);
+            perf.performance(gameCycleCount,-1,"frame.tick_ms",getGameSpeed(),-1,false);
+            perf.performance(gameCycleCount,-1,"frame.paused",bPause,-1,false);
+            if (perf.isWorstFrame(us(thisFrameMs))) perf.slowFrame(gameCycleCount,us(thisFrameMs),AITelemetry::Record()
+                .set("ai_us",us(frameTiming.aiMsThisFrame)).set("city_us",us(frameTiming.citySimMsThisFrame))
+                .set("path_us",us(frameTiming.pathfindingMsThisFrame)).set("render_us",us(frameTiming.renderingMsThisFrame))
+                .set("units_us",us(frameTiming.unitsMsThisFrame)).set("structures_us",us(frameTiming.structuresMsThisFrame))
+                .set("network_us",us(frameTiming.networkWaitMsThisFrame))
+                .set("worst_house",frameTiming.aiWorstHouseIdxThisFrame).set("worst_house_us",us(frameTiming.aiWorstHouseMsThisFrame))
+                .set("cycles",frameTiming.gameCyclesThisFrame).set("queue",pathRequestQueue.size())
+                .set("path_nodes",frameTiming.pathTokensThisFrame).set("paths",frameTiming.totalPathsProcessedThisFrame)
+                .set("units",unitList.size()).set("structures",structureList.size())
+                .set("tick_ms",getGameSpeed()).set("paused",bPause));
+            perf.flushPerformance(gameCycleCount);
+        }
+
         // Frame-spike detection: any single frame slower than ~50 FPS is a
         // visible stutter even if the rolling average looks fine. Log a one-
         // line breakdown so we can correlate the spike with whatever phase
@@ -3137,6 +3183,7 @@ void Game::updateGameState() {
             house[i]->update();
             const Uint64 houseEnd = SDL_GetPerformanceCounter();
             const double houseMs = getElapsedMs(houseStart, houseEnd);
+            AITelemetry::log().performance(gameCycleCount,i,"house.update",static_cast<int64_t>(houseMs*1000));
             if(houseMs > worstHouseMs) {
                 worstHouseMs = houseMs;
                 worstHouseIdx = i;
@@ -3153,8 +3200,10 @@ void Game::updateGameState() {
     const double aiMs = getElapsedMs(aiStart, aiEnd);
     frameTiming.aiMs += aiMs;
     frameTiming.aiMsThisFrame += aiMs;
-    frameTiming.aiWorstHouseMsThisFrame = worstHouseMs;
-    frameTiming.aiWorstHouseIdxThisFrame = worstHouseIdx;
+    if (worstHouseMs > frameTiming.aiWorstHouseMsThisFrame) {
+        frameTiming.aiWorstHouseMsThisFrame = worstHouseMs;
+        frameTiming.aiWorstHouseIdxThisFrame = worstHouseIdx;
+    }
 
     screenborder->update();
     triggerManager.trigger(gameCycleCount);
