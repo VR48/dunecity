@@ -1,3 +1,24 @@
+# Preserve connectivity rather than fixed lanes — 1.0.613
+
+Current 612 game 1789013651529445-0 (4 corners, city mode) showed the ground
+access guard rejecting 55,961 of 70,669 candidate checks for Mercenary in a
+five-simulation-minute sample (~79%; repeated candidates, not distinct tiles).
+Fixed paths from every unit and every factory perimeter tile over-reserved land.
+GroundAccessPolicy now retains unit endpoints and groups of producer exits,
+not path tiles. A candidate may reroute access; each previously connected producer
+needs at least one remaining outside-connected perimeter tile. Existing connected
+units must remain connected and cannot be covered. New factories also need one
+outside-connected exit. Existing isolated units/producers do not freeze unrelated
+construction. Other-yard reservations remain static barriers in QuantBot's caller.
+A connected local perimeter is a cheap proof that detours remain; otherwise an
+early-exit flood checks longer detours, then validates protected endpoints when
+components split. If the old outside anchor is covered, use the largest remaining
+component rather than reserve the anchor forever. No random state or save fields.
+Regression cases cover long alternate routes, sealing the final opening, corner
+exit replacement, trapped units, and disconnected courtyards. Full CTest passed;
+Ninja dependency audits passed before/after build. Local build is 1.0.613; live
+612 game was not restarted, and no remote release was requested for this change.
+
 ## Current release/hosting entry point — 2026-09-10
 
 Read `docs/release-operations.md` and `docs/sourceforge-releases.md` for current

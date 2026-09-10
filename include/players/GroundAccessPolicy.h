@@ -11,7 +11,7 @@ public:
     struct Rect { int x, y, w, h; };
     void reset(int width, int height, const std::vector<uint8_t>& passable) {
         w = width; h = height; open = passable;
-        parent.assign(w*h, -1); lanes.assign(w*h, false);
+        parent.assign(w*h, -1); units.clear(); exits.clear(); outside = -1;
         std::vector<int> component(w*h, -1), queue, largest;
         int label = 0;
         for (int i=0; i<w*h; ++i) {
@@ -36,63 +36,95 @@ public:
         });
         int anchor=largest.front();
         for (int i:largest) if (clearance[i]>clearance[anchor]) anchor=i;
+        outside = anchor;
         queue.clear(); parent[anchor]=anchor; queue.push_back(anchor);
         for (size_t q=0; q<queue.size(); ++q) neighbours(queue[q], [&](int n) {
             if (open[n] && parent[n]<0) { parent[n]=queue[q]; queue.push_back(n); }
         });
     }
     void protectUnit(int x, int y) {
-        if (!inside(x,y)) return;
-        for (int i=y*w+x; i>=0 && parent[i]>=0 && !lanes[i]; i=parent[i]) {
-            lanes[i]=true;
-            if (parent[i]==i) break;
-        }
+        if (inside(x,y) && parent[y*w+x]>=0) units.push_back(y*w+x);
     }
     void protectExits(Rect r) {
-        perimeter(r,[&](int x,int y) { protectUnit(x,y); });
+        std::vector<int> edge;
+        perimeter(r,[&](int x,int y) {
+            if (inside(x,y) && parent[y*w+x]>=0) edge.push_back(y*w+x);
+        });
+        // Already isolated producers must not freeze unrelated construction.
+        if (!edge.empty()) exits.push_back(std::move(edge));
     }
     bool allows(Rect r, bool needsExit) const {
         if (r.w<=0 || r.h<=0 || !inside(r.x,r.y) || !inside(r.x+r.w-1,r.y+r.h-1)) return false;
-        for (int y=r.y;y<r.y+r.h;++y) for (int x=r.x;x<r.x+r.w;++x)
-            if (lanes[y*w+x]) return false;
-        if (!needsExit) return true;
-        // Check the small ring around the proposed footprint. Every disconnected
-        // piece needs a route out; a route may detour around the new building.
+        auto covered=[&](int i) { return contains(r,i%w,i/w); };
+        for (int i:units) if (covered(i)) return false;
+        for (const auto& group:exits)
+            if (std::none_of(group.begin(),group.end(),[&](int i){return !covered(i);})) return false;
+
+        // Only the original outside component matters. Removing a footprint
+        // cannot reconnect an existing isolated courtyard.
         std::vector<int> edge;
         perimeter(r,[&](int x,int y) {
-            if (inside(x,y) && open[y*w+x]) edge.push_back(y*w+x);
+            if (inside(x,y) && parent[y*w+x]>=0) edge.push_back(y*w+x);
         });
-        if (edge.empty()) return false;
-        std::vector<bool> seen(edge.size(),false);
-        std::vector<size_t> queue;
-        for (size_t start=0;start<edge.size();++start) {
-            if (seen[start]) continue;
-            queue.clear(); queue.push_back(start); seen[start]=true;
-            bool reachesOutside=false;
-            for (size_t q=0;q<queue.size();++q) {
-                int i=edge[queue[q]];
-                if (!reachesOutside && parent[i]>=0) for (;;) {
-                    if (contains(r,i%w,i/w)) break;
-                    if (lanes[i] || parent[i]==i) { reachesOutside=true; break; }
-                    i=parent[i];
+        if (edge.empty()) return !needsExit;
+
+        // Cheap common case: if the perimeter reconnects around the footprint,
+        // all old routes can detour locally. No whole-map search is needed.
+        std::vector<int> ring{edge.front()};
+        for (size_t q=0;q<ring.size();++q) neighbours(ring[q],[&](int n) {
+            if (std::find(edge.begin(),edge.end(),n)!=edge.end()
+                && std::find(ring.begin(),ring.end(),n)==ring.end()) ring.push_back(n);
+        });
+        if (ring.size()==edge.size()) return true;
+
+        // A broken local ring may still have a longer route around other
+        // buildings. Flood the remaining static graph, not a fixed path tree.
+        std::vector<uint8_t> reached(w*h,0);
+        std::vector<int> queue;
+        std::vector<uint8_t> boundary(w*h,0);
+        for (int i:edge) boundary[i]=1;
+        auto flood=[&](int seed, bool stopWhenConnected=false) {
+            size_t remaining=edge.size()-boundary[seed];
+            queue.clear(); queue.push_back(seed); reached[seed]=1;
+            for (size_t q=0;q<queue.size() && (!stopWhenConnected || remaining);++q) neighbours(queue[q],[&](int n) {
+                if (parent[n]>=0 && !covered(n) && !reached[n]) {
+                    reached[n]=1; queue.push_back(n);
+                    remaining-=boundary[n];
                 }
-                neighbours(edge[queue[q]],[&](int n) {
-                    auto it=std::find(edge.begin(),edge.end(),n);
-                    if (it==edge.end()) return;
-                    const size_t at=it-edge.begin();
-                    if (!seen[at]) { seen[at]=true; queue.push_back(at); }
-                });
+            });
+            return remaining==0;
+        };
+        if (flood(edge.front(),true)) return true;
+        if (outside>=0 && !covered(outside)) {
+            if (!reached[outside]) {
+                std::fill(reached.begin(),reached.end(),0);
+                flood(outside);
             }
-            if (!reachesOutside) return false;
         }
-        return true;
+        else {
+            // Building over the old anchor is legal; use the largest remaining
+            // component instead of permanently reserving that arbitrary tile.
+            std::vector<int> largest=queue;
+            for (int i=0;i<w*h;++i) if (parent[i]>=0 && !covered(i) && !reached[i]) {
+                flood(i);
+                if (queue.size()>largest.size()) largest=queue;
+            }
+            std::fill(reached.begin(),reached.end(),0);
+            for (int i:largest) reached[i]=1;
+        }
+        for (int i:units) if (!reached[i]) return false;
+        for (const auto& group:exits)
+            if (std::none_of(group.begin(),group.end(),[&](int i){return reached[i]!=0;})) return false;
+        return !needsExit || std::any_of(edge.begin(),edge.end(),[&](int i){return reached[i]!=0;});
     }
 
 private:
     int w=0,h=0;
     std::vector<uint8_t> open;
     std::vector<int> parent;
-    std::vector<bool> lanes;
+    int outside=-1;
+    std::vector<int> units;
+    std::vector<std::vector<int>> exits;
     bool inside(int x,int y) const { return x>=0 && y>=0 && x<w && y<h; }
     static bool contains(Rect r,int x,int y) { return x>=r.x && y>=r.y && x<r.x+r.w && y<r.y+r.h; }
     template<class F> void neighbours(int i,F f) const {

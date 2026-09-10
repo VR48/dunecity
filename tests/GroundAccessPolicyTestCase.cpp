@@ -45,12 +45,14 @@ TEST_CASE("Reserved footprints and mountains count as barriers", "[ai][placement
     auto reserved=m.policy();
     REQUIRE_FALSE(reserved.allows({2,1,2,2},true));
 }
-TEST_CASE("A factory cannot occupy its own only route out", "[ai][placement]") {
+TEST_CASE("A factory needs one connected deployment side", "[ai][placement]") {
     AccessMap m;
     m.block(0,0,1,10);m.block(4,0,1,10);m.block(0,9,5,1);
     m.tiles[9*m.w+2]=1;
     auto p=m.policy();
-    REQUIRE_FALSE(p.allows({1,5,3,2},true));
+    REQUIRE(p.allows({1,5,3,2},true)); // south side still reaches outside
+    p.protectUnit(2,2);
+    REQUIRE_FALSE(p.allows({1,5,3,2},true)); // but cannot seal an existing unit behind it
 }
 TEST_CASE("Existing isolated units do not freeze construction elsewhere", "[ai][placement]") {
     AccessMap m;
@@ -75,8 +77,31 @@ TEST_CASE("Even a spacious courtyard must retain its outside connection", "[ai][
     auto p=m.policy();p.protectUnit(4,4);
     REQUIRE_FALSE(p.allows({5,9,1,1},false));
 }
-TEST_CASE("Corner deployment tiles also keep their escape route", "[ai][placement]") {
+TEST_CASE("One factory exit can be covered when another remains", "[ai][placement]") {
     AccessMap m;m.block(3,3,3,2);
     auto p=m.policy();p.protectExits({3,3,3,2});
-    REQUIRE_FALSE(p.allows({6,5,1,1},false));
+    REQUIRE(p.allows({6,5,1,1},false));
+}
+
+TEST_CASE("Open ground paths may detour around a new building", "[ai][placement]") {
+    AccessMap m;m.block(3,3,3,2);
+    auto p=m.policy();p.protectExits({3,3,3,2});p.protectUnit(4,7);
+    REQUIRE(p.allows({3,9,5,2},false));
+    REQUIRE_FALSE(p.allows({4,7,1,1},false));
+}
+TEST_CASE("Long alternate paths preserve factory connectivity", "[ai][placement]") {
+    AccessMap m;
+    m.block(0,9,24,1);m.tiles[9*m.w+4]=1;m.tiles[9*m.w+19]=1;
+    m.block(3,2,3,2);
+    auto p=m.policy();p.protectExits({3,2,3,2});p.protectUnit(4,5);
+    REQUIRE(p.allows({4,9,1,1},false)); // far opening remains
+    m.block(19,9,1,1); // e.g. another yard's reservation
+    p=m.policy();p.protectExits({3,2,3,2});p.protectUnit(4,5);
+    REQUIRE_FALSE(p.allows({4,9,1,1},false));
+}
+TEST_CASE("Unrelated construction in isolated space leaves existing access alone", "[ai][placement]") {
+    AccessMap m;m.block(0,0,6,1);m.block(0,0,1,6);m.block(5,0,1,6);m.block(0,5,6,1);
+    auto p=m.policy();p.protectUnit(15,15);
+    REQUIRE(p.allows({2,2,1,1},false));
+    REQUIRE_FALSE(p.allows({2,2,1,1},true));
 }
