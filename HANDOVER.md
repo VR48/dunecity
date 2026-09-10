@@ -1,3 +1,58 @@
+# Bound repeated city AI placement work — 1.0.622
+
+Completed game `1789031518687887-0` ran 1.0.620 (192x192 SimCity,
+seed 1929923577, ended cycle 208163). Imported 181834 events into
+`/tmp/dunecity-620-performance.sqlite`: 245 performance windows, zero dropped
+samples. Worst frame was 340 ms, including 316 ms in AI. In the final active
+minute, 108 frames exceeded 100 ms and 96 included AI over 100 ms. Construction
+planning consumed 319 seconds across the session; turret placement (169 s) and
+service investment (130 s, includes service site search) explain about 94%.
+At cycle 196248, eight yards emitted 24 ineligible service candidates. This is
+the measured cause of the recurring hitches. Paths remain a separate background
+cost (8.7 ms/frame in the last minute). Rendering averaged 3.8 ms, city 1.9 ms.
+
+Changes in 622:
+- Check turret caps, enemy presence, power and affordability before expensive
+  location searches where those guards previously came afterwards.
+- One service search per house build pass scores police/rocket sites for all
+  three selection modes together: normal, emergency and tax-value investment.
+  Yards reuse positive and negative results. Each caller still filters its own
+  build availability and spending reserve; the first yard's upgrade level must
+  not suppress a later yard's rocket option.
+- One city defensive turret search per build pass, shared between yard rules
+  and placement. Reserved coverage for crime targets is computed once per
+  target rather than again for every proposed tile.
+- Each search examines at most 4096 origin tiles per item in a deterministic
+  rotating batch. Candidate-mask generation is restricted to the same rows.
+  All map tiles, including partial edge batches, remain reachable over a sweep.
+  These are best-in-batch choices, not a full-city optimum every pass. A failed
+  batch means try a different batch next pass, not that the city has no sites.
+- New reservations, redevelopment and actual placements invalidate cached
+  results without replenishing the pass budget. Later yards defer additional
+  expensive searches; ordinary building choices/production keep running.
+- Completed CY items take priority over new plans, with deterministic rotation
+  within each CY priority group. For blocked reserved turrets, advance the map
+  batch only after all ready yards have had a turn; this avoids scan/yard-count
+  resonance stranding a yard on the same map strip forever.
+
+Scheduling derives from simulation cycles, never elapsed wall time. Caches and
+ready-yard count reset/derive within each build call; save format is unchanged.
+City effects, service strengths, overlap rules, road access and unit pathfinding
+are unchanged. Vanilla retains its existing placement search; cheap guard
+reordering also applies there. Policy telemetry is now `bounded-city-planning-v45`.
+New performance counters: `service.cache_hit`, `service.search_deferred`,
+`service.scanned_tiles`, `turret.cache_hit`, `turret.search_deferred`,
+`turret.scanned_tiles`. Compare these plus existing timed scopes in the next game.
+
+Tests cover complete bounded map sweeps, edge cells, negative cache sharing,
+geometry invalidation without renewed work, distinct reservation keys, ready
+placement priority, fair yard rotation and every blocked yard visiting every
+batch even when the yard count equals the batch count. Build/test logs:
+`/tmp/dunecity-planning-{build,tests}.log`. Full CTest: 527 cases, 524 passed,
+3 optional skips; before/after dependency audits and version/app metadata passed.
+Local app 1.0.622; no live-game launch,
+Applications copy, push or release. Actual FPS improvement needs a new game.
+
 # Route-based traffic density and Micropolis decay — 1.0.621
 
 Fixed the traffic animation's inflated input rather than raising sprite

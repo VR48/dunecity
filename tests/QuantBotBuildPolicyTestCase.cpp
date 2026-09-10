@@ -829,3 +829,84 @@ TEST_CASE("Residential infill takes priority only with positive housing demand",
     prioritizeResidentialInfill(ranked,1,false);
     REQUIRE(ranked[0]==Structure_ZoneCommercial);
 }
+
+#include <players/CityPlanningPolicy.h>
+
+TEST_CASE("City planning batches visit the whole map without gaps or oversized work", "[quantbot][city][performance]") {
+    using CityPlanningPolicy::ScanWindow;
+    for (const auto size : {std::pair<int,int>{1,1}, {64,64}, {193,191}}) {
+        const int cells = size.first*size.second;
+        const int batches = (cells+ScanWindow::tilesPerPass-1)/ScanWindow::tilesPerPass;
+        for (unsigned house : {0u,2u,7u}) {
+            std::vector<int> visits(cells);
+            for (int pass=0;pass<batches;++pass) {
+                const ScanWindow scan(size.first,size.second,pass*100+48,house);
+                REQUIRE(scan.end-scan.begin <= ScanWindow::tilesPerPass);
+                REQUIRE(scan.begin >= 0);
+                REQUIRE(scan.end <= cells);
+                for (int i=scan.begin;i<scan.end;++i) ++visits[i];
+                // A reloaded planner derives the identical batch from the saved cycle.
+                const ScanWindow reloaded(size.first,size.second,pass*100+48,house);
+                REQUIRE(reloaded.begin == scan.begin);
+            }
+            REQUIRE(std::all_of(visits.begin(),visits.end(),[](int n){return n==1;}));
+        }
+    }
+    REQUIRE(ScanWindow(0,0,100,2).end == 0);
+}
+
+TEST_CASE("City planning shares failed searches and cannot exceed its pass allowance", "[quantbot][city][performance]") {
+    CityPlanningPolicy::PassSearch<int,int> search;
+    REQUIRE(search.start(1));
+    search.result() = -1; // No useful site is a cached result, not a cache miss.
+    for (int yard=0;yard<20;++yard) {
+        REQUIRE(search.get(1));
+        REQUIRE(*search.get(1) == -1);
+        REQUIRE_FALSE(search.start(1));
+    }
+    REQUIRE_FALSE(search.get(2)); // Different excluded reservation cannot reuse it.
+    REQUIRE_FALSE(search.start(2));
+    search.invalidate(); // Another yard placed/reserved/demolished something.
+    REQUIRE_FALSE(search.get(1));
+    REQUIRE_FALSE(search.start(1)); // Invalidation does not refill the work budget.
+    search.reset();
+    REQUIRE(search.start(2));
+    search.result() = 42;
+    REQUIRE(*search.get(2) == 42);
+    search.invalidate();
+    REQUIRE_FALSE(search.get(2)); // Never return a stale now-blocked positive site.
+}
+
+TEST_CASE("Blocked completed yards share search turns without delaying ready placement behind new orders", "[quantbot][city][performance]") {
+    std::set<uint32_t> firstReady, firstIdle;
+    for (unsigned pass=0;pass<8;++pass) {
+        std::vector<std::pair<int,uint32_t>> yards{{3,10},{3,11},{3,12},{3,13},
+            {2,20},{2,21},{2,22},{2,23},{1,30},{0,40}};
+        CityPlanningPolicy::rotateYards(yards,pass*100+48);
+        firstReady.insert(yards[0].second);
+        firstIdle.insert(yards[4].second);
+        REQUIRE(yards[0].first == 3);
+        REQUIRE(yards[4].first == 2);
+        REQUIRE(yards[8].second == 30); // Factory ordering stays unchanged.
+        REQUIRE(yards[9].second == 40);
+    }
+    REQUIRE(firstReady.size() == 4);
+    REQUIRE(firstIdle.size() == 4);
+}
+
+TEST_CASE("Each blocked yard sweeps all map batches even when yard count equals batch count", "[quantbot][city][performance]") {
+    using CityPlanningPolicy::ScanWindow;
+    constexpr int cells = 192*192;
+    constexpr int batches = cells/ScanWindow::tilesPerPass;
+    for (unsigned owners : {3u,8u,9u,12u}) {
+        std::vector<std::set<int>> visited(owners);
+        for (unsigned pass=0;pass<owners*batches;++pass) {
+            std::vector<std::pair<int,uint32_t>> order;
+            for (unsigned yard=0;yard<owners;++yard) order.emplace_back(3,yard);
+            CityPlanningPolicy::rotateYards(order,pass*100+48);
+            const ScanWindow scan(192,192,pass*100+48,2,owners);
+            visited[order.front().second].insert(scan.begin);
+        }
+        for (const auto& starts:visited) REQUIRE(starts.size() == batches);
+    }
+}

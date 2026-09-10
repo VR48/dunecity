@@ -19,6 +19,8 @@
 #define QuantBot_H
 
 #include <players/Player.h>
+#include <players/CityPlanningPolicy.h>
+#include <players/CityServiceInvestmentPolicy.h>
 #include <players/CombatReward.h>
 #include <players/GroundAccessPolicy.h>
 #include <players/UnitMixPolicy.h>
@@ -155,7 +157,7 @@ private:
     Coord findMcvPlaceLocation(const MCV* pMCV);
     Coord findPlaceLocation(Uint32 itemID);
     bool preservesGroundAccess(Uint32 item, Coord pos);
-    void clearPlacementCache();
+    void clearPlacementCache(bool geometryChanged = true);
     Coord findRedevelopmentSite(Uint32 itemID);
     bool redevelopmentZones(Uint32 itemID, Coord pos, std::vector<Uint32>& zones) const;
     Coord findPlaceLocationSimple(Uint32 itemID);
@@ -221,6 +223,20 @@ private:
     bool overlapsReservedStructure(int x, int y, int width, int height) const;
     OrnithopterStrikeTeam ornithopterStrikeTeam;
     std::unordered_map<Uint32, Coord> placementCache; ///< Per-build-cycle cache for findPlaceLocation results
+
+    struct CityServiceSite {
+        Coord site = Coord::Invalid();
+        CityServiceInvestmentPolicy::Value value;
+    };
+    // [normal/emergency/land-value-only][police/rocket], scored together.
+    using CityServiceResults = std::array<std::array<CityServiceSite, 2>, 3>;
+    CityPlanningPolicy::PassSearch<Uint32, CityServiceResults> cityServiceSearch;
+    struct CityTurretResult {
+        Coord site = Coord::Invalid();
+        int defense = 0, amenity = 0, crime = 0, hotspot = 0;
+    };
+    CityPlanningPolicy::PassSearch<Uint32, CityTurretResult> cityTurretSearch;
+    unsigned cityReadyYardCount = 1; // Derived each build pass, for fair replan sweeps.
 
     void checkAllUnits();
     void retreatAllUnits();
