@@ -2,6 +2,7 @@
 #define DUNECITY_CITYEFFECTS_H
 
 #include <data.h>
+#include <dunecity/ParkTerrainPolicy.h>
 #include <fixmath/FixPoint.h>
 
 #include <algorithm>
@@ -52,7 +53,7 @@ namespace DuneCity {
 //   Barracks           -> Residential high (infantry garrison = population)
 //   WOR                -> Residential high (heavy infantry garrison = population)
 //   Gun Turret        -> Park bonus + 15% Police
-//   Rocket Turret     -> 2x park land-value bonus, 15% police coverage
+//   Rocket Turret     -> one park terrain source, 15% police coverage
 //   Wall               -> Park bonus only
 //   Sand (terrain)     -> Water (land-value bonus)
 // =============================================================================
@@ -67,8 +68,7 @@ constexpr int kPollutionRadius   = 5;  // emission falls off linearly to this
 // over that range preserves SC's "one station noticeably affects the whole
 // neighbourhood" feel without over-reaching for our smaller gameplay grid.
 constexpr int kPoliceRadius      = 23; // Three 6-tile diffusion steps plus the source cell.
-constexpr int kParkBonusRadius   = 3;  // Park / Wall / Turret land-value reach
-constexpr int kRocketTurretParkBonusRadius = kParkBonusRadius * 2;
+
 // Sand-as-water reach. Each open sand tile stamps a falloff into the land-
 // value map, bypassing the /8 dilution of the SC-style smoothing pass.
 // Tuned so a zone with one full sand-block neighbour lands solidly inside
@@ -87,7 +87,7 @@ constexpr int kSupplyRadius      = 16;
 
 // --- Effect strengths --------------------------------------------------------
 
-constexpr int kParkLandValueBonus       = 15;  // SC Classic Park land-value lift
+constexpr int kParkLandValueBonus       = 15;  // Micropolis raw park terrain contribution, before smoothing
 constexpr int kStadiumLandValueBonus   = 40;  // Stadium provides a much larger boost
 constexpr int kSandLandValueBonus       = 8;   // Per-tile direct stampFalloff
 /// Per-tile contribution to the block-smoothed terrain feature map. Box-
@@ -282,10 +282,14 @@ inline FixPoint getPoliceAnnualCost(int itemID) {
 
 // --- Park-style land-value bonus (Wall / Turrets) ----------------------------
 
+inline bool usesParkTerrain(int itemID) {
+    return itemID == Structure_Wall || itemID == Structure_GunTurret || itemID == Structure_RocketTurret;
+}
+
 inline int getParkLandValueBonus(int itemID) {
     switch (itemID) {
         case Structure_Wall:            return kParkLandValueBonus;
-        case Structure_GunTurret:       return kParkLandValueBonus; // one fountain
+        case Structure_GunTurret:       return kParkLandValueBonus; // one park source
         case Structure_RocketTurret:    return kParkLandValueBonus;
         case Structure_Stadium:         return kStadiumLandValueBonus;
         case Structure_Palace:          return kStadiumLandValueBonus;   // civic building — large boost
@@ -295,8 +299,8 @@ inline int getParkLandValueBonus(int itemID) {
 
 inline int getParkLandValueRadius(int itemID) {
     if (itemID == Structure_Stadium || itemID == Structure_Palace) return 8;
-    if (itemID == Structure_RocketTurret) return kRocketTurretParkBonusRadius;
-    return kParkBonusRadius;
+    // Conservative candidate-search bound, not a radial gameplay bonus.
+    return kParkTerrainSearchRadius;
 }
 
 // --- Linear distance falloff helper ------------------------------------------

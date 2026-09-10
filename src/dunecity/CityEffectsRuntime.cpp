@@ -351,6 +351,14 @@ void CitySimulation::runEffectsScans() {
         clusterCenterWy[c] = static_cast<int>(sumY[c] / count[c]);
     }
 
+    // One raw terrain contribution per park-like structure origin. Smooth
+    // using the shared Micropolis kernel, before pollution and clamping.
+    parkTerrain_.init(mapWidth_, mapHeight_);
+    forEachStructureOrigin(map, [&](int x, int y, const StructureBase* structure) {
+        const int item = structure->getItemID();
+        if (usesParkTerrain(item)) parkTerrain_.addSource(x,y,getParkLandValueBonus(item));
+    });
+
     // SC formula (scan.cpp::pollutionTerrainLandValueScan), evaluated per
     // block. Distance is measured to THIS block's cluster centre.
     //     dis = 34 - getCityCenterDistance(worldX, worldY) / 2;
@@ -377,18 +385,18 @@ void CitySimulation::runEffectsScans() {
             // no -20 penalty fires.
             const int v = computeBaseLandValue(
                 dist,
-                terrainRaw[idx],
+                terrainRaw[idx] + parkTerrain_.landValueContribution(worldX,worldY,bs),
                 pollutionDensityMap_.get(bx, by),
                 crimeRateMap_.get(bx, by));
             landValueMap_.set(bx, by, static_cast<uint8_t>(v));
         }
     }
 
-    // Park-style land-value bonuses (Wall, Turrets). Layered on top of
-    // the SC base so defensive structures still uplift adjacent value.
+    // Preserve the separate Palace/Stadium civic bonus. Walls and turrets
+    // now contribute through terrain above, never through radial stamps.
     forEachStructureOrigin(map, [&](int x, int y, const StructureBase* pStruct) {
         const int parkBonus = getParkLandValueBonus(pStruct->getItemID());
-        if (parkBonus > 0) {
+        if (parkBonus > 0 && !usesParkTerrain(pStruct->getItemID())) {
             const int itemID = pStruct->getItemID();
             const int radius = getParkLandValueRadius(itemID);
             stampFalloff(landValueMap_, x, y,

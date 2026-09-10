@@ -211,7 +211,7 @@ TEST_CASE("Park land-value bonus: Wall, Turrets, Palace, Stadium contribute",
     REQUIRE(getParkLandValueBonus(Structure_Wall)         == kParkLandValueBonus);
     REQUIRE(getParkLandValueBonus(Structure_GunTurret)    == kParkLandValueBonus);
     REQUIRE(getParkLandValueBonus(Structure_RocketTurret) == kParkLandValueBonus);
-    REQUIRE(getParkLandValueRadius(Structure_RocketTurret) == kRocketTurretParkBonusRadius);
+    REQUIRE(getParkLandValueRadius(Structure_RocketTurret) == getParkLandValueRadius(Structure_GunTurret));
     REQUIRE(getParkLandValueBonus(Structure_Palace)       == kStadiumLandValueBonus);
     REQUIRE(getParkLandValueBonus(Structure_Stadium)      == kStadiumLandValueBonus);
     REQUIRE(getParkLandValueBonus(Structure_HeavyFactory) == 0);
@@ -1244,4 +1244,64 @@ TEST_CASE("Civic notices are spaced, deduplicated and rearmed after resolution",
     CityDemandNoticePolicy cancelled;
     CHECK(cancelled.update(all, all, 0, 10) == NeedStadium);
     CHECK(cancelled.update(NeedStadium, 0, 10, 10) == 0);
+}
+
+
+TEST_CASE("Park terrain counts each source once and uses Micropolis smoothing", "[city-effects][park][regression]") {
+    ParkTerrainPolicy terrain;
+    terrain.init(18,18);
+    terrain.addSource(7,7,15);
+    // Micropolis non-dither: center15/2=7, cardinal neighbour(15/4)/2=1.
+    CHECK(terrain.valueAt(6,6) == 7);
+    CHECK(terrain.valueAt(8,8) == 7);
+    CHECK(terrain.valueAt(9,6) == 1);
+    CHECK(terrain.valueAt(6,9) == 1);
+    CHECK(terrain.valueAt(9,9) == 0);
+    CHECK(terrain.valueAt(12,6) == 0);
+    // Aggregate raw sources BEFORE smoothing, not rounded per-emitter stamps.
+    terrain.addSource(8,7,15);
+    CHECK(terrain.valueAt(6,6) == 15);
+    CHECK(terrain.valueAt(9,6) == 3);
+    CHECK(terrain.marginalGain(6,7,15,6,6) == 7);
+    CHECK(kParkTerrainBlockSize == 3); // 2-tile zone + unchanged 1-tile road
+}
+
+TEST_CASE("Park source boundaries do not alias or wrap at map edges", "[city-effects][park]") {
+    ParkTerrainPolicy terrain;
+    terrain.init(8,7);
+    terrain.addSource(-1,0,15);
+    terrain.addSource(8,0,15);
+    CHECK(terrain.valueAt(0,0) == 0);
+    terrain.addSource(0,0,15);
+    CHECK(terrain.valueAt(0,0) == 7);
+    CHECK(terrain.valueAt(3,0) == 1);
+    CHECK(terrain.valueAt(0,3) == 1);
+    CHECK(terrain.valueAt(-1,0) == 0);
+    terrain.addSource(7,6,15);
+    CHECK(terrain.valueAt(7,6) == 7);
+    CHECK(terrain.valueAt(8,6) == 0);
+    terrain.init(8,7);
+    CHECK(terrain.valueAt(0,0) == 0); // recompute clears destroyed sources
+    terrain.addSource(3,3,15);
+    CHECK(terrain.landValueContribution(3,3) == 2); // average0,1,1,7, not origin-only0
+    CHECK(terrain.landValueContribution(4,4) == 7);
+}
+
+TEST_CASE("AI park gain matches runtime with overlap and mismatched grid alignment", "[city-effects][park][ai]") {
+    ParkTerrainPolicy terrain;
+    terrain.init(11,10);
+    terrain.addSource(0,0,15);
+    terrain.addSource(1,0,15);
+    terrain.addSource(4,4,15);
+    terrain.addSource(10,9,15);
+    for (int cy=0;cy<10;++cy) for (int cx=0;cx<11;++cx) {
+        auto after=terrain;
+        after.addSource(cx,cy,15);
+        for (int py=0;py<10;++py) for (int px=0;px<11;++px)
+            CHECK(terrain.marginalGain(cx,cy,15,px,py) ==
+                after.landValueContribution(px,py)-terrain.landValueContribution(px,py));
+    }
+    // The park enters terrain before pollution and the land-value floor.
+    CHECK(computeBaseLandValue(0,7,200) == 1);
+    CHECK(computeBaseLandValue(0,7,0)-computeBaseLandValue(0,0,0) == 7);
 }

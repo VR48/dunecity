@@ -9,6 +9,7 @@
 #include <dunecity/CityBudget.h>
 #include <dunecity/CrimeUnrestPolicy.h>
 #include <dunecity/CityDemandNoticePolicy.h>
+#include <dunecity/ParkTerrainPolicy.h>
 
 class InputStream;
 class OutputStream;
@@ -152,6 +153,7 @@ public:
     const CityMapLayer<uint8_t>& getTrafficDensityMap() const { return trafficDensityMap_; }
     const CityMapLayer<uint8_t>& getPollutionDensityMap() const { return pollutionDensityMap_; }
     const CityMapLayer<uint8_t>& getLandValueMap() const { return landValueMap_; }
+    const ParkTerrainPolicy& getParkTerrain() const { return parkTerrain_; }
     const CityMapLayer<int32_t>& getPoliceCoverageMap() const { return policeCoverageMap_; }
     const CityMapLayer<uint16_t>& getCrimeBeforePoliceMap() const { return crimeBeforePoliceMap_; }
     const CityMapLayer<uint16_t>& getCrimeRateMap() const { return crimeRateMap_; }
@@ -217,6 +219,7 @@ private:
     CityMapLayer<uint8_t> trafficDensityMap_;
     CityMapLayer<uint8_t> pollutionDensityMap_;
     CityMapLayer<uint8_t> landValueMap_;
+    ParkTerrainPolicy parkTerrain_; // derived from structures; rebuilt, not serialized
     CityMapLayer<uint8_t> hostileLandValuePenaltyMap_;
     CityMapLayer<uint16_t> crimeRateMap_;
     std::vector<CrimeUnrestDistrict> crimeUnrestProgress_; // Per-house 16x16 districts; persisted.

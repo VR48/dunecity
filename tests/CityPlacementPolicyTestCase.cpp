@@ -99,13 +99,15 @@ TEST_CASE("Service investment compares economic return without bypassing emergen
     REQUIRE(annualTaxGain(1000,7,128,100) == 46);
     REQUIRE(annualTaxGain(1000,7,0,100) == 0);
     REQUIRE(annualTaxGain(1000,7,128,0) == 0);
-    REQUIRE(parkContribution(Structure_PoliceStation,10,10,10,10,2) == 0);
-    const int stamp = parkContribution(Structure_RocketTurret,10,10,10,10,2);
-    const int strength = DuneCity::getParkLandValueBonus(Structure_RocketTurret);
-    const int radius = DuneCity::getParkLandValueRadius(Structure_RocketTurret)+1;
-    REQUIRE(stamp == strength + 3*DuneCity::falloff(strength,1,radius));
-    REQUIRE(parkContribution(Structure_RocketTurret,10,10,11,11,2) == stamp);
-    REQUIRE(parkContribution(Structure_RocketTurret,10,10,100,100,2) == 0);
+    DuneCity::ParkTerrainPolicy terrain;
+    terrain.init(120,120);
+    REQUIRE(parkContribution(Structure_PoliceStation,10,10,10,10,2,terrain) == 0);
+    REQUIRE(parkContribution(Structure_RocketTurret,10,10,10,10,2,terrain) == 7);
+    REQUIRE(parkContribution(Structure_RocketTurret,10,10,11,11,2,terrain) == 7);
+    REQUIRE(parkContribution(Structure_RocketTurret,10,10,12,10,2,terrain) == 1);
+    REQUIRE(parkContribution(Structure_RocketTurret,10,10,100,100,2,terrain) == 0);
+    terrain.addSource(10,11,15); // another yard's planned source
+    REQUIRE(parkContribution(Structure_RocketTurret,10,10,10,10,2,terrain) == 8);
     expensive = police;
     expensive.overlapPenalty = 500;
     REQUIRE(police.betterThan(expensive));
@@ -230,16 +232,16 @@ TEST_CASE("Rocket turrets protect reactors before factories and useful city junc
     REQUIRE((Score{1, 240, 0, 1}).betterThan(Score{1, 0, 0, 10}));
 }
 
-TEST_CASE("Rocket amenities have park strength and expanded useful coverage", "[city][placement]") {
+TEST_CASE("Rocket amenities use smoothed park gain rather than a radial bonus", "[city][placement]") {
     using namespace RocketTurretPolicy;
     REQUIRE(DuneCity::getPoliceCoverage(Structure_RocketTurret) == 150);
     REQUIRE(DuneCity::getParkLandValueBonus(Structure_RocketTurret) == 15);
-    REQUIRE(amenityBenefit(100, false, 0) == 15);
-    REQUIRE(amenityBenefit(100, false, 2) == 10);
-    REQUIRE(amenityBenefit(245, false, 0) == 5);
-    REQUIRE(amenityBenefit(250, false, 0) == 0);
-    REQUIRE(amenityBenefit(100, true, 0) == 0);
-    REQUIRE(amenityBenefit(100, false, DuneCity::kRocketTurretParkBonusRadius + 1) == 0);
+    REQUIRE(amenityBenefit(100, false, 7) == 7);
+    REQUIRE(amenityBenefit(100, false, 1) == 1);
+    REQUIRE(amenityBenefit(245, false, 7) == 5);
+    REQUIRE(amenityBenefit(250, false, 7) == 0);
+    REQUIRE(amenityBenefit(100, true, 7) == 0);
+    REQUIRE(amenityBenefit(100, false, 0) == 0);
 }
 
 TEST_CASE("Polluting factories and R/C keep a footprint-aware buffer", "[city][placement]") {

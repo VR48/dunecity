@@ -11,8 +11,11 @@ inline int crimeHarm(int crime, int item, int population) {
     if (item == Structure_ZoneCommercial) growthPenalty = crime > 120 ? 150 : crime > 80 ? 75 : 0;
     return std::max(0, crime - 63) / 4 + growthPenalty * std::max(1, population) / 4;
 }
-// Match stampFalloff: every world tile adds into its coarse land-value cell.
-inline int parkContribution(int item, int cx, int cy, int px, int py, int blockSize) {
+// Match park terrain for walls/turrets; retain the separate civic stamp model.
+inline int parkContribution(int item, int cx, int cy, int px, int py, int blockSize,
+                            const DuneCity::ParkTerrainPolicy& terrain) {
+    if (DuneCity::usesParkTerrain(item))
+        return terrain.marginalGain(cx,cy,DuneCity::getParkLandValueBonus(item),px,py,blockSize);
     int value = 0;
     for (int y = (py/blockSize)*blockSize; y < (py/blockSize+1)*blockSize; ++y)
         for (int x = (px/blockSize)*blockSize; x < (px/blockSize+1)*blockSize; ++x)

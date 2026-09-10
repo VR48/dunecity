@@ -1,3 +1,40 @@
+# Micropolis park terrain for walls/turrets — 1.0.618
+
+Replaced walls/gun turrets/rocket turrets radial +15 land-value stamps with one
++15 raw park source per structure origin. Reference: local Micropolis scan.cpp
+pollutionTerrainLandValueScan (one +15 per qualifying terrain tile) and
+smoothTerrain non-dither branch: (center + cardinalSum/4)/2, single pass with
+integer rounding. Original literal FOUNTAIN tile does not receive the tree
+terrain increment; this implements Stefan's intended one-park equivalence,
+not that original fountain quirk. Both turrets have identical park effects.
+
+Scaling: original4x4 terrain cell corresponds to3-tile zone +1-tile road; use
+3x3 terrain cells for2-tile zone + unchanged1-tile road. Gameplay zones remain
+2x2, roads1x1 and land-value storage2x2. Average tile samples into the2x2 land
+layer to avoid aliasing odd-coordinate sources across nonaligned3/2 grids.
+One isolated source gives7 in its terrain cell,1 in cardinal neighbours,0
+in diagonal/distant cells before resampling. Multiple sources accumulate raw
+before smoothing, avoiding duplicated world-tile additions/rounded emitters.
+Park contribution enters base land value before pollution subtraction and
+clamping. Existing sand terrain/direct bonuses and Palace/Stadium stamps stay
+unchanged; this is park-source parity, not a complete terrain-simulation port.
+
+ParkTerrainPolicy is deterministic/local and derived, rebuilt each effects
+scan, not serialized. CitySimulation initializes it for new/load state. AI
+service investment and turret amenity estimates share exact marginal smoothed
+contributions including planned sources and2x2 resampling. The old doubled
+rocket radius is gone; getParkLandValueRadius for park sources is now only a
+conservative search bound. Combat and police coverage unchanged.
+
+Tests cover source counting, original kernel goldens, raw overlap aggregation,
+map edges/partial cells, no negative-coordinate alias, rebuilding destroyed
+sources, pollution-before-clamp, and exhaustive AI/runtime gain agreement on
+an11x10 map with overlapping sources and nonaligned grids. Full CTest passed;
+Ninja dependency audits passed before/after build. Local1.0.618 app metadata
+verified. No app launch, Applications copy, remote push or release. Logs:
+/tmp/dunecity-park-terrain-{build,tests}.log. Existing cities recalculate their
+lower turret-driven values on the next effects scan; tax/crime may respond.
+
 # Pollution sidebar overlay button — 1.0.617
 
 Added Pollution below Land Value and Crime, using existing CityOverlayMode::Pollution.

@@ -32,6 +32,7 @@ void CitySimulation::init(int width, int height) {
     trafficDensityMap_.init(width, height, 2);
     pollutionDensityMap_.init(width, height, 2);
     landValueMap_.init(width, height, 2);
+    parkTerrain_.init(width, height);
     crimeRateMap_.init(width, height, 2);
     crimeUnrestProgress_.assign(kMaxCityHouses * ((width+15)/16) * ((height+15)/16), {});
     policeCoverageMap_.init(width, height, 2);

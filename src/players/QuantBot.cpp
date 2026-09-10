@@ -2420,6 +2420,12 @@ bool QuantBot::selectCityServiceInvestment(const BuilderBase* builder, int money
     const auto* sim = currentGame->getCitySimulation();
     if (!sim || !sim->isInitialized()) return false;
     const int house = getHouse()->getHouseID(), w = getMap().getSizeX(), h = getMap().getSizeY();
+    auto plannedTerrain = sim->getParkTerrain();
+    for (const auto& entry : reservedStructures) {
+        if (entry.first == planningBuilder || !DuneCity::usesParkTerrain(entry.second.item)) continue;
+        const auto& plan = entry.second;
+        plannedTerrain.addSource(plan.location.x,plan.location.y,DuneCity::getParkLandValueBonus(plan.item));
+    }
     const auto& state = sim->getHouseState(house);
     const auto& data = currentGame->objectData.data;
     const bool powered = getHouse()->getProducedPower() >= getHouse()->getPowerRequirement();
@@ -2457,7 +2463,10 @@ bool QuantBot::selectCityServiceInvestment(const BuilderBase* builder, int money
         totalPopulation += pop;
         const int value = sim->getLandValueMap().worldGet(p.x,p.y);
         if (value > 0) ++sampleCount;
-        int coverage = sim->getPoliceCoverageMap().worldGet(p.x,p.y), plannedValue = 0;
+        int coverage = sim->getPoliceCoverageMap().worldGet(p.x,p.y);
+        const int landBlockSize = sim->getLandValueMap().getBlockSize();
+        int plannedValue = plannedTerrain.landValueContribution(p.x,p.y,landBlockSize)
+            - sim->getParkTerrain().landValueContribution(p.x,p.y,landBlockSize);
         for (const auto& entry : reservedStructures) {
             if (entry.first == planningBuilder) continue;
             const auto& plan = entry.second;
@@ -2465,8 +2474,9 @@ bool QuantBot::selectCityServiceInvestment(const BuilderBase* builder, int money
             const auto source = DuneCity::policeSource(getMap(), plan.location.x, plan.location.y,
                 size.x, size.y, DuneCity::getPoliceCoverage(plan.item), state.policeFundingPercent, powered);
             coverage += DuneCity::policeCoverageAt(source.x,source.y,p.x,p.y,2,source.strength,w,h);
-            plannedValue += CityServiceInvestmentPolicy::parkContribution(plan.item,
-                plan.location.x,plan.location.y,p.x,p.y,sim->getLandValueMap().getBlockSize());
+            if (!DuneCity::usesParkTerrain(plan.item))
+                plannedValue += CityServiceInvestmentPolicy::parkContribution(plan.item,
+                    plan.location.x,plan.location.y,p.x,p.y,landBlockSize,plannedTerrain);
         }
         const int base = sim->getCrimeBeforePoliceMap().worldGet(p.x,p.y);
         const int crime = std::clamp(base - coverage, 0, 250);
@@ -2552,7 +2562,7 @@ bool QuantBot::selectCityServiceInvestment(const BuilderBase* builder, int money
                     value.dangerousRelief += std::max(0,p.crime-191) - std::max(0,p.crime-reduction-191);
                 }
                 const int park = CityServiceInvestmentPolicy::parkContribution(item,x,y,p.p.x,p.p.y,
-                    sim->getLandValueMap().getBlockSize());
+                    sim->getLandValueMap().getBlockSize(),plannedTerrain);
                 const int restored = p.crime > 190 && p.crime-reduction <= 190 ? 20 : 0;
                 const int gain = std::min(250-p.value,park+restored);
                 if (p.value > 0) valueGainSum += gain;
@@ -2726,6 +2736,13 @@ Coord QuantBot::findCityTurretPlaceLocation(Uint32 itemID, int* defenseScore, in
     if (crimeHotspot) *crimeHotspot = 0;
     auto* citySim = currentGame ? currentGame->getCitySimulation() : nullptr;
     if (!citySim || itemID != Structure_RocketTurret) return Coord::Invalid();
+    auto plannedTerrain = citySim->getParkTerrain();
+    for (const auto& entry : reservedStructures) {
+        if (entry.first == planningBuilder || !DuneCity::usesParkTerrain(entry.second.item)) continue;
+        const auto& plan = entry.second;
+        plannedTerrain.addSource(plan.location.x,plan.location.y,DuneCity::getParkLandValueBonus(plan.item));
+    }
+
 
     // Existing and planned turrets count as coverage, so additional yards do
     // not buy the same protection/amenity repeatedly.
@@ -2758,7 +2775,10 @@ Coord QuantBot::findCityTurretPlaceLocation(Uint32 itemID, int* defenseScore, in
         int coverage = 0;
         const int radius = target.defense ? defenseRadius : DuneCity::getParkLandValueRadius(Structure_RocketTurret);
         for (const auto& turret : turrets) {
-            if (std::max(std::abs(turret.x-target.position.x), std::abs(turret.y-target.position.y)) <= radius) {
+            if (target.defense
+                ? std::max(std::abs(turret.x-target.position.x), std::abs(turret.y-target.position.y)) <= radius
+                : plannedTerrain.marginalGain(turret.x,turret.y,DuneCity::kParkLandValueBonus,
+                    target.position.x,target.position.y)>0) {
                 if (++coverage >= (target.defense == 2 ? 2 : 1)) { target.covered = true; break; }
             }
         }
@@ -2825,7 +2845,9 @@ Coord QuantBot::findCityTurretPlaceLocation(Uint32 itemID, int* defenseScore, in
                 score.defense += target.defense;
                 score.proximity += target.defense * (defenseRadius-distance);
             } else if (!target.defense) {
-                score.amenity += RocketTurretPolicy::amenityBenefit(target.value, false, distance);
+                score.amenity += RocketTurretPolicy::amenityBenefit(target.value, false,
+                    plannedTerrain.marginalGain(x,y,DuneCity::getParkLandValueBonus(itemID),
+                        target.position.x,target.position.y));
             }
         }
         const auto source = DuneCity::policeSource(getMap(), x, y, 1, 1, DuneCity::getPoliceCoverage(itemID),
