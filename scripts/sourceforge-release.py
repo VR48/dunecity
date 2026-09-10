@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 """Mirror an existing stable GitHub release; never rebuild or delete releases."""
 import argparse
-import gzip
 import hashlib
 import json
 import os
 from pathlib import Path
 import re
-import shutil
 import subprocess
 import tempfile
 import urllib.parse
@@ -61,7 +59,7 @@ def verify_files(folder, manifest):
 
 
 def prepare(tag, folder):
-    v = version(tag)
+    version(tag)
     release = json.loads(run('gh', 'api', f'repos/{REPO}/releases/tags/{tag}'))
     assets = validate_release(release, tag)
     folder.mkdir(parents=True, exist_ok=False)
@@ -75,19 +73,13 @@ def prepare(tag, folder):
         published = assets[name].get('digest')
         if published and published != 'sha256:' + digest(folder/name):
             raise ValueError(f'GitHub digest mismatch: {name}')
-    source = folder / f'DuneCity-{v}-source.tar.gz'
-    # git archive exports the tagged source, respecting repository export attributes.
-    # Keep source archive generation independent of the working tree and clock.
-    with tempfile.TemporaryFile() as tar:
-        subprocess.run(['git', 'archive', '--format=tar', f'--prefix=DuneCity-{v}/', tag],
-                       stdout=tar, check=True)
-        tar.seek(0)
-        with source.open('wb') as raw, gzip.GzipFile(filename='', mode='wb', fileobj=raw, mtime=0) as gz:
-            shutil.copyfileobj(tar, gz)
-    (folder/'README.md').write_text((release.get('body') or '') + f'\n\nSource commit: `{commit}`\n')
+    # Source belongs in Git; do not package the tracked historical build trees.
+    (folder/'README.md').write_text((release.get('body') or '') +
+        f'\n\nSource code: https://github.com/{REPO}/tree/{tag}\n'
+        f'Source commit: `{commit}`\n')
     manifest = {p.name: digest(p) for p in sorted(folder.iterdir())}
     (folder/'SHA256SUMS').write_text(''.join(f'{sha}  {name}\n' for name, sha in manifest.items()))
-    print(f'Prepared {tag}: six packages, tagged source, notes and checksums ({commit})')
+    print(f'Prepared {tag}: six packages, notes and checksums ({commit})')
     return commit
 
 

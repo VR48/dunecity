@@ -55,3 +55,13 @@ Baseline test result: 362 passed, 2 failed, 3 skipped. The two failures are pre-
   `*-REVIEW.md`, `*-ANALYSIS.md`) are session scratch and are gitignored. Fold whatever outlives
   the session into `HANDOVER.md`; if a note is genuinely reference material, put it under `docs/`
   with a lowercase name so it is tracked deliberately.
+
+## Release and hosting handover
+
+Before release, website or SourceForge work, read [docs/release-operations.md](docs/release-operations.md)
+and [docs/sourceforge-releases.md](docs/sourceforge-releases.md). They map the three repositories,
+automated versus manual publishing, verification and recovery commands. SourceForge Files
+contains binaries, notes and checksums only; link to tagged Git source, never upload a source archive.
+Keep these runbooks current when changing deployment behaviour. Credentials live in GitHub
+Actions secrets/local SSH storage, never in these documents. Verify current service state;
+historical HANDOVER entries are dated evidence, not claims that a deployment is still pending.

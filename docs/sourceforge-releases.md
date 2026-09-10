@@ -9,17 +9,23 @@ as `v1.0.612`, to backfill or retry without rebuilding the game.
 
 Configured and first published on 2026-09-10. [Run 34416472472](https://github.com/VR48/dunecity/actions/runs/34416472472)
 successfully mirrored [1.0.612](https://sourceforge.net/projects/dunelegacy/files/dunecity/1.0.612/),
-verified all nine files, pushed the source refs and confirmed all three OS defaults.
+initially verified nine files, pushed the source refs and confirmed all three OS defaults.
 The setup below is retained for credential rotation or migration.
+
+On 2026-09-10 Stefan requested removal of the source archive. Current policy is
+**eight files: six packages, README with a tagged Git source link, SHA256SUMS**.
+The archive is excluded from future runs; source branch/tag mirroring continues.
+See [release-operations.md](release-operations.md) for the cross-repository checklist.
 
 ## Published layout
 
 - Files: `dunelegacy` project, `dunecity/<version>/` directory.
-- Six unchanged GitHub desktop packages, tagged source `.tar.gz`, `README.md`
+- Six unchanged GitHub desktop packages, `README.md`
   release notes and `SHA256SUMS`.
 - Source: existing `ssh://USER@git.code.sf.net/p/dunelegacy/code` repository,
   dedicated `dunecity` branch and `dunecity-vX.Y.Z` tags.
-- No forced Git pushes, deletion of old releases, or changes to Legacy master.
+- The release workflow never force-pushes, deletes old releases or changes Legacy master.
+  Separately authorized website edits can advance Legacy master.
 
 Every uploaded file is downloaded through authenticated rsync and SHA256 checked
 before source refs or download defaults are changed. Only the current GitHub

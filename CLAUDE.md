@@ -133,3 +133,13 @@ If those fail because the local build tree is stale or target names differ, insp
 - If a task tempts you to redesign zoning, stop and write the tradeoff down first.
 
 The main trap: solving a 3x3 art/rendering problem by accidentally changing the 2x2 gameplay architecture. Don’t step on the rake. It has teeth.
+
+## Release and hosting handover
+
+Before release, website or SourceForge work, read [docs/release-operations.md](docs/release-operations.md)
+and [docs/sourceforge-releases.md](docs/sourceforge-releases.md). They map the three repositories,
+automated versus manual publishing, verification and recovery commands. SourceForge Files
+contains binaries, notes and checksums only; link to tagged Git source, never upload a source archive.
+Keep these runbooks current when changing deployment behaviour. Credentials live in GitHub
+Actions secrets/local SSH storage, never in these documents. Verify current service state;
+historical HANDOVER entries are dated evidence, not claims that a deployment is still pending.

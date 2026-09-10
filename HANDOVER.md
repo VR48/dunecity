@@ -1,3 +1,12 @@
+## Current release/hosting entry point — 2026-09-10
+
+Read `docs/release-operations.md` and `docs/sourceforge-releases.md` for current
+operations. SourceForge sync is configured and verified; no credential setup is
+pending. User policy: do not upload source archives to SourceForge Files. Publish
+six binaries, README with tagged Git source link, and SHA256SUMS. Git branch/tag
+mirroring remains enabled. The original nine-file publication below is historical;
+the current release folder is being reconciled to eight files with this change.
+
 ## SourceForge release automation — 2026-09-09
 
 Added `.github/workflows/sourceforge.yml` and `scripts/sourceforge-release.py`.
@@ -13,7 +22,8 @@ in 2m15s. All nine files read back with matching SHA256; public Files page lists
 six packages, source archive, notes and checksums. API confirmed Windows ZIP,
 macOS DMG and Linux AppImage defaults at 1.0.612. Source branch `dunecity` and
 peeled `dunecity-v1.0.612` resolve to b949be92a1f44233c1964e3b1b3995088ac3a76e;
-Legacy master remains a3810102bd00a03c618bb7414d353a337c732fc6. Future stable-tag
+Legacy master was unchanged by that release sync; subsequent website-only commit
+`dc69c5a` updated its downloads page. Future stable-tag
 builds trigger the mirror automatically. Setup/operations documentation is in
 `docs/sourceforge-releases.md`. Do not print or commit credential contents.
 This is infrastructure-only, pushed with `[skip ci]`; game version remains 1.0.612.

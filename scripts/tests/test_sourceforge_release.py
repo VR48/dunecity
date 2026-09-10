@@ -1,3 +1,4 @@
+import json
 import importlib.util
 from pathlib import Path
 import tempfile
@@ -61,3 +62,25 @@ class ReleaseTests(unittest.TestCase):
                 self.assertEqual(len(pushes), 1)
                 self.assertEqual(pushes[0][-1], 'refs/tags/v1.0.612:refs/tags/dunecity-v1.0.612')
                 request.assert_not_called()
+
+    def test_preparation_excludes_source_archive_and_links_tagged_repo(self):
+        release=self.release()
+        release['body']='Release notes'
+        with tempfile.TemporaryDirectory() as tmp:
+            output=Path(tmp)/'release'
+            def fake_run(*args, **kwargs):
+                if args[:2]==('gh','api'): return json.dumps(release)
+                if args[:2]==('git','rev-parse'): return 'abc123'
+                if args[:3]==('gh','release','download'):
+                    name=args[args.index('--pattern')+1]
+                    (output/name).write_bytes(b'x')
+                return ''
+            with patch.object(sf,'run',side_effect=fake_run), \
+                 patch.object(sf.subprocess,'run') as command:
+                sf.prepare('v1.0.612',output)
+                command.assert_not_called()
+            self.assertEqual({p.name for p in output.iterdir()},
+                set(sf.expected_files('v1.0.612'))|{'README.md','SHA256SUMS'})
+            self.assertIn('https://github.com/VR48/dunecity/tree/v1.0.612',
+                (output/'README.md').read_text())
+            self.assertNotIn('-source.tar.gz',(output/'SHA256SUMS').read_text())
