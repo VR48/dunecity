@@ -269,8 +269,9 @@ inline int foundationSlabSize(int x,int y,bool bulk,bool prepared) {
 }
 
 // Divide the remaining map spice between active houses before investing.
+// City economies keep a larger runway than vanilla: 2,250 spice per worker.
 inline int desiredSpiceHarvesters(int spice, int competitors, int limit) {
-    return std::clamp(std::max(0, spice) / std::max(1, competitors) / 3000, 0, std::max(0, limit));
+    return std::clamp(std::max(0, spice) / std::max(1, competitors) / 2250, 0, std::max(0, limit));
 }
 // A refinery without workers is sunk capital. Once a player has a meaningful
 // share of the field, maintain enough harvesters to keep each refinery busy

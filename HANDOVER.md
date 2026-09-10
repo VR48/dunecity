@@ -1,3 +1,33 @@
+# Less conservative adaptive spice fleet — 1.0.628
+
+Stefan explicitly requested a modest adjustment to calculated harvester targets,
+not special lobby-override behavior or a fixed 120-worker target.
+
+Measured completed Vanilla session `1789043602798877-0` using Atreides snapshots,
+map spice deltas and all-house worker counts. At 14.21 minutes: 711,263 spice,
+189 harvesters across the map, 75 Atreides workers. Trailing ~2-minute depletion
+was 75,903 spice/min, implying 9.4 minutes remaining at that rate; old Atreides
+spice target 71. At 15.23 minutes: 638,690 spice, depletion 70,704/min, runway
+9.0 minutes, old target 63. These are measured aggregate depletion rates and
+constant-rate estimates, not guarantees of accessible spice or future duration.
+Over 10.16–14.72 minutes, the map averaged 182.7 harvesters and 415 spice removed
+per worker per minute; Atreides refined 301 credits per worker per minute.
+Removal and refinery income differ because of cargo in transit/losses and other
+map effects; do not equate them.
+
+- Reduced desired spice-per-worker by 25%: Vanilla 2,000 -> 1,500; city 3,000 ->
+  2,250. Targets increase about one-third where not capped. Five-house Vanilla
+  examples: 711,263 spice -> 94 workers; 638,690 -> 85; 215,370 -> 28.
+- Equal-share calculation, lobby/engine caps, existing global low-spice limit,
+  refinery throughput, budget, queue and factory ordering rules remain intact.
+  No override bypass and no production batching changes. Includes 1.0.627's air fix.
+- Added actual-match and depletion/cap regression cases. Policy telemetry tag
+  `spice-worker-runway-v50`. No save-format change.
+- Before/after dependency audits passed; CTest 541 passed, 3 optional skips.
+  Built and installed signed local 1.0.628; Applications executable SHA-256 matches
+  the tested build. Existing running game left alone; new policy applies next
+  launch. No remote push/release performed.
+
 # Fund ornithopter production before ground overflow — 1.0.627
 
 Reviewed last completed session `1789043602798877-0`: Vanilla 1.0.626,

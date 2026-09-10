@@ -103,7 +103,7 @@ TEST_CASE("QuantBot prioritizes the live jobs demand seen in the current game", 
 
 TEST_CASE("QuantBot invests in spice without counting the whole map for every house", "[quantbot][economy]") {
     REQUIRE(desiredSpiceHarvesters(600000, 4, 40) == 40);
-    REQUIRE(desiredSpiceHarvesters(60000, 4, 40) == 5);
+    REQUIRE(desiredSpiceHarvesters(60000, 4, 40) == 6);
     REQUIRE(desiredSpiceHarvesters(0, 4, 40) == 0);
     REQUIRE(desiredSpiceHarvesters(600000, 4, 10) == 10);
     REQUIRE(desiredSpiceRefineries(40, 21) == 8);
@@ -234,7 +234,7 @@ TEST_CASE("Spice-rich vanilla funds a larger fleet and preserves low-cash factor
     REQUIRE(DuneCity::vanillaHarvesterCapacity(40) == 60);
     REQUIRE(DuneCity::vanillaHarvesterCapacity(0) == 0);
     REQUIRE(DuneCity::vanillaHarvesterTarget(640916, 5, 60) == 60);
-    REQUIRE(DuneCity::vanillaHarvesterTarget(200000, 5, 60) == 20);
+    REQUIRE(DuneCity::vanillaHarvesterTarget(200000, 5, 60) == 26);
     REQUIRE(DuneCity::vanillaHarvesterTarget(640916, 5, 10) == 10);
     REQUIRE(DuneCity::vanillaFactoryTarget(24, 6, 8000) == 2);
     REQUIRE(DuneCity::vanillaFactoryTarget(24, 40, 8000) == 13);
@@ -977,4 +977,23 @@ TEST_CASE("Air prerequisite upgrades proceed without displacing available combat
     REQUIRE(chooseAirProduction(s).order==AirOrder::Upgrade);
     s.ornithopterAvailable=true;
     REQUIRE(chooseAirProduction(s).order==AirOrder::Ornithopter);
+}
+
+TEST_CASE("Spice fleet targets retain runway without retiring workers too early", "[quantbot][economy]") {
+    // Actual 1.0.626 match: five houses, a 120 lobby cap, 75 Atreides workers.
+    // The previous target was already 71 with 9.4 minutes of measured supply left.
+    REQUIRE(DuneCity::vanillaHarvesterTarget(711263, 5, 120) == 94);
+    REQUIRE(DuneCity::vanillaHarvesterTarget(638690, 5, 120) == 85);
+    REQUIRE(DuneCity::vanillaHarvesterTarget(215370, 5, 120) == 28);
+    REQUIRE(DuneCity::vanillaHarvesterTarget(1294346, 5, 120) == 120);
+    REQUIRE(DuneCity::vanillaHarvesterTarget(711263, 5, 40) == 40);
+    REQUIRE(DuneCity::vanillaHarvesterTarget(0, 5, 120) == 0);
+    REQUIRE(DuneCity::vanillaHarvesterTarget(-1, 0, 120) == 0);
+    REQUIRE(DuneCity::vanillaHarvesterTarget(711263, 5, 0) == 0);
+    // City tax income still warrants the more cautious worker investment.
+    REQUIRE(desiredSpiceHarvesters(711263, 5, 120) == 63);
+    REQUIRE(desiredSpiceHarvesters(215370, 5, 120) == 19);
+    REQUIRE(desiredSpiceHarvesters(711263, 5, 40) == 40);
+    REQUIRE(desiredSpiceHarvesters(-1, 0, 120) == 0);
+    REQUIRE(desiredSpiceHarvesters(711263, 5, 0) == 0);
 }

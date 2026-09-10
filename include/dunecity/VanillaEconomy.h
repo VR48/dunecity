@@ -7,8 +7,10 @@ namespace DuneCity {
 inline int vanillaHarvesterCapacity(int configured) {
     return configured <= 0 ? configured : configured + configured / 2;
 }
+// Budget 1,500 remaining spice per worker (just over two 700-spice loads).
+// Still share the field between houses and taper investment as it depletes.
 inline int vanillaHarvesterTarget(int spice, int competitors, int capacity) {
-    return std::clamp(std::max(0, spice) / std::max(1, competitors) / 2000, 0, std::max(0, capacity));
+    return std::clamp(std::max(0, spice) / std::max(1, competitors) / 1500, 0, std::max(0, capacity));
 }
 inline int vanillaYardTarget(int credits, int harvesters) {
     const int economyTarget = std::min(credits / 4000, 1 + std::max(0, harvesters) / 8);
