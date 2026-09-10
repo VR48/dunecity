@@ -161,3 +161,16 @@ TEST_CASE("RoadPlacement: Road is in the build menu; PowerLine is not", "[road][
     REQUIRE(orderBlock.find("Structure_Road") != std::string::npos);
     REQUIRE(orderBlock.find("Structure_PowerLine") == std::string::npos);
 }
+
+TEST_CASE("Road foundation is captured before placement clears the road flag", "[road][foundation][regression]") {
+    const auto src=readSourceFile("src/structures/StructureBase.cpp");
+    const auto start=src.find("void StructureBase::assignToMap");
+    REQUIRE(start!=std::string::npos);
+    const auto capture=src.find("const bool preparedFoundation = pTile->hasPreparedFoundation();",start);
+    const auto clear=src.find("pTile->setRoad(false)",start);
+    const auto damage=src.find("if(!preparedFoundation &&",start);
+    REQUIRE(capture!=std::string::npos);REQUIRE(clear!=std::string::npos);REQUIRE(damage!=std::string::npos);
+    REQUIRE(capture<clear);REQUIRE(clear<damage);
+    const auto tile=readSourceFile("include/Tile.h");
+    REQUIRE(tile.find("return isConcrete() || isRoad();")!=std::string::npos);
+}

@@ -1726,7 +1726,7 @@ Coord QuantBot::findPlaceLocation(Uint32 itemID) {
                     && wouldLandlockNeighbouringZone(getMap(), houseID, placeLocationX, placeLocationY, newSizeX, newSizeY)) continue;
 				int locationScore = 0;
                 const int blockBonus = cityZonePlacement ? fourZoneBlockBonus(getMap(),houseID,placeLocationX,placeLocationY) : 0;
-                locationScore += roads.junctionBonus - roads.roadsCovered * 20;
+                locationScore += roads.junctionBonus + roads.redundantRoadsCovered * 40;
 				int placeLocationEndX = placeLocationX + newSizeX;
 				int placeLocationEndY = placeLocationY + newSizeY;
 
@@ -1782,7 +1782,7 @@ Coord QuantBot::findPlaceLocation(Uint32 itemID) {
 							locationScore -= 10;
 						}
 					}
-					else if (!getMap().getTile(i, j)->isRock() && !getMap().getTile(i, j)->isConcrete()) {
+					else if (!getMap().getTile(i, j)->isRock() && !getMap().getTile(i, j)->hasPreparedFoundation()) {
 						// Favor non-rock tiles (open buildable terrain)
 						locationScore += 4;
 					}
@@ -1855,7 +1855,7 @@ Coord QuantBot::findPlaceLocation(Uint32 itemID) {
 	// Bonus for building on concrete tiles
 	for (int i = placeLocationX; i < placeLocationEndX; i++) {
 		for (int j = placeLocationY; j < placeLocationEndY; j++) {
-			if (getMap().tileExists(i, j) && getMap().getTile(i, j)->isConcrete()) {
+			if (getMap().tileExists(i, j) && getMap().getTile(i, j)->hasPreparedFoundation()) {
 				locationScore += 2;  // Small bonus - concrete protects from damage
 			}
 		}
@@ -2230,7 +2230,7 @@ Coord QuantBot::findSlabPlaceLocation(Uint32 itemID) {
 				// Check if any of the slab tiles already have concrete
 				for (int i = x; i < x + slabSizeX; i++) {
 					for (int j = y; j < y + slabSizeY; j++) {
-						if (getMap().getTile(i, j)->isConcrete()) {
+						if (getMap().getTile(i, j)->hasPreparedFoundation()) {
 							hasExistingSlab = true;
 							break;
 						}
@@ -2263,7 +2263,7 @@ Coord QuantBot::findSlabPlaceLocation(Uint32 itemID) {
 								adjacentStructureTiles++;
 							}
 							// Count concrete tiles that are directly adjacent (second priority)
-							else if (pTile->isConcrete()) {
+							else if (pTile->hasPreparedFoundation()) {
 							adjacentConcreteTiles++;
 						}
 							// Count rock tiles that are directly adjacent (room to expand)
@@ -2337,7 +2337,7 @@ Coord QuantBot::findTurretPlaceLocation(Uint32 itemID) {
                 const auto roads = cityRoadImpact(getMap(), x, y, newSizeX, newSizeY, itemID);
                 if (!roads.preservesConnections) continue;
 				FixPoint score = 0;
-                score += roads.junctionBonus - roads.roadsCovered * 20;
+                score += roads.junctionBonus + roads.redundantRoadsCovered * 40;
 				Coord candidatePos(x, y);
 
 				// 1. Favor being CLOSE to base center (integrated into base, not perimeter)
@@ -5288,7 +5288,7 @@ void QuantBot::build(int militaryValue) {
                     if (placementCache.count(itemID) && placementCache[itemID] == selectedPlaceLocation)
                         site.set("placement_quality", placementScoreDetails[itemID]);
                     site.set("road_connections_preserved", roads.preservesConnections)
-                        .set("roads_covered", roads.roadsCovered).set("junction_bonus", roads.junctionBonus);
+                        .set("roads_covered", roads.roadsCovered).set("redundant_roads_reused",roads.redundantRoadsCovered).set("junction_bonus", roads.junctionBonus);
                     site.set("pollution", sim->getPollutionDensityMap().worldGet(x, y))
                         .set("crime", sim->getCrimeRateMap().worldGet(x, y))
                         .set("traffic", sim->getTrafficDensityMap().worldGet(x, y))
@@ -5334,29 +5334,25 @@ void QuantBot::build(int militaryValue) {
 						startI = location.x + structureSize.x - 1; startJ = location.y + structureSize.y - 1; incI = -1; incJ = -1;
 					}
 
+                    // Bulk concrete is useful only when all four tiles are bare.
+                    // A partial road/concrete foundation needs individual slabs.
+                    const bool useSlab4 = QuantBotBuildPolicy::useBulkFoundation(
+                        structureSize.x,structureSize.y,pBuilder->isAvailableToBuild(Structure_Slab4),
+                        [&](int dx,int dy) { return getMap().getTile(location.x+dx,location.y+dy)->hasPreparedFoundation(); });
 					// Queue concrete slabs for each tile, preferring Slab4 (2x2) when available
 					for (int i = startI; abs(i - startI) < structureSize.x; i += incI) {
 						for (int j = startJ; abs(j - startJ) < structureSize.y; j += incJ) {
 							const Tile* pTile = getMap().getTile(i, j);
 
-							// For structures >= 2x2, try to use Slab4 for the first 2x2 area
-							if (structureSize.x > 1 && structureSize.y > 1
-								&& pBuilder->isAvailableToBuild(Structure_Slab4)
-								&& abs(i - location.x) < 2 && abs(j - location.y) < 2) {
-								// Only queue Slab4 at the origin corner (covers 2x2)
-								if (i == location.x && j == location.y && pTile->getType() != Terrain_Slab) {
-									placeLocations.emplace_back(i, j);
-									doProduceItem(pBuilder, Structure_Slab4);
-									logDebug("CONCRETE: Queuing Slab4 at (%d,%d) for %s", i, j, getItemNameByID(itemID).c_str());
-								}
-							} else if (pTile->getType() != Terrain_Slab) {
-								// Use Slab1 for remaining tiles or if Slab4 not available
-								if (pBuilder->isAvailableToBuild(Structure_Slab1)) {
-									placeLocations.emplace_back(i, j);
-									doProduceItem(pBuilder, Structure_Slab1);
-									logDebug("CONCRETE: Queuing Slab1 at (%d,%d) for %s", i, j, getItemNameByID(itemID).c_str());
-								}
-							}
+                            const int slabSize=QuantBotBuildPolicy::foundationSlabSize(
+                                i-location.x,j-location.y,useSlab4,pTile->hasPreparedFoundation());
+                            const Uint32 slab=slabSize==2 ? Structure_Slab4 : Structure_Slab1;
+                            if (slabSize && pBuilder->isAvailableToBuild(slab)) {
+                                placeLocations.emplace_back(i,j);
+                                doProduceItem(pBuilder,slab);
+                                logDebug("CONCRETE: Queuing %s at (%d,%d) for %s",
+                                    getItemNameByID(slab).c_str(),i,j,getItemNameByID(itemID).c_str());
+                            }
 						}
 					}
 

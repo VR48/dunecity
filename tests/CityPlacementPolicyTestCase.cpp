@@ -416,3 +416,30 @@ TEST_CASE("Empty harvesters do not repeat refuge trips because their old field i
     REQUIRE(needsRefineryRefuge(false,false,true,true));
     REQUIRE_FALSE(needsRefineryRefuge(false,false,false,true));
 }
+
+TEST_CASE("A spare lane can become foundation while the other lane stays connected", "[city][placement][roads]") {
+    auto doubleRoad=[](int x,int y){return x>=0 && x<10 && (y==3 || y==4);};
+    const auto impact=CityPlacementPolicy::assessRoads(3,2,3,2,false,doubleRoad);
+    REQUIRE(impact.preservesConnections);
+    REQUIRE(impact.roadsCovered==3);
+    REQUIRE(impact.redundantRoadsCovered==3);
+    auto singleRoad=[](int x,int y){return x>=0 && x<10 && y==3;};
+    const auto blocked=CityPlacementPolicy::assessRoads(3,2,3,2,false,singleRoad);
+    REQUIRE_FALSE(blocked.preservesConnections);
+    REQUIRE(blocked.redundantRoadsCovered==0);
+}
+TEST_CASE("Mixed road foundation needs only the missing individual slabs", "[quantbot][placement][roads]") {
+    using namespace QuantBotBuildPolicy;
+    auto prepared=[](int,int y){return y==1;}; // 3x2 factory with three road tiles
+    const bool bulk=useBulkFoundation(3,2,true,prepared);
+    REQUIRE_FALSE(bulk);
+    int orders=0,tiles=0;
+    for (int x=0;x<3;++x) for (int y=0;y<2;++y) {
+        const int size=foundationSlabSize(x,y,bulk,prepared(x,y));
+        if (size) ++orders;
+        tiles+=size*size;
+    }
+    REQUIRE(orders==3);REQUIRE(tiles==3);
+    REQUIRE(useBulkFoundation(3,2,true,[](int,int){return false;}));
+    REQUIRE_FALSE(useBulkFoundation(3,2,true,[](int x,int y){return x==1 && y==1;}));
+}

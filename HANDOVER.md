@@ -1,3 +1,24 @@
+# Roads are prepared foundations; reuse spare lanes — 1.0.615
+
+Stefan's double-road screenshots showed factories wasting space and concrete.
+Tile::hasPreparedFoundation now treats concrete OR a road as prepared ground,
+without merging their tile states. StructureBase captures this before clearing
+the road flag: previously it cleared the flag and checked only concrete, charging
+placement damage on roads. Prepared roads also follow the existing concrete
+foundation degradation rule. Covered road flags still clear normally.
+
+QBot foundation scoring counts roads, slab-site search avoids paved roads, and
+pre-concreting skips road/concrete cells. Slab4 is used only when all four cells
+are bare; mixed footprints get individual missing Slab1s. Shared foundation
+helpers are exercised with a3x2 footprint containing3road cells: exactly3Slab1
+orders. Placement no longer penalises every covered road; it rewards reusing
+redundant parallel lanes while retaining local access and road connectivity
+checks. Telemetry reports redundant_roads_reused. No map-wide path tracking.
+Tests cover spare-lane reuse, a single road with no alternate connection, mixed
+foundations, and foundation capture before road flag clearing. Full CTest and
+Ninja dependency audits passed; local615 built, no remote release or launch.
+Logs: /tmp/dunecity-road-foundation-{build,tests}.log.
+
 # Local road access and residential infill — 1.0.614
 
 Supersedes 613's global connectivity search at Stefan's request. GroundAccessPolicy

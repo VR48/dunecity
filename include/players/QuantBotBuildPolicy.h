@@ -209,6 +209,20 @@ inline void prioritizeResidentialInfill(std::array<Uint32,3>& ranked,int demand,
     if (it!=ranked.end()) std::rotate(ranked.begin(),it,it+1);
 }
 
+// A road is already foundation: a bulk slab must not erase it. Coordinates
+// below are relative to the building footprint, independently of queue order.
+template<class Prepared>
+inline bool useBulkFoundation(int width,int height,bool available,Prepared prepared) {
+    if (!available || width<2 || height<2) return false;
+    for (int x=0;x<2;++x) for (int y=0;y<2;++y) if (prepared(x,y)) return false;
+    return true;
+}
+inline int foundationSlabSize(int x,int y,bool bulk,bool prepared) {
+    if (prepared) return 0;
+    if (bulk && x<2 && y<2) return x==0 && y==0 ? 2 : 0;
+    return 1;
+}
+
 // Divide the remaining map spice between active houses before investing.
 inline int desiredSpiceHarvesters(int spice, int competitors, int limit) {
     return std::clamp(std::max(0, spice) / std::max(1, competitors) / 3000, 0, std::max(0, limit));

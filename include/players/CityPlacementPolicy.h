@@ -66,7 +66,7 @@ inline bool preferCitySite(bool safe,int sides,int tier,int score,
     return score>bestScore;
 }
 
-struct RoadImpact { bool preservesConnections = true; int roadsCovered = 0; int junctionBonus = 0; };
+struct RoadImpact { bool preservesConnections = true; int roadsCovered = 0; int redundantRoadsCovered = 0; int junctionBonus = 0; };
 
 template<class IsRoad, class CanPave = std::nullptr_t>
 RoadImpact assessRoads(int x, int y, int width, int height, bool turret, IsRoad road, CanPave pave = nullptr) {
@@ -82,6 +82,16 @@ RoadImpact assessRoads(int x, int y, int width, int height, bool turret, IsRoad 
         if (covered && before[j*w+i]) ++result.roadsCovered;
     }
     if (!result.roadsCovered) return result;
+    auto survivingRoad=[&](int tx,int ty) {
+        return !(tx>=x && tx<x+width && ty>=y && ty<y+height) && road(tx,ty);
+    };
+    for (int ty=y;ty<y+height;++ty) for (int tx=x;tx<x+width;++tx) if (road(tx,ty)) {
+        const bool horizontal=road(tx-1,ty) && road(tx+1,ty)
+            && (survivingRoad(tx,ty-1) || survivingRoad(tx,ty+1));
+        const bool vertical=road(tx,ty-1) && road(tx,ty+1)
+            && (survivingRoad(tx-1,ty) || survivingRoad(tx+1,ty));
+        result.redundantRoadsCovered += horizontal || vertical;
+    }
     auto components = [&](const std::vector<bool>& cells) {
         std::vector<int> labels(w*h, -1), queue;
         for (int seed = 0; seed < w*h; ++seed) {
