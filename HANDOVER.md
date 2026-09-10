@@ -1,3 +1,20 @@
+# Shared city road access and desktop release — 1.0.630
+
+Stefan requested enemy roads be reusable, then authorized local/remote builds
+and both website updates, including accumulated 1.0.627–629 fixes.
+- Roads already supplied prepared foundations independent of owner, but
+  Map::isWithinBuildRange only recognized owned tiles. In city mode any road
+  now supplies construction reach within the existing two-tile BUILDRANGE.
+  This is shared access, including enemy/abandoned road networks; roads do not
+  need to be connected to an owned network. Human/AI validation uses the same rule.
+- Ownership/upkeep remains unchanged, enemy bare ground/concrete grants no reach,
+  Vanilla retains owned-tile reach, and footprint occupation/terrain/AI lane and
+  threat checks still apply. Strict foundation checks now accept roads as slabs.
+  No path searches or new map-wide scans. Regression cases cover owners, modes,
+  foundation/occupancy wiring. Policy shared-road-access-v52, save layout unchanged.
+- Before/after dependency audits passed; CTest 547 passed, three optional skips.
+  Release publication/installation verification will be recorded below.
+
 # Repair-yard crash and earlier QuantBot repair support — 1.0.629
 
 Crash evidence: `~/Library/Logs/DiagnosticReports/dunecity-2026-09-10-232316.ips`

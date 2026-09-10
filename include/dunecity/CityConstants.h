@@ -50,6 +50,12 @@ inline bool isCityOnlyStructure(int itemID) {
         || itemID == Structure_Airport;
 }
 
+// Roads are shared construction access in city mode. Ownership still controls
+// maintenance accounting; enemy bare ground/concrete does not grant build reach.
+inline bool isConstructionAnchor(bool cityMode, bool road, int tileOwner, int builderHouse) {
+    return tileOwner == builderHouse || (cityMode && road);
+}
+
 inline bool isCityBuildableTerrain(uint32_t terrain) {
     return terrain == Terrain_Rock || terrain == Terrain_Slab;
 }

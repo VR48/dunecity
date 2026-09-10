@@ -17,6 +17,8 @@
 
 #include <catch2/catch_all.hpp>
 #include <data.h>
+#include <dunecity/CityConstants.h>
+#include <dunecity/RoadMaintenancePolicy.h>
 #include <fstream>
 #include <string>
 #include <cstdlib>
@@ -173,4 +175,31 @@ TEST_CASE("Road foundation is captured before placement clears the road flag", "
     REQUIRE(capture<clear);REQUIRE(clear<damage);
     const auto tile=readSourceFile("include/Tile.h");
     REQUIRE(tile.find("return isConcrete() || isRoad();")!=std::string::npos);
+}
+
+TEST_CASE("City construction can reuse enemy and abandoned roads without taking their upkeep", "[road][placement][regression]") {
+    for (int owner : {-1, 0, 1, 4, 7}) {
+        REQUIRE(DuneCity::isConstructionAnchor(true, true, owner, 1));
+        REQUIRE(DuneCity::isConstructionAnchor(false, true, owner, 1) == (owner == 1));
+        REQUIRE(DuneCity::isConstructionAnchor(true, false, owner, 1) == (owner == 1));
+    }
+    // Public access and responsibility for existing roads remain separate.
+    REQUIRE(DuneCity::roadOwnerAfterPlacement(true, 4, 1) == 4);
+    REQUIRE(DuneCity::roadOwnerAfterPlacement(false, 4, 1) == 1);
+}
+
+TEST_CASE("Road reuse keeps footprint occupancy and the bounded build-range check", "[road][placement][regression]") {
+    const auto map = readSourceFile("src/Map.cpp");
+    const auto begin = map.find("bool Map::okayToPlaceStructure(");
+    const auto end = map.find("bool Map::isWithinBuildRange(", begin);
+    REQUIRE(begin != std::string::npos);
+    REQUIRE(end != std::string::npos);
+    const auto checks = map.substr(begin, end-begin);
+    REQUIRE(checks.find("!pTile->hasPreparedFoundation()") != std::string::npos);
+    REQUIRE(checks.find("pTile->hasCityZone()") != std::string::npos);
+    REQUIRE(checks.find("pTile->isBlocked()") != std::string::npos);
+    const auto range = map.substr(end, map.find("return false;",end)-end);
+    REQUIRE(range.find("x - BUILDRANGE") != std::string::npos);
+    REQUIRE(range.find("x + BUILDRANGE") != std::string::npos);
+    REQUIRE(range.find("DuneCity::isConstructionAnchor") != std::string::npos);
 }
