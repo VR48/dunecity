@@ -5,7 +5,13 @@ operations. SourceForge sync is configured and verified; no credential setup is
 pending. User policy: do not upload source archives to SourceForge Files. Publish
 six binaries, README with tagged Git source link, and SHA256SUMS. Git branch/tag
 mirroring remains enabled. The original nine-file publication below is historical;
-the current release folder is being reconciled to eight files with this change.
+the current release folder now contains eight files. Verification run
+https://github.com/VR48/dunecity/actions/runs/34431698171 passed all eight release
+safeguard tests, read back matching upload hashes, and confirmed the existing
+Windows/macOS/Linux defaults at 1.0.612. The source archive was removed explicitly.
+Retries now check current defaults before issuing an API update: a redundant PUT
+returned HTTP 400 after an otherwise successful upload. Source remains available
+via the README's tagged GitHub link and SourceForge's dedicated Git refs.
 
 ## SourceForge release automation — 2026-09-09
 
