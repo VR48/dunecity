@@ -486,7 +486,7 @@ TEST_CASE("ZoneStructure: civic art survives the renderer texture refresh",
     REQUIRE(restore.find("graphicID = ObjPic_ZoneCommercial") != std::string::npos);
     REQUIRE(restore.find("graphicID = ObjPic_ZoneIndustrial") != std::string::npos);
     REQUIRE(restore.find("numImagesX = DuneCity::CitySprites::zoneColumns(zoneType_)") != std::string::npos);
-    REQUIRE(restore.find("ZoneType::Industrial ? DuneCity::CitySprites::industrialRows : 4") != std::string::npos);
+    REQUIRE(restore.find("DuneCity::CitySprites::zoneRows(zoneType_)") != std::string::npos);
 }
 
 // Zone animation frame regression tests
@@ -510,7 +510,7 @@ TEST_CASE("ZoneStructure: init sets animation frame to 0 and matches atlas size"
     // walks curAnimFrame around the grid based on density + value tier.
     struct ZoneInit { const char* sig; const char* nx; const char* ny; };
     const ZoneInit zones[] = {
-        { "void ResidentialZone::init()", "DuneCity::CitySprites::residentialColumns", "4" },
+        { "void ResidentialZone::init()", "DuneCity::CitySprites::residentialColumns", "DuneCity::CitySprites::residentialRows" },
         { "void CommercialZone::init()", "DuneCity::CitySprites::commercialColumns", "4" },
         { "void IndustrialZone::init()", "DuneCity::CitySprites::industrialColumns", "DuneCity::CitySprites::industrialRows" },
     };
@@ -616,4 +616,50 @@ TEST_CASE("ZoneStructure: zone HP matches WindTrap in ObjectData config",
         INFO(std::string(zoneName) + " HitPoints must match Windtrap (" + wtHP + ")");
         REQUIRE(zoneHP == wtHP);
     }
+}
+
+#include <dunecity/ResidentialPopulation.h>
+#include <misc/IMemoryStream.h>
+#include <misc/OMemoryStream.h>
+
+TEST_CASE("Residential lots build individual houses then each apartment stage", "[zone][population]") {
+    using namespace DuneCity::ResidentialPopulation;
+    int pop=0;
+    for (int expected=1;expected<=8;++expected) {
+        pop=grow(pop,0);
+        REQUIRE(pop==expected);
+        REQUIRE(density(pop)==0);
+        REQUIRE(supply(pop)>0);
+    }
+    REQUIRE(grow(pop,64)==8);
+    for (int expected : {16,24,32,40}) {
+        pop=grow(pop,65);
+        REQUIRE(pop==expected);
+    }
+    REQUIRE(grow(pop,255)==40);
+    for (int expected : {32,24,16,8,7,6,5,4,3,2,1,0}) {
+        pop=decline(pop);
+        REQUIRE(pop==expected);
+    }
+    REQUIRE(decline(0)==0);
+    REQUIRE(supply(0)==0);
+}
+
+TEST_CASE("Residential occupancy survives saves without shifting older streams", "[zone][population][save-compat]") {
+    using namespace DuneCity::ResidentialPopulation;
+    for (int pop : {0,1,2,3,4,5,6,7,8,16,24,32,40}) {
+        OMemoryStream output;
+        write(output,pop); output.writeUint32(0x12345678);
+        IMemoryStream input(output.getData(),output.getDataLength());
+        REQUIRE(read(input,9835)==pop);
+        REQUIRE(input.readUint32()==0x12345678);
+    }
+    OMemoryStream output; output.writeUint32(0x12345678);
+    IMemoryStream input(output.getData(),output.getDataLength());
+    REQUIRE(read(input,9834)==legacy);
+    REQUIRE(input.readUint32()==0x12345678);
+    REQUIRE(fromDensity(0)==0);
+    REQUIRE(fromDensity(1)==16);
+    REQUIRE(fromDensity(2)==24);
+    REQUIRE(fromDensity(3)==40);
 }

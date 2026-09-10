@@ -5,11 +5,13 @@
 #include <cstdint>
 #include <dunecity/CityConstants.h>
 #include <Definitions.h>
+#include <dunecity/ResidentialPopulation.h>
 
 namespace DuneCity::CitySprites {
 // Must match scripts/build-city-atlases.py. Visual-only: no random-generator
 // calls, saved fields, scans, or changes to population/density/footprints.
-constexpr int residentialColumns = 8;
+constexpr int residentialColumns = 15;
+constexpr int residentialRows = 8; // 29 models per value tier, packed into two rows
 constexpr int commercialColumns = 6;
 constexpr int industrialColumns = 5;
 constexpr int industrialRows = 18; // 2 value tiers * (static + 8 phases)
@@ -36,18 +38,21 @@ inline int zoneColumns(ZoneType type) {
     return industrialColumns;
 }
 
+inline int zoneRows(ZoneType type) {
+    return type == ZoneType::Residential ? residentialRows : type == ZoneType::Industrial ? industrialRows : 4;
+}
+
 inline int zoneFrame(ZoneType type, int density, int valueTier,
-                     int x, int y, uint32_t cycle, bool powered) {
+                     int x, int y, uint32_t cycle, bool powered, int residentialPopulation = -1) {
     density = std::clamp(density, 0, 3);
     const uint32_t seed = siteSeed(x, y);
     int model = 0;
     if (type == ZoneType::Residential) {
-        // Four apartment sizes and the three house styles per value tier,
-        // distributed across our three inhabited simulation densities.
-        if (density == 1) model = 1 + seed % 4;
-        if (density == 2) model = 5 + seed % 2;
-        if (density == 3) model = 7;
-        return model + std::clamp(valueTier, 0, 3) * residentialColumns;
+        const int pop = residentialPopulation < 0 ? ResidentialPopulation::fromDensity(density)
+            : ResidentialPopulation::normalize(residentialPopulation);
+        if (pop > 0 && pop <= 8) model = 1 + (seed % 3)*8 + pop-1;
+        else if (pop >= 16) model = 25 + (pop-16)/8;
+        return model + std::clamp(valueTier, 0, 3) * residentialColumns * 2;
     }
     if (type == ZoneType::Commercial) {
         if (density == 1) model = 1 + seed % 2;

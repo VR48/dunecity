@@ -218,7 +218,7 @@ static const Coord objPicTiles[] {
     { 4, 1 },   // ObjPic_TechCenter
     { 4, 1 },   // ObjPic_Scoutpost
     { 10, 1 },  // ObjPic_LoveFactory
-    { DuneCity::CitySprites::residentialColumns, 4 }, // ObjPic_ZoneResidential
+    { DuneCity::CitySprites::residentialColumns, DuneCity::CitySprites::residentialRows }, // ObjPic_ZoneResidential
     { DuneCity::CitySprites::commercialColumns, 4 }, // ObjPic_ZoneCommercial
     { DuneCity::CitySprites::industrialColumns, DuneCity::CitySprites::industrialRows }, // ObjPic_ZoneIndustrial
     { 16, DuneCity::CitySprites::roadRows }, // ObjPic_CityRoad

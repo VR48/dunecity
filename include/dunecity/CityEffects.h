@@ -35,7 +35,7 @@ namespace DuneCity {
 //
 // Mapping reference (as agreed in spec discussion):
 //   Slab/Slab4         -> Road
-//   WindTrap           -> Wind power / Industrial medium (no pollution)
+//   WindTrap           -> Wind power / Industrial light (no pollution)
 //   Nuclear Plant      -> Nuclear Power (no pollution; detonates when destroyed)
 //   Refinery           -> Industrial medium
 //   Light Factory      -> Industrial medium
@@ -170,8 +170,9 @@ inline int getStructureMaxLevel(int itemID) {
         case Structure_ZoneIndustrial:
         case Structure_Palace:          // civic dual — grows to max density
             return 3;
+        case Structure_WindTrap:        // clean light industry, fixed at level 1
+            return 1;
         case Structure_Radar:           // commercial medium
-        case Structure_WindTrap:        // clean industrial medium
         case Structure_LightFactory:    // industrial medium
             return 2;
         case Structure_Refinery:        // industrial high
@@ -240,6 +241,7 @@ inline int getCommercialSupply(int itemID, int level) {
 }
 
 inline int getIndustrialSupply(int itemID, int level) {
+    if (itemID == Structure_WindTrap) level = std::min(level,1);
     return (getStructureCityRole(itemID) == CityRole::Industrial)
         ? detail::supplyForLevel(level) : 0;
 }
@@ -543,6 +545,7 @@ inline int getZoneValueTier(int landValue, int numTiers) {
 /// getZonePopulation returns the residential portion; use
 /// getPalaceCommercialPopulation() for the commercial half.
 inline int getZonePopulation(int itemID, int level) {
+    if (itemID == Structure_WindTrap) level = std::min(level,1);
     if (level <= 0) return 0;
     if (level > 3) level = 3;
 

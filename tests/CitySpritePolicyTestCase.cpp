@@ -15,12 +15,14 @@ TEST_CASE("All imported RCI models are reachable without changing simulation den
         const int tiers = type == ZoneType::Industrial ? 2 : 4;
         for (int tier = 0; tier < tiers; ++tier) {
             std::set<int> models;
-            for (int d = 0; d <= 3; ++d) for (int x = 0; x < 30; ++x) for (int y = 0; y < 30; ++y) {
-                const auto frame = zoneFrame(type, d, tier, x, y, 0, false);
-                models.insert(frame % cols);
-                CHECK(frame / cols == (type == ZoneType::Industrial ? tier * 9 : tier));
+            for (int pop : {0,1,2,3,4,5,6,7,8,16,24,32,40}) for (int x = 0; x < 30; ++x) for (int y = 0; y < 30; ++y) {
+                const int d = ResidentialPopulation::density(pop);
+                const auto frame = zoneFrame(type, d, tier, x, y, 0, false,pop);
+                const int stride = type == ZoneType::Residential ? cols*2 : cols;
+                models.insert(frame % stride);
+                CHECK(frame / stride == (type == ZoneType::Industrial ? tier * 9 : tier));
             }
-            CHECK(models.size() == static_cast<size_t>(cols));
+            CHECK(models.size() == static_cast<size_t>(type == ZoneType::Residential ? 29 : cols));
         }
     }
 }
@@ -29,7 +31,7 @@ TEST_CASE("City animation frames respect density power and atlas bounds", "[city
     for (auto type : {ZoneType::Residential, ZoneType::Commercial, ZoneType::Industrial}) {
         for (int density : {-1, 0, 1, 2, 3, 99}) for (int tier : {-1, 0, 1, 2, 3, 99}) {
             const int cols = zoneColumns(type);
-            const int count = cols * (type == ZoneType::Industrial ? industrialRows : 4);
+            const int count = cols * zoneRows(type);
             for (uint32_t cycle : {0u, frameCycles, 7 * frameCycles, 0xffffffffu}) {
                 const int frame = zoneFrame(type, density, tier, 17, 9, cycle, true);
                 CHECK(frame >= 0);
@@ -94,7 +96,7 @@ struct Pixels {
 
 TEST_CASE("Shipped city atlases match renderer dimensions and contain real animations", "[city][sprites][assets]") {
     struct Spec { const char* name; int cols, rows, cell; };
-    for (const auto& spec : {Spec{"residential", residentialColumns, 4, 32},
+    for (const auto& spec : {Spec{"residential", residentialColumns, residentialRows, 32},
                             Spec{"commercial", commercialColumns, 4, 32},
                             Spec{"industrial", industrialColumns, industrialRows, 32},
                             Spec{"roads", 16, roadRows, 16},
@@ -123,5 +125,39 @@ TEST_CASE("Shipped city atlases match renderer dimensions and contain real anima
     for (int mask = 0; mask < 16; ++mask) {
         CHECK(roads.cell(mask, 1, 16) != roads.cell(mask, 2, 16));
         CHECK(roads.cell(mask, 5, 16) != roads.cell(mask, 6, 16));
+    }
+}
+
+TEST_CASE("Residential house artwork changes only one perimeter site per growth step", "[city][sprites][assets]") {
+    Pixels pixels("residential");
+    const auto framePixels=[&](int pop,int x,int y,int tier) {
+        const int frame=zoneFrame(ZoneType::Residential,ResidentialPopulation::density(pop),tier,x,y,0,true,pop);
+        return pixels.cell(frame%residentialColumns,frame/residentialColumns,32);
+    };
+    for (int tier=0;tier<4;++tier) for (int site=0;site<3;++site) {
+        auto previous=framePixels(0,site*3,9,tier);
+        for (int pop=1;pop<=8;++pop) {
+            const auto next=framePixels(pop,site*3,9,tier);
+            int changed=0,minX=32,minY=32,maxX=-1,maxY=-1;
+            for (int y=0;y<32;++y) for (int x=0;x<32;++x) {
+                const int i=(y*32+x)*4;
+                // Ignore faint Lanczos/unsharp halos outside the changed house tile.
+                int delta=0;
+                for (int c=0;c<4;++c) delta=std::max(delta,std::abs(int(previous[i+c])-int(next[i+c])));
+                if (delta>8) {
+                    ++changed; minX=std::min(minX,x); maxX=std::max(maxX,x);
+                    minY=std::min(minY,y); maxY=std::max(maxY,y);
+                }
+            }
+            REQUIRE(changed>0);
+            REQUIRE(maxX-minX<14);
+            REQUIRE(maxY-minY<14);
+            previous=next;
+        }
+        for (int pop : {16,24,32,40}) {
+            auto next=framePixels(pop,site*3,9,tier);
+            REQUIRE(previous!=next);
+            previous=next;
+        }
     }
 }

@@ -164,11 +164,10 @@ private:
     Coord findSlabPlaceLocation(Uint32 itemID);
     Coord findTurretPlaceLocation(Uint32 itemID);
     bool selectCityServiceInvestment(const BuilderBase* builder, int money, bool emergency,
-                                    Uint32& item, Coord& site, bool landValueOnly = false);
+                                    Uint32& item, Coord& site, bool landValueOnly = false, Uint32 requiredItem = NONE_ID);
     Coord findCityTurretPlaceLocation(Uint32 itemID, int* defenseScore = nullptr, int* amenityScore = nullptr,
                                       int* crimeBenefit = nullptr, int* crimeHotspot = nullptr);
-    Coord findCityCrimeServicePlaceLocation(Uint32 itemID, int* crimeBenefit = nullptr,
-                                            int* crimeHotspot = nullptr);
+
     Coord findEffectiveTurretPlaceLocation(Uint32 itemID);
     Coord findSquadCenter(int houseID);
     Coord findBaseCentre(int houseID);

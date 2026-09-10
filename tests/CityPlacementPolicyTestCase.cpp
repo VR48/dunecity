@@ -445,3 +445,26 @@ TEST_CASE("Mixed road foundation needs only the missing individual slabs", "[qua
     REQUIRE(useBulkFoundation(3,2,true,[](int,int){return false;}));
     REQUIRE_FALSE(useBulkFoundation(3,2,true,[](int x,int y){return x==1 && y==1;}));
 }
+
+TEST_CASE("Service placement penalises clusters and favours underserved crime", "[city][placement]") {
+    using namespace CityServiceInvestmentPolicy;
+    Value unserved;
+    unserved.buildCost=500; unserved.upkeep=100; unserved.crime=500;
+    unserved.crimeUtility=underservedUtility(1500,0);
+    Value duplicate=unserved;
+    duplicate.crimeUtility=underservedUtility(2500,200);
+    duplicate.overlapPenalty=stationOverlapCost(500,3);
+    REQUIRE(unserved.betterThan(duplicate));
+    REQUIRE(unserved.useful(false));
+    REQUIRE_FALSE(duplicate.useful(false));
+    auto cluster=duplicate;
+    cluster.overlapPenalty+=stationOverlapCost(500,6);
+    REQUIRE(duplicate.betterThan(cluster)); // the second neighbour matters too
+    REQUIRE(stationOverlapCost(500,12)==0);
+    REQUIRE(stationOverlapCost(500,100)==0);
+    REQUIRE(stationOverlapCost(500,3)>stationOverlapCost(500,6));
+    REQUIRE(underservedUtility(1500,0)>underservedUtility(1500,100));
+    // An exceptionally bad district can still justify overlapping stations.
+    cluster.crimeUtility=underservedUtility(20000,200);
+    REQUIRE(cluster.useful(false));
+}

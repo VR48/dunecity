@@ -182,10 +182,14 @@ inline std::array<Uint32, 3> rankZones(int residential, int commercial, int indu
         {Structure_ZoneIndustrial, industrial, indDemand, 1},
         {Structure_ZoneCommercial, commercial, comDemand, 1}
     }};
-    std::stable_sort(candidates.begin(), candidates.end(), [bootstrap](const auto& a, const auto& b) {
+    const Uint32 preferred = resDemand < 500
+        ? (comDemand < 500 && indDemand > 0 ? Structure_ZoneIndustrial
+            : comDemand > 0 ? Structure_ZoneCommercial : NONE_ID) : NONE_ID;
+    std::stable_sort(candidates.begin(), candidates.end(), [bootstrap,preferred](const auto& a, const auto& b) {
         const bool missingA = bootstrap && a.count == 0;
         const bool missingB = bootstrap && b.count == 0;
         if(missingA != missingB) return missingA;
+        if ((a.item == preferred) != (b.item == preferred)) return a.item == preferred;
         const int demandA = normalizedZoneDemand(a.item, a.demand);
         const int demandB = normalizedZoneDemand(b.item, b.demand);
         if(demandA != demandB) return demandA > demandB;
@@ -201,10 +205,10 @@ inline std::array<Uint32, 3> rankZones(int residential, int commercial, int indu
     return result;
 }
 
-// Infill housing while R demand exists; retain bootstrap and demand balancing
+// Infill housing when R demand reaches 500; retain bootstrap and demand balancing
 // when no residential gap is available.
 inline void prioritizeResidentialInfill(std::array<Uint32,3>& ranked,int demand,bool infill) {
-    if (demand<=0 || !infill) return;
+    if (demand<500 || !infill) return;
     const auto it=std::find(ranked.begin(),ranked.end(),Structure_ZoneResidential);
     if (it!=ranked.end()) std::rotate(ranked.begin(),it,it+1);
 }

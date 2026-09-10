@@ -1,3 +1,4 @@
+#include <dunecity/CityStructurePopulation.h>
 #include <players/LocalPointIndex.h>
 #include <players/CityRoadRepairPolicy.h>
 #include <players/UnitMixPolicy.h>
@@ -1607,7 +1608,8 @@ Coord QuantBot::findRedevelopmentSite(Uint32 item) {
             for (Uint32 id : zones) {
                 const auto* zone=static_cast<const ZoneStructure*>(currentGame->getObjectManager().getObject(id));
                 const Coord z=zone->getLocation();
-                const int density=getMap().getTile(z.x,z.y)->getCityZoneDensity();
+                const int density=std::max(int(getMap().getTile(z.x,z.y)->getCityZoneDensity()),
+                    zone->getResidentialPopulation() > 0 ? 1 : 0);
                 const auto& state=sim->getHouseState(getHouse()->getHouseID());
                 const bool residential=zone->getItemID()==Structure_ZoneResidential;
                 const int demand=residential ? state.resValve : zone->getItemID()==Structure_ZoneCommercial ? state.comValve : state.indValve;
@@ -2424,7 +2426,7 @@ Coord QuantBot::findTurretPlaceLocation(Uint32 itemID) {
 }
 
 bool QuantBot::selectCityServiceInvestment(const BuilderBase* builder, int money, bool emergency,
-                                         Uint32& selectedItem, Coord& selectedSite, bool landValueOnly) {
+                                         Uint32& selectedItem, Coord& selectedSite, bool landValueOnly, Uint32 requiredItem) {
     AITelemetry::PerformanceScope perfScope("ai.selectCityServiceInvestment", getGameCycleCount(), getHouse()->getHouseID());
     using CityServiceInvestmentPolicy::Value;
     const auto* sim = currentGame->getCitySimulation();
@@ -2434,7 +2436,8 @@ bool QuantBot::selectCityServiceInvestment(const BuilderBase* builder, int money
     unsigned available = 0;
     const std::array<Uint32,2> serviceItems{Structure_PoliceStation,Structure_RocketTurret};
     for (unsigned i=0;i<serviceItems.size();++i)
-        if (builder->isAvailableToBuild(serviceItems[i]) && money > prices[serviceItems[i]][house].price)
+        if ((requiredItem == NONE_ID || requiredItem == serviceItems[i])
+            && builder->isAvailableToBuild(serviceItems[i]) && money > prices[serviceItems[i]][house].price)
             available |= 1u << i;
     if (!available || (landValueOnly && !(available & 2))) return false;
     const unsigned mode = landValueOnly ? 2 : emergency ? 1 : 0;
@@ -2505,6 +2508,27 @@ bool QuantBot::selectCityServiceInvestment(const BuilderBase* builder, int money
     for (const auto& entry:reservedStructures)
         if (entry.first!=planningBuilder && entry.second.item==Structure_PoliceStation)
             stationSites.push_back(entry.second.location);
+    DuneCity::CityMapLayer<int32_t> plannedPolice;
+    plannedPolice.init(w,h,DuneCity::kPoliceMapBlockSize);
+    auto addSource = [&](int item,Coord p,Coord size,int funding,bool hasPower) {
+        const int strength=DuneCity::getPoliceCoverage(item);
+        if (strength<=0) return;
+        const auto source=DuneCity::policeSource(getMap(),p.x,p.y,size.x,size.y,strength,funding,hasPower);
+        DuneCity::addPoliceCoverage(plannedPolice,w,h,source.x,source.y,source.strength);
+    };
+    for (const auto* structure:getStructureList()) {
+        const auto* owner=structure->getOwner();
+        if (!owner || structure->getHealth()<=0) continue;
+        addSource(structure->getItemID(),structure->getLocation(),structure->getStructureSize(),
+            sim->getHouseState(owner->getHouseID()).policeFundingPercent,
+            owner->getProducedPower()>=owner->getPowerRequirement());
+    }
+    for (const auto& entry:reservedStructures) {
+        if (entry.first==planningBuilder) continue;
+        const auto& plan=entry.second;
+        addSource(plan.item,plan.location,getStructureSize(plan.item),state.policeFundingPercent,powered);
+    }
+    DuneCity::smoothPoliceCoverage(plannedPolice,w,h);
     int totalPopulation = 0, sampleCount = 0;
     for (const auto* structure : getStructureList()) {
         if (structure->getOwner() != getHouse() || structure->getHealth() <= 0) continue;
@@ -2513,21 +2537,17 @@ bool QuantBot::selectCityServiceInvestment(const BuilderBase* builder, int money
         const int item = structure->getItemID();
         const auto* zone = dynamic_cast<const ZoneStructure*>(structure);
         const int level = zone ? getMap().getTile(p.x,p.y)->getCityZoneDensity() : structure->getCityOccupancy();
-        const int pop = DuneCity::getZonePopulation(item, level);
+        const int pop = DuneCity::getStructurePopulation(structure, level);
         totalPopulation += pop;
         const int value = sim->getLandValueMap().worldGet(p.x,p.y);
         if (value > 0) ++sampleCount;
-        int coverage = sim->getPoliceCoverageMap().worldGet(p.x,p.y);
+        int coverage = plannedPolice.worldGet(p.x,p.y);
         const int landBlockSize = sim->getLandValueMap().getBlockSize();
         int plannedValue = plannedTerrain.landValueContribution(p.x,p.y,landBlockSize)
             - sim->getParkTerrain().landValueContribution(p.x,p.y,landBlockSize);
         for (const auto& entry : reservedStructures) {
             if (entry.first == planningBuilder) continue;
             const auto& plan = entry.second;
-            const Coord size = getStructureSize(plan.item);
-            const auto source = DuneCity::policeSource(getMap(), plan.location.x, plan.location.y,
-                size.x, size.y, DuneCity::getPoliceCoverage(plan.item), state.policeFundingPercent, powered);
-            coverage += DuneCity::policeCoverageAt(source.x,source.y,p.x,p.y,2,source.strength,w,h);
             if (!DuneCity::usesParkTerrain(plan.item))
                 plannedValue += CityServiceInvestmentPolicy::parkContribution(plan.item,
                     plan.location.x,plan.location.y,p.x,p.y,landBlockSize,plannedTerrain);
@@ -2555,8 +2575,9 @@ bool QuantBot::selectCityServiceInvestment(const BuilderBase* builder, int money
         }
         const int demand = item == Structure_ZoneResidential ? state.resValve
             : item == Structure_ZoneCommercial ? state.comValve : item == Structure_ZoneIndustrial ? state.indValve : 0;
-        const int nextPop = zone && level < DuneCity::getStructureMaxLevel(item)
-            ? DuneCity::getZonePopulation(item, level+1) : pop;
+        const int nextPop = zone && item == Structure_ZoneResidential
+            ? DuneCity::ResidentialPopulation::grow(pop,sim->getPopulationDensityMap().worldGet(p.x,p.y))
+            : zone && level < DuneCity::getStructureMaxLevel(item) ? DuneCity::getZonePopulation(item,level+1) : pop;
         properties.push_back({p,item,std::min(250,value+plannedValue),crime,base,coverage,pop,nextPop,demand,
             sim->getPollutionDensityMap().worldGet(p.x,p.y),threat});
     }
@@ -2597,10 +2618,9 @@ bool QuantBot::selectCityServiceInvestment(const BuilderBase* builder, int money
             // Placement-only cost discourages another station beside one already
             // built/planned. It does not change stacking in the simulation.
             if (item == Structure_PoliceStation) {
-                int nearest = 12;
                 for (const Coord p : stationSites)
-                    nearest = std::min(nearest,std::max(std::abs(x-p.x),std::abs(y-p.y)));
-                value.overlapPenalty = value.buildCost*(12-nearest)/12;
+                    value.overlapPenalty += CityServiceInvestmentPolicy::stationOverlapCost(value.buildCost,
+                        std::max(std::abs(x-p.x),std::abs(y-p.y)));
             }
             value.upkeep = (DuneCity::getPoliceAnnualCost(item)*state.policeFundingPercent/100).lround();
             const int power = std::max(0,data[item][house].power);
@@ -2619,8 +2639,9 @@ bool QuantBot::selectCityServiceInvestment(const BuilderBase* builder, int money
                 const int reduction = DuneCity::marginalCrimeReduction(p.baseCrime,p.coverage,added);
                 if (p.population > 0) {
                     value.crime += reduction;
-                    value.crimeUtility += CityServiceInvestmentPolicy::crimeHarm(p.crime,p.item,p.population)
-                        - CityServiceInvestmentPolicy::crimeHarm(p.crime-reduction,p.item,p.population);
+                    value.crimeUtility += CityServiceInvestmentPolicy::underservedUtility(
+                        CityServiceInvestmentPolicy::crimeHarm(p.crime,p.item,p.population)
+                        - CityServiceInvestmentPolicy::crimeHarm(p.crime-reduction,p.item,p.population),p.coverage);
                     value.dangerousRelief += std::max(0,p.crime-191) - std::max(0,p.crime-reduction-191);
                 }
                 const int park = CityServiceInvestmentPolicy::parkContribution(item,x,y,p.p.x,p.p.y,
@@ -2670,117 +2691,6 @@ bool QuantBot::selectCityServiceInvestment(const BuilderBase* builder, int money
             .set("emergency",emergency));
     }
     return selectResult(results);
-}
-
-Coord QuantBot::findCityCrimeServicePlaceLocation(Uint32 itemID, int* crimeBenefit, int* crimeHotspot) {
-    AITelemetry::PerformanceScope perfScope("ai.findCityCrimeServicePlaceLocation", getGameCycleCount(), getHouse()->getHouseID(), itemID);
-    if (crimeBenefit) *crimeBenefit = 0;
-    if (crimeHotspot) *crimeHotspot = 0;
-    auto* citySim = currentGame ? currentGame->getCitySimulation() : nullptr;
-    if (!citySim || itemID != Structure_PoliceStation) return Coord::Invalid();
-
-    const Coord size = getStructureSize(itemID);
-    const int width = getMap().getSizeX(), height = getMap().getSizeY();
-    const int serviceStrength = DuneCity::getPoliceCoverage(itemID);
-    struct Hotspot { Coord position; int crime; };
-    std::vector<Hotspot> hotspots;
-    for (const auto* structure : getStructureList()) {
-        if (structure->getOwner() != getHouse() || structure->getHealth() <= 0) continue;
-        if (DuneCity::getStructureCityRole(structure->getItemID()) == DuneCity::CityRole::None) continue;
-        const Coord p = structure->getLocation();
-        const int crime = citySim->getCrimeRateMap().worldGet(p.x, p.y);
-        if (crime >= 60) hotspots.push_back({p, crime});
-    }
-    if (hotspots.empty()) return Coord::Invalid();
-
-    // Sites already reserved by other yards contribute before their building
-    // exists.  This makes simultaneous construction yards spread services over
-    // separate hot districts instead of all selecting the same neighbourhood.
-    auto plannedCoverageAt = [&](Coord point) {
-        int coverage = 0;
-        for (const auto& entry : reservedStructures) {
-            if (entry.first == planningBuilder) continue;
-            const int strength = DuneCity::getPoliceCoverage(entry.second.item);
-            if (strength <= 0) continue;
-            const Coord size = getStructureSize(entry.second.item);
-            const auto source = DuneCity::policeSource(getMap(), entry.second.location.x,
-                entry.second.location.y, size.x, size.y, strength,
-                citySim->getHouseState(getHouse()->getHouseID()).policeFundingPercent,
-                getHouse()->getProducedPower() >= getHouse()->getPowerRequirement());
-            coverage += DuneCity::policeCoverageAt(source.x,source.y,point.x,point.y,2,
-                source.strength,getMap().getSizeX(),getMap().getSizeY());
-        }
-        return coverage;
-    };
-
-    std::vector<bool> candidates(width * height, false);
-    for (const auto& hotspot : hotspots) {
-        for (int y = std::max(0, hotspot.position.y - DuneCity::kPoliceRadius);
-             y <= std::min(height - size.y, hotspot.position.y + DuneCity::kPoliceRadius); ++y) {
-            for (int x = std::max(0, hotspot.position.x - DuneCity::kPoliceRadius);
-                 x <= std::min(width - size.x, hotspot.position.x + DuneCity::kPoliceRadius); ++x) {
-                candidates[y * width + x] = true;
-            }
-        }
-    }
-
-    Coord best = Coord::Invalid();
-    int bestScore = 0, bestBenefit = 0, bestHotspot = 0;
-    for (int y = 0; y <= height - size.y; ++y) for (int x = 0; x <= width - size.x; ++x) {
-        if (!candidates[y * width + x] || overlapsReservedStructure(x, y, size.x, size.y)) continue;
-        if (!getMap().okayToPlaceStructure(x, y, size.x, size.y, false, getHouse(), false, itemID)) continue;
-        if (!preservesGroundAccess(itemID,Coord(x,y))) continue;
-        const auto roads = cityRoadImpact(getMap(), x, y, size.x, size.y, itemID);
-        if (!roads.preservesConnections || wouldLandlockNeighbouringZone(getMap(), getHouse()->getHouseID(), x, y, size.x, size.y)) continue;
-
-        const auto source = DuneCity::policeSource(getMap(), x, y, size.x, size.y, serviceStrength,
-            citySim->getHouseState(getHouse()->getHouseID()).policeFundingPercent,
-            getHouse()->getProducedPower() >= getHouse()->getPowerRequirement());
-        int benefit = 0, hotspot = 0, underservedBenefit = 0;
-        for (const auto& target : hotspots) {
-            const int added = DuneCity::policeCoverageAt(source.x,source.y,target.position.x,target.position.y,
-                2,source.strength,width,height);
-            const int existing = citySim->getPoliceCoverageMap().worldGet(target.position.x, target.position.y);
-            const int reduction = DuneCity::marginalCrimeReduction(
-                citySim->getCrimeBeforePoliceMap().worldGet(target.position.x, target.position.y),
-                existing + plannedCoverageAt(target.position), added);
-            benefit += reduction;
-            // Prefer extending services to underserved property over stacking
-            // another station in an already covered neighbourhood. Actual
-            // coverage includes existing stations; reservations cover new yards.
-            const int coverage = citySim->getPoliceCoverageMap().worldGet(
-                target.position.x, target.position.y) + plannedCoverageAt(target.position);
-            underservedBenefit += reduction * 100 / (100 + std::max(0, coverage));
-            if (reduction > 0) hotspot = std::max(hotspot, target.crime);
-        }
-        // The benefit is the actual expected crime reduction; the hotspot term
-        // breaks ties toward imminent unrest, while an intersection remains a
-        // useful secondary quality signal.
-        int nearestStation = DuneCity::kPoliceRadius;
-        for (const auto* station : getStructureList()) {
-            if (station->getOwner() != getHouse() || station->getHealth() <= 0
-                || station->getItemID() != Structure_PoliceStation) continue;
-            const Coord p = station->getLocation();
-            nearestStation = std::min(nearestStation, std::max(std::abs(x-p.x), std::abs(y-p.y)));
-        }
-        for (const auto& entry : reservedStructures) {
-            if (entry.first == planningBuilder || entry.second.item != Structure_PoliceStation) continue;
-            const Coord p = entry.second.location;
-            nearestStation = std::min(nearestStation, std::max(std::abs(x-p.x), std::abs(y-p.y)));
-        }
-        // A soft overlap penalty, not a ban: an isolated edge district may
-        // still need a station, but an adjacent duplicate must offer much more
-        // benefit than extending coverage elsewhere. Empty terrain earns zero.
-        const int spread = std::min(DuneCity::kPoliceRadius, nearestStation);
-        const int score = (underservedBenefit * 16 + hotspot * 4) * (4 + spread)
-            / (4 + DuneCity::kPoliceRadius);
-        if (benefit > 0 && (!best.isValid() || score > bestScore)) {
-            best = Coord(x, y); bestScore = score; bestBenefit = benefit; bestHotspot = hotspot;
-        }
-    }
-    if (crimeBenefit) *crimeBenefit = bestBenefit;
-    if (crimeHotspot) *crimeHotspot = bestHotspot;
-    return best;
 }
 
 Coord QuantBot::findCityTurretPlaceLocation(Uint32 itemID, int* defenseScore, int* amenityScore,
@@ -3350,7 +3260,7 @@ void QuantBot::build(int militaryValue) {
 			itemCount[Structure_ZoneResidential], itemCount[Structure_ZoneCommercial],
 			itemCount[Structure_ZoneIndustrial], ownResValve, ownComValve, ownIndValve, bootstrap);
         bool residentialInfill=false;
-        if (!bootstrap && ownResValve>0 && builder->isAvailableToBuild(Structure_ZoneResidential)) {
+        if (!bootstrap && ownResValve>=500 && builder->isAvailableToBuild(Structure_ZoneResidential)) {
             const auto site=findPlaceLocation(Structure_ZoneResidential);
             residentialInfill=site.isValid() && residentialInfillSides(getMap(),houseID,site.x,site.y,2,2)>=2;
             QuantBotBuildPolicy::prioritizeResidentialInfill(ranked,ownResValve,residentialInfill);
@@ -3385,7 +3295,7 @@ void QuantBot::build(int militaryValue) {
             lastZoneTraceCycle[builder->getObjectID()] = getGameCycleCount();
             zoneDecisionIds[builder->getObjectID()] = traceDecision("zone_evaluation", AITelemetry::Record()
                 .set("builder", builder->getObjectID()).set("bootstrap", bootstrap)
-                .set("rule", residentialInfill ? "residential_infill" : "normalized_demand_then_weighted_count").set("selected", selected)
+                .set("rule", residentialInfill ? "residential_infill" : "demand_threshold_then_normalized_demand").set("selected", selected)
                 .set("expansion_policy", "demand_led_independent_of_spice")
                 .set("result", selected != NONE_ID ? "selected"
                     : ranked[0] == NONE_ID ? "no_positive_demand" : "no_available_site_or_building")
@@ -3496,8 +3406,8 @@ void QuantBot::build(int militaryValue) {
                         .set("item",item).set("x",pos.x).set("y",pos.y).set("width",size.x).set("height",size.y)
                         .set("health",structure->getHealth().lround()).set("max_health",structure->getMaxHealth())
                         .set("role",static_cast<int>(role)).set("level",level).set("max_level",DuneCity::getStructureMaxLevel(item))
-                        .set("population",DuneCity::getZonePopulation(item,level))
-                        .set("res_supply",DuneCity::getResidentialSupply(item,level))
+                        .set("population",DuneCity::getStructurePopulation(structure,level))
+                        .set("res_supply",DuneCity::getStructureResidentialSupply(structure,level))
                         .set("com_supply",DuneCity::getCommercialSupply(item,level)).set("ind_supply",DuneCity::getIndustrialSupply(item,level))
                         .set("palace_com_population",item == Structure_Palace ? DuneCity::getPalaceCommercialPopulation(level) : 0)
                         .set("land_value",sim->getLandValueMap().worldGet(pos.x,pos.y))
@@ -4774,7 +4684,7 @@ void QuantBot::build(int militaryValue) {
                             if (!zone || zone->getOwner() != getHouse() || zone->getHealth() <= 0) continue;
                             const Coord p = zone->getLocation();
                             if (!getMap().tileExists(p.x, p.y)
-                                || getMap().getTile(p.x, p.y)->getCityZoneDensity() == 0) continue;
+                                || DuneCity::getStructurePopulation(zone,getMap().getTile(p.x,p.y)->getCityZoneDensity()) == 0) continue;
                             ++developedZones;
                             if (sim->getCrimeRateMap().worldGet(p.x, p.y) >= 192) ++dangerousZones;
                         }
@@ -5387,11 +5297,14 @@ void QuantBot::build(int militaryValue) {
 				pBuilder->getObjectID(), itemID, money, skipRemainingStructureLogic);
 			Coord selectedPlaceLocation = Coord::Invalid();
 			if (itemID != NONE_ID && pBuilder->isAvailableToBuild(itemID)) {
-				selectedPlaceLocation = crimeServiceSite.isValid() ? crimeServiceSite : itemID == Structure_PoliceStation
-                    ? findCityCrimeServicePlaceLocation(itemID)
-                    : (itemID == Structure_RocketTurret || itemID == Structure_GunTurret)
-					? findEffectiveTurretPlaceLocation(itemID)
-					: findPlaceLocation(itemID);
+                if (crimeServiceSite.isValid()) selectedPlaceLocation = crimeServiceSite;
+                else if (itemID == Structure_PoliceStation) {
+                    // Legacy demand/emergency rules use the same bounded service
+                    // scorer; no alternate full-map search bypasses its overlap costs.
+                    Uint32 service = NONE_ID;
+                    selectCityServiceInvestment(pBuilder,money,true,service,selectedPlaceLocation,false,itemID);
+                } else selectedPlaceLocation = (itemID == Structure_RocketTurret || itemID == Structure_GunTurret)
+                    ? findEffectiveTurretPlaceLocation(itemID) : findPlaceLocation(itemID);
 			}
 
             if (AITelemetry::log().enabled() && (itemID != NONE_ID || emitStatsLog)) {

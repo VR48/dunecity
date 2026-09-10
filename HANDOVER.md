@@ -1,3 +1,64 @@
+# Occupancy-based traffic, individual houses and city AI priorities — 1.0.623
+
+User screenshots of tiny 1.0.622 settlements showed widespread heavy traffic.
+Every occupied city-role structure emitted a successful road journey every city
+day. Micropolis `zone.cpp` instead tests R population > random(35), and C/I
+population > random(5); its random upper bound is inclusive. Traffic generation
+now uses those probabilities (R pop/36, C/I pop/6) with a deterministic site/day
+hash. Existing connectivity checks, route sampling (+50 at moves 2/4/6...),
+240 cap, 24/34 decay and display thresholds (64 light, 192 heavy) remain.
+This corrects trip frequency; it does not guarantee small shared bottlenecks
+can never be heavy. Old inflated traffic clears naturally when no longer fed.
+
+Residential zones now store real occupancy: 0–8 houses, then 16/24/32/40
+apartment population, and the reverse on decline. The eighth house upgrades
+only above local population density 64, as in Micropolis. Existing DuneCity
+score, demand, pollution, supply and power gates still govern growth.
+- Each successful free-lot growth adds one visible house; decline removes one.
+- Counts feed population, demand, density, taxes, traffic, local supply, power,
+  crime-service investment and telemetry. House lots are not vacant when
+  scoring redevelopment. Sidebar shows Houses n/8.
+- 29 residential models per land-value tier are packed in two 15-column rows;
+  all zooms remain within the 2048px texture ceiling. Original 2x2 zone/1x1 road
+  footprints remain. Civic overlays retain apartment-only eligibility.
+- Save format 9835 adds one occupancy byte per ZoneStructure. Older saves
+  consume no byte and migrate tile tiers to their existing 0/16/24/40 count;
+  new saves preserve individual houses and the 32-pop apartment stage.
+
+Additional requests during this change:
+- Windtraps are light industry: maximum occupancy 1, industrial population 1
+  and local job supply 10 instead of medium 3/25. Power/emissions unchanged.
+  Loaded windtrap occupancy is reconciled; population/supply helpers also
+  clamp older medium values.
+- Zoning favours C when R <500; if R and C <500, favours I with positive demand.
+  Residential infill only overrides other choices at R >=500. Missing bootstrap
+  roles still take priority; unavailable/unsuitable land falls through normally.
+- Police placement penalises every built/planned station within 12 tiles,
+  with a stronger quadratic near-neighbour cost. Crime utility favours
+  underserved properties. Actual coverage remains additive and unmodified.
+- Service planning rebuilds the small 6-tile police map once per shared bounded
+  search from current buildings plus reservations. This includes recently
+  completed stations before the next city scan, with original sum-then-smooth
+  rounding. Removed the old alternate unbounded police-site search; all police
+  construction paths now use the same bounded scorer and overlap penalties.
+  Exceptional crime may still justify overlapping stations; there is no spacing ban.
+
+Live log evidence: partial session `1789037053114457-0` had 143 station investment
+choices at inspection, 18 with overlap cost >=300 (roughly within five tiles of
+an existing/planned station). The old nearest-only cost was easily outweighed
+by thousands of utility points. Counts are a read of an ongoing log, not final
+match totals. Policy telemetry is `occupancy-traffic-houses-v46`.
+
+Validation: full CTest 534 cases, 531 passed, 3 optional skips; occupancy
+progression/save stream alignment, sprite reachability and single-house changes,
+occupancy trip probabilities, sparse/light vs busy/heavy roads, cluster costs,
+500-demand boundaries and windtrap migration. Atlas reproduction, source/app
+atlas hashes, bundle version, git whitespace and before/after Ninja dependency
+audits pass. Logs: `/tmp/dunecity-houses-{build,tests}.log`.
+Local `build/bin/dunecity.app` is 1.0.623. No game launch, Applications copy,
+remote push or release. Live visual/game balance verification remains for the
+next run; automated checks are not a claim of measured live FPS improvement.
+
 # Bound repeated city AI placement work — 1.0.622
 
 Completed game `1789031518687887-0` ran 1.0.620 (192x192 SimCity,

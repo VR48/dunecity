@@ -1,3 +1,4 @@
+#include <dunecity/CityStructurePopulation.h>
 #ifndef CITYSTATSBOX_H
 #define CITYSTATSBOX_H
 
@@ -112,14 +113,14 @@ public:
         if (showPop) {
             std::string text;
             if (itemID == Structure_Palace) {
-                const int resPop = DuneCity::getZonePopulation(itemID, level);
+                const int resPop = DuneCity::getStructurePopulation(pStructure, level);
                 const int comPop = DuneCity::getPalaceCommercialPopulation(level);
                 text = " R: " + std::to_string(resPop) + " C: " + std::to_string(comPop);
             } else {
-                const int pop = DuneCity::getZonePopulation(itemID, level);
+                const int pop = DuneCity::getStructurePopulation(pStructure, level);
                 text = " Pop: " + std::to_string(pop);
             }
-            if (maxLevel > 0) {
+            if (maxLevel > 0 && !(pZone && pZone->getZoneType() == DuneCity::ZoneType::Residential && pZone->getResidentialPopulation() <= 8)) {
                 text += " (lvl " + std::to_string(level) + "/" + std::to_string(maxLevel) + ")";
             }
             populationLabel_.setText(text);

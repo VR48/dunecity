@@ -85,3 +85,46 @@ TEST_CASE("Micropolis traffic decays per cell and quiet roads eventually empty",
     for(int n=0;n<10;++n) CityTraffic::decay(density,5,3);
     for(int y=0;y<2;++y) for(int x=0;x<3;++x) REQUIRE(density.get(x,y)==0);
 }
+
+TEST_CASE("Journey frequency follows Micropolis occupancy probabilities", "[city][traffic]") {
+    constexpr int days=36000;
+    for (bool residential : {false,true}) for (int pop : {0,1,4,8,16,24,32,40}) {
+        int trips=0;
+        for (int day=0;day<days;++day) trips+=CityTraffic::journeyDue(residential,pop,12,18,day);
+        const int expected=days*std::min(pop,residential?36:6)/(residential?36:6);
+        INFO("residential="<<residential<<" population="<<pop);
+        REQUIRE(std::abs(trips-expected)<days/100);
+    }
+    int different=0;
+    for (int day=0;day<1000;++day)
+        different+=CityTraffic::journeyDue(false,1,12,18,day)!=CityTraffic::journeyDue(false,1,15,18,day);
+    REQUIRE(different>200); // nearby grid-aligned sites do not emit in lockstep
+}
+
+TEST_CASE("Sparse occupied roads show light traffic while busy shared routes can congest", "[city][traffic]") {
+    CityMapLayer<uint8_t> traffic; traffic.init(8,2,2);
+    const std::vector<CityTraffic::Point> route={{0,0},{1,0},{2,0},{3,0},{4,0},{5,0},{6,0}};
+    const auto road=[](int,int){return true;};
+    int none=0,light=0,heavy=0;
+    for (int day=0;day<10000;++day) {
+        CityTraffic::decay(traffic,8,2);
+        // Two early industrial employers and a two-house residential lot.
+        for (int site=0;site<3;++site)
+            if (CityTraffic::journeyDue(site==2,site==2?2:1,site*3,6,day))
+                CityTraffic::addJourney(traffic,route,road);
+        const int value=traffic.get(1,0);
+        none+=value<64; light+=value>=64&&value<192; heavy+=value>=192;
+    }
+    REQUIRE(none>5000);
+    REQUIRE(light>1000);
+    REQUIRE(heavy<1000);
+    for (int day=0;day<20;++day) {
+        CityTraffic::decay(traffic,8,2);
+        for (int site=0;site<8;++site)
+            if (CityTraffic::journeyDue(true,40,site*3,6,day))
+                CityTraffic::addJourney(traffic,route,road);
+    }
+    REQUIRE(traffic.get(1,0)==240);
+    for (int day=0;day<10;++day) CityTraffic::decay(traffic,8,2);
+    REQUIRE(traffic.get(1,0)==0);
+}

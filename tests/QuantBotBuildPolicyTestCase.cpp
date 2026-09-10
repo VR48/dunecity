@@ -816,10 +816,10 @@ TEST_CASE("Local service property lookup matches full scans at map and bucket ed
     }
 }
 
-TEST_CASE("Residential infill takes priority only with positive housing demand", "[quantbot][city]") {
-    auto ranked=rankZones(60,4,9,1,1500,1500,false);
+TEST_CASE("Residential infill takes priority only once housing demand reaches 500", "[quantbot][city]") {
+    auto ranked=rankZones(60,4,9,500,1500,1500,false);
     REQUIRE(ranked[0]==Structure_ZoneCommercial);
-    prioritizeResidentialInfill(ranked,1,true);
+    prioritizeResidentialInfill(ranked,500,true);
     REQUIRE(ranked[0]==Structure_ZoneResidential);
     REQUIRE(ranked[1]==Structure_ZoneCommercial);
     ranked=rankZones(60,4,9,0,1500,1500,false);
@@ -909,4 +909,18 @@ TEST_CASE("Each blocked yard sweeps all map batches even when yard count equals 
         }
         for (const auto& starts:visited) REQUIRE(starts.size() == batches);
     }
+}
+
+TEST_CASE("City zone priorities switch to C and I below the 500 demand thresholds", "[quantbot][city]") {
+    REQUIRE(rankZones(40,20,2,499,500,1500,false)[0]==Structure_ZoneCommercial);
+    REQUIRE(rankZones(40,20,2,499,499,1,false)[0]==Structure_ZoneIndustrial);
+    REQUIRE(rankZones(40,20,2,499,499,0,false)[0]==Structure_ZoneCommercial);
+    REQUIRE(rankZones(40,20,2,499,0,0,false)[0]==Structure_ZoneResidential);
+    REQUIRE(rankZones(40,20,2,0,0,0,false)[0]==NONE_ID);
+    auto ranked=rankZones(40,20,2,499,1500,1500,false);
+    prioritizeResidentialInfill(ranked,499,true);
+    REQUIRE(ranked[0]==Structure_ZoneCommercial);
+    ranked=rankZones(40,20,2,500,1500,1500,false);
+    prioritizeResidentialInfill(ranked,500,true);
+    REQUIRE(ranked[0]==Structure_ZoneResidential);
 }

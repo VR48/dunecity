@@ -58,7 +58,7 @@ TEST_CASE("getStructureMaxLevel matches structure tier", "[city-effects][role]")
     REQUIRE(getStructureMaxLevel(Structure_Refinery)         == 3);  // I-high
     REQUIRE(getStructureMaxLevel(Structure_Barracks)         == 3);  // R-high
     REQUIRE(getStructureMaxLevel(Structure_WOR)              == 3);  // R-high
-    REQUIRE(getStructureMaxLevel(Structure_WindTrap)         == 2);  // clean I-medium
+    REQUIRE(getStructureMaxLevel(Structure_WindTrap)         == 1);  // clean I-light
 }
 
 // --- Pollution ---------------------------------------------------------------
@@ -269,7 +269,7 @@ TEST_CASE("Non-zone city-role buildings ALSO contribute population at their leve
     REQUIRE(getZonePopulation(Structure_Refinery, 0)       == 0);
     REQUIRE(getZonePopulation(Structure_WindTrap, 0)       == 0);
     REQUIRE(getZonePopulation(Structure_WindTrap, 1)       == 1);
-    REQUIRE(getZonePopulation(Structure_WindTrap, 2)       == 3);
+    REQUIRE(getZonePopulation(Structure_WindTrap, 2)       == 1);
 }
 
 TEST_CASE("Residential zones contribute people, scaled with level (SC Classic values)",
@@ -883,11 +883,13 @@ TEST_CASE("Church count: auto-created 1 per 256 res pop",
     CHECK(computeChurchCount(512) == 2);
 }
 
-TEST_CASE("Windtraps provide medium industrial jobs without emissions", "[city-effects][windtrap]") {
+TEST_CASE("Windtraps provide light industrial jobs without emissions", "[city-effects][windtrap]") {
     const int maxLevel = getStructureMaxLevel(Structure_WindTrap);
-    REQUIRE(maxLevel == 2);
-    REQUIRE(getIndustrialSupply(Structure_WindTrap, maxLevel) == 25);
-    REQUIRE(getZonePopulation(Structure_WindTrap, maxLevel) == 3);
+    REQUIRE(maxLevel == 1);
+    REQUIRE(getIndustrialSupply(Structure_WindTrap, maxLevel) == 10);
+    REQUIRE(getZonePopulation(Structure_WindTrap, maxLevel) == 1);
+    REQUIRE(getZonePopulation(Structure_WindTrap, 2) == 1); // old saves
+    REQUIRE(getIndustrialSupply(Structure_WindTrap, 2) == 10);
     for (int level = 0; level <= 3; ++level) {
         REQUIRE(getPollutionEmission(Structure_WindTrap, level) == 0);
         REQUIRE(getCommercialSupply(Structure_WindTrap, level) == 0);

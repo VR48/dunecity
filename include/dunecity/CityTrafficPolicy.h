@@ -72,6 +72,19 @@ inline void decay(CityMapLayer<uint8_t>& density, int width, int height) {
             density.set(x,y,decayed(density.get(x,y)));
 }
 
+// Micropolis: R population > random(35), C/I population > random(5).
+// Mix site and day independently so neighbouring trips do not synchronise.
+// Deterministic sampling avoids consuming the combat RNG or adding save state.
+inline bool journeyDue(bool residential, int population, int x, int y, uint32_t day) {
+    const unsigned range = residential ? 36u : 6u;
+    if (population <= 0) return false;
+    if (population >= int(range)) return true;
+    uint32_t hash = uint32_t(x)*0x9e3779b9u ^ uint32_t(y)*0x85ebca6bu ^ day*0xc2b2ae35u;
+    hash ^= hash >> 16; hash *= 0x7feb352du;
+    hash ^= hash >> 15; hash *= 0x846ca68bu; hash ^= hash >> 16;
+    return hash % range < unsigned(population);
+}
+
 // route[0] is the perimeter start. Original tryDrive saves moves 2,4,6,...
 // for its 2x2 traffic cells; addToTrafficDensityMap adds 50, capped at 240.
 // Sample the route, not every world tile or every explored search branch.

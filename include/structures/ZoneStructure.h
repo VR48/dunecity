@@ -47,6 +47,9 @@ public:
     CivicOverlay getCivicOverlay() const { return civicOverlay_; }
     void setCivicOverlay(CivicOverlay overlay) { civicOverlay_ = overlay; }
 
+    int getResidentialPopulation() const;
+    void setResidentialPopulation(int population);
+
     ObjectInterface* getInterfaceContainer() override;
 
     void destroy() override;
@@ -65,6 +68,7 @@ public:
 
 private:
     DuneCity::ZoneType zoneType_;  // The type of zone this structure represents
+    uint8_t residentialPopulation_ = 0;
     int registeredZonePower_ = 0;  // Power last reported into the House pool.
     CivicOverlay civicOverlay_ = CivicOverlay::None;
 };

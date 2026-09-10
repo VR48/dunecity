@@ -5,6 +5,13 @@
 #include <dunecity/CityEffects.h>
 
 namespace CityServiceInvestmentPolicy {
+inline int stationOverlapCost(int buildCost, int distance) {
+    const int overlap = std::max(0,12-distance);
+    return buildCost * 4 * overlap * overlap / (12*12);
+}
+inline int underservedUtility(int utility, int coverage) {
+    return int(int64_t(utility)*100/(100+std::max(0,coverage)));
+}
 inline int crimeHarm(int crime, int item, int population) {
     int growthPenalty = 0;
     if (item == Structure_ZoneResidential) growthPenalty = crime > 150 ? 200 : crime > 100 ? 100 : 0;

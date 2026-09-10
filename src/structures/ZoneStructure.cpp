@@ -16,6 +16,7 @@
 #include <dunecity/CityEffects.h>
 #include <dunecity/CitySpritePolicy.h>
 #include <dunecity/ZonePower.h>
+#include <dunecity/ResidentialPopulation.h>
 #include <FileClasses/GFXManager.h>
 
 #include <GUI/ObjectInterfaces/ZoneStructureInterface.h>
@@ -30,6 +31,7 @@ ZoneStructure::ZoneStructure(House* newOwner, DuneCity::ZoneType zoneType)
 
 void ZoneStructure::setLocation(int xPos, int yPos) {
     StructureBase::setLocation(xPos, yPos);
+    residentialPopulation_ = 0;
 
     if (getLocation().isInvalid()) return;
 
@@ -90,7 +92,7 @@ void ZoneStructure::updateStructureSpecificStuff() {
     }
     graphic = pGFXManager->getObjPic(graphicID, getOwner()->getHouseID());
     numImagesX = DuneCity::CitySprites::zoneColumns(zoneType_);
-    numImagesY = zoneType_ == DuneCity::ZoneType::Industrial ? DuneCity::CitySprites::industrialRows : 4;
+    numImagesY = DuneCity::CitySprites::zoneRows(zoneType_);
 
     int valueT = 0;
     if (auto* citySim = currentGame ? currentGame->getCitySimulation() : nullptr;
@@ -103,7 +105,7 @@ void ZoneStructure::updateStructureSpecificStuff() {
 
     const int frame = DuneCity::CitySprites::zoneFrame(
         zoneType_, density, valueT, pos.x, pos.y,
-        currentGame->getGameCycleCount(), owner->hasPower());
+        currentGame->getGameCycleCount(), owner->hasPower(), getResidentialPopulation());
     firstAnimFrame = lastAnimFrame = curAnimFrame = frame;
 }
 
@@ -120,6 +122,8 @@ void ZoneStructure::refreshZonePowerDraw() {
     }
 
     int target = DuneCity::getZonePower(itemID, density);
+    if (zoneType_ == DuneCity::ZoneType::Residential && getResidentialPopulation() <= 8)
+        target = (DuneCity::getZonePower(itemID,1)*getResidentialPopulation()+15)/16;
     int delta  = target - registeredZonePower_;
     if (delta != 0 && owner) {
         owner->adjustPowerRequirement(delta);
@@ -135,6 +139,29 @@ ZoneStructure::ZoneStructure(InputStream& stream)
     // the saved zone never re-renders its building sprite after reload.
     structureSize = Coord(2, 2);
     zoneType_ = static_cast<DuneCity::ZoneType>(stream.readUint8());
+    residentialPopulation_ = DuneCity::ResidentialPopulation::read(stream,
+        currentGame ? currentGame->getLoadedSavegameVersion() : SAVEGAMEVERSION);
+}
+
+int ZoneStructure::getResidentialPopulation() const {
+    if (zoneType_ != DuneCity::ZoneType::Residential) return 0;
+    if (residentialPopulation_ != DuneCity::ResidentialPopulation::legacy)
+        return residentialPopulation_;
+    const auto pos = getLocation();
+    const auto* tile = currentGameMap && currentGameMap->tileExists(pos.x,pos.y)
+        ? currentGameMap->getTile(pos.x,pos.y) : nullptr;
+    return DuneCity::ResidentialPopulation::fromDensity(tile ? tile->getCityZoneDensity() : 0);
+}
+
+void ZoneStructure::setResidentialPopulation(int population) {
+    if (zoneType_ != DuneCity::ZoneType::Residential) return;
+    residentialPopulation_ = DuneCity::ResidentialPopulation::normalize(population);
+    const auto pos = getLocation();
+    if (currentGameMap && pos.isValid())
+        for (int dy=0;dy<structureSize.y;++dy) for (int dx=0;dx<structureSize.x;++dx)
+            if (auto* tile = currentGameMap->getTile(pos.x+dx,pos.y+dy))
+                tile->setCityZoneDensity(DuneCity::ResidentialPopulation::density(residentialPopulation_));
+    refreshZonePowerDraw();
 }
 
 ZoneStructure::~ZoneStructure() = default;
@@ -149,6 +176,7 @@ ObjectInterface* ZoneStructure::getInterfaceContainer() {
 void ZoneStructure::save(OutputStream& stream) const {
     StructureBase::save(stream);
     stream.writeUint8(static_cast<uint8_t>(zoneType_));
+    DuneCity::ResidentialPopulation::write(stream,getResidentialPopulation());
 }
 
 bool ZoneStructure::canBePlacedAt(int x, int y, bool torch) const {
@@ -255,7 +283,7 @@ void ResidentialZone::init() {
     graphic = pGFXManager->getObjPic(graphicID, getOwner()->getHouseID());
     // Layout must match the prebuilt atlas and GFXManager metadata.
     numImagesX = DuneCity::CitySprites::residentialColumns;
-    numImagesY = 4;
+    numImagesY = DuneCity::CitySprites::residentialRows;
     firstAnimFrame = lastAnimFrame = curAnimFrame = 0;
 }
 

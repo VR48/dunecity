@@ -2,10 +2,10 @@
   "source": "Micropolis; GPL-3.0+; see ../NOTICE.txt",
   "atlases": {
     "residential": {
-      "columns": 8,
-      "rows": 4,
+      "columns": 15,
+      "rows": 8,
       "cell": 32,
-      "models": 28
+      "models": 112
     },
     "commercial": {
       "columns": 6,

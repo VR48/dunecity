@@ -54,11 +54,16 @@ def build(raw_dir):
     for value in range(4):
         frames.append((0, value, composite(tiles, 240, 3)))
         for house in range(3):
-            repl = {240 + n: 249 + value * 3 + house for n in range(9) if n != 4}
-            frames.append((1 + house, value, composite(tiles, 240, 3, repl)))
+            # Stable perimeter order: growth adds one house, decline removes
+            # one, preserving every house already visible on the lot.
+            perimeter = [0, 1, 2, 5, 8, 7, 6, 3]
+            for count in range(1, 9):
+                repl = {240 + n: 249 + value * 3 + house for n in perimeter[:count]}
+                frames.append((1 + house * 8 + count - 1, value, composite(tiles, 240, 3, repl)))
         for density in range(4):
-            frames.append((4 + density, value, composite(tiles, 261 + (value * 4 + density) * 9, 3)))
-    save("residential", 8, 4, 32, frames, 28)
+            frames.append((25 + density, value, composite(tiles, 261 + (value * 4 + density) * 9, 3)))
+    frames = [(col % 15, value * 2 + col // 15, img) for col, value, img in frames]
+    save("residential", 15, 8, 32, frames, 112)
 
     frames = []
     for value in range(4):

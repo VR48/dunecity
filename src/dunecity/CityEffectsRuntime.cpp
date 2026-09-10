@@ -1,3 +1,4 @@
+#include <dunecity/CityStructurePopulation.h>
 #include <units/UnitBase.h>
 #include <dunecity/PoliceCoveragePolicy.h>
 #include <players/AIDecisionLog.h>
@@ -468,10 +469,9 @@ void CitySimulation::runEffectsScans() {
     forEachStructureOrigin(map, [&](int x, int y, const StructureBase* pStruct) {
         const Tile* originTile = map.getTile(x, y);
         const int level = cityLevelOf(originTile, pStruct);
-        if (level <= 0) return;
         const auto role = getStructureCityRole(pStruct->getItemID());
         if (role == CityRole::None) return;
-        const int pop      = getZonePopulation(pStruct->getItemID(), level);
+        const int pop      = getStructurePopulation(pStruct, level);
         const int sourceDensity = role == CityRole::Residential ? pop : pop * 8;
         const int popStamp = std::min(254, std::max(0, sourceDensity * 8));
         const int bs = populationDensityMap_.getBlockSize();
@@ -559,7 +559,8 @@ void CitySimulation::runEffectsScans() {
         if (h < 0 || h >= kMaxCityHouses || p.x < 0 || p.y < 0 || p.x >= mapWidth_ || p.y >= mapHeight_) continue;
         const auto index = h * districtsPerHouse + (p.y / 16) * districtWidth + p.x / 16;
         const int crime = crimeRateMap_.worldGet(p.x, p.y);
-        const int strength = crimeRebelsForDensity(cityLevelOf(map.getTile(p.x,p.y),building));
+        const int level = cityLevelOf(map.getTile(p.x,p.y),building);
+        const int strength = crimeRebelsForDensity(std::max(level,getStructurePopulation(building,level)>0 ? 1 : 0));
         if (crime >= kCrimeDangerousThreshold && strength > 0) {
             districtTroops[index] += strength;
             ++dangerousBuildings[index];
@@ -739,7 +740,10 @@ void CitySimulation::reconcileLoadedMapState(uint32_t gameCycleCount) {
             ++cityRoleStructures;
 
             auto* pZone = dynamic_cast<ZoneStructure*>(pStruct);
-            if (!pZone) continue;
+            if (!pZone) {
+                if (pStruct->getItemID() == Structure_WindTrap) pStruct->setCityOccupancy(1);
+                continue;
+            }
 
             ++zoneStructures;
             uint8_t density = 0;
@@ -758,7 +762,9 @@ void CitySimulation::reconcileLoadedMapState(uint32_t gameCycleCount) {
                     zt->setCityZoneDensity(density);
                 }
             }
-            pZone->refreshZonePowerDraw();
+            if (pZone->getZoneType() == ZoneType::Residential)
+                pZone->setResidentialPopulation(pZone->getResidentialPopulation());
+            else pZone->refreshZonePowerDraw();
         }
     }
 
@@ -837,7 +843,7 @@ void CitySimulation::runZoneGrowth() {
 
             nodes.push_back({
                 x, y, pStruct, pZone, role, level, maxLevel,
-                getResidentialSupply(itemID, level),
+                getStructureResidentialSupply(pStruct, level),
                 getCommercialSupply (itemID, level),
                 getIndustrialSupply (itemID, level),
                 pZone == nullptr,
@@ -864,7 +870,7 @@ void CitySimulation::runZoneGrowth() {
             if (!n.pStruct->getOwner() || n.pStruct->getOwner()->getHouseID() != h)
                 continue;
             const int itemID = n.pStruct->getItemID();
-            const int pop = getZonePopulation(itemID, n.level);
+            const int pop = getStructurePopulation(n.pStruct, n.level);
             switch (n.role) {
                 case CityRole::Residential: curRes += pop; break;
                 case CityRole::Commercial:  curCom += pop; break;
@@ -974,7 +980,11 @@ void CitySimulation::runZoneGrowth() {
         if (pos.isInvalid()) continue;
 
         const int initialLevel = n.level;
-        const int targetLevel = n.level + 1;
+        const int initialPopulation = getStructurePopulation(n.pStruct,n.level);
+        const bool residentialLot = n.pZone && n.role == CityRole::Residential;
+        const int nextResidentialPopulation = residentialLot
+            ? ResidentialPopulation::grow(initialPopulation,populationDensityMap_.worldGet(pos.x,pos.y)) : 0;
+        const int targetLevel = residentialLot ? ResidentialPopulation::density(nextResidentialPopulation) : n.level+1;
 
         // Local supply within kSupplyRadius — summed from spatial grid blocks.
         int localComm = 0, localInd = 0, localRes = 0;
@@ -1012,7 +1022,7 @@ void CitySimulation::runZoneGrowth() {
         // Traffic connectivity attempt: BFS along road network to find
         // the complementary zone type. R->C, C->I, I->R.
         TrafficResult traffic = TrafficResult::Connected;  // default for L0
-        if (n.level > 0) {
+        if (initialPopulation > 0) {
             ZoneType destZone = ZoneType::None;
             switch (n.role) {
                 case CityRole::Residential: destZone = ZoneType::Commercial;  break;
@@ -1026,7 +1036,8 @@ void CitySimulation::runZoneGrowth() {
                 else if (trafResult == 0) traffic = TrafficResult::NoDestination;
                 else                      traffic = TrafficResult::Connected;
 
-                if (traffic == TrafficResult::Connected) {
+                if (traffic == TrafficResult::Connected && CityTraffic::journeyDue(
+                        n.role == CityRole::Residential,initialPopulation,pos.x,pos.y,lastProcessedDay_)) {
                     CityTraffic::addJourney(trafficDensityMap_,trafficSim.getLastPath(),
                         [&](int x,int y) {
                             const auto* tile = currentGameMap->getTile(x,y);
@@ -1063,9 +1074,9 @@ void CitySimulation::runZoneGrowth() {
             || (roll == 0 && (!pollutionSlowed || (lastProcessedDay_ % 2u == 0)));
 
         // --- Growth attempt: requires zscore above threshold ---
-        if (zscore > kZscoreGrowthGate && n.level < n.maxLevel
+        if (zscore > kZscoreGrowthGate && (residentialLot ? nextResidentialPopulation > initialPopulation : n.level < n.maxLevel)
             && growthRolled && !pollutionBlocked) {
-            const int lvFloor = getDemandLandValueFloor(targetLevel);
+            const int lvFloor = getDemandLandValueFloor(std::max(1,targetLevel));
             if (landValue >= lvFloor) {
                 bool meets = false;
                 const bool bootstrapping = (n.level == 0);
@@ -1092,7 +1103,9 @@ void CitySimulation::runZoneGrowth() {
                 }
 
                 if (meets) {
-                    if (n.pZone) {
+                    if (residentialLot) {
+                        n.pZone->setResidentialPopulation(nextResidentialPopulation);
+                    } else if (n.pZone) {
                         for (int dy = 0; dy < n.pZone->getStructureSizeY(); ++dy) {
                             for (int dx = 0; dx < n.pZone->getStructureSizeX(); ++dx) {
                                 Tile* zt = currentGameMap->getTile(pos.x + dx, pos.y + dy);
@@ -1124,11 +1137,11 @@ void CitySimulation::runZoneGrowth() {
                         growthRateMap_.set(gbx, gby, static_cast<int8_t>(gr));
                     }
 
-                    SDL_Log("[CitySim] %s GREW (%d,%d) item=%d %d->%d "
+                    SDL_Log("[CitySim] %s GREW (%d,%d) item=%d pop=%d->%d "
                             "zscore=%d valve=%d lv=%d poll=%d crime=%d traf=%d",
                             n.pZone ? "zone" : "bldg",
                             pos.x, pos.y, n.pStruct->getItemID(),
-                            n.level - 1, n.level,
+                            initialPopulation, getStructurePopulation(n.pStruct,n.level),
                             zscore, valve, landValue, pollution, crime,
                             static_cast<int>(traffic));
                 }
@@ -1138,16 +1151,20 @@ void CitySimulation::runZoneGrowth() {
         // --- Demand-based decline ---
         // Non-zone Dune structures (Refinery, Silo, etc.) decline in
         // occupancy but are never destroyed. Zones can go to L0 (vacant).
-        if (!grew && n.level > 0) {
+        if (!grew && initialPopulation > 0) {
             const uint32_t declineRoll = (static_cast<uint32_t>(pos.x) * 97u
                                         + static_cast<uint32_t>(pos.y) * 173u
                                         + lastProcessedDay_) % 16u;
-            if (shouldZoneDecline(zscore, n.level, declineRoll)) {
+            if (shouldZoneDecline(zscore, std::max(1,n.level), declineRoll)) {
                 // Non-zone Dune structures floor at level 1 (never destroyed).
                 const int floorLevel = n.isDuneStructure ? 1 : 0;
-                const int newLevel = std::max(floorLevel, n.level - 1);
-                if (newLevel < n.level) {
-                    if (n.pZone) {
+                const int nextPopulation = residentialLot ? ResidentialPopulation::decline(initialPopulation) : 0;
+                const int newLevel = residentialLot ? ResidentialPopulation::density(nextPopulation)
+                    : std::max(floorLevel, n.level - 1);
+                if (residentialLot ? nextPopulation < initialPopulation : newLevel < n.level) {
+                    if (residentialLot) {
+                        n.pZone->setResidentialPopulation(nextPopulation);
+                    } else if (n.pZone) {
                         for (int dy = 0; dy < n.pZone->getStructureSizeY(); ++dy) {
                             for (int dx = 0; dx < n.pZone->getStructureSizeX(); ++dx) {
                                 Tile* zt = currentGameMap->getTile(pos.x + dx, pos.y + dy);
@@ -1171,11 +1188,11 @@ void CitySimulation::runZoneGrowth() {
                         growthRateMap_.set(gbx, gby, static_cast<int8_t>(gr));
                     }
 
-                    SDL_Log("[CitySim] %s DECLINED (%d,%d) item=%d %d->%d "
+                    SDL_Log("[CitySim] %s DECLINED (%d,%d) item=%d pop=%d->%d "
                             "zscore=%d valve=%d lv=%d poll=%d crime=%d traf=%d (demand)",
                             n.pZone ? "zone" : "bldg",
                             pos.x, pos.y, n.pStruct->getItemID(),
-                            n.level + 1, n.level,
+                            initialPopulation, getStructurePopulation(n.pStruct,n.level),
                             zscore, valve, landValue, pollution, crime,
                             static_cast<int>(traffic));
                 }
@@ -1186,9 +1203,13 @@ void CitySimulation::runZoneGrowth() {
         // Non-zone Dune structures floor at level 1.
         if (!grew && !declined && !powered && n.level > 1) {
             const int floorLevel = n.isDuneStructure ? 1 : 1;  // both floor at 1 for power
-            const int newLevel = std::max(floorLevel, n.level - 1);
-            if (newLevel < n.level) {
-                if (n.pZone) {
+            const int nextPopulation = residentialLot ? ResidentialPopulation::decline(initialPopulation) : 0;
+            const int newLevel = residentialLot ? ResidentialPopulation::density(nextPopulation)
+                : std::max(floorLevel, n.level - 1);
+            if (residentialLot ? nextPopulation < initialPopulation : newLevel < n.level) {
+                if (residentialLot) {
+                    n.pZone->setResidentialPopulation(nextPopulation);
+                } else if (n.pZone) {
                     for (int dy = 0; dy < n.pZone->getStructureSizeY(); ++dy) {
                         for (int dx = 0; dx < n.pZone->getStructureSizeX(); ++dx) {
                             Tile* zt = currentGameMap->getTile(pos.x + dx, pos.y + dy);
@@ -1200,14 +1221,16 @@ void CitySimulation::runZoneGrowth() {
                     n.pStruct->setCityOccupancy(static_cast<uint8_t>(newLevel));
                 }
                 n.level = newLevel;
-                SDL_Log("[CitySim] %s DECLINED (%d,%d) item=%d %d->%d (power-starved)",
+                SDL_Log("[CitySim] %s DECLINED (%d,%d) item=%d pop=%d->%d (power-starved)",
                         n.pZone ? "zone" : "bldg",
                         pos.x, pos.y, n.pStruct->getItemID(),
-                        n.level + 1, n.level);
+                        initialPopulation, getStructurePopulation(n.pStruct,n.level));
             }
         }
+        const int finalPopulation = getStructurePopulation(n.pStruct,n.level);
+        const bool populationChanged = finalPopulation != initialPopulation;
         // Observe the decision without changing its rolls, score or ordering.
-        if (AITelemetry::log().enabled() && (n.level != initialLevel || lastProcessedDay_ % 96u == 0)) {
+        if (AITelemetry::log().enabled() && (populationChanged || lastProcessedDay_ % 96u == 0)) {
             const bool supplySatisfied = initialLevel == 0 || (n.role == CityRole::Residential
                 ? localComm+localInd >= getDemandJobsThreshold(targetLevel)
                 : n.role == CityRole::Commercial
@@ -1218,12 +1241,12 @@ void CitySimulation::runZoneGrowth() {
             const int crimePenalty = computeLocalEval(n.role,landValue,pollution,0,traffic)
                 - computeLocalEval(n.role,landValue,pollution,crime,traffic);
             AITelemetry::log().write(currentGame->getGameCycleCount(),ownerID,-1,
-                n.level != initialLevel ? "city_level_changed" : "city_growth_sample",
+                populationChanged ? "city_level_changed" : "city_growth_sample",
                 AITelemetry::Record().set("object",n.pStruct->getObjectID()).set("item",n.pStruct->getItemID())
                     .set("x",pos.x).set("y",pos.y).set("role",static_cast<int>(n.role))
                     .set("old_level",initialLevel).set("new_level",n.level).set("max_level",n.maxLevel)
-                    .set("outcome",n.level > initialLevel ? "growth" : n.level < initialLevel ? "decline" : "unchanged")
-                    .set("reason",n.level > initialLevel ? "growth_gates_passed" : n.level < initialLevel ? (powered ? "negative_score" : "power_shortage") : "sample")
+                    .set("outcome",finalPopulation > initialPopulation ? "growth" : finalPopulation < initialPopulation ? "decline" : "unchanged")
+                    .set("reason",finalPopulation > initialPopulation ? "growth_gates_passed" : finalPopulation < initialPopulation ? (powered ? "negative_score" : "power_shortage") : "sample")
                     .set("powered",powered).set("demand",valve).set("local_eval",localEval).set("score",zscore)
                     .set("crime_before_police",crimeBeforePoliceMap_.worldGet(pos.x,pos.y)).set("police_coverage",policeCoverageMap_.worldGet(pos.x,pos.y))
                     .set("hostile_value_penalty",hostileLandValuePenaltyMap_.worldGet(pos.x,pos.y)).set("crime_score_penalty",crimePenalty).set("land_value",landValue).set("crime",crime)
@@ -1233,8 +1256,8 @@ void CitySimulation::runZoneGrowth() {
                     .set("supply_satisfied",supplySatisfied).set("land_value_satisfied",landSatisfied).set("road_satisfied",roadSatisfied)
                     .set("pollution_blocked",pollutionBlocked).set("pollution_slowed",pollutionSlowed)
                     .set("growth_roll",roll).set("growth_roll_passed",growthRolled).set("score_satisfied",zscore>kZscoreGrowthGate)
-                    .set("at_max_level",initialLevel>=n.maxLevel).set("population_before",getZonePopulation(n.pStruct->getItemID(),initialLevel))
-                    .set("population_after",getZonePopulation(n.pStruct->getItemID(),n.level)));
+                    .set("at_max_level",initialLevel>=n.maxLevel).set("population_before",initialPopulation)
+                    .set("population_after",finalPopulation));
         }
     }
 
@@ -1304,7 +1327,7 @@ void CitySimulation::runZoneGrowth() {
             if (!n.pStruct->getOwner() || n.pStruct->getOwner()->getHouseID() != h)
                 continue;
             const int itemID = n.pStruct->getItemID();
-            const int pop = getZonePopulation(itemID, n.level);
+            const int pop = getStructurePopulation(n.pStruct, n.level);
             switch (n.role) {
                 case CityRole::Residential: newRes += pop; break;
                 case CityRole::Commercial:  newCom += pop; break;
@@ -1434,7 +1457,7 @@ void CitySimulation::runDailyBudget() {
 
         if (getStructureCityRole(itemID) != CityRole::None) {
             const int level = cityLevelOf(t, pStruct);
-            hb.pop += getZonePopulation(itemID, level);
+            hb.pop += getStructurePopulation(pStruct, level);
         }
         hb.policeCost += getPoliceAnnualCost(itemID);
     });
