@@ -70,12 +70,10 @@ inline bool isCityZoneTerrain(uint32_t terrain) {
         || terrain == Terrain_Sand || terrain == Terrain_Dunes;
 }
 
-inline int getCityBuildTime(int itemID, int configuredBuildTime,
-                            int concreteBuildTime, int policeBuildTime) {
-    // Road and R/C/I zoning are planning tools, not construction projects.
-    // The builder needs one simulation step to process the order, after
-    // which the tile/lot is placed immediately.
-    if (itemID == Structure_Road || isCityZoneStructure(itemID)) return 1;
+inline int getCityBuildTime(int itemID, int configuredBuildTime) {
+    // Only roads bypass normal construction timing. Zones use their configured
+    // duration like other buildings, respecting active house/mod data.
+    if (itemID == Structure_Road) return 1;
     return std::max(1, configuredBuildTime);
 }
 

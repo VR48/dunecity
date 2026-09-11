@@ -3392,7 +3392,8 @@ void QuantBot::build(int militaryValue) {
                 const int shortage = std::max(0,ownResPop+waitingR*16-(ownComPop+ownIndPop)*8);
                 residential.annualIncome += DuneCity::computeAnnualTaxRevenue(std::min(shortage,population*8),tax,land)/2;
             }
-            residential.delayCycles = DuneCity::kCyclesPerCityYear; // ~60 s growth/foundation allowance
+            residential.delayCycles = DuneCity::getCityBuildTime(zone,data[zone][houseID].buildtime)*15
+                + DuneCity::kCyclesPerCityYear; // construction plus ~60 s growth/foundation allowance
             residential.confidence = zoneConfidence(demand,zone==Structure_ZoneResidential ? 2000 : 1500,
                 industry ? 0 : pollution,crime,unfinished);
         }

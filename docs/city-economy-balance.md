@@ -1,4 +1,4 @@
-# City tax and spice economics (1.0.635, 2026-09-11)
+# City tax and spice economics (1.0.636, 2026-09-11)
 
 These are source-derived estimates at normal simulation speed, not measured
 match income. Tax-rate constants are unchanged. As of 1.0.634, only R/C/I
@@ -76,7 +76,7 @@ power costs before choosing a broad tax reduction/upkeep increase. No such
 formula change has been made in this version. The government exemption below
 is implemented, independently of this hypothetical Micropolis restructuring.
 
-## Government infrastructure (1.0.634)
+## Government infrastructure (tax exemption 1.0.634; latest tiers 1.0.636)
 
 Taxable status is independent of employment, demand, pollution and density.
 Only actual R/C/I zones pay tax, including the actual population of partially
@@ -89,14 +89,16 @@ population, not taxable population.
 | Infrastructure | Economic role / maximum density |
 | --- | --- |
 | WindTrap | Power only, no industry |
-| Light Factory, Refinery | Medium I |
+| Light Factory | Low I |
+| Refinery | Medium I |
 | Spice Silo | Low I; clean |
-| Heavy Factory, Repair Yard | High I |
-| High Tech Factory | High C (Stefan's final item overrides the earlier high-I listing) |
+| Heavy Factory, High Tech Factory, Repair Yard | Medium I |
+| House IX | High C |
 | Starport | Seaport, existing high-I employment / demand gate |
 
-Other existing roles are preserved. High Tech retains aircraft manufacturing
-emissions despite C employment; refinery emission caps at medium. Loaded
+Other existing roles are preserved. Stefan's latest instruction changes High
+Tech from the interim high-C mapping to medium I. Factory emissions follow the
+revised density: Light Factory caps at 10; Heavy/HighTech/Repair/Refinery at 25. Loaded
 occupancy is clamped to the new maximum; no save-format fields added. The
 zone-only census is derived from existing scans and feeds payout, budget and
 QuantBot/Mentat income forecasts. Government jobs can still indirectly support
@@ -135,6 +137,17 @@ annual values would also be credits per simulated minute. High R would fall
 72%; high C/I would rise 124%. The whole-city effect depends on the zone mix;
 this is not a blanket 3.57x tax reduction. At ~320 delivered spice/minute, one
 harvester would match ~6.1 high R or C zones, or ~7.7 high I zones, gross.
+
+## Zone construction timing (1.0.636)
+
+R/C/I now use normal configured construction timing through BuilderBase, using
+active house/mod data. Default buildtime 40 × 15 ticks × 16ms = 9.6 simulated
+seconds at full builder speed and adequate funds. The previous city helper
+forced buildtime 1 (~0.24s). Stefan's final instruction for normal timing
+supersedes his earlier request to match silo time. Roads and instant-build
+options retain their prior behaviour. Zone purchase price and subsequent
+population growth are unchanged. The AI's investment delay includes configured
+construction time before its 60s growth allowance.
 
 ## QuantBot investment policy
 

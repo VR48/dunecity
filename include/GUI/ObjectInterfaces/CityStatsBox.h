@@ -174,11 +174,11 @@ private:
             case Structure_Refinery:         return "Role: I-medium";
             case Structure_Silo:             return "Role: I-light";
             case Structure_Radar:            return "Role: C-medium";
-            case Structure_HighTechFactory:  return "Role: C-high";
+            case Structure_HighTechFactory:  return "Role: I-medium";
             case Structure_IX:               return "Role: C-high";
-            case Structure_LightFactory:     return "Role: I-medium";
-            case Structure_HeavyFactory:     return "Role: I-high";
-            case Structure_RepairYard:       return "Role: I-high";
+            case Structure_LightFactory:     return "Role: I-light";
+            case Structure_HeavyFactory:     return "Role: I-medium";
+            case Structure_RepairYard:       return "Role: I-medium";
             case Structure_StarPort:         return "Role: Seaport";
             case Structure_Palace:           return "Role: R+C Palace";
             case Structure_PoliceStation:    return "Role: Police";

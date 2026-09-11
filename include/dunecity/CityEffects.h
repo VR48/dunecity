@@ -144,12 +144,12 @@ inline CityRole getStructureCityRole(int itemID) {
         case Structure_Radar:
         case Structure_IX:
         case Structure_Airport:
-        case Structure_HighTechFactory:
             return CityRole::Commercial;
         case Structure_ZoneIndustrial:
         case Structure_ConstructionYard:
         case Structure_LightFactory:
         case Structure_HeavyFactory:
+        case Structure_HighTechFactory:
         case Structure_RepairYard:
         case Structure_Refinery:
         case Structure_Silo:
@@ -172,16 +172,16 @@ inline int getStructureMaxLevel(int itemID) {
         case Structure_WindTrap:        // government power, no industry
             return 0;
         case Structure_Silo:            // industrial low (no pollution)
+        case Structure_LightFactory:    // industrial low
             return 1;
         case Structure_Radar:           // commercial medium
-        case Structure_LightFactory:    // industrial medium
         case Structure_Refinery:        // industrial medium
+        case Structure_HeavyFactory:    // industrial medium
+        case Structure_HighTechFactory: // industrial medium
+        case Structure_RepairYard:      // industrial medium
             return 2;
-        case Structure_HighTechFactory: // commercial high
         case Structure_IX:              // commercial high
         case Structure_ConstructionYard: // industrial high (acts as factory)
-        case Structure_HeavyFactory:    // industrial high
-        case Structure_RepairYard:      // industrial high
         case Structure_StarPort:        // shipyard — industrial high
         case Structure_Airport:         // transport hub — commercial high
         case Structure_Barracks:        // residential high (infantry)
@@ -213,13 +213,12 @@ inline int effectiveCityLevel(int itemID, int level) {
 // --- Pollution emission ------------------------------------------------------
 
 /// Per-source pollution emission (0-100 scale), scaled by current level.
-/// Industrial sources and aircraft manufacturing pollute by level. Fiscal
-/// exemption and commercial jobs do not remove factory emissions.
+/// Industrial sources pollute by their capped city density. Government tax
+/// exemption does not remove factory emissions.
 inline int getPollutionEmission(int itemID, int level) {
     level = effectiveCityLevel(itemID, level);
     if (level <= 0) return 0;
-    if (getStructureCityRole(itemID) != CityRole::Industrial
-        && itemID != Structure_HighTechFactory) return 0;
+    if (getStructureCityRole(itemID) != CityRole::Industrial) return 0;
 
     // Starport is Industrial for jobs/demand but does not pollute (it's a
     // trade hub, not a factory). Per spec override.

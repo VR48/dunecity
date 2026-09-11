@@ -1,3 +1,32 @@
+# Revised factory roles and normal zone construction — 1.0.636 (local only)
+
+Stefan revised the mapping again after 1.0.635: Light Factory is now low-density
+I; Heavy Factory, High Tech Factory and Repair Yard medium-density I; House IX
+high-density C. This supersedes 1.0.634's High Tech high-C interpretation.
+
+- Roles, caps, supply/population/emissions helpers and sidebar labels agree.
+  Existing load reconciliation clamps old high occupancy automatically. Factory
+  emissions follow the tiers: Light 10; Heavy/HighTech/Repair 25. IX stays clean.
+- Government infrastructure stays non-taxable; private R/C/I tax formula still
+  unchanged. Refinery medium I, Silo low I, WindTrap power only and Starport
+  seaport remain as previously requested. Includes 1.0.635 balanced zone choice.
+
+- Stefan's final timing instruction is normal construction timing. R/C/I use
+  their configured build time through the standard BuilderBase production path,
+  removing the instant-zone override. Default 40 is ~9.6 simulated seconds at
+  full builder speed; house/mod overrides respected. This supersedes the earlier
+  silo-time request. Roads, instant-build mode and zone prices remain unchanged.
+- QuantBot tax-investment delay includes normal configured construction time
+  plus its existing 60s growth/foundation allowance. Population growth itself
+  is not accelerated. Regression tests cover all zones, overrides and zero-time
+  safeguards. No new save fields, scans or pathfinding.
+
+- Final build, before/after dependency checks and CTest pass: 557 passed, 3 optional
+  skips. Installed signed/hash-verified /Applications/dunecity.app 1.0.636,
+  SHA256 7194a3cd6eece9e4a0cb8224e9ac1056d262e535ae992743a02a07eb1b24bc59. Backup: dunecity-before-636.66dh8ro3.
+  No launch/interruption of ongoing game, no remote push or release. Runtime
+  balance still needs a subsequent live game; tests stub the full world scans.
+
 # Balanced R/C/I selection — 1.0.635 (local only)
 
 Stefan's current game screenshot showed R -1110 / C +1360 / I +1500 and little
@@ -25,7 +54,7 @@ cycle 71648 chose R via infill despite demand 1685/224/1500 and counts 18/10/5.
 
 - Build and before/after dependency audits passed; CTest 556 passed, 3 optional
   skips. Installed signed/hash-verified /Applications/dunecity.app 1.0.635,
-  SHA256 e04112fdbd9b739e98bb6a85633e2506f69c608b0ca394f83655e0d751825230. Backup: dunecity-before-635.4xsde6uo.
+  SHA256 e04112fdbd9b739e98bb6a85633e2506f69c608b0ca394f83655e0d751825230. Backup:  dunecity-before-635.4xsde6uo.
   Did not launch/interrupt the live 1.0.634 process. No remote push/release.
 
 # Government tax exemption and infrastructure roles — 1.0.634 (local only)
@@ -1068,7 +1097,7 @@ includes dangerous-building count, requested force, mean crime and buildup rate;
 member records identify each spawn-origin building.
 
 Built and signed locally1.0.605. Ninja dependency audits passed, version metadata
-consistent. CTest482passed,3optional skipped. Tests cover4/6minute boundaries,
+consistent. CTest482passed, 3optional skipped. Tests cover4/6minute boundaries,
 cluster size/history, policing/small-population reset, district spread, old/new
 save codecs with trailing sentinels and invalid sizes, heavy overflow balancing,
 parallel cap/cash consumption and light backlog expansion gates. Not pushed,
@@ -1240,7 +1269,7 @@ multiplayer path queue. No new random calls. Telemetry policy simple-hunt-v40 ad
 `ground_hunt`, `defence_response`, `harvest_army_rally` in generic SQLite events.
 
 Validation: local Release602 built, dependency audit passed before/after, CTest
-passed (471 cases passed,3optional skipped), app signature and version checked.
+passed (471 cases passed, 3optional skipped), app signature and version checked.
 Tests cover defence force sizing, existing responders, insufficient armies,
 deterministic nearest-first selection and bounded blocked rally destinations.
 Live FPS/combat and two-peer save/load still require runtime verification.

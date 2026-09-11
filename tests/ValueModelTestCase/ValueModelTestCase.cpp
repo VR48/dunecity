@@ -254,7 +254,7 @@ TEST_CASE("Pollution: DuneCity scales industrial emission by level (divergence)"
     REQUIRE(getPollutionEmission(Structure_ZoneIndustrial, 3) == 50);
     // At max level we hit SC's flat-50 number, so high-density I lines up
     // with SC's worst-case noise.
-    REQUIRE(getPollutionEmission(Structure_HeavyFactory, 3) == 50);
+    REQUIRE(getPollutionEmission(Structure_HeavyFactory, 3) == 25); // capped medium I, including old saves
 }
 
 TEST_CASE("Pollution: residential and commercial are clean at every level",

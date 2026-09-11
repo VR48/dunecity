@@ -290,12 +290,7 @@ void BuilderBase::updateProductionProgress() {
                 FixPoint totalBuildCosts = tmp->price;
                 int buildTime = currentGame->objectData.data[currentProducedItem][originalHouseID].buildtime;
                 if (currentGame->isCitySimEnabled()) {
-                    const int concreteBuildTime =
-                        currentGame->objectData.data[Structure_Slab1][originalHouseID].buildtime;
-                    const int policeBuildTime =
-                        currentGame->objectData.data[Structure_PoliceStation][originalHouseID].buildtime;
-                    buildTime = DuneCity::getCityBuildTime(
-                        currentProducedItem, buildTime, concreteBuildTime, policeBuildTime);
+                    buildTime = DuneCity::getCityBuildTime(currentProducedItem, buildTime);
                 }
                 FixPoint totalBuildGameTicks = buildTime * 15;
                 FixPoint buildCosts = totalBuildCosts / totalBuildGameTicks;
