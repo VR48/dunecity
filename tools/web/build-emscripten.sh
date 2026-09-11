@@ -8,6 +8,9 @@
 #   dunecity.data   (preloaded game assets)
 #
 # Requires: git, cmake, python3.
+#
+# Artifact sizes use tools/web/file-size-bytes.sh (portable wc -c) so the
+# script works on Linux CI and macOS dev machines.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -16,6 +19,7 @@ EMSDK_DIR="${EMSDK_DIR:-${ROOT}/.emsdk}"
 BUILD_DIR="${BUILD_DIR:-${ROOT}/build/emscripten}"
 BUILD_TYPE="${BUILD_TYPE:-Release}"
 JOBS="${JOBS:-2}"
+FILE_SIZE="${ROOT}/tools/web/file-size-bytes.sh"
 
 echo "==> DuneCity Emscripten build"
 echo "    repo:        ${ROOT}"
@@ -30,7 +34,7 @@ if [[ ! -d "${EMSDK_DIR}/.git" ]]; then
 fi
 
 pushd "${EMSDK_DIR}" >/dev/null
-if ! ./emsdk list | grep -q "${EMSDK_VERSION}"; then
+if ! ./emsdk list --installed 2>/dev/null | grep -qw "${EMSDK_VERSION}"; then
     echo "==> Installing Emscripten ${EMSDK_VERSION}"
     ./emsdk install "${EMSDK_VERSION}"
 fi
@@ -40,7 +44,12 @@ source ./emsdk_env.sh
 popd >/dev/null
 
 command -v emcc >/dev/null
-echo "==> Using $(emcc --version | head -1)"
+EMCC_VERSION="$(emcc --version | head -1)"
+if ! emcc --version 2>/dev/null | grep -q "${EMSDK_VERSION}"; then
+    echo "ERROR: active emcc is not pinned ${EMSDK_VERSION}: ${EMCC_VERSION}" >&2
+    exit 1
+fi
+echo "==> Using ${EMCC_VERSION}"
 
 echo "==> Prebuilding Emscripten SDL ports (serial cache warmup)"
 unset EM_CACHE_IS_LOCKED
@@ -58,22 +67,28 @@ OUT_DIR="${BUILD_DIR}/bin"
 HTML="${OUT_DIR}/dunecity.html"
 JS="${OUT_DIR}/dunecity.js"
 WASM="${OUT_DIR}/dunecity.wasm"
+DATA="${OUT_DIR}/dunecity.data"
 
-for artifact in "${HTML}" "${JS}" "${WASM}"; do
+for artifact in "${HTML}" "${JS}" "${WASM}" "${DATA}"; do
     if [[ ! -s "${artifact}" ]]; then
         echo "ERROR: expected non-empty artifact missing: ${artifact}" >&2
         exit 1
     fi
 done
 
+if [[ -f "${OUT_DIR}/dunecity.worker.js" ]]; then
+    echo "ERROR: pthread worker artifact present; browser build must be single-threaded" >&2
+    exit 1
+fi
+
+node "${ROOT}/tools/web/verify-dunecity-js.mjs" --built "${JS}"
+
 echo ""
 echo "==> Build succeeded"
-echo "    ${HTML}  $(stat -c%s "${HTML}") bytes"
-echo "    ${JS}    $(stat -c%s "${JS}") bytes"
-echo "    ${WASM}  $(stat -c%s "${WASM}") bytes"
-if [[ -f "${OUT_DIR}/dunecity.data" ]]; then
-    echo "    ${OUT_DIR}/dunecity.data  $(stat -c%s "${OUT_DIR}/dunecity.data") bytes"
-fi
+echo "    ${HTML}  $("${FILE_SIZE}" "${HTML}") bytes"
+echo "    ${JS}    $("${FILE_SIZE}" "${JS}") bytes"
+echo "    ${WASM}  $("${FILE_SIZE}" "${WASM}") bytes"
+echo "    ${DATA}  $("${FILE_SIZE}" "${DATA}") bytes"
 echo ""
 echo "Serve locally, e.g.:"
 echo "  cd ${OUT_DIR} && python3 -m http.server 8080"
