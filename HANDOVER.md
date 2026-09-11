@@ -1,3 +1,26 @@
+# Original single-mission house identities — 1.0.651 (local)
+
+Current session1789170044652756-0 loads SCENA022.INI as GameType::Skirmish.
+Its loose data/scena022.ini is a Tornie import (5a172ce) that changes original
+Harkonnen -> Ordos, Sardaukar -> Harkonnen, Ordos -> Mercenary. House IDs were
+instantiated correctly from that wrong source. Campaign already used
+openCampaignFile; the single-mission picker bypassed it outside Tornie.
+
+INIMap now routes both Campaign and Skirmish through openCampaignFile. Original
+A/H/O scenarios resolve from SCENARIO.PAK; Tornie retains its campaign resolver.
+Custom games/multiplayer still use their supplied map data. No hardcoded house
+swaps or save-format changes. Original SCENA022 has Harkonnen left, Sardaukar
+middle, Ordos right (the user's remembered left/right order was reversed).
+Verified original units, structures, teams and reinforcements consistently
+reference those houses; Mercenary absent. Existing saves retain old identities;
+a newly started mission in the new executable gets the fix.
+
+Release build, full ctest suite, before/after Ninja dependency checks, version
+and whitespace checks passed. No fresh interactive mission run; current game
+and logs preserved. Installed /Applications/dunecity.app SHA256 c5cb7207a0fecf98d1e41d1d8cb0a020437ef32c2a747d5b0664f4a673d847e1.
+Previous650: /Applications/.dunecity-651-691z6krw/dunecity-previous.app.
+No remote deployment; existing reports/ remains unstaged.
+
 # Main-base proximity for MCV expansion — 1.0.650 (local)
 
 Stefan reported MCVs passing nearby rock and explicitly requires distance to
