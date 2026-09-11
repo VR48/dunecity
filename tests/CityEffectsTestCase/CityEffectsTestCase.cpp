@@ -1392,3 +1392,32 @@ TEST_CASE("Completed road redirects to another useful gap when its original tile
     REQUIRE(std::find(sites.begin(),sites.end(),std::make_pair(40,39))==sites.end());
     REQUIRE(candidates(buildings,[](int,int){return false;},hasRoad).empty()); // Keep finished item for later.
 }
+
+TEST_CASE("Road access cannot move police coverage into another district", "[city][crime]") {
+    struct RoadTile { bool value=false; bool isRoad() const { return value; } };
+    struct RoadMap {
+        std::array<RoadTile,64*64> tiles{};
+        int getSizeX() const { return 64; }
+        int getSizeY() const { return 64; }
+        const RoadTile* getTile(int x,int y) const { return &tiles[y*64+x]; }
+    } map;
+    // 645: station (24,5), first road (23,4), industrial zone (30,4).
+    // The arbitrary first road moved the station a full six-tile police cell west.
+    map.tiles[4*64+23].value=true;
+    const auto source=DuneCity::policeSource(map,24,5,2,2,1000,100,true);
+    CHECK(source.x==24); CHECK(source.y==5); CHECK(source.strength==1000);
+    map.tiles[4*64+23].value=false;
+    map.tiles[5*64+26].value=true;
+    const auto opposite=DuneCity::policeSource(map,24,5,2,2,1000,100,true);
+    CHECK(opposite.x==source.x); CHECK(opposite.y==source.y);
+    CHECK(opposite.strength==source.strength);
+    DuneCity::CityMapLayer<int32_t> field;
+    field.init(64,64,DuneCity::kPoliceMapBlockSize);
+    DuneCity::addPoliceCoverage(field,64,64,source.x,source.y,source.strength);
+    DuneCity::addPoliceCoverage(field,64,64,29,3,150); // Nearby rocket.
+    DuneCity::smoothPoliceCoverage(field,64,64);
+    CHECK(DuneCity::computeCrimeAfterPolice(25,172,field.worldGet(30,4))<192);
+    map.tiles[5*64+26].value=false;
+    const auto disconnected=DuneCity::policeSource(map,24,5,2,2,1000,100,true);
+    CHECK(disconnected.x==24); CHECK(disconnected.y==5); CHECK(disconnected.strength==500);
+}

@@ -23,13 +23,17 @@ PoliceSource policeSource(const MapType& map,int x,int y,int sx,int sy,
         const auto* tile=map.getTile(wx,wy);
         return tile && tile->isRoad();
     };
+    // Road access affects strength, never the service location. A road on
+    // the far side of a coarse-cell boundary must not move the whole district.
+    // Use the central occupied tile (lower centre for an even footprint).
+    const int cx=x+(sx-1)/2, cy=y+(sy-1)/2;
     if(sx==1&&sy==1&&road(x,y))
-        return {x,y,policeSourceStrength(strength,funding,powered,true)};
+        return {cx,cy,policeSourceStrength(strength,funding,powered,true)};
     for(int yy:{y-1,y+sy}) for(int xx=x-1;xx<=x+sx;++xx)
-        if(road(xx,yy)) return {xx,yy,policeSourceStrength(strength,funding,powered,true)};
+        if(road(xx,yy)) return {cx,cy,policeSourceStrength(strength,funding,powered,true)};
     for(int yy=y;yy<y+sy;++yy) for(int xx:{x-1,x+sx})
-        if(road(xx,yy)) return {xx,yy,policeSourceStrength(strength,funding,powered,true)};
-    return {x,y,policeSourceStrength(strength,funding,powered,false)};
+        if(road(xx,yy)) return {cx,cy,policeSourceStrength(strength,funding,powered,true)};
+    return {cx,cy,policeSourceStrength(strength,funding,powered,false)};
 }
 inline void addPoliceCoverage(CityMapLayer<int32_t>& raw,int width,int height,
                               int x,int y,int strength) {

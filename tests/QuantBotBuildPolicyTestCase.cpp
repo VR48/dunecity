@@ -1236,3 +1236,56 @@ TEST_CASE("Air coverage uses combat diagonal distance and clears with removed de
     for(int item : {Structure_GunTurret,Structure_Refinery,Unit_Harvester,Unit_SonicTank})
         CHECK_FALSE(AirStrikePolicy::antiAir(item));
 }
+
+TEST_CASE("Brutal compounds an eight-worker opening while lower difficulties keep four", "[quantbot][city]") {
+    using namespace CityEconomyInvestmentPolicy;
+    for (int workers = 4; workers < 8; ++workers) {
+        CHECK(openingWorkersNeeded(workers,120,true));
+        CHECK(preferFactoryHarvester(workers,120,300,80000,300,true,true,true));
+        CHECK_FALSE(openingWorkersNeeded(workers,120));
+        CHECK_FALSE(preferFactoryHarvester(workers,120,300,80000,300,true,true));
+    }
+    CHECK_FALSE(openingWorkersNeeded(8,120,true));
+    CHECK(preferFactoryHarvester(8,120,2400,80000,300,true,true,true));
+    CHECK_FALSE(preferFactoryHarvester(9,120,2400,80000,300,true,true,true));
+    CHECK(preferFactoryHarvester(40,120,12000,80000,300,true,true,true));
+    for (int target : {0,1,2,5}) {
+        CHECK_FALSE(openingWorkersNeeded(target,target,true));
+        CHECK_FALSE(preferFactoryHarvester(target,target,80000,80000,300,true,true,true));
+    }
+    CHECK_FALSE(preferFactoryHarvester(4,120,1200,80000,300,true,false,true)); // Vanilla unchanged.
+}
+
+TEST_CASE("Brutal can choose a profitable third refinery with a worker-capable factory", "[quantbot][city]") {
+    using namespace CityEconomyInvestmentPolicy;
+    // Observed 645 forecast: refinery rejected solely because a factory exists.
+    Investment refinery{461,375,3,8195,1000,689};
+    Investment zone{109,19,0,4350,1000,53};
+    CHECK_FALSE(considerRefinery(false,true,true));
+    CHECK(openingRefineryInvestment(true,4,120,2));
+    CHECK(preferRefinery(refinery,zone,considerRefinery(false,true,true,
+        openingRefineryInvestment(true,4,120,2)),false));
+    CHECK_FALSE(preferRefinery(refinery,zone,true,true)); // Keep first residential hedge.
+    CHECK_FALSE(openingRefineryInvestment(false,4,120,2));
+    CHECK_FALSE(openingRefineryInvestment(true,8,120,2));
+    CHECK_FALSE(openingRefineryInvestment(true,4,120,3)); // No unlimited spare bays.
+    CHECK_FALSE(openingRefineryInvestment(true,2,2,2));
+    refinery.projectedProceeds=300;
+    CHECK_FALSE(preferRefinery(refinery,zone,true,false)); // Bad/risky trips still lose.
+    CHECK(considerRefinery(true,false,true)); // Mature unloading catchup remains available.
+}
+
+TEST_CASE("Announced civic requirements select a single feasible investment", "[quantbot][city]") {
+    using namespace CityEconomyInvestmentPolicy;
+    using namespace DuneCity;
+    CHECK(demandedCivic(NeedStadium,0,true,0,true)==Structure_Stadium);
+    CHECK(demandedCivic(NeedStadium|NeedAirport,0,true,0,true)==Structure_Stadium);
+    CHECK(demandedCivic(NeedStadium|NeedAirport,1,true,0,true)==Structure_Airport);
+    CHECK(demandedCivic(NeedStadium|NeedAirport,0,false,0,true)==Structure_Airport);
+    CHECK(demandedCivic(NeedStadium,0,false,0,true)==NONE_ID);
+    CHECK(demandedCivic(NeedStadium,1,true,0,true)==NONE_ID);
+    CHECK(demandedCivic(0,0,true,0,true)==NONE_ID); // No premature airports/stadiums.
+    // A 3000-credit stadium can accumulate cash instead of losing it to optional units.
+    CHECK(QuantBotBuildPolicy::spendableCredits(2900,3000)==0);
+    CHECK(QuantBotBuildPolicy::spendableCredits(3400,3000)==400);
+}

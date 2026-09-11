@@ -29,18 +29,34 @@ inline int factoryHarvesterTarget(int sustainableWorkers, int mapLimit) {
 }
 // A small opening fleet must compound before optional technology. This is a
 // priority floor bounded by remaining spice/map capacity, never a worker cap.
-inline bool openingWorkersNeeded(int workers, int target) {
-    return workers < std::min(4, std::max(0,target));
+inline bool openingWorkersNeeded(int workers, int target, bool brutal = false) {
+    return workers < std::min(brutal ? 8 : 4, std::max(0,target));
 }
 // This is production priority, not a worker cap. While the army is short,
-// keep about twice the current harvester capital in military strength. Rebuild
+// keep twice the harvester capital in military strength (equal capital on
+// Brutal city games, allowing faster compounding). Rebuild
 // a collapsed workforce first; once army needs are met, expand to the spice target.
 inline bool preferFactoryHarvester(int workers, int target, int armyValue,
-                                   int armyTarget, int workerPrice, bool canBuildMilitary, bool cityOpening = false) {
+                                   int armyTarget, int workerPrice, bool canBuildMilitary, bool cityOpening = false, bool brutal = false) {
     if (workers >= target) return false;
-    if ((cityOpening && openingWorkersNeeded(workers,target)) || workers < 2 || !canBuildMilitary || armyValue >= armyTarget) return true;
+    if ((cityOpening && openingWorkersNeeded(workers,target,brutal)) || workers < 2 || !canBuildMilitary || armyValue >= armyTarget) return true;
     return int64_t(armyValue) >= std::min<int64_t>(armyTarget,
-        int64_t(std::max(0,workers))*std::max(0,workerPrice)*2);
+        int64_t(std::max(0,workers))*std::max(0,workerPrice)*(cityOpening && brutal ? 1 : 2));
+}
+// Expand the opening in parallel with the heavy factory when the included
+// worker beats zoning on return per credit. This is not a permanent bay target:
+// after the opening, additional bays require actual fleet throughput pressure.
+inline bool openingRefineryInvestment(bool brutal, int workers, int target, int refineries) {
+    return brutal && openingWorkersNeeded(workers,target,true)
+        && refineries < QuantBotBuildPolicy::openingSpiceRefineries(target);
+}
+inline int demandedCivic(uint8_t blocked, int stadiumCommitted, bool stadiumAvailable,
+                         int airportCommitted, bool airportAvailable) {
+    if ((blocked & DuneCity::NeedStadium) && stadiumCommitted == 0 && stadiumAvailable)
+        return Structure_Stadium;
+    if ((blocked & DuneCity::NeedAirport) && airportCommitted == 0 && airportAvailable)
+        return Structure_Airport;
+    return NONE_ID;
 }
 inline bool processingCapacityNeeded(int refineries, int committedWorkers,
                                     int workerAnnualIncome, int bayAnnualCapacity) {

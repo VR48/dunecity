@@ -68,12 +68,12 @@ uint64_t DecisionLog::write(uint32_t cycle, int house, int player,
     const bool terminal=event=="game_summary" || event=="session_end" || event=="simulation_exception";
     if (limit>=1024*1024 && !terminal && bytes>=limit-limit/16) return 0;
     const uint64_t id = ++sequence;
-    const auto row = Record().set("schema_version", 1).set("telemetry_version", 11).set("policy_version", "city-outpost-placement-airport-patrols-v63")
+    const auto row = Record().set("schema_version", 1).set("telemetry_version", 11).set("policy_version", "city-brutal-economy-civic-police-v64")
         .set("session", session).set("seq", id).set("cycle", cycle)
         .set("house", house).set("player", player).set("event", event).set("data", details).json() + '\n';
     if (bytes + row.size() > limit) {
         // Explicit terminal marker; a few hundred bytes beyond the configured cap.
-        stream << Record().set("schema_version", 1).set("telemetry_version", 11).set("policy_version", "city-outpost-placement-airport-patrols-v63").set("session", session).set("seq", id)
+        stream << Record().set("schema_version", 1).set("telemetry_version", 11).set("policy_version", "city-brutal-economy-civic-police-v64").set("session", session).set("seq", id)
             .set("cycle", cycle).set("house", -1).set("player", -1)
             .set("event", "capture_limit").set("data", Record().set("byte_limit", limit)).json() << '\n';
         stream.close();

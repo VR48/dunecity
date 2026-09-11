@@ -1,3 +1,64 @@
+# Brutal opening economy, demanded civics and police anchoring — 1.0.646 (local)
+
+Stefan's running 1.0.645 Harkonnen Brutal game, Moshpit seed 406506788,
+session 1789138202535608-0, was slow to compound. Refineries completed at
+cycles 2200 and 7100; the first factory harvester at 23505 (~6.3 simulated
+minutes), with two bays still at cycle 81700. At cycle 73700 the refinery
+forecast was cost 461 / four-minute proceeds 689 versus R cost 109 / proceeds
+53, but a worker-capable factory vetoed the refinery. The broad tax hedge
+also overrode early refinery ROI, and factory priority ended at four workers,
+then required military capital twice worker capital plus a tank cash reserve.
+
+- Brutal custom city games prioritize up to eight committed workers, bounded
+  by the existing remaining-spice/map target. Lower difficulty/vanilla policy
+  stays unchanged. This is a priority floor, never a worker cap. Afterward,
+  Brutal compares equal army/worker capital rather than 2:1; the map target
+  remains authoritative. Preferred workers can use their own purchase money
+  without the optional IX reserve or an additional tank reserve. Optional
+  custom orders cannot preempt them. Emergency reconstruction still applies.
+- Preserve the first demanded R hedge. While the opening workforce is short,
+  defer the broad one-third tax hedge and permit an economically worthwhile
+  third refinery despite a worker-capable factory. The pre-factory opening
+  no longer buys six lots before tech; it compares profitable refineries and
+  then bootstraps vehicle production. Short/unsafe spice trips still lose on
+  the existing cost/power/delay/risk forecast. Beyond the opening, more bays
+  require fleet throughput pressure. Included workers count as committed.
+- First carryall eligibility still begins at four workers, before a second
+  heavy factory, while Brutal continues toward eight. Repair/optional tech
+  waits for the larger workforce floor.
+- Actual NeedStadium/NeedAirport demand selects a feasible civic investment
+  before optional services, production, tech and further zoning. Reserve its
+  purchase price from other factories (initial worker recovery remains an
+  exception), and wait for funds instead of repeatedly buying cheap plots.
+  Essential power/initial economy precede it. Committed civics suppress
+  duplicates; unavailable/unplaceable civics do not lock money. No premature
+  airport based on total population; palace-satisfied R has no stadium demand.
+- Crime at industrial zone (30,4), cycle 83600: pre-police 275, coverage 42,
+  final 233, with PD (24,5), rocket (29,3), full funding and sufficient power.
+  policeSource incorrectly anchored service at its first adjoining road,
+  shifting the source across six-tile district boundaries. Road access now
+  affects strength only; the central occupied building tile anchors service
+  (lower centre for even footprints). Runtime and placement estimates share
+  this helper. Existing Micropolis diffusion, strength, funding/power/road
+  penalties and turret 15% contribution remain. Regression reproduces this
+  boundary layout and drops below Dangerous without a strength buff.
+- Policy telemetry v64 adds opening refinery/Brutal opening fields and civic
+  investment/funding decisions. Save format remains 9836.
+
+Validation: 578 test cases passed, 3 skipped via ctest; dependency audits,
+version consistency, diff whitespace and strict deep app signature passed.
+Four added regression cases cover difficulty/spice limits, the observed
+refinery ROI veto, civic feasibility/commitments, and road-side-independent
+police coverage. No fresh full match was run; next-game growth speed remains
+an empirical check, not a claimed measured improvement.
+
+Installed /Applications/dunecity.app 1.0.646 without interrupting the running
+645 game. Built/installed executable SHA256:
+98af57a74efb6adc8020c9dd85d7fdac7934ccfbeb3181d246c2f1ddb8198dc8.
+Previous app: /Applications/.dunecity-646-ep1iz24v/dunecity-previous.app.
+No remote push, release or website deployment in this task. Existing untracked
+reports/ belongs to earlier game analysis and was not staged.
+
 # Outlying placement and city reinforcements — 1.0.645 (local)
 
 Stefan reported finished R zones stuck despite open sites in widely separated
