@@ -1,3 +1,33 @@
+# Balanced R/C/I selection — 1.0.635 (local only)
+
+Stefan's current game screenshot showed R -1110 / C +1360 / I +1500 and little
+industry. Session 1789107959898835-0 is actually 1.0.634, DuneCity 192x192, seed 460150850.
+Snapshot at ~cycle 82000: 49 of 52 evaluations with R<500 and both job demands
+positive selected C; 3 selected I. House2 had built 32 R / 15 C / 5 I, so industry was
+suppressed intermittently, not universally unavailable. Example cycle 21248:
+5 R / 1 C / 1 I, demand -530/1500/1419, I marked lower_rank_not_evaluated. Another at
+cycle 71648 chose R via infill despite demand 1685/224/1500 and counts 18/10/5.
+
+- Removed the hard C-before-I 500 gate. Normalize demand maxima (R 2000, C/I 1500).
+  Among positive candidates within 20% of strongest demand, choose underprovided
+  built+queued plots with the existing 3:1:1 R/C/I tie-balance. Stronger demand
+  wins outside that band. A fixed strongest reference preserves sort transitivity.
+- Removed unconditional residential infill promotion across zone types. Existing
+  placement scoring still favours gaps for housing when R is the selected need.
+  First demanded R hedge preserved; no forced missing C/I at nonpositive demand.
+- No new scans/state/pathfinding. Existing suitability/site fallback and marginal
+  tax/refinery investment comparison remain. Telemetry rule now
+  normalized_demand_band_then_committed_balance, policy balanced-zone-demand-v56.
+- Regression cases reproduce screenshot and log states, queued commitments,
+  sustained slightly unequal positive C/I demands, and near-zero I exclusion.
+  Includes 1.0.634 government tax and employment changes; Micropolis formula
+  remains a comparison only. Live post-fix balance validation pending.
+
+- Build and before/after dependency audits passed; CTest 556 passed, 3 optional
+  skips. Installed signed/hash-verified /Applications/dunecity.app 1.0.635,
+  SHA256 e04112fdbd9b739e98bb6a85633e2506f69c608b0ca394f83655e0d751825230. Backup: dunecity-before-635.4xsde6uo.
+  Did not launch/interrupt the live 1.0.634 process. No remote push/release.
+
 # Government tax exemption and infrastructure roles — 1.0.634 (local only)
 
 Stefan requested Micropolis-equivalent R/C/I numbers (comparison only) plus
@@ -1129,7 +1159,7 @@ locally; not pushed, released, launched or tested in a live match.
 
 # Completed 601 match review after simple-controller build
 
-Session1788846458415706-0 ended cleanly at760548cycles/202.81simulation minutes,
+Session 1788846458415706-0 ended cleanly at760548cycles/202.81simulation minutes,
 local_result ended_without_result; all four houses alive with999999credits. This
 was the old601 controller throughout, not a602 test. FinalSQLite import266721rows,
 no invalid/deferred tails; auditclean. DBbuild/review-601-live.sqlite and final
@@ -1357,7 +1387,7 @@ skips. The retry path itself awaits a real transient failure in a future game.
 
 # Cash-first city MCV expansion — 1.0.598
 
-Session1788799572693304-0 v597: both houses stayed at two yards with
+Session 1788799572693304-0 v597: both houses stayed at two yards with
 ~100k–140k credits because only one R/C/I valve was positive. A second positive
 valve raised the target to six; both reached six within ~40 simulation seconds.
 User rejects demand gating. Wealth now sets minimum yard targets5 at20k,
@@ -2079,7 +2109,7 @@ Further static audit found fourZoneBlockBonus independently reading off-map neig
 and its road perimeter. 555 skips block layouts whose full4x4+road perimeter cannot fit;
 individual edge lots remain legal, they merely receive no block bonus. Regression checks
 all candidate origins/offsets on128x128. Placement failure telemetry also bounds tile reads.
-Session1788691499646985-0 endedcycle95 and1788691615471597-0 cycle99 in554; normal log
+Session 1788691499646985-0 endedcycle95 and1788691615471597-0 cycle99 in554; normal log
 was overwritten by later menu launches, so exact second exception was not retained.
 Do not claim full runtime verification. New simulation_exception event wraps updateGameState
 before destructor closes telemetry; subsequent launches cannot erase that session evidence.

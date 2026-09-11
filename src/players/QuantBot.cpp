@@ -3291,12 +3291,8 @@ void QuantBot::build(int militaryValue) {
 		auto ranked = QuantBotBuildPolicy::rankZones(
 			itemCount[Structure_ZoneResidential], itemCount[Structure_ZoneCommercial],
 			itemCount[Structure_ZoneIndustrial], ownResValve, ownComValve, ownIndValve, bootstrap);
-        bool residentialInfill=false;
-        if (!bootstrap && ownResValve>=500 && builder->isAvailableToBuild(Structure_ZoneResidential)) {
-            const auto site=findPlaceLocation(Structure_ZoneResidential);
-            residentialInfill=site.isValid() && residentialInfillSides(getMap(),houseID,site.x,site.y,2,2)>=2;
-            QuantBotBuildPolicy::prioritizeResidentialInfill(ranked,ownResValve,residentialInfill);
-        }
+        // The site scorer still rewards residential infill. It must not
+        // override the chosen zone type and suppress stronger jobs demand.
         Uint32 selected = NONE_ID;
         AITelemetry::Record candidates;
         for (Uint32 candidate : {Structure_ZoneResidential, Structure_ZoneCommercial, Structure_ZoneIndustrial}) {
@@ -3327,7 +3323,7 @@ void QuantBot::build(int militaryValue) {
             lastZoneTraceCycle[builder->getObjectID()] = getGameCycleCount();
             zoneDecisionIds[builder->getObjectID()] = traceDecision("zone_evaluation", AITelemetry::Record()
                 .set("builder", builder->getObjectID()).set("bootstrap", bootstrap)
-                .set("rule", residentialInfill ? "residential_infill" : "demand_threshold_then_normalized_demand").set("selected", selected)
+                .set("rule", "normalized_demand_band_then_committed_balance").set("selected", selected)
                 .set("expansion_policy", "demand_led_tax_candidate")
                 .set("result", selected != NONE_ID ? "selected"
                     : ranked[0] == NONE_ID ? "no_positive_demand" : "no_available_site_or_building")

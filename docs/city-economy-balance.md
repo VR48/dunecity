@@ -1,4 +1,4 @@
-# City tax and spice economics (1.0.634, 2026-09-11)
+# City tax and spice economics (1.0.635, 2026-09-11)
 
 These are source-derived estimates at normal simulation speed, not measured
 match income. Tax-rate constants are unchanged. As of 1.0.634, only R/C/I
@@ -137,6 +137,14 @@ this is not a blanket 3.57x tax reduction. At ~320 delivered spice/minute, one
 harvester would match ~6.1 high R or C zones, or ~7.7 high I zones, gross.
 
 ## QuantBot investment policy
+
+From 1.0.635, zone choice normalizes demand maxima and balances built+queued
+plots among needs within 20% of the strongest normalized demand, using the
+existing 3:1:1 R/C/I plot weights. It excludes nonpositive demand and retains
+the opening demanded-R hedge. This replaces the C-before-I 500 gate, which
+starved I when C demand stayed high. Infill remains a residential site score,
+not permission to override a stronger jobs need. Suitable-site fallback still
+applies before the tax/refinery comparison.
 
 The first refinery remains essential income/technology. A first demanded R plot
 then hedges spice income; no missing C/I is forced against zero/negative demand.

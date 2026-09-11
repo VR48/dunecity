@@ -854,18 +854,12 @@ TEST_CASE("Local service property lookup matches full scans at map and bucket ed
     }
 }
 
-TEST_CASE("Residential infill takes priority only once housing demand reaches 500", "[quantbot][city]") {
-    auto ranked=rankZones(60,4,9,500,1500,1500,false);
-    REQUIRE(ranked[0]==Structure_ZoneCommercial);
-    prioritizeResidentialInfill(ranked,500,true);
-    REQUIRE(ranked[0]==Structure_ZoneResidential);
-    REQUIRE(ranked[1]==Structure_ZoneCommercial);
-    ranked=rankZones(60,4,9,0,1500,1500,false);
-    prioritizeResidentialInfill(ranked,0,true);
-    REQUIRE(ranked[0]==Structure_ZoneCommercial);
-    ranked=rankZones(60,4,9,1,1500,1500,false);
-    prioritizeResidentialInfill(ranked,1,false);
-    REQUIRE(ranked[0]==Structure_ZoneCommercial);
+TEST_CASE("Housing gaps do not suppress stronger jobs demand", "[quantbot][city]") {
+    CHECK(rankZones(60,4,9,500,1500,1500,false)[0] == Structure_ZoneCommercial);
+    // Logged house 2: previously forced housing despite greater industry demand.
+    CHECK(rankZones(18,10,5,1685,224,1500,false)[0] == Structure_ZoneIndustrial);
+    CHECK(rankZones(40,20,2,500,1500,1500,false)[0] == Structure_ZoneIndustrial);
+    CHECK(rankZones(60,4,9,2000,0,0,false)[0] == Structure_ZoneResidential);
 }
 
 #include <players/CityPlanningPolicy.h>
@@ -949,18 +943,32 @@ TEST_CASE("Each blocked yard sweeps all map batches even when yard count equals 
     }
 }
 
-TEST_CASE("City zone priorities switch to C and I below the 500 demand thresholds", "[quantbot][city]") {
-    REQUIRE(rankZones(40,20,2,499,500,1500,false)[0]==Structure_ZoneCommercial);
-    REQUIRE(rankZones(40,20,2,499,499,1,false)[0]==Structure_ZoneIndustrial);
-    REQUIRE(rankZones(40,20,2,499,499,0,false)[0]==Structure_ZoneCommercial);
-    REQUIRE(rankZones(40,20,2,499,0,0,false)[0]==Structure_ZoneResidential);
-    REQUIRE(rankZones(40,20,2,0,0,0,false)[0]==NONE_ID);
-    auto ranked=rankZones(40,20,2,499,1500,1500,false);
-    prioritizeResidentialInfill(ranked,499,true);
-    REQUIRE(ranked[0]==Structure_ZoneCommercial);
-    ranked=rankZones(40,20,2,500,1500,1500,false);
-    prioritizeResidentialInfill(ranked,500,true);
-    REQUIRE(ranked[0]==Structure_ZoneResidential);
+TEST_CASE("Zone demand balancing replaces the industry-starving 500 threshold", "[quantbot][city]") {
+    CHECK(rankZones(40,20,2,499,500,1500,false)[0] == Structure_ZoneIndustrial);
+    CHECK(rankZones(40,20,2,499,499,1,false)[0] == Structure_ZoneCommercial);
+    CHECK(rankZones(40,20,2,499,499,0,false)[0] == Structure_ZoneCommercial);
+    CHECK(rankZones(40,20,2,499,0,0,false)[0] == Structure_ZoneResidential);
+    CHECK(rankZones(40,20,2,0,0,0,false)[0] == NONE_ID);
+    // Screenshot: negative R and both job demands high. Existing I shortage wins.
+    CHECK(rankZones(20,10,1,-1110,1360,1500,false)[0] == Structure_ZoneIndustrial);
+    // Committed counts include orders in other construction yards.
+    CHECK(rankZones(20,4,3,-1110,1500,1360,false)[0] == Structure_ZoneIndustrial);
+    CHECK(rankZones(20,4,4,-1110,1500,1360,false)[0] == Structure_ZoneCommercial);
+}
+
+TEST_CASE("Persistent slightly unequal demands fund both jobs sectors", "[quantbot][city]") {
+    int c=10, i=1, builtC=0, builtI=0;
+    for (int n=0;n<40;++n) {
+        const auto selected=rankZones(20,c,i,-1110,1500,1360,false)[0];
+        if (selected==Structure_ZoneCommercial) { ++c; ++builtC; }
+        else if (selected==Structure_ZoneIndustrial) { ++i; ++builtI; }
+        else FAIL("Negative-demand housing was selected");
+    }
+    CHECK(builtC>0);
+    CHECK(builtI>0);
+    CHECK(std::abs(c-i)<=1);
+    // Near-zero demand does not get a plot merely to fill the ratio.
+    CHECK(rankZones(30,30,0,-100,1500,1,false)[0] == Structure_ZoneCommercial);
 }
 
 TEST_CASE("Air gets funds before ground factories without changing city yard precedence", "[quantbot][production][air]") {

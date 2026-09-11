@@ -208,7 +208,8 @@ inline int baseDefenderTarget(int combatUnits) {
 }
 
 // Demand valves have different maxima: R=2000, C/I=1500. Compare
-// their fractions of maximum using integers; counts only break demand ties.
+// fractions of maximum. Among similarly urgent needs, committed plot counts
+// prevent a small persistent demand difference starving an entire sector.
 inline int normalizedZoneDemand(Uint32 item, int demand) {
     return std::clamp(demand, 0, item == Structure_ZoneResidential ? 2000 : 1500)
         * (item == Structure_ZoneResidential ? 3 : 4);
@@ -223,35 +224,32 @@ inline std::array<Uint32, 3> rankZones(int residential, int commercial, int indu
         {Structure_ZoneIndustrial, industrial, indDemand, 1},
         {Structure_ZoneCommercial, commercial, comDemand, 1}
     }};
-    const Uint32 preferred = resDemand < 500
-        ? (comDemand < 500 && indDemand > 0 ? Structure_ZoneIndustrial
-            : comDemand > 0 ? Structure_ZoneCommercial : NONE_ID) : NONE_ID;
-    std::stable_sort(candidates.begin(), candidates.end(), [bootstrap,preferred](const auto& a, const auto& b) {
-        const bool missingA = bootstrap && a.item == Structure_ZoneResidential && a.count == 0 && a.demand > 0;
-        const bool missingB = bootstrap && b.item == Structure_ZoneResidential && b.count == 0 && b.demand > 0;
-        if(missingA != missingB) return missingA;
-        if ((a.item == preferred) != (b.item == preferred)) return a.item == preferred;
-        const int demandA = normalizedZoneDemand(a.item, a.demand);
-        const int demandB = normalizedZoneDemand(b.item, b.demand);
-        if(demandA != demandB) return demandA > demandB;
-        return a.count * b.weight < b.count * a.weight;
+    int strongestDemand = 0;
+    for (const auto& c : candidates)
+        strongestDemand = std::max(strongestDemand, normalizedZoneDemand(c.item,c.demand));
+    // Within 20% of the strongest normalized demand, use the established 3:1:1
+    // plot balance. Includes queued plots so multiple yards do not repeat the
+    // same order. Weaker demands remain fallbacks if stronger types lack sites.
+    // A shared strongest-demand reference keeps the sort ordering transitive.
+    std::stable_sort(candidates.begin(), candidates.end(), [bootstrap,strongestDemand](const auto& a, const auto& b) {
+        const bool hedgeA = bootstrap && a.item == Structure_ZoneResidential && a.count == 0 && a.demand > 0;
+        const bool hedgeB = bootstrap && b.item == Structure_ZoneResidential && b.count == 0 && b.demand > 0;
+        if (hedgeA != hedgeB) return hedgeA;
+        const int demandA = normalizedZoneDemand(a.item,a.demand);
+        const int demandB = normalizedZoneDemand(b.item,b.demand);
+        const bool urgentA = demandA > 0 && demandA*5 >= strongestDemand*4;
+        const bool urgentB = demandB > 0 && demandB*5 >= strongestDemand*4;
+        if (urgentA != urgentB) return urgentA;
+        if (urgentA && a.count*b.weight != b.count*a.weight)
+            return a.count*b.weight < b.count*a.weight;
+        if (demandA != demandB) return demandA > demandB;
+        return a.count*b.weight < b.count*a.weight;
     });
     std::array<Uint32, 3> result{{NONE_ID, NONE_ID, NONE_ID}};
     int index = 0;
-    for(const auto& candidate : candidates) {
-        if(candidate.demand > 0) {
-            result[index++] = candidate.item;
-        }
-    }
+    for (const auto& candidate : candidates)
+        if (candidate.demand > 0) result[index++] = candidate.item;
     return result;
-}
-
-// Infill housing when R demand reaches 500; retain bootstrap and demand balancing
-// when no residential gap is available.
-inline void prioritizeResidentialInfill(std::array<Uint32,3>& ranked,int demand,bool infill) {
-    if (demand<500 || !infill) return;
-    const auto it=std::find(ranked.begin(),ranked.end(),Structure_ZoneResidential);
-    if (it!=ranked.end()) std::rotate(ranked.begin(),it,it+1);
 }
 
 // A road is already foundation: a bulk slab must not erase it. Coordinates
