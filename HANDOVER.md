@@ -1,3 +1,19 @@
+# Nuclear plant 750 HP — 1.0.642 (local only)
+
+Stefan revised reactor health from Palace-equivalent 1,000 to 750 HP. Default and
+Tornie data now use 750; new city matches force 750 instead of copying Palace HP,
+so older user ObjectData files cannot silently retain the previous balance.
+Palace HP, reactor power/cost and explosion damage/radius are unchanged. Existing
+saves retain their saved stats. A 900-damage reactor blast or centered palace
+strike can again destroy a full-health reactor. Updated the existing balance test
+and Tornie's ObjectData checksum (the earlier edit left that checksum stale).
+
+Validation: release build, dependency audits and CTest passed (564 passed,
+3 optional skips); bundled data/checksum and signature verified. Installed locally
+as /Applications/dunecity.app without launching; no remote push or release.
+SHA256 6499b00a8624225b37ee4902652ecc0f2608844864664cf269d1c6d17a366848.
+Backup /var/folders/3y/kfqmr__n2wz56wnvn919zhxh0000gn/T/dunecity-before-642.b1x3jou6/dunecity.app.
+
 # Palace-strength nuclear plants — 1.0.641 (local only)
 
 Stefan requested nuclear HP equal to Palace HP. Default and Tornie reactor stats

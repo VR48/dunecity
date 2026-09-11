@@ -428,7 +428,7 @@ TechLevel = 1
 
 [Nuclear Plant]
 Enabled = true
-HitPoints = 1000
+HitPoints = 750
 Price = 2000
 Power = -2000		# 20x Windtrap at full health; city output scales with health
 ViewRange = 3
