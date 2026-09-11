@@ -326,9 +326,9 @@ TEST_CASE("Palace contributes both R and C at every occupied tier", "[city-effec
     }
     // Aggregate100 buildings to verify rates without per-building truncation.
     CHECK(computeAnnualTaxRevenue(100*taxablePopulationEighths(Structure_Palace,40,3),7,128) == 10453);
-    CHECK(computeAnnualTaxRevenue(100*taxablePopulationEighths(Structure_ZoneResidential,40,3),7,128) == 5226);
-    CHECK(computeAnnualTaxRevenue(100*taxablePopulationEighths(Structure_ZoneCommercial,5,3),7,128) == 5226);
-    CHECK(computeAnnualTaxRevenue(100*taxablePopulationEighths(Structure_ZoneIndustrial,4,3),7,128) == 4181);
+    CHECK(computeAnnualTaxRevenue(100*taxablePopulationEighths(Structure_ZoneResidential,40,3),7,128) == 10453);
+    CHECK(computeAnnualTaxRevenue(100*taxablePopulationEighths(Structure_ZoneCommercial,5,3),7,128) == 10453);
+    CHECK(computeAnnualTaxRevenue(100*taxablePopulationEighths(Structure_ZoneIndustrial,4,3),7,128) == 8362);
 }
 
 // --- Zone score / growth-decline gating --------------------------------------
@@ -910,10 +910,10 @@ TEST_CASE("Government buildings retain roles without paying tax", "[city-effects
     CHECK(getZonePopulation(Structure_HeavyFactory, 3) == 3);  // I-medium cap
     CHECK(getZonePopulation(Structure_HighTechFactory, 3) == 3);  // I-medium cap
     CHECK(getZonePopulation(Structure_Barracks, 3) == 40);
-    CHECK(taxablePopulationEighths(Structure_ZoneResidential, 2, 3) == 2); // one house
-    CHECK(taxablePopulationEighths(Structure_ZoneResidential, 40, 3) == 40);
-    CHECK(taxablePopulationEighths(Structure_ZoneCommercial, 5, 3) == 40);
-    CHECK(taxablePopulationEighths(Structure_ZoneIndustrial, 4, 3) == 32);
+    CHECK(taxablePopulationEighths(Structure_ZoneResidential, 2, 3) == 4); // one house
+    CHECK(taxablePopulationEighths(Structure_ZoneResidential, 40, 3) == 80);
+    CHECK(taxablePopulationEighths(Structure_ZoneCommercial, 5, 3) == 80);
+    CHECK(taxablePopulationEighths(Structure_ZoneIndustrial, 4, 3) == 64);
     CHECK(taxablePopulationEighths(Structure_ZoneResidential, 0, 3) == 0);
 }
 

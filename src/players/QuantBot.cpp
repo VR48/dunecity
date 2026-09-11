@@ -2996,6 +2996,7 @@ void QuantBot::build(int militaryValue) {
 	}
 
 	int activeHeavyFactoryCount = 0;
+    std::vector<const BuilderBase*> harvesterFactories;
     int activeLightFactoryCount = 0;
 	int activeHighTechFactoryCount = 0;
     int ornithopterFactoryCount = 0;
@@ -3018,6 +3019,8 @@ void QuantBot::build(int militaryValue) {
 		if (pStructure->getOwner() == getHouse()) {
 			if (pStructure->isABuilder()) {
 				const BuilderBase* pBuilder = static_cast<const BuilderBase*>(pStructure);
+                if (pBuilder->getItemID() == Structure_HeavyFactory && pBuilder->getHealth() > 0
+                    && pBuilder->isAvailableToBuild(Unit_Harvester)) harvesterFactories.push_back(pBuilder);
                 if (pBuilder->getItemID() == Structure_HeavyFactory && pBuilder->isUpgrading()
                     && !pBuilder->isAvailableToBuild(Unit_MCV)) ++mcvUpgradesInProgress;
 				if (pBuilder->getProductionQueueSize() > 0) {
@@ -3060,6 +3063,13 @@ void QuantBot::build(int militaryValue) {
 	int money = getHouse()->getCredits();
     militaryValue += queuedMilitaryValue;
 	const bool citySimEnabled = currentGame && currentGame->isCitySimEnabled();
+    if (citySimEnabled) {
+        // Queued refineries bring a worker too; count it once across build passes.
+        const int pendingRefineries = std::max(0,itemCount[Structure_Refinery]
+            - getHouse()->getNumItems(Structure_Refinery));
+        itemCount[Unit_Harvester] += std::min(pendingRefineries,
+            std::max(0,harvesterLimit-itemCount[Unit_Harvester]));
+    }
     const bool powerRules = getHouse()->isPowerRequired();
     const bool turretPowerRequired = getGameInitSettings().getGameOptions().rocketTurretsNeedPower;
     const bool vanillaEconomy = !citySimEnabled && !powerRules;
@@ -3199,23 +3209,35 @@ void QuantBot::build(int militaryValue) {
     const int mapSpiceHarvesterTarget = vanillaEconomy
         ? DuneCity::vanillaHarvesterTarget(lastCalculatedSpice, spiceCompetitors, harvesterLimit)
         : QuantBotBuildPolicy::desiredSpiceHarvesters(lastCalculatedSpice, spiceCompetitors, harvesterLimit);
-    const int spiceHarvesterTarget = QuantBotBuildPolicy::refineryThroughputHarvesterTarget(
-        spiceShare, mapSpiceHarvesterTarget, getHouse()->getNumItems(Structure_Refinery), harvesterLimit);
-    const int fundedHarvesterTarget = QuantBotBuildPolicy::fundedSpiceHarvesters(
-        mapSpiceHarvesterTarget, getHouse()->getNumItems(Structure_Refinery));
+    const int spiceHarvesterTarget = citySimEnabled ? mapSpiceHarvesterTarget
+        : QuantBotBuildPolicy::refineryThroughputHarvesterTarget(
+            spiceShare,mapSpiceHarvesterTarget,getHouse()->getNumItems(Structure_Refinery),harvesterLimit);
+    const int fundedHarvesterTarget = citySimEnabled
+        ? CityEconomyInvestmentPolicy::factoryHarvesterTarget(spiceHarvesterTarget,harvesterLimit)
+        : QuantBotBuildPolicy::fundedSpiceHarvesters(mapSpiceHarvesterTarget,getHouse()->getNumItems(Structure_Refinery));
     const int cityWorkingReserve = data[Unit_Tank][houseID].price
         + (itemCount[Unit_Harvester] < fundedHarvesterTarget ? data[Unit_Harvester][houseID].price : 0)
-        + (itemCount[Structure_Refinery] < QuantBotBuildPolicy::desiredSpiceRefineries(
+        + (!citySimEnabled && itemCount[Structure_Refinery] < QuantBotBuildPolicy::desiredSpiceRefineries(
             mapSpiceHarvesterTarget,itemCount[Unit_Harvester]) ? data[Structure_Refinery][houseID].price : 0);
     bool orderedSpiceHarvester = false;
 
+    const auto windSize = getStructureSize(Structure_WindTrap);
+    int generationCostPerThousand = 1000 * (data[Structure_WindTrap][houseID].price
+        + windSize.x*windSize.y*data[Structure_Slab1][houseID].price)
+        / std::max(1,-data[Structure_WindTrap][houseID].power);
     int largestGenerator = 0;
     int currentZonePower = 0, matureZonePower = 0, committedPowerDemand = 0;
     std::array<int,3> developingZones{};
     for (const auto* structure : getStructureList()) {
         if (structure->getOwner() != getHouse()) continue;
         const int power = data[structure->getItemID()][structure->getOriginalHouseID()].power;
-        if (power < 0) largestGenerator = std::max(largestGenerator, -power);
+        if (power < 0) {
+            largestGenerator = std::max(largestGenerator, -power);
+            const auto size = getStructureSize(structure->getItemID());
+            const int generationCost = data[structure->getItemID()][structure->getOriginalHouseID()].price
+                + size.x*size.y*data[Structure_Slab1][houseID].price;
+            generationCostPerThousand = std::min(generationCostPerThousand,1000*generationCost/-power);
+        }
         if (citySimEnabled && DuneCity::isCityZoneStructure(structure->getItemID())) {
             const auto* zone = static_cast<const ZoneStructure*>(structure);
             currentZonePower += zone->getZonePowerDraw();
@@ -3332,6 +3354,19 @@ void QuantBot::build(int militaryValue) {
         return selected;
 	};
 
+    auto canBuildMilitaryVehicle = [&](const BuilderBase* factory) {
+        if (getHouse()->isGroundUnitLimitReached()) return false;
+        for (Uint32 item : {Unit_Tank,Unit_SiegeTank,Unit_Launcher,Unit_Devastator,Unit_SonicTank,Unit_Deviator})
+            if (factory->isAvailableToBuild(item) && data[item][houseID].price <= money
+                && militaryValue + data[item][houseID].price <= militaryValueLimit) return true;
+        return false;
+    };
+    auto factoryPrefersHarvester = [&](const BuilderBase* factory) {
+        return CityEconomyInvestmentPolicy::preferFactoryHarvester(itemCount[Unit_Harvester],
+            citySimEnabled ? fundedHarvesterTarget : spiceHarvesterTarget,militaryValue,militaryValueLimit,
+            data[Unit_Harvester][houseID].price,canBuildMilitaryVehicle(factory));
+    };
+
     // Site searches are already cached. Only inspect a bounded neighbourhood
     // for transport distance, once per build pass; never run a path search.
     int refineryTripCycles = -1;
@@ -3344,7 +3379,16 @@ void QuantBot::build(int militaryValue) {
         const int tax = sim->getCityTax();
         const int land = ownAvgLandValue>0 ? ownAvgLandValue : 128;
         const int workers = itemCount[Unit_Harvester], refs = itemCount[Structure_Refinery];
-        const bool capacityNeeded = refineryCapacityNeeded(refs,workers,spiceHarvesterTarget);
+        const bool wantedWorker = workers < std::min(spiceHarvesterTarget,harvesterLimit);
+        const bool parallelFactorySupply = workers < fundedHarvesterTarget
+            && !getHouse()->isGroundUnitLimitReached()
+            && money >= data[Unit_Harvester][houseID].price + data[Unit_Tank][houseID].price
+            && std::any_of(harvesterFactories.begin(),harvesterFactories.end(),[&](const BuilderBase* factory) {
+                return !factory->isUpgrading() && !factory->isOnHold() && factory->getProductionQueueSize()==0
+                    && factoryPrefersHarvester(factory);
+            });
+        bool capacityNeeded = false, refineryUseful = false;
+        int workerIncome = 0, bayIncome = 0;
         const bool hedge = zone == Structure_ZoneResidential && itemCount[zone] == 0;
         Investment residential, refinery;
         auto setupInvestment = [&](Uint32 item, Coord site, int power) {
@@ -3355,10 +3399,10 @@ void QuantBot::build(int militaryValue) {
                 const auto* tile = getMap().getTile(x,y);
                 foundation += !tile->hasPreparedFoundation();
             }
-            // Amortize generation even when today's windtrap has spare power.
+            // Amortize available generation (including foundation) even with spare power.
             Investment result;
             result.cost = data[item][houseID].price + foundation*data[Structure_Slab1][houseID].price
-                + power*data[Structure_WindTrap][houseID].price/std::max(1,-data[Structure_WindTrap][houseID].power);
+                + (power*generationCostPerThousand+999)/1000;
             // Roads have no recurring cost; allow for separate power upkeep.
             result.annualUpkeep = power/8;
             return result;
@@ -3385,7 +3429,8 @@ void QuantBot::build(int militaryValue) {
                 const int waitingR = developingZones[0] + std::max(0,itemCount[Structure_ZoneResidential]
                     - getHouse()->getNumItems(Structure_ZoneResidential));
                 const int shortage = std::max(0,ownResPop+waitingR*16-(ownComPop+ownIndPop)*8);
-                residential.annualIncome += DuneCity::computeAnnualTaxRevenue(std::min(shortage,population*8),tax,land)/2;
+                residential.annualIncome += DuneCity::computeAnnualTaxRevenue(DuneCity::taxablePopulationEighths(
+                    Structure_ZoneResidential,std::min(shortage,population*8),0),tax,land)/2;
             }
             residential.delayCycles = DuneCity::getCityBuildTime(zone,data[zone][houseID].buildtime)*15
                 + DuneCity::kCyclesPerCityYear; // construction plus ~60 s growth/foundation allowance
@@ -3393,7 +3438,7 @@ void QuantBot::build(int militaryValue) {
                 industry ? 0 : pollution,crime,unfinished);
         }
         Coord refinerySite = Coord::Invalid();
-        if (capacityNeeded && spiceShare>0 && builder->isAvailableToBuild(Structure_Refinery))
+        if (spiceShare>0 && builder->isAvailableToBuild(Structure_Refinery))
             refinerySite = findPlaceLocation(Structure_Refinery);
         if (refinerySite.isValid()) {
             if (refineryTripCycles<0) {
@@ -3416,20 +3461,31 @@ void QuantBot::build(int militaryValue) {
             const int fillCycles = (FixPoint(HARVESTERMAXSPICE)/HARVESTSPEED).lround();
             const int unloadCycles = HARVESTERMAXSPICE*8/5; // Refinery's 0.625 spice/cycle
             const int roundTrip = fillCycles+unloadCycles+refineryTripCycles;
-            const int workerIncome = HARVESTERMAXSPICE*int(DuneCity::kCyclesPerCityYear)/std::max(1,roundTrip);
-            // Half the theoretical bay throughput allows queues and manoeuvring.
-            const int bayIncome = int(DuneCity::kCyclesPerCityYear)*5/16;
+            workerIncome = HARVESTERMAXSPICE*int(DuneCity::kCyclesPerCityYear)/std::max(1,roundTrip);
+            // Reserve 25% of ideal unloading capacity for manoeuvring and uneven arrivals.
+            // Three/four workers can share a bay; no hypothetical extra fleet is credited.
+            bayIncome = int(DuneCity::kCyclesPerCityYear)*15/32;
+            capacityNeeded = processingCapacityNeeded(refs,workers,workerIncome,bayIncome);
+            refineryUseful = considerRefinery(capacityNeeded,wantedWorker,parallelFactorySupply);
             const bool freeWorker = workers < harvesterLimit;
             const int power = std::max(0,data[Structure_Refinery][houseID].power);
             refinery = setupInvestment(Structure_Refinery,refinerySite,power);
             refinery.annualIncome = marginalSpiceIncome(workers,refs,freeWorker,workerIncome,bayIncome);
-            refinery.delayCycles = data[Structure_Refinery][houseID].buildtime*15 + roundTrip;
+            const int refineryBuildCycles = data[Structure_Refinery][houseID].buildtime*15;
+            refinery.delayCycles = refineryBuildCycles + roundTrip;
+            refinery.projectedProceeds = refineryProceeds(workers,refs,freeWorker,workerIncome,bayIncome,
+                refineryBuildCycles,roundTrip,unloadCycles,HARVESTERMAXSPICE,refinery.annualUpkeep);
             const int forecastFleetSpice = (workers+int(freeWorker))*workerIncome*4;
             refinery.confidence = static_cast<int>(std::min<int64_t>(1000,int64_t(spiceShare)*1000/std::max(1,forecastFleetSpice)));
             if (refineryFieldRisk>0) refinery.confidence/=2;
         }
-        Uint32 selected = preferRefinery(refinery,residential,capacityNeeded,hedge) ? Structure_Refinery : zone;
+        Uint32 selected = preferRefinery(refinery,residential,refineryUseful,hedge) ? Structure_Refinery : zone;
         if (selected == zone && zone!=NONE_ID && !hedge && residential.confidence==0) selected=NONE_ID;
+        // Keep the independently affordable factory worker and one combat-unit
+        // reserve funded when the yard chooses zoning first in this build pass.
+        if (selected == zone && zone != NONE_ID && parallelFactorySupply
+            && money-data[zone][houseID].price < data[Unit_Harvester][houseID].price + data[Unit_Tank][houseID].price)
+            selected = NONE_ID;
         // Save for a winning refinery instead of spending its money on another
         // cheap lot every pass. The caller preserves urgent non-economic work.
         const bool funded = selected!=NONE_ID && money>=data[selected][houseID].price;
@@ -3442,7 +3498,11 @@ void QuantBot::build(int militaryValue) {
                 .set("delay_cycles",i.delayCycles).set("confidence_per_mille",i.confidence).set("proceeds",i.proceeds()); };
             traceDecision("city_economy_comparison",AITelemetry::Record().set("builder",builder->getObjectID())
                 .set("selected",selected).set("zone",zone).set("hedge",hedge).set("funded",funded)
-                .set("capacity_needed",capacityNeeded).set("workers",workers).set("refineries",refs)
+                .set("capacity_needed",capacityNeeded).set("refinery_useful",refineryUseful)
+                .set("parallel_factory_supply",parallelFactorySupply).set("wanted_included_worker",wantedWorker)
+                .set("worker_income",workerIncome).set("bay_capacity",bayIncome)
+                .set("generation_cost_per_thousand",generationCostPerThousand)
+                .set("workers",workers).set("refineries",refs)
                 .set("sustainable_workers",spiceHarvesterTarget).set("horizon_cycles",horizonCycles)
                 .set("spice_share",spiceShare).set("trip_cycles",refineryTripCycles).set("field_risk",refineryFieldRisk)
                 .set("tax_candidate",describe(residential)).set("refinery_candidate",describe(refinery)));
@@ -4128,6 +4188,13 @@ void QuantBot::build(int militaryValue) {
                         ? std::max(0, cityYardTarget - itemCount[Structure_ConstructionYard] - itemCount[Unit_MCV])
                         : DuneCity::vanillaMcvShortfall(money, getHouse()->getNumItems(Unit_Harvester),
                             itemCount[Structure_ConstructionYard], itemCount[Unit_MCV]);
+                    if (emitStatsLog && AITelemetry::log().enabled())
+                        traceDecision("factory_economy_priority",AITelemetry::Record()
+                            .set("builder",pBuilder->getObjectID()).set("harvesters_committed",itemCount[Unit_Harvester])
+                            .set("spice_target",citySimEnabled ? fundedHarvesterTarget : spiceHarvesterTarget)
+                            .set("army_value",militaryValue).set("army_target",militaryValueLimit)
+                            .set("military_available",canBuildMilitaryVehicle(pBuilder))
+                            .set("prefer_harvester",factoryPrefersHarvester(pBuilder)));
 					// only if the factory isn't busy
 					if ((pBuilder->isUpgrading() == false) && (pBuilder->getProductionQueueSize() < 1) && (pBuilder->getBuildListSize() > 0)) {
 						// we need a construction yard. Build an MCV if we don't have a starport
@@ -4164,8 +4231,8 @@ void QuantBot::build(int militaryValue) {
                             }
                         }
 						else if ((citySimEnabled || vanillaEconomy) && !orderedSpiceHarvester
+                            && factoryPrefersHarvester(pBuilder)
                             && itemCount[Unit_Harvester] < (vanillaEconomy ? spiceHarvesterTarget : fundedHarvesterTarget)
-                            && itemCount[Unit_Harvester] < getHouse()->getNumItems(Structure_Refinery) * 3
                             && pBuilder->isAvailableToBuild(Unit_Harvester) && !getHouse()->isGroundUnitLimitReached()
                             && money + (vanillaEconomy ? reserve.reserved : 0) >= data[Unit_Harvester][houseID].price
                                 + (vanillaEconomy ? 1000 : data[Unit_Tank][houseID].price)) {

@@ -575,14 +575,16 @@ inline int getPalaceCommercialPopulation(int level) {
     return getZonePopulation(Structure_ZoneCommercial, level);
 }
 
-/// Tax population in eighths: R/8 + C + I, retaining fractional individual
-/// houses until the city-wide annual total is rounded. Palace contributes R+C.
+/// Weighted tax population in eighths. Private R/C/I income receives a 2x
+/// balance multiplier; Palace retains its unboosted R+C contribution. Preserve
+/// fractional houses until the city-wide annual total is rounded.
+constexpr int kZoneTaxMultiplier = 2;
 inline int taxablePopulationEighths(int itemID, int population, int level) {
     population = std::max(0, population);
     switch (itemID) {
-        case Structure_ZoneResidential: return population;
+        case Structure_ZoneResidential: return population * kZoneTaxMultiplier;
         case Structure_ZoneCommercial:
-        case Structure_ZoneIndustrial: return population * 8;
+        case Structure_ZoneIndustrial: return population * 8 * kZoneTaxMultiplier;
         case Structure_Palace:
             return population + getPalaceCommercialPopulation(effectiveCityLevel(itemID,level)) * 8;
         default: return 0;

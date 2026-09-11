@@ -1,3 +1,45 @@
+# Double private-zone tax — 1.0.638 (local only)
+
+Stefan chose 2x R/C/I income rather than 3x fleet parity: tax is easier and less
+exposed than harvesting. Added kZoneTaxMultiplier=2 in the shared weighted tax
+base. All private zone densities and partial houses receive it; Palace remains
+at unboosted R+C and other government infrastructure remains exempt. Census,
+actual payouts, UI and AI share the multiplier; updated QuantBot indirect
+residential tax forecast to use the helper too. Policy parallel-city-economy-v58.
+
+At 7% tax/LV128, high R/C/I yield ~104.53/104.53/83.63 credits/min; Palace
+~104.53 unchanged. Power, demand, jobs, growth, road upkeep and harvesting
+unchanged. No extra scans or save-format changes. Detailed fleet comparison
+and rates are in docs/city-economy-balance.md.
+
+Yard/factory review: Stefan explicitly rejected 3/4 workers-per-refinery caps.
+City factories target remaining-map-spice capacity and the map harvester limit;
+refinery count never caps production. Removed direct 3-per-refinery gate for
+vanilla QuantBot too; its existing target/refinery policy remains. Removed city
+hypothetical-refinery reserve.
+Yards choose zones alongside a funded idle factory that prefers a harvester unless processing
+needs another bay; busy factories leave included-worker refinery option eligible.
+Capacity uses 75% ideal unloading; marginal forecast credits actual first loads
+and bay relief, not existing fleet or unqueued future workers. Queued refinery
+workers counted across passes. Power capital uses owned generators plus foundation.
+Added decision telemetry and regressions for spare/busy factory, shared bays,
+queued bays, first delivery and unsafe fields. Vanilla refinery-build ratios unchanged; factory worker gate removed.
+
+Factory allocation clarification: a spice target is not unconditional worker
+priority. Recover fewer than two committed workers first; otherwise while an
+affordable military order is needed, require military value of about 2x current
+worker purchase value before spending another slot on a harvester. Once army
+target is met, grow to spice/map target. Includes committed queues and falls
+through to military selection when workers defer. Yard forecasts use the same
+choice; telemetry factory_economy_priority. No new persistent AI state.
+
+Validation: final dependency audit/build/CTest pass, 556 passed and 3 optional
+skips. Signed/hash-verified local /Applications/dunecity.app 1.0.638 installed.
+SHA256 2266a41ea980f68eeba7b777935c30cbab666b18708d6c1aa3e82162bc1aadf1.
+Backup dunecity-before-638.ba21axvi. No game launch, remote push or release.
+Live balance still needs the next match; capacity is a throughput forecast,
+not a measurement of local queue wait times. No pathfinding was added.
+
 # Micropolis tax, Palace income and road upkeep revert — 1.0.637 (local only)
 
 Stefan authorized implementation of the Micropolis easy tax comparison, made

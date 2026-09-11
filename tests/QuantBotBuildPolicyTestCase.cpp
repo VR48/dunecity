@@ -69,14 +69,51 @@ TEST_CASE("City investment compares return per credit and protects the residenti
 
 TEST_CASE("Refinery expansion follows near-term workers and marginal delivered spice", "[quantbot][city]") {
     using namespace CityEconomyInvestmentPolicy;
-    REQUIRE(refineryCapacityNeeded(1,3,40));
-    REQUIRE_FALSE(refineryCapacityNeeded(4,9,120)); // Don't build bays for a hypothetical 120 workers.
-    REQUIRE_FALSE(refineryCapacityNeeded(40,120,120));
-    REQUIRE(refineryCapacityNeeded(39,120,120));
+    REQUIRE(factoryHarvesterTarget(40,120)==40);
+    REQUIRE(factoryHarvesterTarget(140,120)==120);
+    REQUIRE(factoryHarvesterTarget(0,120)==0);
+    // Four is not a production cap: factories continue toward the spice target,
+    // then the yard adds bays when predicted throughput requires them.
+    REQUIRE(factoryHarvesterTarget(120,120)==120);
+    REQUIRE_FALSE(processingCapacityNeeded(1,4,320,1757));
+    REQUIRE(processingCapacityNeeded(1,6,320,1757));
+    REQUIRE_FALSE(processingCapacityNeeded(2,6,320,1757)); // Queued bay already covers fleet.
+    REQUIRE_FALSE(considerRefinery(false,true,true)); // Factory + zoning run together.
+    REQUIRE(considerRefinery(false,true,false)); // Included worker avoids busy factory.
+    REQUIRE(considerRefinery(true,false,true)); // Existing fleet needs unloading capacity.
+    REQUIRE_FALSE(considerRefinery(false,false,false)); // No need; keep yard for city growth.
     REQUIRE(marginalSpiceIncome(120,40,false,400,1200)==0);
     REQUIRE(marginalSpiceIncome(120,39,false,400,1200)==1200);
     REQUIRE(marginalSpiceIncome(3,1,true,400,1200)==400);
     REQUIRE(marginalSpiceIncome(3,1,false,400,1200)==0);
+}
+
+TEST_CASE("Factory economy priority balances workers with military without a refinery cap", "[quantbot][city]") {
+    using namespace CityEconomyInvestmentPolicy;
+    CHECK(preferFactoryHarvester(1,120,0,10000,300,true)); // Recover collapsed economy.
+    CHECK_FALSE(preferFactoryHarvester(4,120,600,10000,300,true)); // Army is too weak.
+    CHECK(preferFactoryHarvester(4,120,2400,10000,300,true)); // Enough cover to expand economy.
+    CHECK_FALSE(preferFactoryHarvester(5,120,2400,10000,300,true)); // Next worker yields to military.
+    CHECK(preferFactoryHarvester(80,120,10000,10000,300,true)); // No refinery-based ceiling.
+    CHECK(preferFactoryHarvester(4,120,600,10000,300,false)); // No available combat order to displace.
+    CHECK_FALSE(preferFactoryHarvester(120,120,10000,10000,300,true));
+}
+
+TEST_CASE("Refinery forecasts count the first delivery and only marginal shared-bay income", "[quantbot][city]") {
+    using namespace CityEconomyInvestmentPolicy;
+    // A new worker completes one full load within four minutes, not zero income
+    // followed by a second full harvesting delay. Existing fleet income is common.
+    CHECK(refineryProceeds(3,1,true,320,1757,1200,8200,1120,700,4)==686);
+    CHECK(refineryProceeds(3,1,false,320,1757,1200,8200,1120,700,4)==0);
+    CHECK(refineryProceeds(3,1,true,320,1757,1200,14000,1120,700,4)==0);
+    CHECK(refineryProceeds(6,1,false,320,1757,1200,8200,1120,700,4)>0);
+    CHECK(refineryProceeds(6,2,false,320,1757,1200,8200,1120,700,4)==0);
+    Investment refinery{526,320,4,9400,1000,686};
+    Investment mediumR{143,62,1,4350,1000};
+    CHECK(preferRefinery(refinery,mediumR,true,false)); // Busy factory: useful worker via yard.
+    CHECK_FALSE(preferRefinery(refinery,mediumR,considerRefinery(false,true,true),false));
+    refinery.confidence=500;
+    CHECK_FALSE(preferRefinery(refinery,mediumR,true,false)); // Dangerous/depleting field.
 }
 
 TEST_CASE("Tax investment forecasts reflect weak demand, pollution and the existing growth pipeline", "[quantbot][city]") {
