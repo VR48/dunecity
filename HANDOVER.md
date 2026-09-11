@@ -1,3 +1,36 @@
+# Remote release 1.0.642 — verified 2026-09-11
+
+Published the accumulated 631–642 changes at tag `v1.0.642`, commit `29b1f5f`.
+Latest local 642 commit was amended before its first push to include release notes;
+it replaces the earlier local-only `df40853` ID without changing game code.
+Main and fix/dunecity-ui-quantbot were fast-forwarded. Release build
+[34595302140](https://github.com/VR48/dunecity/actions/runs/34595302140) passed
+version verification, Linux tests and all three desktop platforms. Six assets
+published at https://github.com/VR48/dunecity/releases/tag/v1.0.642.
+Duplicate main build 34595302154 was cancelled; ordinary cancellation did not
+stop its always-conditioned jobs, so the Actions force-cancel endpoint was used.
+
+SourceForge mirror [34596266575](https://github.com/VR48/dunecity/actions/runs/34596266575)
+verified all eight uploaded files by SHA256, advanced the dedicated `dunecity`
+source branch, published `dunecity-v1.0.642`, and confirmed Windows/macOS/Linux
+platform defaults at 642. No source archive uploaded; Legacy master preserved.
+
+Website automation advanced links, then website commit `c7fb363` updated release
+prose. Deploy to Droplet `34596363046` passed. Live index and dune-city pages
+returned HTTP 200 and all six 642 desktop links with the corrected summary;
+Android remains independently versioned at 0.2.25.
+Legacy SourceForge website copy committed on its master as `c06f68f`, deployed
+by SFTP temporary upload/rename, compared byte-for-byte after readback and
+verified in-browser at downloads.html?updated=642. Corrected obsolete road
+upkeep/shared-construction-range claims and described economy, transport and
+750 HP reactors. Backup: /tmp/dunecity-sf-web-642/downloads-before.html.
+Plain HTTP tooling encountered SourceForge bot filtering (403); browser
+verification worked. This game repo contains the same updated legacy HTML.
+
+Local /Applications/dunecity.app was already 1.0.642 from the implementation
+turn; version and deep strict signature verified again without launching.
+The earlier local-only entries below are historical checkpoints, now released.
+
 # Nuclear plant 750 HP — 1.0.642 (local only)
 
 Stefan revised reactor health from Palace-equivalent 1,000 to 750 HP. Default and
