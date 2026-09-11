@@ -23,17 +23,17 @@ TEST_CASE("Reactor blast has twice the palace impact area rather than twice its 
         }
 }
 
-TEST_CASE("A centered palace strike destroys a Starport-strength three-by-three reactor", "[city][nuclear]") {
+TEST_CASE("Reactor health matches Palace health and withstands one centered strike at full health", "[city][nuclear]") {
     const char* root = std::getenv("DUNE_CITY_SOURCE_DIR");
     REQUIRE(root != nullptr);
     for (const auto* filename : {"config/ObjectData.ini.default", "mods/Tornie/ObjectData.ini"}) {
         INIFile data(std::string(root) + "/" + filename);
         const int hp = data.getIntValue("Nuclear Plant", "HitPoints");
         REQUIRE(hp > 0);
-        REQUIRE(hp == data.getIntValue("Starport", "HitPoints"));
+        REQUIRE(hp == data.getIntValue("Palace", "HitPoints"));
         // Nine of the existing missile's 21 impacts land inside a centered 3x3 plant.
-        REQUIRE(9 * missileDamagePerTile >= hp);
-        REQUIRE(plantBlastDamage >= hp); // Adjacent plants can detonate in turn.
+        REQUIRE(hp - 9 * missileDamagePerTile == 100);
+        REQUIRE(hp - plantBlastDamage == 100); // Damaged plants can still chain-react.
     }
 }
 

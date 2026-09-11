@@ -1,3 +1,19 @@
+# Palace-strength nuclear plants — 1.0.641 (local only)
+
+Stefan requested nuclear HP equal to Palace HP. Default and Tornie reactor stats
+increase from 500 to 1,000 HP. New city games now copy each house's Palace HP
+(including custom overrides), replacing the previous Starport comparison.
+Existing saves retain their saved object-data stats; start a new match for this
+balance. Blast radius/damage, price and power output are unchanged. A full-health
+standard reactor now survives one centered 900-damage strike/neighbor blast with
+100 HP; damaged reactors can still chain-react. Updated the existing balance test.
+
+Validation: dependency audits, release build, CTest (564 passed, 3 optional skips)
+and bundled config checks passed. Signed/hash-verified /Applications/dunecity.app
+1.0.641 installed without launching; no remote push or release.
+SHA256 11d24800fb5797373ef2685130ec3c37d9dd192d4841af81d83c6460e24aa066.
+Backup /var/folders/3y/kfqmr__n2wz56wnvn919zhxh0000gn/T/dunecity-before-641.ogqah3tq/dunecity.app.
+
 # Earlier nuclear, recovery budgets and road reuse — 1.0.640 (local only)
 
 Stefan approved the remaining 638 match findings with one correction: redirect

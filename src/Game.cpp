@@ -548,7 +548,7 @@ void Game::initGame(const GameInitSettings& newGameInitSettings) {
             // Apply the city reactor balance only to a city match. ObjectData
             // also loads non-city mods and must preserve their configured stats.
             if (citySimEnabled_) for (int h = 0; h < NUM_HOUSES; ++h)
-                objectData.data[Structure_NuclearPlant][h].hitpoints = objectData.data[Structure_StarPort][h].hitpoints;
+                objectData.data[Structure_NuclearPlant][h].hitpoints = objectData.data[Structure_Palace][h].hitpoints;
 
             objectData.logSettings();
 
