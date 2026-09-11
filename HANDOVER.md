@@ -1,3 +1,37 @@
+# Micropolis tax, Palace income and road upkeep revert — 1.0.637 (local only)
+
+Stefan authorized implementation of the Micropolis easy tax comparison, made
+Palace an R+C tax exception, and requested road costs/ownership reverted.
+
+- Tax now uses (taxableR/8+C+I)*landValue/120*taxPercent*1.4. Only R/C/I zones
+  and Palace pay. Eighth-unit census preserves partial houses until aggregate
+  annual rounding; smooth per-cycle payouts and 60s year retained. This is the
+  easy formula, with less intermediate truncation than Micropolis tiny cities.
+  Zero land value now yields zero actual tax; unknown future-land forecasts may
+  assume 128. Government jobs/demand are separate from taxable population.
+- Palace contributes BOTH R and C at its occupancy tier. At 7%/LV128, high R/C/I
+  are ~52.27/52.27/41.81 credits per simulated minute; Palace ~104.53. Full tier
+  table and harvester comparisons are in docs/city-economy-balance.md.
+- Budget, QuantBot economy/service/production forecasts and Mentat use the same
+  tax base. Also fixed two extracted MentatBuildOrder variants still using gross
+  population (the Mentat variant is compiled), missed by earlier exemption.
+  Telemetry replaces taxable_pop with tax_base_eighths; policy micropolis-tax-palace-v57.
+- Removed road upkeep at every population and the maintenance ownership feature:
+  no census, deductions, road-only owners, AI road expense, or old-save inference.
+  Auto frontage and city road-overlay command preserve underlying tile owners.
+  Normal manually placed foundations/roads retain their tile ownership behavior;
+  enemy concrete/roads still do not extend construction range. Existing saved
+  tile ownership stays; cannot distinguish historical inferred owners safely.
+  Road overlay/foundation/traffic behavior, build prices and police upkeep remain.
+- No save-format changes or added scans/pathfinding. Latest 636 factory roles and
+  normal configured zone construction timing retained. Live balance validation
+  remains pending; tests stub the full world runtime scans.
+
+- Final dependency audit, build and CTest passed: 554 tests passed, 3 optional skips.
+  Installed signed/hash-verified /Applications/dunecity.app 1.0.637.
+  SHA256 3898ee9a75e6a21e4b05e7147b5be467b3072d9a767d9ba72a8eee6c50615644.
+  Backup: dunecity-before-637.7w3j44an. No game launch or remote push/release.
+
 # Revised factory roles and normal zone construction — 1.0.636 (local only)
 
 Stefan revised the mapping again after 1.0.635: Light Factory is now low-density

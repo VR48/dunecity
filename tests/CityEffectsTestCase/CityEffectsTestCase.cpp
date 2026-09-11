@@ -305,28 +305,30 @@ TEST_CASE("Annual tax is zero for empty city or zero rate",
     REQUIRE(computeAnnualTaxRevenue(100, -3) == 0);
 }
 
-TEST_CASE("Annual tax scales linearly with population and rate (no land value)",
-          "[city-effects][tax]") {
-    // Per-citizen contribution: 200/3 credits/year at 100% tax rate.
-    // Formula: pop*200*rate/(100*3)
-    // pop=100, rate=7: 100*200*7/300 = 466
-    REQUIRE(computeAnnualTaxRevenue(100, 7)  == 466);
-    REQUIRE(computeAnnualTaxRevenue(200, 7)  == 933);
-    REQUIRE(computeAnnualTaxRevenue(100, 14) == 933);
-    REQUIRE(computeAnnualTaxRevenue(50, 20)  == 666);
+TEST_CASE("Annual tax uses Micropolis easy weighting and rate", "[city-effects][tax]") {
+    // Values are tax population in eighths; default land value is128.
+    CHECK(computeAnnualTaxRevenue(100,7) == 130);
+    CHECK(computeAnnualTaxRevenue(200,7) == 261);
+    CHECK(computeAnnualTaxRevenue(100,14) == 261);
+    CHECK(computeAnnualTaxRevenue(50,20) == 186);
+    CHECK(computeAnnualTaxRevenue(100,7,0) == 0);
+    CHECK(computeAnnualTaxRevenue(100,7,64) == 65);
+    CHECK(computeAnnualTaxRevenue(100,7,250) == 255);
 }
 
-TEST_CASE("Annual tax scales with land value when provided",
-          "[city-effects][tax]") {
-    // Base: pop=100, rate=7, no LV: 100*200*7/300 = 466
-    const int32_t base = computeAnnualTaxRevenue(100, 7);
-    REQUIRE(base == 466);
-    // avgLandValue=128 → 1.0x multiplier (1400*128/128 = 1400)
-    REQUIRE(computeAnnualTaxRevenue(100, 7, 128) == base);
-    // avgLandValue=250 → ~1.95x
-    CHECK(computeAnnualTaxRevenue(100, 7, 250) > base);
-    // avgLandValue=30 → ~0.23x
-    CHECK(computeAnnualTaxRevenue(100, 7, 30) < base);
+TEST_CASE("Palace contributes both R and C at every occupied tier", "[city-effects][tax]") {
+    CHECK(isTaxableCityStructure(Structure_Palace));
+    for (int level=0;level<=3;++level) {
+        const int residential=getZonePopulation(Structure_ZoneResidential,level);
+        const int commercial=getZonePopulation(Structure_ZoneCommercial,level);
+        const int base=taxablePopulationEighths(Structure_Palace,residential,level);
+        CHECK(base == residential+8*commercial);
+    }
+    // Aggregate100 buildings to verify rates without per-building truncation.
+    CHECK(computeAnnualTaxRevenue(100*taxablePopulationEighths(Structure_Palace,40,3),7,128) == 10453);
+    CHECK(computeAnnualTaxRevenue(100*taxablePopulationEighths(Structure_ZoneResidential,40,3),7,128) == 5226);
+    CHECK(computeAnnualTaxRevenue(100*taxablePopulationEighths(Structure_ZoneCommercial,5,3),7,128) == 5226);
+    CHECK(computeAnnualTaxRevenue(100*taxablePopulationEighths(Structure_ZoneIndustrial,4,3),7,128) == 4181);
 }
 
 // --- Zone score / growth-decline gating --------------------------------------
@@ -898,21 +900,21 @@ TEST_CASE("Government buildings retain roles without paying tax", "[city-effects
     for (const int item : {Structure_ConstructionYard, Structure_WindTrap,
             Structure_LightFactory, Structure_Refinery, Structure_Silo,
             Structure_HeavyFactory, Structure_HighTechFactory, Structure_RepairYard,
-            Structure_StarPort, Structure_Airport, Structure_Palace, Structure_Barracks,
+            Structure_StarPort, Structure_Airport, Structure_Barracks,
             Structure_WOR, Structure_Radar, Structure_IX, Structure_TechCenter,
             Structure_PoliceStation, Structure_RocketTurret, Structure_GunTurret}) {
         CAPTURE(item);
         CHECK_FALSE(isTaxableCityStructure(item));
-        CHECK(taxableCityPopulation(item, 40) == 0);
+        CHECK(taxablePopulationEighths(item, 40, 3) == 0);
     }
     CHECK(getZonePopulation(Structure_HeavyFactory, 3) == 3);  // I-medium cap
     CHECK(getZonePopulation(Structure_HighTechFactory, 3) == 3);  // I-medium cap
     CHECK(getZonePopulation(Structure_Barracks, 3) == 40);
-    CHECK(taxableCityPopulation(Structure_ZoneResidential, 2) == 2); // one house
-    CHECK(taxableCityPopulation(Structure_ZoneResidential, 40) == 40);
-    CHECK(taxableCityPopulation(Structure_ZoneCommercial, 5) == 5);
-    CHECK(taxableCityPopulation(Structure_ZoneIndustrial, 4) == 4);
-    CHECK(taxableCityPopulation(Structure_ZoneResidential, 0) == 0);
+    CHECK(taxablePopulationEighths(Structure_ZoneResidential, 2, 3) == 2); // one house
+    CHECK(taxablePopulationEighths(Structure_ZoneResidential, 40, 3) == 40);
+    CHECK(taxablePopulationEighths(Structure_ZoneCommercial, 5, 3) == 40);
+    CHECK(taxablePopulationEighths(Structure_ZoneIndustrial, 4, 3) == 32);
+    CHECK(taxablePopulationEighths(Structure_ZoneResidential, 0, 3) == 0);
 }
 
 TEST_CASE("Reduced infrastructure tiers cap loaded jobs and emissions", "[city-effects][role]") {
@@ -1348,10 +1350,10 @@ TEST_CASE("Latest government factory tiers apply to old high-density occupancy",
         CHECK(getIndustrialSupply(item,3) == 25);
         CHECK(getCommercialSupply(item,3) == 0);
         CHECK(getPollutionEmission(item,3) == 25);
-        CHECK(taxableCityPopulation(item,3) == 0);
+        CHECK(taxablePopulationEighths(item, 3, 3) == 0);
     }
     CHECK(getStructureMaxLevel(Structure_IX) == 3);
     CHECK(getCommercialSupply(Structure_IX,3) == 50);
     CHECK(getZonePopulation(Structure_IX,3) == 5);
-    CHECK(taxableCityPopulation(Structure_IX,5) == 0);
+    CHECK(taxablePopulationEighths(Structure_IX, 5, 3) == 0);
 }

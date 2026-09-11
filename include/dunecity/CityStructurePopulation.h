@@ -11,8 +11,8 @@ inline int getStructurePopulation(const StructureBase* structure, int level) {
         return zone->getResidentialPopulation();
     return getZonePopulation(structure->getItemID(),level);
 }
-inline int getStructureTaxablePopulation(const StructureBase* structure, int level) {
-    return taxableCityPopulation(structure->getItemID(), getStructurePopulation(structure, level));
+inline int getStructureTaxBaseEighths(const StructureBase* structure, int level) {
+    return taxablePopulationEighths(structure->getItemID(), getStructurePopulation(structure, level), level);
 }
 inline int getStructureResidentialSupply(const StructureBase* structure, int level) {
     if (const auto* zone = dynamic_cast<const ZoneStructure*>(structure);

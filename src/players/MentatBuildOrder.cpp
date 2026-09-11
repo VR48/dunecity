@@ -574,7 +574,8 @@ const std::vector<MentatBuildStep>& QuantBot::getCYBuildOrder() {
             if (ctx.isCitySim) {
                 auto* citySim = currentGame ? currentGame->getCitySimulation() : nullptr;
                 int tax = citySim ? citySim->getCityTax() : 7;
-                int32_t annual = DuneCity::computeAnnualTaxRevenue(ctx.ownTotalPop, tax, ctx.ownAvgLandValue);
+                const int taxBaseEighths = citySim ? citySim->getHouseState(bot->getHouse()->getHouseID()).taxBaseEighths : 0;
+                int32_t annual = DuneCity::computeAnnualTaxRevenue(taxBaseEighths, tax, ctx.ownAvgLandValue);
                 int creditsPerSec = annual / 60;
                 desiredHFs = 1 + creditsPerSec / 50;
             } else {

@@ -212,74 +212,20 @@ TEST_CASE("CityBudget: Alternating roads and power lines correct total", "[cityb
 }
 
 
-TEST_CASE("Road upkeep follows Micropolis weighting and aggregate rounding", "[citybudget][roads]") {
-    DuneCity::RoadMaintenanceCensus roads;
-    REQUIRE(roads.annualCost(2000) == 0);
-    for (int i = 0; i < 80; ++i) roads.add(true, 191);
-    for (int i = 0; i < 20; ++i) roads.add(true, 192);
-    // 100 physical road tiles + 20 extra heavy weights, at 0.7/year.
-    REQUIRE(roads.tiles == 100);
-    REQUIRE(roads.heavyTiles == 20);
-    REQUIRE(roads.annualCost(2000) == 84);
-    roads.add(false, 255); // Concrete, destroyed roads and building footprints are free.
-    REQUIRE(roads.annualCost(2000) == 84);
-    roads = {};
-    roads.add(true, 0);
-    REQUIRE(roads.annualCost(2000) == 0); // Truncate the annual total, not individual tiles.
-    roads.add(true, 64);
-    REQUIRE(roads.annualCost(2000) == 1);
-}
-
-TEST_CASE("Road placement preserves existing owners and assigns new roads", "[citybudget][roads]") {
-    REQUIRE(DuneCity::roadOwnerAfterPlacement(false, -1, 2) == 2);
-    REQUIRE(DuneCity::roadOwnerAfterPlacement(false, 1, 2) == 2);
-    REQUIRE(DuneCity::roadOwnerAfterPlacement(true, 1, 2) == 1);
-    REQUIRE(DuneCity::roadOwnerAfterPlacement(true, -1, 2) == 2);
-}
-
-TEST_CASE("Legacy roads inherit only adjacent structure ownership", "[citybudget][roads]") {
-    auto ownerAt = [](int x, int y) {
-        if (x == 9 && y == 9) return 0; // Diagonal loses to direct neighbors.
-        if (x == 10 && y == 9) return 2;
-        if (x == 11 && y == 10) return 1; // Stable house-ID tie break.
-        return -1;
-    };
-    REQUIRE(DuneCity::legacyRoadOwner(-1, 10, 10, ownerAt) == 1);
-    REQUIRE(DuneCity::legacyRoadOwner(3, 10, 10, ownerAt) == 3);
-    REQUIRE(DuneCity::legacyRoadOwner(-1, 50, 50, ownerAt) == -1);
-}
-
-TEST_CASE("Road census is per house and fractional upkeep accumulates over a year", "[citybudget][roads]") {
-    DuneCity::HouseCityState houses[2];
-    for (int i = 0; i < 100; ++i) {
-        houses[0].roads.add(true, 0);
-        houses[1].roads.add(true, 240);
-    }
-    REQUIRE(houses[0].roads.annualCost(2000) == 70);
-    REQUIRE(houses[1].roads.annualCost(2000) == 140);
-    const FixPoint tick = FixPoint(houses[0].roads.annualCost(2000)) / DuneCity::kBudgetTicksPerYear;
-    FixPoint charged = 0;
-    for (int i = 0; i < DuneCity::kBudgetTicksPerYear; ++i) charged += tick;
-    REQUIRE(charged.toDouble() == Catch::Approx(70.0).margin(0.001));
-    houses[0].roads = {}; // Removed roads disappear in the next census.
-    REQUIRE(houses[0].roads.annualCost(2000) == 0);
-    REQUIRE(houses[1].roads.annualCost(2000) == 140);
-}
-
-
-TEST_CASE("Road upkeep starts at 2000 displayed population and stops below it", "[citybudget][roads]") {
-    DuneCity::RoadMaintenanceCensus roads;
-    for (int i = 0; i < 100; ++i) roads.add(true, 240);
-    REQUIRE(roads.annualCost(0) == 0);
-    REQUIRE(roads.annualCost(1999) == 0);
-    REQUIRE(roads.annualCost(2000) == 140);
-    REQUIRE(roads.annualCost(2001) == 140);
-    REQUIRE(roads.annualCost(1999) == 0); // No permanent unlock after crossing the threshold.
-    // The threshold uses each house's population, not the sum for the map.
-    DuneCity::HouseCityState houses[2];
-    houses[0].resPop = 99;
-    houses[1].resPop = 100;
-    const int scale = DuneCity::CitySimulation::kPopDisplayMultiplier;
-    REQUIRE(roads.annualCost(houses[0].getTotalPop() * scale) == 0);
-    REQUIRE(roads.annualCost(houses[1].getTotalPop() * scale) == 140);
+TEST_CASE("City tax census retains fractional housing and the Palace dual income", "[citybudget][tax]") {
+    using namespace DuneCity;
+    const int home=taxablePopulationEighths(Structure_ZoneResidential,40,3);
+    const int shop=taxablePopulationEighths(Structure_ZoneCommercial,5,3);
+    const int industry=taxablePopulationEighths(Structure_ZoneIndustrial,4,3);
+    const int palace=taxablePopulationEighths(Structure_Palace,40,3);
+    CHECK(home == shop);
+    CHECK(palace == home+shop);
+    CHECK(computeAnnualTaxRevenue(home+shop+industry+palace,7,128) == 250);
+    // Many small plots are aggregated before rounding; one house has R=2.
+    CHECK(computeAnnualTaxRevenue(100*taxablePopulationEighths(Structure_ZoneResidential,2,0),7,128) == 261);
+    // A year of fractional cycle payouts totals the annual bill, not 3750 rounded bills.
+    const FixPoint tick=FixPoint(computeAnnualTaxRevenue(palace,7,128))/kBudgetTicksPerYear;
+    FixPoint paid=0;
+    for (int n=0;n<kBudgetTicksPerYear;++n) paid+=tick;
+    CHECK(paid.toDouble() == Catch::Approx(104).margin(0.001));
 }

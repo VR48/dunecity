@@ -2179,8 +2179,8 @@ void Mentat::handleHeavyFactory(const BuilderBase* pBuilder, MentatBuildContext&
 					if (ctx.money <= 3000) return false;
 					auto* citySim = currentGame->getCitySimulation();
 					int tax = citySim ? citySim->getCityTax() : 7;
-					const int taxablePop = citySim ? citySim->getHouseState(getHouse()->getHouseID()).taxablePopulation : 0;
-					int32_t annual = DuneCity::computeAnnualTaxRevenue(taxablePop, tax, ctx.ownAvgLandValue);
+					const int taxBaseEighths = citySim ? citySim->getHouseState(getHouse()->getHouseID()).taxBaseEighths : 0;
+					int32_t annual = DuneCity::computeAnnualTaxRevenue(taxBaseEighths, tax, ctx.ownAvgLandValue);
 					int creditsPerSec = annual / 60;
 					desiredCYs = 1 + creditsPerSec / 50;
 				} else {

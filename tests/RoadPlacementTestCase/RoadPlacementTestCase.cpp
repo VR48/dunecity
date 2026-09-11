@@ -18,7 +18,6 @@
 #include <catch2/catch_all.hpp>
 #include <data.h>
 #include <dunecity/CityConstants.h>
-#include <dunecity/RoadMaintenancePolicy.h>
 #include <fstream>
 #include <string>
 #include <cstdlib>
@@ -184,9 +183,7 @@ TEST_CASE("Enemy foundations do not grant construction reach", "[road][placement
             REQUIRE(DuneCity::isConstructionAnchor(owner, builder) == (owner == builder));
         }
     }
-    // An enemy road still belongs to its owner when reused as an access road.
-    REQUIRE(DuneCity::roadOwnerAfterPlacement(true, 4, 1) == 4);
-    REQUIRE(DuneCity::roadOwnerAfterPlacement(false, 4, 1) == 1);
+
 }
 
 TEST_CASE("Road reuse keeps footprint occupancy and the bounded build-range check", "[road][placement][regression]") {
@@ -209,4 +206,19 @@ TEST_CASE("Road reuse keeps footprint occupancy and the bounded build-range chec
     REQUIRE(checks.find("getOwner()") == std::string::npos);
     const auto structure = readSourceFile("src/structures/StructureBase.cpp");
     REQUIRE(structure.find("pTile->setOwner(getOwner()->getHouseID())") != std::string::npos);
+}
+
+TEST_CASE("Road overlays do not assign owners or charge recurring upkeep", "[road][regression]") {
+    const auto house = readSourceFile("src/House.cpp");
+    const auto begin=house.find("// DuneCity: when city-sim mode is active, auto-pave");
+    REQUIRE(begin != std::string::npos);
+    const auto end=house.find("if ((builderID != NONE_ID)",begin);
+    REQUIRE(house.substr(begin,end-begin).find("setOwner") == std::string::npos);
+    const auto runtime=readSourceFile("src/dunecity/CityEffectsRuntime.cpp");
+    REQUIRE(runtime.find("legacyRoadOwner") == std::string::npos);
+    REQUIRE(runtime.find("tickRoadPaid") == std::string::npos);
+    const auto sim=readSourceFile("src/dunecity/CitySimulation.cpp");
+    const auto road=sim.find("case CityTool_Road:");
+    const auto roadEnd=sim.find("} break;",road);
+    REQUIRE(sim.substr(road,roadEnd-road).find("setOwner") == std::string::npos);
 }

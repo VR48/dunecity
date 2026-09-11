@@ -53,10 +53,10 @@ struct Value {
         return left != right ? left > right : crime > other.crime;
     }
 };
-inline int annualTaxGain(int population, int taxPercent, int valueGainSum, int sampledBuildings) {
+inline int annualTaxGain(int taxBaseEighths, int taxPercent, int valueGainSum, int sampledBuildings) {
     if (sampledBuildings <= 0) return 0;
-    return int(int64_t(population) * 200 * taxPercent * valueGainSum
-        / (int64_t(100) * 3 * 128 * sampledBuildings));
+    return int(int64_t(taxBaseEighths) * 14 * taxPercent * valueGainSum
+        / (int64_t(8) * 120 * 10 * sampledBuildings));
 }
 }
 #endif

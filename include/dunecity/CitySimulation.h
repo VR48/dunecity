@@ -7,7 +7,6 @@
 #include <dunecity/CityConstants.h>
 #include <dunecity/CityMapLayer.h>
 #include <dunecity/CityBudget.h>
-#include <dunecity/RoadMaintenancePolicy.h>
 #include <dunecity/CrimeUnrestPolicy.h>
 #include <dunecity/CityDemandNoticePolicy.h>
 #include <dunecity/ParkTerrainPolicy.h>
@@ -23,7 +22,7 @@ static constexpr int kMaxCityHouses = NUM_HOUSES;
 
 struct HouseCityState {
     int resPop = 0, comPop = 0, indPop = 0;
-    int taxablePopulation = 0; // Derived zone-only census; not serialized.
+    int taxBaseEighths = 0; // Derived (R/8+C+I) in eighths, zones + Palace; not serialized.
     int prevResPop = 0, prevComPop = 0, prevIndPop = 0;
     int16_t resValve = 0, comValve = 0, indValve = 0;
     int avgLandValue = 0;
@@ -34,7 +33,6 @@ struct HouseCityState {
     int32_t nominalPoliceCost = 0;
     int32_t lastPoliceExpense = 0;
     CityBudget budget;
-    RoadMaintenanceCensus roads; // Derived from owned road tiles; not serialized.
 
     int getTotalPop() const { return resPop + comPop + indPop; }
 
@@ -82,7 +80,7 @@ public:
     int getComPop() const;
     int getIndPop() const;
     int getTotalPop() const;
-    int getTaxablePopulation() const;
+    int getTaxBaseEighths() const;
 
     // Display population (SC multiplied for UI — what players see)
     static constexpr int kPopDisplayMultiplier = 20;

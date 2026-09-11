@@ -188,7 +188,7 @@ void HouseCityState::save(OutputStream& stream) const {
 }
 
 void HouseCityState::load(InputStream& stream) {
-    taxablePopulation = 0;
+    taxBaseEighths = 0;
     resPop     = stream.readSint32();
     comPop     = stream.readSint32();
     indPop     = stream.readSint32();
@@ -332,7 +332,7 @@ void CitySimulation::executeCityCommand(int playerID, int commandID,
                         return;
                     }
 
-                    tile->setOwner(roadOwnerAfterPlacement(tile->isRoad(), tile->getOwner(), player->getHouse()->getHouseID()));
+                    // The road overlay does not claim the underlying tile.
                     tile->setRoad(placementState.hasRoad);
                     tile->setDestroyedStructureTile(DestroyedStructure_None);
                     SDL_Log("CityTool: Road placed at (%d, %d)", x, y);
@@ -370,8 +370,7 @@ void CitySimulation::executeCityCommand(int playerID, int commandID,
         } break;
 
         case CMD_CITY_SET_BUDGET: {
-            // p0 = police funding %; p1/p2 reserved (road upkeep is
-            // fixed at full funding). Routed through the command
+            // p0 = police funding %; p1/p2 reserved (roads have no upkeep). Routed through the command
             // system so multiplayer stays deterministic.
             auto* sim = currentGame ? currentGame->getCitySimulation() : nullptr;
             if (sim) {

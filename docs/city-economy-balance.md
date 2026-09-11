@@ -1,182 +1,130 @@
-# City tax and spice economics (1.0.636, 2026-09-11)
+# City tax and spice economics (1.0.637, 2026-09-11)
 
-These are source-derived estimates at normal simulation speed, not measured
-match income. Tax-rate constants are unchanged. As of 1.0.634, only R/C/I
-zones pay tax; all Dune government infrastructure is exempt.
+## Active tax formula
 
-## Runtime tax and budget
+Stefan authorized the Micropolis easy restructuring, with Palace as an explicit
+R+C exception to the government tax exemption. Only actual R/C/I zones and the
+Palace generate direct city tax. Other government buildings retain their jobs,
+demand and pollution roles, but generate no tax.
 
-`CityEffects.h::computeAnnualTaxRevenue` taxes the sum of raw zoned R population and
-zoned C/I jobs: approximately `population * (200/3) * taxPercent/100 * averageLandValue/128`.
-The runtime aggregates by house, rounds the annual total, and pays fractional
-credits each cycle. Average land value is house-wide, not the individual lot's.
-The displayed population multiplier of 20 is not used in tax calculation.
-At average land value zero the legacy formula skips the land-value multiplier.
+Annual gross tax = `(R/8 + C + I) * averageLandValue/120 * taxPercent * 1.4`.
+Use taxable populations only; Palace contributes both its R and C portions.
+The census stores eighths (`R + 8*C + 8*I`) to retain partial residential houses.
+Annual totals are rounded once per house and paid fractionally each simulation
+cycle. This follows Micropolis easy's weights/rate while avoiding its intermediate
+integer truncation of tiny cities. Explicit zero land value earns zero; AI
+forecasts can assume 128 for unknown future land. All values are deterministic
+integer arithmetic. No per-lot tax calculation or new save-format field.
 
-One year is 3,750 cycles, 60 simulated seconds. `CityBudgetWindow` dividing the
-annual forecast by 60 matches actual payouts. Faster/slower simulation changes
-both harvesters and taxes; wall-clock FPS should not be used to balance them.
+One city year = 3,750 cycles = 60 simulated seconds. Annual credits therefore
+also equal credits per simulated minute in DuneCity. Simulation speed changes
+both taxes and harvesting; do not use wall-clock FPS to compare them.
 
-At 7% tax, average land value 128, per fully occupied high-density zone:
+## Income readout
 
-| Zone | Internal population/jobs | Approximate gross credits/year (= simulated minute) |
-| --- | ---: | ---: |
-| R | 40 | 186.67 |
-| C | 5 | 23.33 |
-| I | 4 | 18.67 |
+At 7% tax and house-average land value 128, gross credits per simulated minute:
 
-Four R plots cost 400 before foundations and power, the same sticker price
-as a refinery, and eventually earn about 746.67/minute. They require demand,
-clean/suitable land, jobs, power and time to mature. C/I's direct tax understates
-their economic value: each job supports eight residential population.
+| Tax-producing building | Low | Medium | High |
+| --- | ---: | ---: | ---: |
+| Residential zone | 20.91 | 31.36 | 52.27 |
+| Commercial zone | 10.45 | 31.36 | 52.27 |
+| Industrial zone | 10.45 | 31.36 | 41.81 |
+| Palace (R+C) | 31.36 | 62.72 | 104.53 |
 
-The supplied budget screenshot shows 42,506 tax, 1,300 police, 720 rocket-turret
-service costs and 1,064 roads: 3,084 listed costs (7.26%) and 39,422 net/year,
-657.03/second. This is the city budget, not total treasury cash flow. It excludes
-construction, units, repairs and the separate power bill. Power costs
-`powerRequirement/32` every 15 seconds when power rules are enabled, i.e. nominal
-`powerRequirement/8` per city year. Pure power upkeep at high density is 1.5/year
-for R, 2.25 for C and 3 for I, before shared services/roads.
+Approximate contributions before city-total rounding and upkeep. Empty zones
+pay zero. A single developed house within an R lot adds population 2, about 2.61
+credits/minute; eight houses total 20.91 before the next density stage.
+At land value 64, all amounts halve; at 192, multiply by 1.5. Rates scale with tax.
+
+Before 1.0.637, high-density R/C/I yielded 186.67/23.33/18.67 at the same settings.
+The change is R -72%, C/I +124%. Palace was exempt in 1.0.634–636; now both halves
+pay tax (rather than the old pre-634 mismatch between R-only payout and R+C UI).
+
+## Government roles
+
+| Infrastructure | Role / maximum density | Direct tax |
+| --- | --- | ---: |
+| WindTrap | Power only; no industry | 0 |
+| Light Factory, Spice Silo | Low I | 0 |
+| Refinery, Heavy Factory, High Tech Factory, Repair Yard | Medium I | 0 |
+| House IX | High C | 0 |
+| Starport | Seaport / existing high-I employment and demand gate | 0 |
+| Construction Yard | Existing high I | 0 |
+| Radar, Airport | Existing medium/high C respectively | 0 |
+| Barracks, WOR | Existing high R garrison | 0 |
+| Palace | R+C, up to high density | See income table |
+
+All remaining non-zone structures also have zero direct tax. Silo, WindTrap,
+IX, Starport and Construction Yard stay clean. Light Factory emissions cap 10;
+Refinery/Heavy/HighTech/Repair cap 25. Jobs/population/emissions and loaded
+occupancy are clamped to mapped density; UI labels agree.
+
+## Roads and other costs
+
+Road upkeep is removed in 1.0.637 at every population, including heavy traffic.
+There is no per-house road census or charge in the runtime, UI or AI forecasts.
+The billing-specific ownership additions from 647b98c are reverted: automatic
+frontage roads and the city road-overlay command preserve underlying tile
+ownership. Load no longer infers owners from neighbouring structures. Existing
+saved tile ownership is preserved; no speculative clearing of concrete owners.
+Normal House::placeStructure ownership for manually built foundations/roads
+remains. Roads still provide foundations; enemy roads/concrete do not expand a
+house's construction range. Roads are not converted to concrete or removed.
+
+Police/turret upkeep remains. Separate power charges remain and are not part of
+the city budget panel: `powerRequirement/32` every 15 seconds when enabled, or
+nominally `powerRequirement/8` per city year. Construction, units and repairs
+are also separate from gross tax income.
 
 ## Complete harvester cycle
 
-Capacity is 700; harvesting is 0.1344/cycle (8.4/second). Filling alone takes
-83.33 seconds. A healthy refinery unloads 0.625/cycle (39.0625/second), requiring
-17.92 seconds. Travel, field changes, queues and damage add delay; carryalls and
-roads can reduce transport delay. Refinery construction/delivery adds initial
-startup delay, separate from recurring throughput.
+Capacity 700; harvesting 0.1344/cycle = 8.4/second, so filling takes 83.33 seconds.
+A healthy refinery unloads 0.625/cycle = 39.0625/second, taking 17.92 seconds.
+Travel, fields, queues, damage and carryalls alter actual delivered income.
 
-| Extra travel/queue seconds per trip | Gross credits/minute | Equivalent high-density R | C | I |
+| Extra travel/queue seconds per trip | Gross credits/minute | High R or C equivalent | High I equivalent | High Palace equivalent |
 | --- | ---: | ---: | ---: | ---: |
-| 0 (upper bound) | 414.80 | 2.22 | 17.78 | 22.22 |
-| 30 | 319.99 | 1.71 | 13.71 | 17.14 |
-| 60 | 260.46 | 1.40 | 11.16 | 13.95 |
+| 0 (upper bound) | 414.80 | 7.94 | 9.92 | 3.97 |
+| 30 | 319.99 | 6.12 | 7.65 | 3.06 |
+| 60 | 260.46 | 4.98 | 6.23 | 2.49 |
 
-Formula: `700 * 60 / (83.333 + 17.92 + extraSeconds)`. Equivalents use gross
-income at 7% tax and land value 128, and exclude startup/operating costs. At land
-value 64 tax halves and required zone counts double; at 192 counts are two-thirds.
+Formula: `700*60/(83.333+17.92+extraSeconds)`. Source-derived estimates, not
+measured match income. A refinery receives 700 per full delivery, but has no
+independent passive income: its income is its fleet's delivered spice. Do not
+add refinery income to harvester income again. The Tornie-only Worfinery also
+processes deliveries; it is not a standard DuneCity tax-producing building.
 
-## Micropolis comparison
+## Zone construction and AI
 
-Verified against local `simcity/micropolis/MicropolisCore/src/MicropolisEngine/src/simulate.cpp`
-(setValves and collectTax) and
-https://github.com/SimHacker/micropolis/blob/master/MicropolisCore/src/MicropolisEngine/src/simulate.cpp .
-Micropolis tax population is `R/8 + C + I`; tax is approximately
-`taxPopulation * averageLandValue/120 * taxRate * difficultyFactor`, with easy
-factor 1.4. Ignoring aggregate integer rounding, high-density R/C/I return about
-52.27/52.27/41.81 annually at the same tax/land value. DuneCity R is 3.57x that
-annual amount; C/I are 0.446x. Overall difference depends on zone mix.
+R/C/I use normal BuilderBase configured timing, respecting house/mod data.
+Default 40*15 ticks*16ms = 9.6 simulated seconds at full speed with sufficient
+funds. Roads/instant-build options unchanged; zone prices and population growth
+unchanged. QuantBot forecasts include construction plus 60s growth allowance.
 
-Police costs 100/year in both engines. DuneCity copies easy road upkeep 0.7/year
-per ordinary tile (heavy twice), with free automatic perimeter-road construction and an additional exemption below displayed
-population 2,000. Smaller 2x2 zones also need fewer frontage tiles than 3x3 zones.
-Thus current city margins are not an exact Micropolis balance. Keep the correct
-60-second payout conversion; separately review tax population weighting and show
-power costs before choosing a broad tax reduction/upkeep increase. No such
-formula change has been made in this version. The government exemption below
-is implemented, independently of this hypothetical Micropolis restructuring.
+First refinery remains an income/technology prerequisite, then a demanded R
+hedge. No C/I is forced against nonpositive demand. Zone choice normalizes demand
+maxima; among needs within 20% of strongest, balances built+queued plots with the
+existing 3:1:1 R/C/I weights. This avoids C-before-I 500 and forced-R-infill starvation.
+Housing infill remains a placement preference, not a zone-type override.
 
-## Government infrastructure (tax exemption 1.0.634; latest tiers 1.0.636)
+Tax versus refinery comparison evaluates four simulated minutes of marginal
+proceeds per credit, with actual setup/power, demand, suitability, growth and
+unfinished lots. No road upkeep estimate. C/I gets limited indirect credit for
+supporting housing short of jobs, using the new R/8 tax weighting. Refinery
+investment requires additional sustainable near-term bay capacity, considering
+current/queued workers plus 3 and sustainable spice target. Includes fill/unload,
+construction, bounded local travel sampling and danger; no new pathfinding.
 
-Taxable status is independent of employment, demand, pollution and density.
-Only actual R/C/I zones pay tax, including the actual population of partially
-built residential lots. Palace/garrisons, all factories, refineries, storage,
-research/communications and transport infrastructure earn no direct tax.
-Their remaining jobs/population still count for demand and employment. WindTrap
-has no city employment role. Road upkeep exemption still uses total displayed
-population, not taxable population.
+Payout, budget, QuantBot services/production and both active Mentat build paths
+use the same weighted taxable census. Telemetry `tax_base_eighths` explicitly
+labels its units; policy `micropolis-tax-palace-v57`. Existing demand/population
+census remains unweighted and separate from taxation.
 
-| Infrastructure | Economic role / maximum density |
-| --- | --- |
-| WindTrap | Power only, no industry |
-| Light Factory | Low I |
-| Refinery | Medium I |
-| Spice Silo | Low I; clean |
-| Heavy Factory, High Tech Factory, Repair Yard | Medium I |
-| House IX | High C |
-| Starport | Seaport, existing high-I employment / demand gate |
+## Reference
 
-Other existing roles are preserved. Stefan's latest instruction changes High
-Tech from the interim high-C mapping to medium I. Factory emissions follow the
-revised density: Light Factory caps at 10; Heavy/HighTech/Repair/Refinery at 25. Loaded
-occupancy is clamped to the new maximum; no save-format fields added. The
-zone-only census is derived from existing scans and feeds payout, budget and
-QuantBot/Mentat income forecasts. Government jobs can still indirectly support
-tax-paying R, but government property is excluded from direct tax/land-value
-revenue forecasts. Telemetry includes `taxable_pop` alongside gross population.
-
-Direct infrastructure tax at maximum **previous** occupancy, tax7%, land value128,
-approximate gross credits per simulated minute (before/after the exemption):
-
-| Building(s) | Before | Now |
-| --- | ---: | ---: |
-| WindTrap | 4.67 | 0 |
-| Light Factory, Radar | 14.00 each | 0 |
-| Refinery, Silo, Heavy Factory, Repair Yard | 18.67 each | 0 |
-| High Tech Factory, Construction Yard, Starport | 18.67 each | 0 |
-| IX, Airport | 23.33 each | 0 |
-| Barracks, WOR, Palace | 186.67 each | 0 |
-
-Palace previously contributed its R portion to the actual budget payout; its
-extra C census contribution was not included in that payout. The new zone-only
-census also removes the resulting budget projection mismatch. Other non-role
-infrastructure already had zero tax. Spice delivery is separate: refineries
-still receive harvested spice, despite earning no city tax.
-
-For the hypothetical Micropolis easy formula at tax 7%, land value 128:
-
-| Density | R annual | C annual | I annual |
-| --- | ---: | ---: | ---: |
-| Low | 20.91 | 10.45 | 10.45 |
-| Medium | 31.36 | 31.36 | 31.36 |
-| High | 52.27 | 52.27 | 41.81 |
-
-Approximate marginal contributions: Micropolis rounds city aggregates, not
-individual zone bills. With DuneCity's existing 60-simulated-second year these
-annual values would also be credits per simulated minute. High R would fall
-72%; high C/I would rise 124%. The whole-city effect depends on the zone mix;
-this is not a blanket 3.57x tax reduction. At ~320 delivered spice/minute, one
-harvester would match ~6.1 high R or C zones, or ~7.7 high I zones, gross.
-
-## Zone construction timing (1.0.636)
-
-R/C/I now use normal configured construction timing through BuilderBase, using
-active house/mod data. Default buildtime 40 × 15 ticks × 16ms = 9.6 simulated
-seconds at full builder speed and adequate funds. The previous city helper
-forced buildtime 1 (~0.24s). Stefan's final instruction for normal timing
-supersedes his earlier request to match silo time. Roads and instant-build
-options retain their prior behaviour. Zone purchase price and subsequent
-population growth are unchanged. The AI's investment delay includes configured
-construction time before its 60s growth allowance.
-
-## QuantBot investment policy
-
-From 1.0.635, zone choice normalizes demand maxima and balances built+queued
-plots among needs within 20% of the strongest normalized demand, using the
-existing 3:1:1 R/C/I plot weights. It excludes nonpositive demand and retains
-the opening demanded-R hedge. This replaces the C-before-I 500 gate, which
-starved I when C demand stayed high. Infill remains a residential site score,
-not permission to override a stronger jobs need. Suitable-site fallback still
-applies before the tax/refinery comparison.
-
-The first refinery remains essential income/technology. A first demanded R plot
-then hedges spice income; no missing C/I is forced against zero/negative demand.
-Further investments compare forecast proceeds per credit over four simulated
-minutes. A refinery must also add capacity for sustainable, near-term workers
-(current/queued fleet plus three, capped by sustainable target, three workers per
-bay). Already-funded bays therefore favour useful demanded zoning.
-
-Forecasts use actual prices, unprepared footprint cost, free automatic frontage
-construction (future road maintenance only), amortized power,
-tax/average land value, low/medium expected growth with a one-minute maturation
-allowance, demand, pollution/crime and unfinished same-type plots. Demanded C/I
-gets partial credit for jobs supporting existing/pending housing short of work.
-Refinery estimates include a free worker if under cap, marginal fleet throughput,
-fill/unload/construction time, a bounded sampled local distance, half theoretical
-bay capacity for manoeuvring, remaining spice share and a danger discount. These
-are intentionally approximate: no new pathfinding or measured-income history.
-
-Log `city_economy_comparison` records cost, income, upkeep, delay, confidence,
-proceeds, capacity/hedge/funding decisions and the selected item. It is sampled
-per yard at 30-second intervals. Compare subsequent match cash flow to these
-forecasts before refining their heuristic parameters.
+Micropolis `simulate.cpp` setValves uses R/8+C+I; collectTax uses landValue/120,
+tax percentage and FLevels 1.4/1.2/0.8. DuneCity adopts the easy 1.4 factor for all
+AI difficulties; it is an economic balance constant, not an AI handicap.
+Verified local read-only reference:
+`../simcity/micropolis/MicropolisCore/src/MicropolisEngine/src/simulate.cpp`.
+Upstream: https://github.com/SimHacker/micropolis/blob/master/MicropolisCore/src/MicropolisEngine/src/simulate.cpp

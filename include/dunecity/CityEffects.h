@@ -193,17 +193,11 @@ inline int getStructureMaxLevel(int itemID) {
     }
 }
 
-/// Government infrastructure may provide jobs/population, but only zoned
-/// private development pays tax. Keep fiscal status independent of city role.
+/// Private zones pay tax. The Palace is the sole government exception, with
+/// both R and C income. Fiscal status is independent of employment role.
 inline bool isTaxableCityStructure(int itemID) {
     return itemID == Structure_ZoneResidential || itemID == Structure_ZoneCommercial
-        || itemID == Structure_ZoneIndustrial;
-}
-
-/// Population is supplied separately so partial residential lots pay only
-/// for their actual houses, rather than a whole low-density zone.
-inline int taxableCityPopulation(int itemID, int population) {
-    return isTaxableCityStructure(itemID) ? std::max(0, population) : 0;
+        || itemID == Structure_ZoneIndustrial || itemID == Structure_Palace;
 }
 
 inline int effectiveCityLevel(int itemID, int level) {
@@ -579,6 +573,20 @@ inline int getZonePopulation(int itemID, int level) {
 /// Separate from getZonePopulation so the main loop can add this to comPop.
 inline int getPalaceCommercialPopulation(int level) {
     return getZonePopulation(Structure_ZoneCommercial, level);
+}
+
+/// Tax population in eighths: R/8 + C + I, retaining fractional individual
+/// houses until the city-wide annual total is rounded. Palace contributes R+C.
+inline int taxablePopulationEighths(int itemID, int population, int level) {
+    population = std::max(0, population);
+    switch (itemID) {
+        case Structure_ZoneResidential: return population;
+        case Structure_ZoneCommercial:
+        case Structure_ZoneIndustrial: return population * 8;
+        case Structure_Palace:
+            return population + getPalaceCommercialPopulation(effectiveCityLevel(itemID,level)) * 8;
+        default: return 0;
+    }
 }
 
 // --- Traffic connectivity result ---------------------------------------------
@@ -989,26 +997,15 @@ constexpr uint32_t kCyclesPerCityDay  = kCyclesPerCityYear / kCityDaysPerYear;
 constexpr uint32_t kCyclesPerBudgetTick = 1;
 constexpr int      kBudgetTicksPerYear  = static_cast<int>(kCyclesPerCityYear);
 
-/// Compute annual tax revenue from taxable zone population (in credits).
-/// Government jobs/garrisons must be excluded by the caller. Revenue scales
-/// with tax and land value; this legacy rate is not Micropolis's R/8 formula.
-/// `avgLandValue` is 0..250; at 128 (midpoint) the multiplier is ~1.0x.
-/// When avgLandValue is 0 (unknown / not passed), falls back to the
-/// population-only formula for backward compatibility.
-///
-/// Per-citizen contribution: 200/3 credits/year at 100% tax rate. This keeps
-/// city tax income useful without letting mature cities outpace spice harvest
-/// too aggressively.
-inline int32_t computeAnnualTaxRevenue(int totalPopulation, int taxRatePct,
-                                       int avgLandValue = 0) {
-    if (totalPopulation <= 0 || taxRatePct <= 0) return 0;
-    int32_t base = static_cast<int32_t>(
-        (static_cast<int64_t>(totalPopulation) * 200 * taxRatePct) / (100 * 3));
-    if (avgLandValue > 0) {
-        // Scale by land value: 128 → 1.0x, 250 → ~2.0x, 30 → ~0.23x
-        base = static_cast<int32_t>((static_cast<int64_t>(base) * avgLandValue) / 128);
-    }
-    return base;
+/// Micropolis easy tax: (R/8 + C + I) * landValue/120 * taxRate * 1.4.
+/// Input is tax population in EIGHTHS, excluding government except Palace.
+/// Round only the city-wide annual total; retain partial-house contributions.
+/// Explicit zero land value means zero income; forecasts may use default128.
+inline int32_t computeAnnualTaxRevenue(int taxBaseEighths, int taxRatePct,
+                                       int avgLandValue = 128) {
+    if (taxBaseEighths <= 0 || taxRatePct <= 0 || avgLandValue <= 0) return 0;
+    return static_cast<int32_t>(int64_t(taxBaseEighths) * avgLandValue * taxRatePct * 14
+        / (8 * 120 * 10));
 }
 
 // --- Hospital and Church census (SC Classic) --------------------------------

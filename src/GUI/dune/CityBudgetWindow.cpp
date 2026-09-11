@@ -163,7 +163,7 @@ CityBudgetWindow::CityBudgetWindow()
     gunTurretCostLabel.setText("Gun turrets: 0 | -0/yr");
     mainVBox.addWidget(&gunTurretCostLabel, 22);
     configureValueLabel(roadCostLabel);
-    roadCostLabel.setText("Roads: 0 | -0/yr");
+    roadCostLabel.setText("Roads: no upkeep");
     mainVBox.addWidget(&roadCostLabel, 22);
     mainVBox.addWidget(&forecastSecondaryHBox, 22);
     mainVBox.addWidget(VSpacer::create(6));
@@ -304,10 +304,10 @@ void CityBudgetWindow::updateDisplay() {
     treasuryLabel.setText(fmt::sprintf("Treasury: %d credits", citySim->getTotalFunds()));
 
     // Projected annual revenue using the pending tax slider and land value.
-    const int taxablePop = citySim->getTaxablePopulation();
+    const int taxBaseEighths = citySim->getTaxBaseEighths();
     const int taxRate   = pendingTaxRate;
     const int avgLV     = citySim->getAvgLandValue();
-    const int projected = DuneCity::computeAnnualTaxRevenue(taxablePop, taxRate, avgLV);
+    const int projected = DuneCity::computeAnnualTaxRevenue(taxBaseEighths, taxRate, avgLV);
     incomeLabel.setText(fmt::sprintf("Projected Tax: +%d/yr", projected));
 
     // Police: nominal cost is full-funded; actual paid is scaled by the
@@ -318,13 +318,8 @@ void CityBudgetWindow::updateDisplay() {
     const FixPoint stationPaying = DuneCity::getPoliceAnnualCost(Structure_PoliceStation) * stationCount * pendingPolicePercent / 100;
     const FixPoint rocketPaying = DuneCity::getPoliceAnnualCost(Structure_RocketTurret) * rocketCount * pendingPolicePercent / 100;
     const FixPoint gunPaying = DuneCity::getPoliceAnnualCost(Structure_GunTurret) * gunCount * pendingPolicePercent / 100;
-    const auto& roads = citySim->getHouseState(pLocalHouse ? pLocalHouse->getHouseID() : 0).roads;
-    const int displayedPopulation = citySim->getDisplayTotalPop();
-    const int roadCost = roads.annualCost(displayedPopulation);
-    const FixPoint paying = stationPaying + rocketPaying + gunPaying + roadCost;
-    roadCostLabel.setText(displayedPopulation < 2000
-        ? fmt::sprintf("Roads: %d | Free below 2,000 pop", roads.tiles)
-        : fmt::sprintf("Roads: %d (%d heavy) | -%d/yr", roads.tiles, roads.heavyTiles, roadCost));
+    const FixPoint paying = stationPaying + rocketPaying + gunPaying;
+    roadCostLabel.setText("Roads: no upkeep");
     auto credits = [](FixPoint amount) {
         std::string text = fmt::sprintf("%.3f", amount.toDouble());
         while (!text.empty() && text.back() == '0') text.pop_back();

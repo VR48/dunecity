@@ -120,7 +120,7 @@ TEST_CASE("Service investment compares economic return without bypassing emergen
     Value expensive = police;
     expensive.upkeep += 500;
     REQUIRE(police.betterThan(expensive));
-    REQUIRE(annualTaxGain(1000,7,128,100) == 46);
+    REQUIRE(annualTaxGain(1000,7,128,100) == 13);
     REQUIRE(annualTaxGain(1000,7,0,100) == 0);
     REQUIRE(annualTaxGain(1000,7,128,0) == 0);
     DuneCity::ParkTerrainPolicy terrain;
