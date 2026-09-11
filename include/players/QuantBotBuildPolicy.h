@@ -144,11 +144,19 @@ inline int spendableCredits(int credits, int strategicCost) {
 
 // Keep city construction first; then fund air before ground factories can
 // repeatedly consume its allocation. Light factories still precede heavy ones.
-inline int productionPlanningPriority(bool city, Uint32 item, bool waitingToPlace) {
-    if (city && item == Structure_ConstructionYard) return waitingToPlace ? 3 : 2;
+inline int productionPlanningPriority(bool city, Uint32 item, bool waitingToPlace, bool firstTransport = false) {
+    if (firstTransport && item == Structure_HighTechFactory) return 4;
+    if ((city || firstTransport) && item == Structure_ConstructionYard) return waitingToPlace ? 3 : 2;
     if (item == Structure_HighTechFactory) return 1;
     if (item == Structure_LightFactory) return 0;
     return -1;
+}
+
+inline int carryallTarget(int militaryValue, int workers) {
+    return std::max(workers > 0 ? 1 : 0, (militaryValue + workers * 500) / 3000);
+}
+inline bool firstTransportNeeded(bool available, int heavyFactories, int workers, int carryalls) {
+    return available && heavyFactories > 0 && workers > 0 && carryalls == 0;
 }
 
 struct AirProductionState {
@@ -168,7 +176,9 @@ inline AirDecision chooseAirProduction(const AirProductionState& s) {
     const bool carryallDue = s.carryallAvailable && s.carryalls < s.carryallTarget
         && s.carryallPrice > 0 && s.spendable >= s.carryallPrice;
     // Bootstrap transport, but a growing carryall target must not starve combat air.
-    if (carryallDue && s.carryalls == 0) return {AirOrder::Carryall, "first_carryall"};
+    if (s.carryalls == 0 && s.carryallTarget > 0 && s.carryallAvailable && s.carryallPrice > 0)
+        return carryallDue ? AirDecision{AirOrder::Carryall, "first_carryall"}
+            : AirDecision{AirOrder::None, "save_first_carryall"};
     const bool airDue = int64_t(s.vehiclePlanValue) * s.airTargetBps
         > int64_t(s.airCommittedValue) * 10000;
     const bool fitsArmy = int64_t(s.armyValue) + s.ornithopterPrice <= s.armyLimit;

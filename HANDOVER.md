@@ -1,3 +1,48 @@
+# Early carryalls, refinery capacity and continuing tax hedge — 1.0.639 (local only)
+
+Current branch fix/dunecity-ui-quantbot. Stefan requested first transport before a
+second heavy and earlier R/C/I alongside spice. Completed 638 session
+1789115118630650-0 confirmed 22–32 refineries and only one R per AI at ~20min;
+all 106 sampled refinery choices had no processing-capacity need. High Tech
+followed 3–5 heavies. It was buying refineries for workers while military
+factories stayed busy; the residential hedge stopped after one plot.
+
+- Custom QuantBot in city/vanilla prioritizes first High Tech and carryall before
+  additional Heavy Factories where tech/site/air capacity allow. Save actual HT
+  price; protect first carryall funds from other builders, skip optional upgrades
+  until affordable, and set minimum carryall target 1 for an active workforce.
+  Counts pending orders, releases the cash reserve during power loss, and avoids
+  indefinite ground expansion gates when no feasible transport build exists.
+- City refinery investment now follows marginal processing capacity. A busy
+  worker-capable Heavy Factory does not justify another otherwise unused bay.
+  No worker factory, or workforce below two, can still justify included-worker
+  recovery. Needed bays which repay their full cost get priority over tax hedge.
+  Existing and queued bays/workers count; added capacity cannot duplicate itself
+  across yards. Workers remain governed by spice/map limit and military priority,
+  never a workers-per-refinery cap. Payouts/harvesting mechanics are unchanged.
+- Continuing tax hedge: forecast tax >= one third of fleet income (25% combined),
+  crediting half low-density income of demanded developing/queued lots. Suitable
+  R/C/I get alternating ten-second early-priority windows so other infrastructure
+  still has opportunities. Normal demand/site checks remain. No saved AI state or
+  added world/path scan. Investment still uses ground-trip estimates rather than
+  observed queues/carryall improvements; validate balance with a new full match.
+- Telemetry policy transport-tax-hedge-v59. Added income/factory-supply fields and
+  first_transport_factory, save_first_transport_factory, first_carryall,
+  save_first_carryall, city_income_hedge and city_refinery_capacity decision rules.
+
+Further observations (recommendations only): save toward nuclear earlier (only
+Neutral bought it, at ~67min); reduce service-budget burden after city losses
+(Ordos ~50min: 695 gross tax vs 575 police/min). Road cancellations mostly cancel
+redundant single road steps: 115/125 already had roads, not whole building plans.
+AI frame max 18.9ms/build max 12.1ms; frame max 170ms with three >100ms samples,
+including one unit-update spike 159.2ms. Full evidence in docs/city-economy-balance.md.
+
+Validation: dependency audits, release build and CTest pass: 560 passed, 3 optional
+skips, 9,726,298 assertions. Signed/hash-verified /Applications/dunecity.app installed
+as 1.0.639; no game launch, remote push or release.
+SHA256 d13775877db6911712b370ca70b3639993f535cfe858e3d82cf30f233d8e1d2c.
+Backup /var/folders/3y/kfqmr__n2wz56wnvn919zhxh0000gn/T/dunecity-before-639.q4lh_9qp/dunecity.app.
+
 # Double private-zone tax — 1.0.638 (local only)
 
 Stefan chose 2x R/C/I income rather than 3x fleet parity: tax is easier and less

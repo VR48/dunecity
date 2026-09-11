@@ -43,14 +43,23 @@ inline bool processingCapacityNeeded(int refineries, int committedWorkers,
         > int64_t(std::max(0,refineries)) * std::max(0,bayAnnualCapacity);
 }
 inline bool considerRefinery(bool processingNeeded, bool wantedIncludedWorker,
-                             bool parallelFactorySupply) {
-    // An idle factory can add the worker alongside a zone. A busy military
-    // factory cannot: then the included worker is a useful yard-side alternative.
-    return processingNeeded || (wantedIncludedWorker && !parallelFactorySupply);
+                             bool factoryCanSupply, bool workerRecovery = false) {
+    // Military production is temporary. Do not buy a permanent unused bay just
+    // because that factory is busy this pass. Recover a collapsed fleet first.
+    return processingNeeded || (wantedIncludedWorker && (!factoryCanSupply || workerRecovery));
+}
+// Grow a permanent tax base alongside spice, rather than planting one token R.
+// Count developing/queued lots conservatively so multiple yards do not duplicate
+// the hedge. Aim for tax >= one third of spice (25% of combined income).
+inline bool taxHedgeNeeded(int taxIncome, int developingIncome, int spiceIncome) {
+    return int64_t(std::max(0,taxIncome) + std::max(0,developingIncome)) * 3
+        < std::max(0,spiceIncome);
 }
 inline bool preferRefinery(const Investment& refinery, const Investment& zone,
-                           bool refineryUseful, bool residentialHedge) {
-    if (!refineryUseful || residentialHedge || refinery.cost <= 0 || refinery.proceeds() <= refinery.cost) return false;
+                           bool refineryUseful, bool residentialHedge, bool processingNeeded = false) {
+    if (!refineryUseful || refinery.cost <= 0 || refinery.proceeds() <= refinery.cost) return false;
+    if (processingNeeded) return true; // Release an economically worthwhile unloading bottleneck first.
+    if (residentialHedge) return false;
     if (zone.cost <= 0) return true;
     // Return per credit accounts for the four 100-credit plots that can be
     // bought instead of a 400-credit refinery. Ties favour permanent tax income.

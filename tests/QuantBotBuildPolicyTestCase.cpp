@@ -79,7 +79,7 @@ TEST_CASE("Refinery expansion follows near-term workers and marginal delivered s
     REQUIRE(processingCapacityNeeded(1,6,320,1757));
     REQUIRE_FALSE(processingCapacityNeeded(2,6,320,1757)); // Queued bay already covers fleet.
     REQUIRE_FALSE(considerRefinery(false,true,true)); // Factory + zoning run together.
-    REQUIRE(considerRefinery(false,true,false)); // Included worker avoids busy factory.
+    REQUIRE(considerRefinery(false,true,false)); // Opening without any worker-capable factory.
     REQUIRE(considerRefinery(true,false,true)); // Existing fleet needs unloading capacity.
     REQUIRE_FALSE(considerRefinery(false,false,false)); // No need; keep yard for city growth.
     REQUIRE(marginalSpiceIncome(120,40,false,400,1200)==0);
@@ -110,7 +110,7 @@ TEST_CASE("Refinery forecasts count the first delivery and only marginal shared-
     CHECK(refineryProceeds(6,2,false,320,1757,1200,8200,1120,700,4)==0);
     Investment refinery{526,320,4,9400,1000,686};
     Investment mediumR{143,62,1,4350,1000};
-    CHECK(preferRefinery(refinery,mediumR,true,false)); // Busy factory: useful worker via yard.
+    CHECK(preferRefinery(refinery,mediumR,true,false)); // Useful bay/worker before factory supply exists.
     CHECK_FALSE(preferRefinery(refinery,mediumR,considerRefinery(false,true,true),false));
     refinery.confidence=500;
     CHECK_FALSE(preferRefinery(refinery,mediumR,true,false)); // Dangerous/depleting field.
@@ -1092,4 +1092,71 @@ TEST_CASE("QuantBot establishes repair support before expanding the opening vehi
     REQUIRE(needsExtraRepairYard(0, 0, 1, 6100));
     REQUIRE(needsExtraRepairYard(1, 0, 4, 8050));
     REQUIRE_FALSE(needsExtraRepairYard(2, 0, 4, 8050)); // Both built/queued slots covered.
+}
+
+TEST_CASE("Opening transport precedes repeated heavy factories and saves for the first carryall", "[quantbot][production][air]") {
+    CHECK(firstTransportNeeded(true,1,3,0));
+    CHECK_FALSE(firstTransportNeeded(false,1,3,0)); // Low tech, disabled transport or air cap.
+    CHECK_FALSE(firstTransportNeeded(true,0,3,0));
+    CHECK_FALSE(firstTransportNeeded(true,1,0,0));
+    CHECK_FALSE(firstTransportNeeded(true,1,3,1)); // Existing or queued carryall releases expansion.
+    CHECK(carryallTarget(0,1)==1); // Old formula rounded early transport to zero.
+    CHECK(carryallTarget(0,0)==0);
+    CHECK(carryallTarget(30000,30)==15);
+    for (bool city : {false,true}) {
+        CHECK(productionPlanningPriority(city,Structure_HighTechFactory,false,true)
+            > productionPlanningPriority(city,Structure_ConstructionYard,true,true));
+        CHECK(productionPlanningPriority(city,Structure_ConstructionYard,false,true)
+            > productionPlanningPriority(city,Structure_HeavyFactory,false,true));
+    }
+    AirProductionState s;
+    s.carryallAvailable=true; s.carryallPrice=800; s.carryallTarget=1;
+    s.ornithopterAvailable=true; s.ornithopterPrice=600; s.canUpgrade=true;
+    s.armyLimit=10000; s.vehiclePlanValue=10000; s.airTargetBps=1000;
+    s.spendable=799;
+    CHECK(chooseAirProduction(s).order==AirOrder::None);
+    CHECK(std::string(chooseAirProduction(s).reason)=="save_first_carryall");
+    s.spendable=800;
+    CHECK(chooseAirProduction(s).order==AirOrder::Carryall);
+    s.carryalls=1;
+    CHECK(chooseAirProduction(s).order==AirOrder::Ornithopter);
+}
+
+TEST_CASE("Busy military factories must not create one refinery per harvester", "[quantbot][city][economy]") {
+    using namespace CityEconomyInvestmentPolicy;
+    // 638 Ordos at 20 minutes: 32 refineries/workers, one R and 47 tax/min.
+    CHECK_FALSE(processingCapacityNeeded(32,32,246,1757));
+    CHECK_FALSE(considerRefinery(false,true,true)); // Busy still means capable of supply.
+    CHECK(taxHedgeNeeded(47,0,32*246));
+    CHECK_FALSE(preferRefinery(Investment{521,246,3,11861,1000,689},
+        Investment{130,23,0,4350,1000},considerRefinery(false,true,true),false));
+    CHECK(considerRefinery(false,true,true,true)); // Recover a workforce below two.
+    CHECK(considerRefinery(false,true,false)); // No heavy factory: opening remains possible.
+    CHECK(considerRefinery(true,false,true)); // Genuine bay backlog still catches up.
+    // Worker target stays independent of refinery count and tax hedge.
+    CHECK(factoryHarvesterTarget(87,120)==87);
+    CHECK(factoryHarvesterTarget(0,120)==0);
+}
+
+TEST_CASE("City income hedge grows with the spice economy and credits pending development", "[quantbot][city][economy]") {
+    using namespace CityEconomyInvestmentPolicy;
+    CHECK(taxHedgeNeeded(30,0,3*320));
+    CHECK(taxHedgeNeeded(300,0,3*320));
+    CHECK_FALSE(taxHedgeNeeded(320,0,3*320));
+    CHECK_FALSE(taxHedgeNeeded(300,20,3*320));
+    CHECK(taxHedgeNeeded(320,20,6*320));
+    CHECK_FALSE(taxHedgeNeeded(30,0,0)); // Depleted fields cannot justify new bays.
+}
+
+TEST_CASE("Refineries catch up to profitable fleet queues even while tax hedge is short", "[quantbot][city][economy]") {
+    using namespace CityEconomyInvestmentPolicy;
+    Investment bay{526,640,4,2000,1000,1500};
+    Investment zone{130,100,0,4350,1000};
+    CHECK(preferRefinery(bay,zone,true,true,true));
+    // One bay processes 1757/min: four 320/min workers fit, six do not.
+    CHECK_FALSE(processingCapacityNeeded(1,4,320,1757));
+    CHECK(processingCapacityNeeded(1,6,320,1757));
+    CHECK_FALSE(processingCapacityNeeded(2,6,320,1757)); // Queued second bay prevents duplicates.
+    bay.confidence=100;
+    CHECK_FALSE(preferRefinery(bay,zone,true,true,true)); // Almost exhausted field cannot repay it.
 }

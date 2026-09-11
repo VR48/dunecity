@@ -120,7 +120,7 @@ sampling and danger; no new pathfinding.
 
 Payout, budget, QuantBot services/production and both active Mentat build paths
 use the same weighted taxable census. Telemetry `tax_base_eighths` explicitly
-labels its units; policy `parallel-city-economy-v58`. Existing demand/population
+labels its units; policy `transport-tax-hedge-v59`. Existing demand/population
 census remains unweighted and separate from taxation.
 
 ## Reference
@@ -150,17 +150,18 @@ Stefan explicitly chose 2x instead of the proposed 3x fleet-parity multiplier
 because zone taxation has the easier risk profile. No harvester or power rates
 were changed, and Palace retains its 1.0.637 income.
 
-## Independent yard and factory allocation (1.0.638)
+## Independent yard and factory allocation (1.0.639)
 
 Stefan explicitly rejected any 3/4-workers-per-refinery production cap. City
 heavy factories target remaining-map-spice capacity, bounded only by the map's
 harvester limit, not the number of refineries. The old direct 3-per-refinery
 factory gate is also removed for vanilla QuantBot; its spice target and refinery
-construction policy remain unchanged. Yards
-prefer zoning when a funded idle factory chooses to add the worker concurrently and
-current/queued bays already cover processing. If factories are occupied (including
-military production), the refinery's included worker remains a candidate.
-Refineries catch up with existing and queued fleet throughput. Mandatory MCV orders retain priority. Military unit selection stays unchanged;
+construction policy remain unchanged. Once a worker-capable Heavy Factory exists,
+yards do not build spare refineries just for the included worker, even when that
+factory is busy with military orders. Exceptions: recover fewer than two workers,
+or no factory can supply them. Refineries catch up with existing and queued fleet
+throughput; a capacity upgrade that repays its full cost within the forecast takes
+precedence even when the tax hedge is short. Mandatory MCV orders retain priority. Military unit selection stays unchanged;
 economy-versus-military factory priority is now explicit.
 
 Refinery capacity compares committed workers' predicted income against 75% of
@@ -182,7 +183,8 @@ census gathers factory pointers; availability is rechecked as queues change.
 
 Telemetry adds refinery_useful, parallel_factory_supply, wanted_included_worker,
 worker_income, bay_capacity and generation_cost_per_thousand to the existing
-city_economy_comparison event. Policy parallel-city-economy-v58.
+city_economy_comparison event. Policy transport-tax-hedge-v59. Added factory_can_supply, tax_income,
+developing_tax_income and forecast_fleet_income.
 
 Factories also balance economic growth against military demand. Below the spice
 target, fewer than two committed harvesters gets recovery priority. Otherwise,
@@ -196,3 +198,53 @@ count. MCV emergencies and existing strategic priority remain ahead of it.
 The yard's parallel-production forecast calls this same policy, so a factory
 choosing a tank is not incorrectly counted as supplying an extra harvester.
 The factory_economy_priority event records both targets and the choice.
+
+## Early transport and continuing tax hedge (1.0.639)
+
+Custom QuantBot (city and vanilla) now orders the first High Tech Factory and
+carryall before extra Heavy Factories when enabled tech, active harvesting,
+air capacity and a legal site permit. It saves the actual factory price, rather
+than requiring 1,000/2,000+ credits. Committed factories/aircraft prevent duplicate
+orders. A queued first heavy is enough to start the transport prerequisite.
+
+First carryall production runs ahead of other builders, receives its purchase
+funds before optional spending, and waits instead of buying an upgrade or combat
+aircraft with those credits. Existing power shortages release the cash reserve
+for recovery. An active workforce has a minimum target of one carryall. After
+the first transport is committed, normal aircraft/ground priorities resume.
+Low-tech, disabled transport, air limits and unplaceable sites do not permanently
+block ground expansion. No extra world scan or saved AI state was introduced.
+
+City hedge: target forecast tax >= one third of forecast fleet spice income
+(25% of combined gross income), with actual tax plus half low-density estimated
+income for demanded developing/queued lots. Suitable demanded zones get an early
+priority window alternating every ten simulated seconds, leaving other windows
+for normal civic/production ordering. Needed profitable bays still take priority.
+This is an AI diversification target, not a tax payout change or harvester cap.
+The target uses existing ground-trip forecasts; carryall travel improvement and
+observed queue delays are not yet separately measured in the investment model.
+
+## Evidence from the completed 638 four-player match
+
+Local session 1789115118630650-0, map 4P - 192x192 - DuneCity, seed 1640328219,
+120-worker lobby cap; finished at cycle 264735 (~70:36 simulated). Neutral won.
+At ~20min, each house still had one R, no C/I, but 22–32 refineries. All 106 sampled
+refinery choices reported capacity_needed=false. Busy military factories made
+the included worker attractive repeatedly; the one-plot hedge never grew. At
+~37min the map spice was exhausted, after city investment had begun too late.
+Ordos's second/third Heavy orders at 668/1121s preceded first High Tech at 1145s.
+Mercenary's fifth Heavy preceded its first High Tech. These observations drove 639.
+
+Further review findings, not changed by 639:
+- Only Neutral ordered nuclear, first at 4024.7s (~67:05). Atreides/Ordos/Mercenary
+  built 52/49/66 windtraps over the match. Review saving for economic large power
+  additions rather than repeatedly using immediately affordable small generators.
+- At~50min Ordos had 695 gross tax/min and 575 police expense/min after city losses.
+  Consider emergency service-budget adjustment and productive-zone recovery.
+- 125 road-step cancellations: 115 already had roads; 12 had unit occupants (counts
+  overlap). Current code cancels/refunds that road item and pops one location;
+  it does not cancel the remaining building plan. Deduplicate/retry as cleanup.
+- Logged AI frame aggregate max 18.9ms; ai.build max 12.1ms. Frame mean 6.64ms/max 170ms,
+  380 frames over 33ms and 3 over 100ms. A unit-update scope peaked 159.2ms; this is
+  isolated rather than evidence of recurring AI stalls. Timings are nested;
+  do not sum their averages. No crash recorded; session_end and game_summary exist.

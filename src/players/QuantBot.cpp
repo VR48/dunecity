@@ -2997,6 +2997,7 @@ void QuantBot::build(int militaryValue) {
 
 	int activeHeavyFactoryCount = 0;
     std::vector<const BuilderBase*> harvesterFactories;
+    bool carryallBuildAvailable = false;
     int activeLightFactoryCount = 0;
 	int activeHighTechFactoryCount = 0;
     int ornithopterFactoryCount = 0;
@@ -3019,6 +3020,8 @@ void QuantBot::build(int militaryValue) {
 		if (pStructure->getOwner() == getHouse()) {
 			if (pStructure->isABuilder()) {
 				const BuilderBase* pBuilder = static_cast<const BuilderBase*>(pStructure);
+                if (pBuilder->getItemID() == Structure_HighTechFactory && pBuilder->getHealth() > 0
+                    && pBuilder->isAvailableToBuild(Unit_Carryall)) carryallBuildAvailable = true;
                 if (pBuilder->getItemID() == Structure_HeavyFactory && pBuilder->getHealth() > 0
                     && pBuilder->isAvailableToBuild(Unit_Harvester)) harvesterFactories.push_back(pBuilder);
                 if (pBuilder->getItemID() == Structure_HeavyFactory && pBuilder->isUpgrading()
@@ -3220,6 +3223,16 @@ void QuantBot::build(int militaryValue) {
         + (!citySimEnabled && itemCount[Structure_Refinery] < QuantBotBuildPolicy::desiredSpiceRefineries(
             mapSpiceHarvesterTarget,itemCount[Unit_Harvester]) ? data[Structure_Refinery][houseID].price : 0);
     bool orderedSpiceHarvester = false;
+    const bool transportTechAvailable = gameMode == GameMode::Custom && lastCalculatedSpice > 0
+        && data[Unit_Carryall][houseID].enabled && data[Structure_HighTechFactory][houseID].enabled
+        && currentGame->techLevel >= data[Unit_Carryall][houseID].techLevel
+        && currentGame->techLevel >= data[Structure_HighTechFactory][houseID].techLevel
+        && !getHouse()->isAirUnitLimitReached();
+    auto needsFirstTransport = [&]() {
+        return QuantBotBuildPolicy::firstTransportNeeded(transportTechAvailable,
+            itemCount[Structure_HeavyFactory],getHouse()->getNumItems(Unit_Harvester),
+            itemCount[Unit_Carryall]);
+    };
 
     const auto windSize = getStructureSize(Structure_WindTrap);
     int generationCostPerThousand = 1000 * (data[Structure_WindTrap][houseID].price
@@ -3371,8 +3384,11 @@ void QuantBot::build(int militaryValue) {
     // for transport distance, once per build pass; never run a path search.
     int refineryTripCycles = -1;
     int refineryFieldRisk = 0;
+    bool cityTaxHedge = false, cityRefineryCatchup = false;
     auto chooseCityEconomy = [&](const BuilderBase* builder, bool opening) {
         using namespace CityEconomyInvestmentPolicy;
+        cityTaxHedge = false;
+        cityRefineryCatchup = false;
         const Uint32 zone = chooseCityZone(builder, opening);
         const auto* sim = currentGame->getCitySimulation();
         if (!sim) return zone;
@@ -3389,7 +3405,7 @@ void QuantBot::build(int militaryValue) {
             });
         bool capacityNeeded = false, refineryUseful = false;
         int workerIncome = 0, bayIncome = 0;
-        const bool hedge = zone == Structure_ZoneResidential && itemCount[zone] == 0;
+        bool hedge = zone == Structure_ZoneResidential && itemCount[zone] == 0;
         Investment residential, refinery;
         auto setupInvestment = [&](Uint32 item, Coord site, int power) {
             const Coord size = getStructureSize(item);
@@ -3466,7 +3482,7 @@ void QuantBot::build(int militaryValue) {
             // Three/four workers can share a bay; no hypothetical extra fleet is credited.
             bayIncome = int(DuneCity::kCyclesPerCityYear)*15/32;
             capacityNeeded = processingCapacityNeeded(refs,workers,workerIncome,bayIncome);
-            refineryUseful = considerRefinery(capacityNeeded,wantedWorker,parallelFactorySupply);
+            refineryUseful = considerRefinery(capacityNeeded,wantedWorker,!harvesterFactories.empty(),workers < 2);
             const bool freeWorker = workers < harvesterLimit;
             const int power = std::max(0,data[Structure_Refinery][houseID].power);
             refinery = setupInvestment(Structure_Refinery,refinerySite,power);
@@ -3479,7 +3495,24 @@ void QuantBot::build(int militaryValue) {
             refinery.confidence = static_cast<int>(std::min<int64_t>(1000,int64_t(spiceShare)*1000/std::max(1,forecastFleetSpice)));
             if (refineryFieldRisk>0) refinery.confidence/=2;
         }
-        Uint32 selected = preferRefinery(refinery,residential,refineryUseful,hedge) ? Structure_Refinery : zone;
+        const int taxIncome = DuneCity::computeAnnualTaxRevenue(ownTaxBaseEighths,tax,land);
+        int developingIncome = 0;
+        for (Uint32 kind : {Structure_ZoneResidential,Structure_ZoneCommercial,Structure_ZoneIndustrial}) {
+            const int pending = developingZones[kind-Structure_ZoneResidential]
+                + std::max(0,itemCount[kind]-getHouse()->getNumItems(kind));
+            const int demand = kind==Structure_ZoneResidential ? ownResValve
+                : kind==Structure_ZoneCommercial ? ownComValve : ownIndValve;
+            if (demand > 0) developingIncome += pending * DuneCity::computeAnnualTaxRevenue(
+                DuneCity::taxablePopulationEighths(kind,DuneCity::getZonePopulation(kind,1),1),tax,land)/2;
+        }
+        const int fleetIncome = workers * workerIncome;
+        // Essential bay capacity can still catch up; hedge only on suitable,
+        // demanded land. Site selection has already checked local growth limits.
+        hedge = hedge || (zone != NONE_ID && residential.confidence > 0 && !capacityNeeded
+            && taxHedgeNeeded(taxIncome,developingIncome,fleetIncome));
+        cityTaxHedge = hedge;
+        Uint32 selected = preferRefinery(refinery,residential,refineryUseful,hedge,capacityNeeded) ? Structure_Refinery : zone;
+        cityRefineryCatchup = selected == Structure_Refinery && capacityNeeded;
         if (selected == zone && zone!=NONE_ID && !hedge && residential.confidence==0) selected=NONE_ID;
         // Keep the independently affordable factory worker and one combat-unit
         // reserve funded when the yard chooses zoning first in this build pass.
@@ -3503,6 +3536,9 @@ void QuantBot::build(int militaryValue) {
                 .set("worker_income",workerIncome).set("bay_capacity",bayIncome)
                 .set("generation_cost_per_thousand",generationCostPerThousand)
                 .set("workers",workers).set("refineries",refs)
+                .set("factory_can_supply",!harvesterFactories.empty())
+                .set("tax_income",taxIncome).set("developing_tax_income",developingIncome)
+                .set("forecast_fleet_income",fleetIncome)
                 .set("sustainable_workers",spiceHarvesterTarget).set("horizon_cycles",horizonCycles)
                 .set("spice_share",spiceShare).set("trip_cycles",refineryTripCycles).set("field_risk",refineryFieldRisk)
                 .set("tax_candidate",describe(residential)).set("refinery_candidate",describe(refinery)));
@@ -3851,7 +3887,7 @@ void QuantBot::build(int militaryValue) {
         if (structure->getOwner() == getHouse())
             planningOrder.emplace_back(QuantBotBuildPolicy::productionPlanningPriority(citySimEnabled,
                 structure->getItemID(), structure->getItemID() == Structure_ConstructionYard
-                    && static_cast<const ConstructionYard*>(structure)->isWaitingToPlace()), structure->getObjectID());
+                    && static_cast<const ConstructionYard*>(structure)->isWaitingToPlace(), needsFirstTransport()), structure->getObjectID());
     std::stable_sort(planningOrder.begin(), planningOrder.end(),
         [](const auto& a, const auto& b) { return a.first > b.first; });
     cityReadyYardCount = std::max(1,int(std::count_if(planningOrder.begin(),planningOrder.end(),
@@ -4000,11 +4036,18 @@ void QuantBot::build(int militaryValue) {
 					int& money;
 					int reserved;
 					~RestoreReservedCredits() { money += reserved; }
-				} reserve{money, pStructure->getItemID() == Structure_ConstructionYard
-					? 0 : money - QuantBotBuildPolicy::spendableCredits(money, std::max(strategicReserveCost, economyReserve))};
+                } reserve{money, 0};
+                const bool firstCarryall = needsFirstTransport() && carryallBuildAvailable && getHouse()->hasPower();
+                const bool transportProducer = firstCarryall && pBuilder->getItemID() == Structure_HighTechFactory
+                    && pBuilder->isAvailableToBuild(Unit_Carryall);
+                int protectedCash = pBuilder->getItemID() == Structure_ConstructionYard || transportProducer
+                    ? 0 : std::max(strategicReserveCost,economyReserve);
+                if (firstCarryall && !transportProducer)
+                    protectedCash = std::max(protectedCash,data[Unit_Carryall][houseID].price);
+                reserve.reserved = money - QuantBotBuildPolicy::spendableCredits(money,protectedCash);
 				money -= reserve.reserved;
 
-				if (!pBuilder->isUpgrading() && pBuilder->getProductionQueueSize() < 1
+				if (!transportProducer && !pBuilder->isUpgrading() && pBuilder->getProductionQueueSize() < 1
 					&& money > 1500) {
 					const int customItem = chooseLowPriorityCustomUnit(pBuilder);
 					if (customItem != ItemID_Invalid) {
@@ -4118,7 +4161,7 @@ void QuantBot::build(int militaryValue) {
                     const int ornithopterPrice = data[Unit_Ornithopter][houseID].price;
                     const int carryallPrice = data[Unit_Carryall][houseID].price;
                     const int ornithopterValue = ornithopterPrice * itemCount[Unit_Ornithopter];
-                    const int carryallTarget = (militaryValue + itemCount[Unit_Harvester] * 500) / 3000;
+                    const int carryallTarget = QuantBotBuildPolicy::carryallTarget(militaryValue,itemCount[Unit_Harvester]);
                     QuantBotBuildPolicy::AirProductionState air;
                     air.busy = pBuilder->getProductionQueueSize() > 0;
                     air.upgrading = pBuilder->isUpgrading();
@@ -4157,7 +4200,7 @@ void QuantBot::build(int militaryValue) {
                         else doRepair(pBuilder);
                     } else if (decision.order == AirOrder::Ornithopter || decision.order == AirOrder::Carryall) {
                         const Uint32 item = decision.order == AirOrder::Ornithopter ? Unit_Ornithopter : Unit_Carryall;
-                        if (produceItemWithLogging(item, __LINE__)) {
+                        if (produceItemWithLogging(item, __LINE__, decision.reason)) {
                             ++itemCount[item];
                             money -= data[item][houseID].price;
                             if (item == Unit_Ornithopter) militaryValue += ornithopterPrice;
@@ -4833,6 +4876,25 @@ void QuantBot::build(int militaryValue) {
                     }
                 }
 
+                // Unlock the first transport before extra ground production.
+                // Save the actual factory price; high cash thresholds delayed this
+                // until 3-5 heavy factories in 638. Never reserve an impossible site.
+                const bool firstTransport = needsFirstTransport();
+                const bool firstHighTechSite = firstTransport && itemCount[Structure_HighTechFactory] == 0
+                    && pBuilder->isAvailableToBuild(Structure_HighTechFactory)
+                    && findPlaceLocation(Structure_HighTechFactory).isValid();
+                const bool holdExtraHeavy = firstTransport
+                    && (firstHighTechSite || carryallBuildAvailable || itemCount[Structure_HighTechFactory]
+                        > getHouse()->getNumItems(Structure_HighTechFactory));
+                if (itemID == NONE_ID && !skipRemainingStructureLogic && firstHighTechSite) {
+                    skipRemainingStructureLogic = true;
+                    structureRule = "save_first_transport_factory";
+                    if (money >= data[Structure_HighTechFactory][houseID].price) {
+                        itemID = Structure_HighTechFactory;
+                        structureRule = "first_transport_factory";
+                    }
+                }
+
                 // Ongoing economic expansion uses the same comparison after
                 // essential services and military infrastructure below.
                 int developedZones = 0, dangerousZones = 0;
@@ -4900,18 +4962,6 @@ void QuantBot::build(int militaryValue) {
                     structureRule = "early_repair_capacity";
                 }
 
-                // Unlock carryalls and air production once the first heavy
-                // factory is operational, before repeating the expansion loop.
-                // Queued High Tech factories count, so other yards keep expanding.
-                if (itemID == NONE_ID && !skipRemainingStructureLogic
-                    && vanillaEconomy && gameMode == GameMode::Custom
-                    && getHouse()->getNumItems(Structure_HeavyFactory) > 0
-                    && itemCount[Structure_HighTechFactory] == 0
-                    && money > std::max(2000, economyReserve + data[Structure_HighTechFactory][houseID].price)
-                    && pBuilder->isAvailableToBuild(Structure_HighTechFactory)
-                    && findPlaceLocation(Structure_HighTechFactory).isValid()) {
-                    itemID = Structure_HighTechFactory; structureRule = "first_air_production";
-                }
 
 				// 3. Refinery (ratio: 1 refinery per 3 harvesters) — non-city-sim only.
 				if (itemID == NONE_ID && !skipRemainingStructureLogic
@@ -4952,6 +5002,22 @@ void QuantBot::build(int militaryValue) {
 					+ itemCount[Structure_ZoneIndustrial];
 				const bool cityIncomeReady = !isCitySim || kCityZoneCount >= kCityIncomeReadyZones || money > 3000;
 
+                // Alternate ten-second priority windows so civic unlocks and
+                // other infrastructure still get normal opportunities to build.
+                // Use simulation time, not the crime-service counter (capped at 3).
+                if (itemID == NONE_ID && !skipRemainingStructureLogic && isCitySim
+                    && (getGameCycleCount()/MILLI2CYCLES(10000) + houseID) % 2 == 0
+                    && getHouse()->getNumItems(Structure_HeavyFactory) > 0
+                    && getHouse()->getProducedPower()-getHouse()->getPowerRequirement() >= 24) {
+                    const Uint32 hedgeZone = chooseCityEconomy(pBuilder,false);
+                    if ((cityRefineryCatchup || (cityTaxHedge && hedgeZone >= Structure_ZoneResidential
+                            && hedgeZone <= Structure_ZoneIndustrial))
+                        && money >= data[hedgeZone][houseID].price) {
+                        itemID = hedgeZone;
+                        structureRule = cityRefineryCatchup ? "city_refinery_capacity" : "city_income_hedge";
+                    }
+                }
+
                 // Expand saturated light production before optional heavy capacity.
                 // Pending factories count, so parallel yards add one lane at a time.
                 if (itemID == NONE_ID && !skipRemainingStructureLogic && lightBacklog
@@ -4963,7 +5029,7 @@ void QuantBot::build(int militaryValue) {
                 // before optional infrastructure. First/expanding refineries above
                 // keep their priority; queued factories count towards this target.
                 if (itemID == NONE_ID && !skipRemainingStructureLogic
-                    && vanillaEconomy && gameMode == GameMode::Custom
+                    && vanillaEconomy && gameMode == GameMode::Custom && !holdExtraHeavy
                     && itemCount[Structure_Refinery] > 0
                     && militaryValue < militaryValueLimit && !getHouse()->isGroundUnitLimitReached()
                     && pBuilder->isAvailableToBuild(Structure_HeavyFactory)) {
@@ -4977,7 +5043,7 @@ void QuantBot::build(int militaryValue) {
                         itemID = Structure_HeavyFactory; structureRule = "cash_factory_expansion";
                     }
                 }
-                if (itemID == NONE_ID && !skipRemainingStructureLogic && heavyBacklog
+                if (itemID == NONE_ID && !skipRemainingStructureLogic && !holdExtraHeavy && heavyBacklog
                     && itemCount[Structure_HeavyFactory] < 24
                     && pBuilder->isAvailableToBuild(Structure_HeavyFactory)
                     && findPlaceLocation(Structure_HeavyFactory).isValid()) {
@@ -5161,7 +5227,7 @@ void QuantBot::build(int militaryValue) {
 				//     Tech 5-6: Require Repair Yard
 				//     Tech 7+: Require Repair Yard + IX
 				if (itemID == NONE_ID && !skipRemainingStructureLogic
-								&& money > std::max(2000, economyReserve + data[Structure_HeavyFactory][houseID].price) && pBuilder->isAvailableToBuild(Structure_HeavyFactory)) {
+								&& !holdExtraHeavy && money > std::max(2000, economyReserve + data[Structure_HeavyFactory][houseID].price) && pBuilder->isAvailableToBuild(Structure_HeavyFactory)) {
 
 								int creditsPerSec = 0;
 								if (isCitySim) {
@@ -5602,7 +5668,8 @@ void QuantBot::build(int militaryValue) {
                     }
                     if (itemID==Structure_Refinery && itemCount[Unit_Harvester]<harvesterLimit
                         && (structureRule==std::string("city_opening_investment")
-                            || structureRule==std::string("city_economy") || structureRule==std::string("city_economy_fallback")))
+                            || structureRule==std::string("city_economy") || structureRule==std::string("city_economy_fallback")
+                            || structureRule==std::string("city_refinery_capacity")))
                         ++itemCount[Unit_Harvester];
 					reservedStructures[planningBuilder] = {itemID, selectedPlaceLocation};
                     if (placeLocations.empty()) placeLocations.push_back(selectedPlaceLocation);
