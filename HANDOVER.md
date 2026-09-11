@@ -1,3 +1,50 @@
+# Opening economy, base defence and city traffic — 1.0.643 (local only)
+
+Current source fixes Stefan's live 1.0.642 game reports. All 568 runnable tests
+pass (3 skipped), including new opening-worker and traffic regressions; pre/post
+Ninja dependency audits pass. No remote release or website update in this task.
+
+Evidence: ai-decisions/1789131423179778-0/events.jsonl, map Moshpit with
+Garbages, seed 845131971. House 0 had two harvesters after eleven simulated
+minutes despite ample map spice and a 120-worker target. It ordered High Tech
+at 379s, then a 700-credit Repair Yard at 475s with only 118 spendable credits.
+No house ordered a factory harvester in the first eleven minutes. At 1136s,
+crime spawned 14 hostile troopers; repeated defence responses dispatched five
+units but counted zero already committed on subsequent passes.
+
+- Opening city economies prioritise the first four existing/queued harvesters
+  before optional technology, MCVs and repair yards. This is a priority floor,
+  never a cap: the map/lobby target still bounds recruitment, and mature armies
+  still balance military versus workers. First carryall remains ahead of a
+  second Heavy Factory after the opening worker floor.
+- Count outstanding production and upgrade costs once, reserve the next worker
+  purchase, stop unaffordable optional construction, and run the existing
+  demand/suitability/tax hedge before optional infrastructure. Actual power
+  shortages can still queue recovery power. New policy telemetry includes
+  worker priority, protected cash, queued costs and yard-upgrade spending.
+- Distant Area Guard attacks were released as out of range by UnitBase. Defence
+  now forces travel to the contact and releases forcing on arrival. Transit
+  assignments survive intervening AI passes; human control, retreat, death and
+  arrival release them. The old unused escort-assignment save slot is reused
+  with unchanged binary layout; old friendly assignments expire safely.
+- Airport construction uses the same positive-commercial-demand-blocked bit
+  as the human civic notice (commercial population >100 internal), replacing
+  the AI's premature >20 check. Derived bit is recomputed, not serialized.
+  Starport build-menu availability is now 10,000 displayed population for
+  humans and AI (other normal build prerequisites still apply).
+- Traffic changes and comparison limits are documented in
+  docs/city-traffic-balance.md. A logged mid-game snapshot (cycle 172225) had
+  206 heavy cells out of 249 nonzero traffic cells. These are density cells,
+  not percentages of all roads. Tests validate quiet, light and heavy flows,
+  decay, repeatable alternate routes and no duplicate cell stamps at turns.
+
+Installed /Applications/dunecity.app 643; deep strict signature and executable
+SHA256 match the rebuilt bundle (f95545bd5826565b11973050dc9e972a656046a6fd089162bebd72399e5a04a7).
+Previous app preserved at /Applications/.dunecity-643-865wluqn/dunecity-previous.app.
+The running 642 match was not interrupted or relaunched.
+New code takes effect on the next launch; existing traffic values decay through
+normal simulation updates rather than being silently reset on load.
+
 # Remote release 1.0.642 — verified 2026-09-11
 
 Published the accumulated 631–642 changes at tag `v1.0.642`, commit `29b1f5f`.

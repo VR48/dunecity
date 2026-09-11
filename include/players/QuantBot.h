@@ -117,7 +117,7 @@ private:
     Coord groundSquadProgressLocation = Coord::Invalid();
     UnitMixPolicy::PerformanceHistory performanceHistory;
     std::set<Uint32> groundSquad;
-    std::map<Uint32, Uint32> manualUnitOrders, escortAssignments;
+    std::map<Uint32, Uint32> manualUnitOrders, defenceAssignments;
     void launchGroundHunt();
     void releaseLegacyGroundSquad();
     std::map<Uint32,Uint32> defenceResponseCycles;

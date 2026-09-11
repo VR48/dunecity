@@ -402,10 +402,10 @@ void BuilderBase::updateBuildList()
         }
 
         // City-sim gate: Starport is a shipyard scaled to a sizable city —
-        // require 20000 displayed population (= 1000 internal) before it can
+        // require 10000 displayed population (= 500 internal) before it can
         // be built. Outside city sim there's no population, so no gate.
         if (itemID2Add == Structure_StarPort && currentGame->isCitySimEnabled()) {
-            constexpr int kStarPortMinDisplayPop = 20000;
+            constexpr int kStarPortMinDisplayPop = 10000;
             constexpr int kStarPortMinInternalPop =
                 kStarPortMinDisplayPop / DuneCity::CitySimulation::kPopDisplayMultiplier;
             auto* citySim = currentGame->getCitySimulation();

@@ -85,23 +85,25 @@ bool TrafficSimulation::findPerimeterRoad(int zoneX, int zoneY,
     return false;
 }
 
-bool TrafficSimulation::tryDrive(int startX, int startY, ZoneType destZone) {
+bool TrafficSimulation::tryDrive(int startX, int startY, ZoneType destZone, unsigned directionOffset) {
     routeFinder_.clear();
     if (!currentGameMap) return false;
     return routeFinder_.find(currentGameMap->getSizeX(),currentGameMap->getSizeY(),
         {startX,startY},kMaxTrafficDistance,
         [&](int x,int y) { return isRoad(x,y); },
-        [&](int x,int y) { return driveDone(x,y,destZone); });
+        [&](int x,int y) { return driveDone(x,y,destZone); }, directionOffset);
 }
 
-int TrafficSimulation::makeTraffic(int x, int y, ZoneType destZone) {
+int TrafficSimulation::makeTraffic(int x, int y, ZoneType destZone, uint32_t day) {
     routeFinder_.clear();
     int roadX = 0, roadY = 0;
     if (!findPerimeterRoad(x, y, roadX, roadY)) {
         return -1;  // NoRoad
     }
 
-    if (tryDrive(roadX, roadY, destZone)) {
+    // Vary equal shortest routes without consuming gameplay RNG or extra searches.
+    const unsigned directionOffset = (day + unsigned(x)*3u + unsigned(y)) & 3u;
+    if (tryDrive(roadX, roadY, destZone, directionOffset)) {
         return 1;   // Connected
     }
 

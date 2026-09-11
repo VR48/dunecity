@@ -12,7 +12,7 @@ struct Point {
     bool operator==(const Point& other) const { return x == other.x && y == other.y; }
 };
 
-// Preserve the existing deterministic N/E/S/W BFS connectivity rule. Keep
+// Bounded BFS preserves connectivity; rotate equal-length route choices. Keep
 // parents so traffic follows one successful route, never the explored branches.
 class RouteFinder {
 public:
@@ -21,7 +21,7 @@ public:
 
     template<class IsRoad, class IsDestination>
     bool find(int width, int height, Point start, int maxDistance,
-              IsRoad isRoad, IsDestination isDestination) {
+              IsRoad isRoad, IsDestination isDestination, unsigned directionOffset = 0) {
         route_.clear(); queue_.clear();
         if (width <= 0 || height <= 0 || maxDistance < 0 || start.x < 0 || start.y < 0
             || start.x >= width || start.y >= height || !isRoad(start.x,start.y)) return false;
@@ -43,7 +43,8 @@ public:
             }
             if (node.distance >= maxDistance) continue;
             for (int d = 0; d < 4; ++d) {
-                const int x = p.x+dx[d], y = p.y+dy[d];
+                const int direction = (d + directionOffset) & 3;
+                const int x = p.x+dx[direction], y = p.y+dy[direction];
                 if (x < 0 || y < 0 || x >= width || y >= height) continue;
                 const int index = y*width+x;
                 if (visited_[index] == generation_ || !isRoad(x,y)) continue;
@@ -85,17 +86,32 @@ inline bool journeyDue(bool residential, int population, int x, int y, uint32_t 
     return hash % range < unsigned(population);
 }
 
+// Balance adaptation, not an original Micropolis constant: a 2x2 plot emits
+// 4/9 of a 3x3 plot's 50-unit load (22, rounded down). Roads stay one tile
+// wide. Keep the original decay and display thresholds: one daily trip must
+// not permanently saturate its fixed access road just because time passes.
+inline constexpr int kJourneyLoad = 50 * 4 / 9;
+
 // route[0] is the perimeter start. Original tryDrive saves moves 2,4,6,...
 // for its 2x2 traffic cells; addToTrafficDensityMap adds 50, capped at 240.
 // Sample the route, not every world tile or every explored search branch.
 template<class IsRoad>
-void addJourney(CityMapLayer<uint8_t>& density, const std::vector<Point>& route, IsRoad isRoad) {
+void addJourney(CityMapLayer<uint8_t>& density, const std::vector<Point>& route, IsRoad isRoad, int load = kJourneyLoad) {
     const int bs = density.getBlockSize();
     for (size_t i = 2; i < route.size(); i += 2) {
         const auto p = route[i];
         if (!isRoad(p.x,p.y)) continue;
         const int x = p.x/bs, y = p.y/bs;
-        density.set(x,y,static_cast<uint8_t>(std::min(240,density.get(x,y)+50)));
+        // A bend can put separate sampled road tiles in the same 2x2 cell.
+        // Count that journey once, not twice in the shared density cell.
+        bool alreadySampled = false;
+        for (size_t j = 2; j < i; j += 2)
+            if (route[j].x/bs == x && route[j].y/bs == y && isRoad(route[j].x,route[j].y)) {
+                alreadySampled = true;
+                break;
+            }
+        if (!alreadySampled)
+            density.set(x,y,static_cast<uint8_t>(std::min(240,density.get(x,y)+load)));
     }
 }
 } // namespace DuneCity::CityTraffic

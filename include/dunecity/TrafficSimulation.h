@@ -14,13 +14,13 @@ public:
     TrafficSimulation();
     void init(CitySimulation* sim);
     // 1 = connected, 0 = no destination, -1 = no perimeter road.
-    int makeTraffic(int x, int y, ZoneType destZone);
+    int makeTraffic(int x, int y, ZoneType destZone, uint32_t day = 0);
     using Pos = CityTraffic::Point;
     // Ordered successful route including start and destination, empty on failure.
     const std::vector<Pos>& getLastPath() const { return routeFinder_.route(); }
 private:
     bool findPerimeterRoad(int zoneX, int zoneY, int& roadX, int& roadY) const;
-    bool tryDrive(int startX, int startY, ZoneType destZone);
+    bool tryDrive(int startX, int startY, ZoneType destZone, unsigned directionOffset);
     bool isRoad(int x, int y) const;
     bool driveDone(int x, int y, ZoneType destZone) const;
     CityTraffic::RouteFinder routeFinder_;

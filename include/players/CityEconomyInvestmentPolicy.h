@@ -27,13 +27,18 @@ struct Investment {
 inline int factoryHarvesterTarget(int sustainableWorkers, int mapLimit) {
     return std::max(0, std::min(sustainableWorkers, mapLimit));
 }
+// A small opening fleet must compound before optional technology. This is a
+// priority floor bounded by remaining spice/map capacity, never a worker cap.
+inline bool openingWorkersNeeded(int workers, int target) {
+    return workers < std::min(4, std::max(0,target));
+}
 // This is production priority, not a worker cap. While the army is short,
 // keep about twice the current harvester capital in military strength. Rebuild
 // a collapsed workforce first; once army needs are met, expand to the spice target.
 inline bool preferFactoryHarvester(int workers, int target, int armyValue,
-                                   int armyTarget, int workerPrice, bool canBuildMilitary) {
+                                   int armyTarget, int workerPrice, bool canBuildMilitary, bool cityOpening = false) {
     if (workers >= target) return false;
-    if (workers < 2 || !canBuildMilitary || armyValue >= armyTarget) return true;
+    if ((cityOpening && openingWorkersNeeded(workers,target)) || workers < 2 || !canBuildMilitary || armyValue >= armyTarget) return true;
     return int64_t(armyValue) >= std::min<int64_t>(armyTarget,
         int64_t(std::max(0,workers))*std::max(0,workerPrice)*2);
 }

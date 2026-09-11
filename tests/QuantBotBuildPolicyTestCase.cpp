@@ -99,6 +99,27 @@ TEST_CASE("Factory economy priority balances workers with military without a ref
     CHECK_FALSE(preferFactoryHarvester(120,120,10000,10000,300,true));
 }
 
+TEST_CASE("City opening grows beyond two workers before optional tech", "[quantbot][city]") {
+    using namespace CityEconomyInvestmentPolicy;
+    // 642 Moshpit: two workers, only 0-300 military value, 120 spice target.
+    for (int army : {0,150,300}) {
+        CHECK(preferFactoryHarvester(2,120,army,80000,300,true,true));
+        CHECK(preferFactoryHarvester(3,120,army,80000,300,true,true));
+    }
+    // Already queued workers count: do not duplicate the fourth from another factory.
+    CHECK_FALSE(openingWorkersNeeded(4,120));
+    CHECK_FALSE(preferFactoryHarvester(4,120,300,80000,300,true,true));
+    CHECK(preferFactoryHarvester(4,120,2400,80000,300,true,true));
+    CHECK(preferFactoryHarvester(60,120,80000,80000,300,true,true));
+    // Lower map/spice targets remain authoritative, including exhausted fields.
+    CHECK_FALSE(openingWorkersNeeded(2,2));
+    CHECK_FALSE(openingWorkersNeeded(0,0));
+    CHECK_FALSE(preferFactoryHarvester(2,2,0,80000,300,true,true));
+    CHECK_FALSE(preferFactoryHarvester(0,0,0,80000,300,true,true));
+    // Vanilla keeps its established army/worker balance.
+    CHECK_FALSE(preferFactoryHarvester(2,120,300,80000,300,true));
+}
+
 TEST_CASE("Refinery forecasts count the first delivery and only marginal shared-bay income", "[quantbot][city]") {
     using namespace CityEconomyInvestmentPolicy;
     // A new worker completes one full load within four minutes, not zero income

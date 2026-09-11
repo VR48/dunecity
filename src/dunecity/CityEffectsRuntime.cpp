@@ -905,6 +905,7 @@ void CitySimulation::runZoneGrowth() {
         const int16_t prevComValve = vi.comValve;
         const int16_t prevIndValve = vi.indValve;
         const ValveOutputs vo = computeDemandValves(vi);
+        hs.civicDemandBlocked = vo.civicDemandBlocked;
         hs.resValve = vo.resValve;
         hs.comValve = vo.comValve;
         hs.indValve = vo.indValve;
@@ -1034,12 +1035,15 @@ void CitySimulation::runZoneGrowth() {
                 default: break;
             }
             if (destZone != ZoneType::None) {
-                const int trafResult = trafficSim.makeTraffic(pos.x, pos.y, destZone);
+                const int trafResult = trafficSim.makeTraffic(pos.x, pos.y, destZone, lastProcessedDay_);
                 if (trafResult < 0)     traffic = TrafficResult::NoRoad;
                 else if (trafResult == 0) traffic = TrafficResult::NoDestination;
                 else                      traffic = TrafficResult::Connected;
 
-                if (traffic == TrafficResult::Connected && CityTraffic::journeyDue(
+                // Micropolis generates journeys in R/C/I zone updates, not in
+                // special-building updates. Infrastructure remains a destination;
+                // its employment must not add a second source of commuter trips.
+                if (n.pZone && traffic == TrafficResult::Connected && CityTraffic::journeyDue(
                         n.role == CityRole::Residential,initialPopulation,pos.x,pos.y,lastProcessedDay_)) {
                     CityTraffic::addJourney(trafficDensityMap_,trafficSim.getLastPath(),
                         [&](int x,int y) {

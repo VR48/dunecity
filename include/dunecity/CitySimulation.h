@@ -23,6 +23,7 @@ static constexpr int kMaxCityHouses = NUM_HOUSES;
 
 struct HouseCityState {
     int resPop = 0, comPop = 0, indPop = 0;
+    uint8_t civicDemandBlocked = 0; // Derived from the latest demand calculation; not serialized.
     int taxBaseEighths = 0; // Derived (R/8+C+I) in eighths, zones + Palace; not serialized.
     int prevResPop = 0, prevComPop = 0, prevIndPop = 0;
     int16_t resValve = 0, comValve = 0, indValve = 0;
