@@ -1,3 +1,14 @@
+# Wider lobby AI selectors — 1.0.649 (local)
+
+Both custom lobby player dropdowns widened from100 to180 logical pixels,
+including their expanded lists, to fit QuantBot and support AI names.
+Release build and before/after Ninja dependency audits passed; whitespace and
+strict signature/hash verification passed. No new tests for this layout-only
+change; no interactive visual run. Current app was not interrupted.
+Installed /Applications/dunecity.app SHA256 aff77514e5f64c43ce28fdafa93b5d7ea3dcea0e04ab05826f84d597baa68d4c.
+Previous648: /Applications/.dunecity-649-qxc4o3tw/dunecity-previous.app.
+No remote changes.
+
 # Ornithopter capacity, safe defence and AI defaults — 1.0.648 (local)
 
 Current 647 session 1789142209744263-0 (Ergsun-Prometh, seed1050788573),

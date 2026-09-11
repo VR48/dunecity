@@ -451,7 +451,7 @@ CustomGamePlayers::CustomGamePlayers(const GameInitSettings& newGameInitSettings
         }
         curHouseInfo.player1DropDown.setOnSelectionChange(std::bind(&CustomGamePlayers::onChangePlayerDropDownBoxes, this, std::placeholders::_1, 2*i));
         curHouseInfo.player1DropDown.setOnClick(std::bind(&CustomGamePlayers::onClickPlayerDropDownBox, this, 2*i));
-        curHouseInfo.playerHBox.addWidget(&curHouseInfo.player1DropDown, 100);
+        curHouseInfo.playerHBox.addWidget(&curHouseInfo.player1DropDown, 180);
 
         curHouseInfo.playerHBox.addWidget(HSpacer::create(10));
 
@@ -518,7 +518,7 @@ CustomGamePlayers::CustomGamePlayers(const GameInitSettings& newGameInitSettings
         }
         curHouseInfo.player2DropDown.setOnSelectionChange(std::bind(&CustomGamePlayers::onChangePlayerDropDownBoxes, this, std::placeholders::_1, 2*i + 1));
         curHouseInfo.player2DropDown.setOnClick(std::bind(&CustomGamePlayers::onClickPlayerDropDownBox, this, 2*i + 1));
-        curHouseInfo.playerHBox.addWidget(&curHouseInfo.player2DropDown, 100);
+        curHouseInfo.playerHBox.addWidget(&curHouseInfo.player2DropDown, 180);
 
         curHouseInfo.houseInfoVBox.addWidget(&curHouseInfo.playerHBox);
 
