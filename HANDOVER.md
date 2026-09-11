@@ -1,3 +1,41 @@
+# Earlier nuclear, recovery budgets and road reuse — 1.0.640 (local only)
+
+Stefan approved the remaining 638 match findings with one correction: redirect
+finished redundant roads to another useful gap; do not cancel/refund them.
+
+- City QuantBot plans nuclear once demand reaches three windtraps' output and
+  available power approaches the growth reserve plus one windtrap. A legal,
+  unlocked reactor and committed Heavy Factory are required; first transport
+  stays ahead. Save the actual reactor price before optional yard/factory orders;
+  release reservations during blackouts so affordable wind can restore power.
+  Count queued generation and retain reactor clearance/placement checks. Existing
+  zone maturity headroom anticipates regrowth after blackouts. No tax/power stats
+  changed; this is investment timing, not a blanket opening nuclear order.
+- Custom city AI reviews police funding every 30 simulated seconds. Major losses
+  mean >=max(3, remaining structures/10) destroyed in the last three minutes.
+  With cash <2,000 and police bill >75% of tax after power, cut up to 25 points,
+  targeting half that income with a 25% funding floor. Restore 25 points when
+  cash >=5,000 or post-power tax covers twice nominal police expense. Support
+  mode does not change the shared house budget. Added city_police_budget events.
+- Fixed CMD_CITY_SET_BUDGET applying to the local viewer: resolve the command's
+  issuing player's house instead. Human UI keeps its local-house accessors.
+- Finished redundant/blocked roads reuse the existing connected frontage/through
+  gap candidate search. Exclude other queued sites; preserve the following plan.
+  Hold the finished road if no useful gap exists, retry after five seconds; only
+  one maintenance/redirect attempt per build pass. Restore its queue position if
+  placement fails. No cancellation or additional pathfinding; a held road can
+  keep that yard occupied until a useful site becomes available.
+- Telemetry policy nuclear-budget-road-reuse-v60; nuclear_investment_due state,
+  save_nuclear_growth/nuclear_growth_investment decisions and road replan reasons.
+  Runtime review/retry timers reset on load; save layout is unchanged.
+
+Validation: release build, dependency audits and CTest passed (564 passed,
+3 optional skips, 9,726,326 assertions). Signed/hash-verified local installation
+at /Applications/dunecity.app, without launching the game.
+SHA256 047992f9666163a802ff7b59fad98f0218c1849f520b6749e17e96175c67ff5c.
+Backup /var/folders/3y/kfqmr__n2wz56wnvn919zhxh0000gn/T/dunecity-before-640.j206fhup/dunecity.app.
+Live match behavior/balance still needs a new match. No remote push/release.
+
 # Early carryalls, refinery capacity and continuing tax hedge — 1.0.639 (local only)
 
 Current branch fix/dunecity-ui-quantbot. Stefan requested first transport before a

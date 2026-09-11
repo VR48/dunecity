@@ -2978,6 +2978,10 @@ void QuantBot::build(int militaryValue) {
     recentStructureLosses.erase(std::remove_if(recentStructureLosses.begin(), recentStructureLosses.end(),
         [&](const auto& loss) { return getGameCycleCount() - loss.cycle >= MILLI2CYCLES(900000); }), recentStructureLosses.end());
     clearPlacementCache();
+    for (auto it = roadRedirectRetryCycle.begin(); it != roadRedirectRetryCycle.end();) {
+        if (getGameCycleCount() >= it->second) it = roadRedirectRetryCycle.erase(it);
+        else ++it;
+    }
     cityServiceSearch.reset();
     cityTurretSearch.reset();
     for (auto it = reservedStructures.begin(); it != reservedStructures.end();) {
@@ -2998,6 +3002,7 @@ void QuantBot::build(int militaryValue) {
 	int activeHeavyFactoryCount = 0;
     std::vector<const BuilderBase*> harvesterFactories;
     bool carryallBuildAvailable = false;
+    bool nuclearBuildAvailable = false;
     int activeLightFactoryCount = 0;
 	int activeHighTechFactoryCount = 0;
     int ornithopterFactoryCount = 0;
@@ -3020,6 +3025,8 @@ void QuantBot::build(int militaryValue) {
 		if (pStructure->getOwner() == getHouse()) {
 			if (pStructure->isABuilder()) {
 				const BuilderBase* pBuilder = static_cast<const BuilderBase*>(pStructure);
+                if (pBuilder->getItemID() == Structure_ConstructionYard && pBuilder->getHealth() > 0
+                    && pBuilder->isAvailableToBuild(Structure_NuclearPlant)) nuclearBuildAvailable = true;
                 if (pBuilder->getItemID() == Structure_HighTechFactory && pBuilder->getHealth() > 0
                     && pBuilder->isAvailableToBuild(Unit_Carryall)) carryallBuildAvailable = true;
                 if (pBuilder->getItemID() == Structure_HeavyFactory && pBuilder->getHealth() > 0
@@ -3104,6 +3111,28 @@ void QuantBot::build(int militaryValue) {
 			ownHasAirport = hs.hasAirport;
 		}
 	}
+
+    if (citySimEnabled && !supportMode && gameMode == GameMode::Custom
+        && getGameCycleCount()-lastPoliceBudgetReviewCycle >= MILLI2CYCLES(30000)) {
+        lastPoliceBudgetReviewCycle = getGameCycleCount();
+        auto* sim = currentGame->getCitySimulation();
+        const auto& hs = sim->getHouseState(houseID);
+        const int recentLosses = std::count_if(recentStructureLosses.begin(),recentStructureLosses.end(),[&](const auto& loss) {
+            return getGameCycleCount()-loss.cycle < MILLI2CYCLES(180000);
+        });
+        const bool majorLosses = recentLosses >= std::max(3,int(getHouse()->getNumStructures())/10);
+        const int taxIncome = DuneCity::computeAnnualTaxRevenue(ownTaxBaseEighths,sim->getCityTax(),ownAvgLandValue);
+        const int powerCost = getHouse()->isPowerRequired() ? getHouse()->getPowerRequirement()/8 : 0;
+        const int funding = QuantBotBuildPolicy::recoveryPoliceFunding(hs.policeFundingPercent,
+            taxIncome,powerCost,hs.nominalPoliceCost,money,majorLosses);
+        if (funding != hs.policeFundingPercent) {
+            currentGame->getCommandManager().addCommand(Command(getPlayerID(),CMD_CITY_SET_BUDGET,funding,0,0));
+            traceDecision("city_police_budget",AITelemetry::Record().set("previous",hs.policeFundingPercent)
+                .set("funding",funding).set("tax_income",taxIncome).set("power_cost",powerCost)
+                .set("nominal_cost",hs.nominalPoliceCost).set("cash",money).set("recent_losses",recentLosses)
+                .set("reason",funding < hs.policeFundingPercent ? "post_loss_recovery" : "funding_recovery"));
+        }
+    }
 
 	// Strategic structures must eventually outrank repeatable choices such as
 	// factories, zones, and reactive turrets. These timers stay runtime-only so
@@ -3269,6 +3298,13 @@ void QuantBot::build(int militaryValue) {
         currentZonePower,matureZonePower,projectedPowerDemandGrowth,committedPowerDemand);
     const int cityPowerReserve = citySimEnabled ? QuantBotBuildPolicy::cityPowerReserve(
         getHouse()->getPowerRequirement(), largestGenerator) + zoneGrowthHeadroom : 0;
+    const bool nuclearPlan = citySimEnabled && !needsFirstTransport()
+        && itemCount[Structure_HeavyFactory] > 0
+        && itemCount[Structure_NuclearPlant] == getHouse()->getNumItems(Structure_NuclearPlant)
+        && itemCount[Structure_WindTrap] == getHouse()->getNumItems(Structure_WindTrap)
+        && QuantBotBuildPolicy::planNuclearInvestment(getHouse()->getPowerRequirement(),
+            getHouse()->getProducedPower(),cityPowerReserve,std::max(1,-data[Structure_WindTrap][houseID].power))
+        && nuclearBuildAvailable && findPlaceLocation(Structure_NuclearPlant).isValid();
     const int cityYardTarget = citySimEnabled ? QuantBotBuildPolicy::cityConstructionYardTarget(
         std::max(0, money - queuedProductionCost), ownResValve, ownComValve, ownIndValve) : 0;
     const int cityConstructionCapacity = itemCount[Structure_ConstructionYard] + itemCount[Unit_MCV];
@@ -3282,6 +3318,7 @@ void QuantBot::build(int militaryValue) {
             .set("power_produced", getHouse()->getProducedPower()).set("power_required", getHouse()->getPowerRequirement())
             .set("zone_power_current",currentZonePower).set("zone_power_mature",matureZonePower)
             .set("zone_growth_headroom",zoneGrowthHeadroom).set("committed_power_demand",committedPowerDemand)
+            .set("nuclear_investment_due",nuclearPlan)
             .set("city_power_reserve_target", cityPowerReserve).set("largest_generator_nominal", largestGenerator)
             .set("res_count", itemCount[Structure_ZoneResidential]).set("com_count", itemCount[Structure_ZoneCommercial])
             .set("ind_count", itemCount[Structure_ZoneIndustrial])
@@ -4044,6 +4081,9 @@ void QuantBot::build(int militaryValue) {
                     ? 0 : std::max(strategicReserveCost,economyReserve);
                 if (firstCarryall && !transportProducer)
                     protectedCash = std::max(protectedCash,data[Unit_Carryall][houseID].price);
+                if (nuclearPlan && getHouse()->hasPower() && !powerGenerationPending()
+                    && pBuilder->getItemID() != Structure_ConstructionYard && !transportProducer)
+                    protectedCash = std::max(protectedCash,data[Structure_NuclearPlant][houseID].price);
                 reserve.reserved = money - QuantBotBuildPolicy::spendableCredits(money,protectedCash);
 				money -= reserve.reserved;
 
@@ -4807,6 +4847,19 @@ void QuantBot::build(int militaryValue) {
 						}
 					}
 				}
+                // Accumulate reactor funds before optional orders consume them.
+                // An actual blackout can still buy an immediately affordable windtrap.
+                if (nuclearPlan && getHouse()->hasPower() && !powerGenerationPending()
+                    && pBuilder->isAvailableToBuild(Structure_NuclearPlant)
+                    && (itemID == NONE_ID || itemID == Structure_WindTrap || itemID == Structure_NuclearPlant)
+                    && findPlaceLocation(Structure_NuclearPlant).isValid()) {
+                    skipRemainingStructureLogic = true;
+                    itemID = money >= data[Structure_NuclearPlant][houseID].price ? Structure_NuclearPlant : NONE_ID;
+                    structureRule = itemID == NONE_ID ? "save_nuclear_growth" : "nuclear_growth_investment";
+                    if (emitStatsLog) traceDecision("nuclear_investment",AITelemetry::Record()
+                        .set("funded",itemID != NONE_ID).set("cash",money)
+                        .set("price",data[Structure_NuclearPlant][houseID].price).set("reserve",cityPowerReserve));
+                }
 				// Low-spice economy: skip additional refineries, pivot to R/I/C zones
 				const bool lowSpiceEconomy = (lastCalculatedSpice < 500);
 				const bool isCitySim = (currentGame && currentGame->isCitySimEnabled());
@@ -5450,7 +5503,7 @@ void QuantBot::build(int militaryValue) {
                     if (windSite.isValid()) windSites.push_back(windSite);
                     // Count disjoint usable footprints only up to this order's
                     // demand. Overlapping candidate tiles are not spare land.
-                    if (windSite.isValid() && nuclearSite.isValid()
+                    if (!nuclearPlan && windSite.isValid() && nuclearSite.isValid()
                         && !QuantBotBuildPolicy::preferNuclearPower(need,windOutput,
                             data[Structure_WindTrap][houseID].price,data[Structure_NuclearPlant][houseID].price,
                             windNeeded,std::max(0,money-queuedProductionCost),
@@ -5473,9 +5526,10 @@ void QuantBot::build(int militaryValue) {
                     }
                     const int reserveCash = getHouse()->hasPower() ? cityWorkingReserve : 0;
                     const int cash = std::max(0,money-queuedProductionCost);
-                    const bool nuclear = nuclearSite.isValid() && QuantBotBuildPolicy::preferNuclearPower(
-                        need,windOutput,data[Structure_WindTrap][houseID].price,
-                        data[Structure_NuclearPlant][houseID].price,windSites.size(),cash,reserveCash,!getHouse()->hasPower());
+                    const bool nuclear = nuclearSite.isValid() && ((nuclearPlan
+                        && money >= data[Structure_NuclearPlant][houseID].price)
+                        || QuantBotBuildPolicy::preferNuclearPower(need,windOutput,data[Structure_WindTrap][houseID].price,
+                            data[Structure_NuclearPlant][houseID].price,windSites.size(),cash,reserveCash,!getHouse()->hasPower()));
                     itemID = nuclear ? Structure_NuclearPlant : windSite.isValid() ? Structure_WindTrap : NONE_ID;
                     if (itemID == NONE_ID) skipRemainingStructureLogic = true;
                     traceDecision("city_generator_choice", AITelemetry::Record().set("item",itemID)
@@ -5787,9 +5841,25 @@ void QuantBot::build(int militaryValue) {
                                     && dangerAt(location,itemsize) == 0 && TacticalSafetyPolicy::reactorPlacementAllowed(itemToBePlaced,reactorClearance(itemToBePlaced,location))))) {
 							placeLocations.pop_front();
 							logDebug("PRODUCTION: Using pre-stored location (%d,%d) for itemID: %d", location.x, location.y, itemToBePlaced);
-						} else if (itemToBePlaced == Structure_Road || itemToBePlaced == Structure_Slab1 || itemToBePlaced == Structure_Slab4) {
-							// Road/concrete placement failed (maybe already repaired), cancel and move on
-							tracePlacementIssue("placement_cancel", itemToBePlaced == Structure_Road ? "planned_road_invalid" : "planned_concrete_invalid", location);
+						} else if (itemToBePlaced == Structure_Road) {
+                            const Coord oldSite = location;
+                            location = Coord::Invalid();
+                            // Rate-limit unsuccessful searches by yard; a finished
+                            // road remains ready and can be used when a gap opens.
+                            if (!roadMaintenanceAttempted) {
+                                roadMaintenanceAttempted = true;
+                                location = findFinishedRoadSite(pBuilder);
+                            }
+                            if (location.isValid()) {
+                                placeLocations.pop_front();
+                                tracePlacementIssue("placement_replan","road_redirected_to_gap",location);
+                            } else if (emitStatsLog) {
+                                tracePlacementIssue("placement_deferred","road_waiting_for_useful_gap",oldSite);
+                            }
+                            placementIssueHandled = true;
+                        } else if (itemToBePlaced == Structure_Slab1 || itemToBePlaced == Structure_Slab4) {
+							// Redundant concrete can be refunded without changing the remaining plan.
+							tracePlacementIssue("placement_cancel", "planned_concrete_invalid", location);
                             doCancelItem(pConstYard, itemToBePlaced);
 							placeLocations.pop_front();
 							logDebug("PRODUCTION: Cancelled concrete at (%d,%d) - already placed or invalid", location.x, location.y);
@@ -5814,7 +5884,13 @@ void QuantBot::build(int militaryValue) {
                         }
 					} else {
 						// No pre-stored location, find one dynamically
-					if (itemToBePlaced == Structure_Slab1 || itemToBePlaced == Structure_Slab4) {
+					if (itemToBePlaced == Structure_Road) {
+                            location = Coord::Invalid();
+                            if (!roadMaintenanceAttempted) {
+                                roadMaintenanceAttempted = true;
+                                location = findFinishedRoadSite(pBuilder);
+                            }
+                        } else if (itemToBePlaced == Structure_Slab1 || itemToBePlaced == Structure_Slab4) {
 						// For concrete slabs, use specialized slab placement method
 						location = findSlabPlaceLocation(itemToBePlaced);
 					} else if (itemToBePlaced == Structure_RocketTurret || itemToBePlaced == Structure_GunTurret) {
@@ -5875,6 +5951,9 @@ void QuantBot::build(int militaryValue) {
 							traceDecision("placement_request", AITelemetry::Record().set("builder", pConstYard->getObjectID())
                                 .set("item", itemToBePlaced).set("x", location.x).set("y", location.y));
                             const bool placed = doPlaceStructure(pConstYard, location.x, location.y);
+                            // A road retry keeps its place ahead of the remaining
+                            // queue; do not accidentally consume the next plan.
+                            if (!placed && itemToBePlaced == Structure_Road) placeLocations.push_front(location);
                             traceDecision("placement_result", AITelemetry::Record().set("builder", planningBuilder)
                                 .set("item", itemToBePlaced).set("x", location.x).set("y", location.y).set("success", placed));
                             if (itemToBePlaced != Structure_Slab1 && itemToBePlaced != Structure_Slab4) {
@@ -7224,16 +7303,31 @@ void QuantBot::retreatAllUnits() {
     }
 }
 
-int QuantBot::queueCityRoadRepairs(const BuilderBase* yard, int limit) {
-    if (limit <= 0) return 0;
+Coord QuantBot::findFinishedRoadSite(const BuilderBase* yard) {
+    const Uint32 id = yard->getObjectID(), cycle = getGameCycleCount();
+    const auto retry = roadRedirectRetryCycle.find(id);
+    if (retry != roadRedirectRetryCycle.end() && cycle < retry->second) return Coord::Invalid();
+    const auto sites = cityRoadRepairSites();
+    if (sites.empty()) {
+        roadRedirectRetryCycle[id] = cycle + MILLI2CYCLES(5000);
+        return Coord::Invalid();
+    }
+    roadRedirectRetryCycle.erase(id);
+    return Coord(sites.front().first,sites.front().second);
+}
+
+std::vector<std::pair<int,int>> QuantBot::cityRoadRepairSites() {
+    std::set<std::pair<int,int>> planned;
+    for (const auto& entry : builderPlaceLocations)
+        for (const Coord p : entry.second) planned.emplace(p.x,p.y);
     std::vector<CityRoadRepairPolicy::Footprint> buildings;
     for (const StructureBase* structure:getStructureList()) {
         if (structure->getOwner()!=getHouse() || !structure->isActive()) continue;
         const Coord p=structure->getLocation(), size=getStructureSize(structure->getItemID());
         buildings.push_back({p.x,p.y,size.x,size.y});
     }
-    const auto sites=CityRoadRepairPolicy::candidates(buildings,[&](int x,int y) {
-        if (!getMap().tileExists(x,y)) return false;
+    return CityRoadRepairPolicy::candidates(buildings,[&](int x,int y) {
+        if (!getMap().tileExists(x,y) || planned.count({x,y})) return false;
         const Tile* tile=getMap().getTile(x,y);
         return !tile->isRoadConnection() && !tile->hasCityZone() && !tile->hasAGroundObject()
             && tile->isRock() && !tile->isMountain()
@@ -7242,6 +7336,11 @@ int QuantBot::queueCityRoadRepairs(const BuilderBase* yard, int limit) {
     },[&](int x,int y) {
         return getMap().tileExists(x,y) && getMap().getTile(x,y)->isRoadConnection();
     });
+}
+
+int QuantBot::queueCityRoadRepairs(const BuilderBase* yard, int limit) {
+    if (limit <= 0) return 0;
+    const auto sites = cityRoadRepairSites();
     int queued=0;
     AITelemetry::Record locations;
     for (const auto& site:sites) {

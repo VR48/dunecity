@@ -373,8 +373,11 @@ void CitySimulation::executeCityCommand(int playerID, int commandID,
             // p0 = police funding %; p1/p2 reserved (roads have no upkeep). Routed through the command
             // system so multiplayer stays deterministic.
             auto* sim = currentGame ? currentGame->getCitySimulation() : nullptr;
-            if (sim) {
-                sim->setPoliceFundingPercent(static_cast<int>(p0));
+            const auto* issuer = currentGame && playerID >= 0 && playerID <= 255
+                ? currentGame->getPlayerByID(static_cast<Uint8>(playerID)) : nullptr;
+            // The command belongs to its issuer, never the observing/local house.
+            if (sim && issuer && issuer->getHouse()) {
+                sim->setPoliceFundingPercent(issuer->getHouse()->getHouseID(),int(std::min(p0,100u)));
             }
         } break;
 

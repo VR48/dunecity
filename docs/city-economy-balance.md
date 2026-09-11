@@ -248,3 +248,26 @@ Further review findings, not changed by 639:
   380 frames over 33ms and 3 over 100ms. A unit-update scope peaked 159.2ms; this is
   isolated rather than evidence of recurring AI stalls. Timings are nested;
   do not sum their averages. No crash recorded; session_end and game_summary exist.
+
+
+## Nuclear investment and post-loss service funding (1.0.640)
+
+The 638 follow-ups above are now implemented. Established city AI starts saving
+for nuclear at three windtraps' load when production is less than requirement +
+growth reserve + one windtrap. A Heavy Factory, unlocked reactor and valid site
+are required. First transport remains ahead. Optional production protects reactor
+funds; actual power loss releases this protection for affordable recovery. Pending
+generation prevents duplicate reactor plans. Existing growth reserve includes
+latent zone maturity, including zones that shrank during a blackout.
+
+After at least max(3, remaining buildings/10) losses within three minutes, a city
+with <2,000 cash and a police bill exceeding 75% of post-power tax cuts funding
+by up to 25 points per 30-second review. The target is half post-power income,
+with a 25% floor. At >=5,000 cash or income covering twice nominal police cost,
+funding recovers by 25 points. The command applies to its issuing house. This is
+an emergency response, not automatic low funding for an intact city.
+
+Redundant finished roads are redirected to connected gaps around owned buildings,
+excluding queued locations. If none is useful/free, keep the road ready and retry
+with a five-second delay rather than cancelling it. This preserves later building
+orders, although a held road occupies the yard until a site becomes available.

@@ -131,6 +131,7 @@ private:
     Coord squadRetreatLocation = Coord::Invalid();
     bool supportMode = false;
     Uint32 lastStatsLogCycle = 0;
+    Uint32 lastPoliceBudgetReviewCycle = 0;
     Uint32 lastTelemetrySnapshotCycle = 0;
     Uint32 lastCityBuildingSnapshotCycle = 0;
     uint64_t telemetryState = 0; // Runtime only; never part of save/simulation state.
@@ -243,6 +244,9 @@ private:
     void build(int militaryValue);
     void attack(int militaryValue);
     void manageCityBuilding();
+    std::map<Uint32,Uint32> roadRedirectRetryCycle;
+    Coord findFinishedRoadSite(const BuilderBase* yard);
+    std::vector<std::pair<int,int>> cityRoadRepairSites();
     int queueCityRoadRepairs(const BuilderBase* yard, int limit);
 
     Sint32 cityBuildTimer = 0;

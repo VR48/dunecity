@@ -1357,3 +1357,38 @@ TEST_CASE("Latest government factory tiers apply to old high-density occupancy",
     CHECK(getZonePopulation(Structure_IX,3) == 5);
     CHECK(taxablePopulationEighths(Structure_IX, 5, 3) == 0);
 }
+
+#include <dunecity/CitySimulation.h>
+TEST_CASE("Police funding belongs to the issuing house and clamps safely", "[city][budget]") {
+    DuneCity::CitySimulation sim;
+    sim.setPoliceFundingPercent(1,50);
+    REQUIRE(sim.getPoliceFundingPercent(1)==50);
+    REQUIRE(sim.getPoliceFundingPercent(0)==100); // Observer/human unaffected.
+    REQUIRE(sim.getPoliceFundingPercent(2)==100); // Another AI unaffected.
+    sim.setPoliceFundingPercent(1,125);
+    REQUIRE(sim.getPoliceFundingPercent(1)==100);
+    sim.setPoliceFundingPercent(1,-5);
+    REQUIRE(sim.getPoliceFundingPercent(1)==0);
+    sim.setPoliceFundingPercent(-1,25);
+    sim.setPoliceFundingPercent(DuneCity::kMaxCityHouses,25);
+    REQUIRE(sim.getPoliceFundingPercent(0)==100);
+}
+
+TEST_CASE("Completed road redirects to another useful gap when its original tile is repaired", "[city][roads]") {
+    using namespace CityRoadRepairPolicy;
+    std::vector<Footprint> buildings{{10,10,2,2},{40,40,2,2}};
+    std::set<std::pair<int,int>> roads{{12,9},{12,10},{12,11},{42,39},{42,41}};
+    std::set<std::pair<int,int>> queued{{40,39}};
+    auto hasRoad=[&](int x,int y) {return roads.count({x,y})!=0;};
+    auto canPlace=[&](int x,int y) {
+        if (hasRoad(x,y) || queued.count({x,y})) return false;
+        for (const auto& b:buildings) if (x>=b.x && x<b.x+b.width && y>=b.y && y<b.y+b.height) return false;
+        return true;
+    };
+    const auto sites=candidates(buildings,canPlace,hasRoad);
+    REQUIRE(!sites.empty());
+    REQUIRE(sites.front()==std::make_pair(42,40)); // Remote broken through-road wins.
+    REQUIRE(std::find(sites.begin(),sites.end(),std::make_pair(12,10))==sites.end());
+    REQUIRE(std::find(sites.begin(),sites.end(),std::make_pair(40,39))==sites.end());
+    REQUIRE(candidates(buildings,[](int,int){return false;},hasRoad).empty()); // Keep finished item for later.
+}

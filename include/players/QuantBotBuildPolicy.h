@@ -313,6 +313,31 @@ inline bool preferNuclearPower(int need, int windOutput, int windPrice, int nucl
     return powerShortage || int64_t(cash) >= int64_t(nuclearPrice) * 5 + std::max(0,protectedCash)
         || availableWindSites < windCount || int64_t(windCount) * windPrice >= nuclearPrice;
 }
+// Start saving while the city still has power, once three windtraps' worth
+// of load needs another increment. This buys one compact growth reserve.
+inline bool planNuclearInvestment(int required, int produced, int growthReserve, int windOutput) {
+    return windOutput > 0 && required >= 3 * windOutput
+        && int64_t(produced) < int64_t(required) + growthReserve + windOutput;
+}
+
+// Emergency funding targets half the income left after power, with a 25%
+// coverage floor. Cut only after major losses with poor cash/operating margin;
+// restore in steps once full service is affordable again.
+inline int recoveryPoliceFunding(int current, int tax, int powerCost, int nominalCost,
+                                  int cash, bool majorLosses) {
+    current = std::clamp(current,0,100);
+    if (nominalCost <= 0) return 100;
+    const int available = std::max(0,tax-powerCost);
+    const int bill = int(int64_t(nominalCost)*current/100);
+    if (majorLosses && cash < 2000 && int64_t(bill)*4 > int64_t(available)*3) {
+        const int target = std::clamp(int(int64_t(available)*50/nominalCost),25,100);
+        return std::min(current,std::max(target,current-25));
+    }
+    if (current < 100 && (cash >= 5000 || int64_t(available) >= int64_t(nominalCost)*2))
+        return std::min(100,current+25);
+    return current;
+}
+
 // Reserve the latent load of existing lots even after blackout shrinkage.
 // Observed growth and latent growth overlap, so use the larger, not their sum.
 inline int cityGrowthPowerHeadroom(int zonePower, int matureZonePower, int observedGrowth,

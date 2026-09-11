@@ -1160,3 +1160,27 @@ TEST_CASE("Refineries catch up to profitable fleet queues even while tax hedge i
     bay.confidence=100;
     CHECK_FALSE(preferRefinery(bay,zone,true,true,true)); // Almost exhausted field cannot repay it.
 }
+
+TEST_CASE("Growing cities save for nuclear before another run of windtraps", "[quantbot][power]") {
+    CHECK_FALSE(planNuclearInvestment(100,200,100,100)); // Opening still uses cheap wind.
+    CHECK(planNuclearInvestment(300,500,125,100)); // Forecast reserve close: begin saving while powered.
+    CHECK(planNuclearInvestment(600,700,250,100));
+    CHECK_FALSE(planNuclearInvestment(600,2500,250,100)); // New reactor covers growth; do not duplicate.
+    CHECK_FALSE(planNuclearInvestment(600,700,250,0));
+    CHECK(spendableCredits(1700,2000)==0); // Existing factories allow the saving to accumulate.
+    CHECK(spendableCredits(2600,2000)==600); // Excess funds can still buy military units.
+}
+
+TEST_CASE("Police budget cuts respond to loss and financial pressure then recover gradually", "[quantbot][city][budget]") {
+    // Ordos at ~50min in638: gross695, police575, plus246 power/min.
+    CHECK(recoveryPoliceFunding(100,695,246,575,500,true)==75);
+    CHECK(recoveryPoliceFunding(75,695,246,575,500,true)==50);
+    CHECK(recoveryPoliceFunding(50,695,246,575,500,true)==50); // Margin has recovered.
+    CHECK(recoveryPoliceFunding(100,695,246,575,500,false)==100); // No major losses.
+    CHECK(recoveryPoliceFunding(100,695,246,575,3000,true)==100); // Healthy cash buffer.
+    CHECK(recoveryPoliceFunding(50,0,250,575,0,true)==25);
+    CHECK(recoveryPoliceFunding(25,0,250,575,0,true)==25); // Keep some crime protection.
+    CHECK(recoveryPoliceFunding(50,1600,250,575,500,true)==75);
+    CHECK(recoveryPoliceFunding(75,1600,250,575,500,false)==100);
+    CHECK(recoveryPoliceFunding(25,695,246,575,5000,false)==50);
+}

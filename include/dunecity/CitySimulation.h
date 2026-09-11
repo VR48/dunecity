@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <vector>
 #ifndef DUNECITY_CITYSIMULATION_H
 #define DUNECITY_CITYSIMULATION_H
@@ -111,6 +112,13 @@ public:
     /// These delegate to local player's house state.
     int getPoliceFundingPercent() const;
     void setPoliceFundingPercent(int v);
+    int getPoliceFundingPercent(int houseID) const {
+        return houseID >= 0 && houseID < kMaxCityHouses ? houseState_[houseID].policeFundingPercent : 100;
+    }
+    void setPoliceFundingPercent(int houseID, int value) {
+        if (houseID >= 0 && houseID < kMaxCityHouses)
+            houseState_[houseID].policeFundingPercent = std::clamp(value,0,100);
+    }
     /// Last computed police annual expense (full nominal, before funding%).
     int32_t getNominalPoliceCost() const;
     /// Last actual amount paid out (nominal * funding%/100).
