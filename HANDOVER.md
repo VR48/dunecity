@@ -1,3 +1,30 @@
+# Main-base proximity for MCV expansion — 1.0.650 (local)
+
+Stefan reported MCVs passing nearby rock and explicitly requires distance to
+main base to rank first. Current648 session1789167702882520-0, Ergsun-Fwiffo
+seed740015832: Harkonnen MCV243 at cycle50750 selected47,72 via105 route tiles;
+MCV257 at52350 selected124,107 via211 tiles. Previous policy maximized enemy
+clearance, then room, and only finally MCV travel distance, causing long detours.
+
+Eligible rock now ranks by Manhattan map distance from the oldest surviving
+active construction yard first. Enemy clearance, local room and MCV route
+length only break ties. No weighted safety detour overrides base distance.
+Actual MCV-ground BFS remains a separate reachability filter; own occupied and
+reserved formations, unsafe tiles, <48 free/local tiles and <12 enemy clearance
+remain excluded. The original yard anchors expansion until destroyed, then the
+oldest surviving yard replaces it; no averaged multi-base centre. First-yard
+legacy placement unchanged. Telemetry v67 includes main-base anchor, distance,
+route length and nearest-main-base selection reason. Save format unchanged.
+
+Validation: 583 tests passed, 3 skipped; dependency audits, version/whitespace
+checks and app signature/hash verification passed. Tests cover near small vs
+far large islands, unnecessary enemy-clearance detours, actual threats,
+unreachable/reserved rock and an MCV already beside the far island. No fresh
+full-match verification. Current game/orders were not modified in memory.
+Installed /Applications/dunecity.app SHA256 e4f33bd7442e18cb5d9de544398a263957acfb15f5aee99c0d4e6a72debd9723.
+Previous649: /Applications/.dunecity-650-ne1awl99/dunecity-previous.app.
+No remote deployment. Existing reports/ remains unstaged.
+
 # Wider lobby AI selectors — 1.0.649 (local)
 
 Both custom lobby player dropdowns widened from100 to180 logical pixels,

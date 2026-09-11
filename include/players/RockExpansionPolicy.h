@@ -7,12 +7,21 @@
 #include <limits>
 namespace RockExpansionPolicy {
 struct Tile { bool rock=false, free=false, walkable=false, owned=false, unsafe=false; };
-struct Site { int x=-1,y=-1,room=0,clearance=0,distance=0; bool valid() const { return x>=0; } };
+struct Site { int x=-1,y=-1,room=0,clearance=0,distance=0,baseDistance=0; bool valid() const { return x>=0; } };
+// Safety and usable room are eligibility checks. Among eligible sites, main
+// base distance is the first ranking key, never extra clearance or island size.
+inline bool betterSite(const Site& candidate,const Site& best) {
+    if(!best.valid()) return true;
+    if(candidate.baseDistance!=best.baseDistance) return candidate.baseDistance<best.baseDistance;
+    if(candidate.clearance!=best.clearance) return candidate.clearance>best.clearance;
+    if(candidate.room!=best.room) return candidate.room>best.room;
+    return candidate.distance<best.distance;
+}
 // Linear map survey: formations, reachable ground and summed local building
 // space. No nested full-map searches or per-candidate pathfinding.
 inline Site choose(int w,int h,const std::vector<Tile>& tiles,
                    const std::vector<int>& starts,const std::vector<int>& enemies,
-                   const std::vector<int>& reserved) {
+                   const std::vector<int>& reserved, int mainBase=-1) {
     const int n=w*h;
     std::vector<int> component(n,-1),distance(n,-1),freeCount;
     std::vector<bool> occupied;
@@ -56,10 +65,11 @@ inline Site choose(int w,int h,const std::vector<Tile>& tiles,
         int clearance=w+h;
         for(int e:enemies) clearance=std::min(clearance,std::max(std::abs(x-e%w),std::abs(y-e/w)));
         if(clearance<12)continue;
-        // Safety dominates travel convenience, then usable room. No enemy
-        // observation means all sites share the same safety score.
-        if(!best.valid()||clearance>best.clearance||(clearance==best.clearance&&(room>best.room
-            ||(room==best.room&&distance[i]<best.distance))))best={x,y,room,clearance,distance[i]};
+        // Manhattan map distance from the main construction yard. MCV BFS
+        // remains the independent reachability check and final travel tie-break.
+        const int baseDistance=mainBase>=0 ? std::abs(x-mainBase%w)+std::abs(y-mainBase/w) : distance[i];
+        const Site candidate{x,y,room,clearance,distance[i],baseDistance};
+        if(betterSite(candidate,best))best=candidate;
     }
     return best;
 }

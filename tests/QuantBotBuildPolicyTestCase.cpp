@@ -1316,9 +1316,9 @@ TEST_CASE("Expansion chooses safe reachable new rock rather than adjacent yards"
     rock(2,20); rock(25,20); rock(60,20);
     tiles[23*w+5].owned=true; // Current base; plenty of rock but not a new formation.
     const auto safe=choose(w,h,tiles,{23*w+12},{23*w+0},{});
-    REQUIRE(safe.valid());CHECK(safe.x>=60);CHECK(safe.room>=48);
+    REQUIRE(safe.valid());CHECK(safe.x>=25);CHECK(safe.x<35);CHECK(safe.room>=48);
     const auto other=choose(w,h,tiles,{23*w+12},{23*w+0},{safe.y*w+safe.x});
-    REQUIRE(other.valid());CHECK(other.x>=25);CHECK(other.x<35);
+    REQUIRE(other.valid());CHECK(other.x>=60);
     // No safe ground route across a mountain barrier: do not order an unreachable MCV.
     for(int y=0;y<h;++y)tiles[y*w+45].walkable=false;
     const auto reachable=choose(w,h,tiles,{23*w+12},{23*w+0},{});
@@ -1347,4 +1347,30 @@ TEST_CASE("Air withdrawal exits new coverage without crossing a second defended 
     CHECK(map.clearWithdrawal(Coord(10,20),exit));
     AirStrikePolicy::Coverage trapped(2,2); trapped.add(Coord(0,0),10);
     CHECK(trapped.escape(Coord(0,0)).isInvalid());
+}
+
+TEST_CASE("MCVs choose nearby usable rock without chasing distant space or clearance", "[quantbot][expansion]") {
+    using namespace RockExpansionPolicy;
+    constexpr int w=100,h=50;
+    std::vector<Tile> tiles(w*h);
+    for(auto& tile:tiles){tile.walkable=true;tile.free=true;}
+    auto rock=[&](int x0,int y0,int size){for(int y=y0;y<y0+size;++y)for(int x=x0;x<x0+size;++x)tiles[y*w+x].rock=true;};
+    rock(2,20,8); tiles[22*w+4].owned=true;
+    rock(20,20,8); rock(65,15,20);
+    // With no enemies, a much larger island must not outrank nearby usable rock.
+    auto result=choose(w,h,tiles,{23*w+10},{},{});
+    REQUIRE(result.valid());CHECK(result.x>=20);CHECK(result.x<28);
+    // Same result when the far island offers needless extra enemy clearance.
+    result=choose(w,h,tiles,{23*w+10},{23*w},{});
+    REQUIRE(result.valid());CHECK(result.x>=20);CHECK(result.x<28);
+    // Nearby rock under direct threat is still rejected.
+    result=choose(w,h,tiles,{23*w+10},{23*w+22},{});
+    REQUIRE(result.valid());CHECK(result.x>=65);
+    // Main-base proximity beats safety/space rewards and the MCV's own position.
+    const Site near{20,20,64,12,70,20}, safer{25,20,64,24,10,25}, distant{70,20,196,70,5,65};
+    CHECK(betterSite(near,safer));CHECK(betterSite(near,distant));
+    CHECK(betterSite(Site{20,20,64,24,70,20},near)); // safety only breaks a distance tie
+    result=choose(w,h,tiles,{23*w+90},{},{},22*w+4);
+    REQUIRE(result.valid());CHECK(result.x>=20);CHECK(result.x<28); // MCV beside far island
+
 }

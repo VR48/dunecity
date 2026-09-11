@@ -1022,14 +1022,22 @@ Coord QuantBot::findRockExpansionSite(const MCV* mcv) {
             if(it!=mcvExpansionSites.end()&&getMap().tileExists(it->second.x,it->second.y))reserved.push_back(it->second.y*w+it->second.x);
         }
     }
-    const auto result=RockExpansionPolicy::choose(w,h,tiles,starts,enemies,reserved);
+    const StructureBase* mainYard=nullptr;
+    for(const auto* structure:getStructureList())
+        if(structure->getOwner()==getHouse() && structure->getItemID()==Structure_ConstructionYard
+            && structure->isActive() && structure->getHealth()>0
+            && (!mainYard || structure->getObjectID()<mainYard->getObjectID())) mainYard=structure;
+    const int mainBase=mainYard ? mainYard->getY()*w+mainYard->getX() : -1;
+    const auto result=RockExpansionPolicy::choose(w,h,tiles,starts,enemies,reserved,mainBase);
     if(!mcv)availableBaseRock=freeBase;
     if(!result.valid())return Coord::Invalid();
     const Coord site(result.x,result.y);
     if(!overlapsReservedStructure(site.x,site.y,2,2)&&preservesGroundAccess(Structure_ConstructionYard,site)) {
         traceDecision("rock_expansion_site",AITelemetry::Record().set("mcv",mcv?mcv->getObjectID():NONE_ID)
             .set("x",site.x).set("y",site.y).set("free_base_rock",freeBase)
-            .set("local_free_rock",result.room).set("enemy_clearance",result.clearance).set("route_tiles",result.distance));
+            .set("local_free_rock",result.room).set("enemy_clearance",result.clearance).set("route_tiles",result.distance)
+            .set("main_base_x",mainYard?mainYard->getX():-1).set("main_base_y",mainYard?mainYard->getY():-1)
+            .set("base_distance",result.baseDistance).set("selection_rule","nearest_main_base_safe_rock"));
         return site;
     }
     return Coord::Invalid();
