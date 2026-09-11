@@ -5,6 +5,7 @@
 #include <dunecity/PowerRules.h>
 #include <dunecity/VanillaEconomy.h>
 #include <catch2/catch_test_macros.hpp>
+#include <players/AirStrikePolicy.h>
 #include <players/QuantBotBuildPolicy.h>
 #include <players/CityEconomyInvestmentPolicy.h>
 #include <set>
@@ -1204,4 +1205,34 @@ TEST_CASE("Police budget cuts respond to loss and financial pressure then recove
     CHECK(recoveryPoliceFunding(50,1600,250,575,500,true)==75);
     CHECK(recoveryPoliceFunding(75,1600,250,575,500,false)==100);
     CHECK(recoveryPoliceFunding(25,695,246,575,5000,false)==50);
+}
+
+TEST_CASE("Air strikes reject protected targets and covered approaches", "[quantbot][air]") {
+    AirStrikePolicy::Coverage coverage(40,40);
+    coverage.add(Coord(20,20),8);
+    CHECK_FALSE(coverage.clearFootprint(Coord(25,20),Coord(2,2)));
+    CHECK_FALSE(coverage.clearFootprint(Coord(28,20),Coord(2,2))); // range boundary
+    CHECK(coverage.clearFootprint(Coord(30,20),Coord(2,2))); // exposed district
+    CHECK(coverage.clearApproach(Coord(35,20),Coord(30,20)));
+    CHECK_FALSE(coverage.clearApproach(Coord(5,20),Coord(30,20))); // target safe, route unsafe
+    CHECK(coverage.clearApproach(Coord(5,5),Coord(30,5)));
+    CHECK_FALSE(coverage.clearFootprint(Coord(-1,5),Coord(2,2)));
+    CHECK_FALSE(coverage.clearApproach(Coord(20,20),Coord(30,20))); // aircraft already under AA
+    // A launcher moving up invalidates a previously safe attack next pass.
+    coverage.add(Coord(33,20),9);
+    CHECK_FALSE(coverage.clearFootprint(Coord(30,20),Coord(2,2)));
+    CHECK_FALSE(coverage.clearApproach(Coord(35,20),Coord(30,20)));
+}
+
+TEST_CASE("Air coverage uses combat diagonal distance and clears with removed defenders", "[quantbot][air]") {
+    AirStrikePolicy::Coverage guarded(40,40);
+    guarded.add(Coord(10,10),8);
+    CHECK_FALSE(guarded.safe(Coord(18,10)));
+    CHECK(guarded.safe(Coord(18,18))); // outside octile range, inside a square approximation
+    AirStrikePolicy::Coverage rebuilt(40,40);
+    CHECK(rebuilt.clearApproach(Coord(0,10),Coord(30,10)));
+    for(int item : {Structure_RocketTurret,Unit_Launcher,Unit_EliteLauncher,Unit_Deviator})
+        CHECK(AirStrikePolicy::antiAir(item));
+    for(int item : {Structure_GunTurret,Structure_Refinery,Unit_Harvester,Unit_SonicTank})
+        CHECK_FALSE(AirStrikePolicy::antiAir(item));
 }

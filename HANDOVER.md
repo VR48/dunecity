@@ -1,3 +1,56 @@
+# Safe ornithopter raids and base air coverage — 1.0.644 (local only)
+
+Stefan requested that ornithopters exploit buildings/units outside launcher and
+rocket-turret protection instead of entering unrestricted Hunt when numerous,
+and that QuantBot build enough distributed air defence for its whole base.
+
+The old strike selector enabled HUNT at a map-scaled aircraft threshold and
+reused active targets without rechecking air defence. Only the special nearby
+reactor shortcut checked anti-air. Turret defence weights included Nuclear,
+Heavy Factory and Repair Yard only, so R/C/I outskirts were amenity targets,
+not assets requiring protection; centre-based square distance also exaggerated
+coverage near diagonal edges.
+
+- QuantBot aircraft now receive explicit forced attacks in STOP mode. STOP
+  suppresses automatic acquisition/retaliatory Hunt; UnitBase::engageTarget
+  still travels/fires at explicit forced targets. There is no size threshold
+  or last-stand exception. Human-controlled units retain their orders.
+- Each tactical pass builds one visible enemy anti-air map (Rocket Turret,
+  Launcher, Elite Launcher, Deviator), using each weapon's actual range plus
+  two tiles of manoeuvre margin and the game's octile distance. Unpowered
+  rockets are ignored only when the match requires turret power. Unknown
+  fogged defenders cannot be inferred. Entire target footprints and direct
+  approaches must be clear. No path through defended space is invented.
+- All enemy ground units and real structures, including zones omitted from
+  configured priority tables, are candidates; existing priorities rank safe
+  choices. Aircraft can independently choose reachable safe opportunities.
+  Existing targets are revalidated as launchers move. Unsafe orders are
+  cancelled and aircraft return to base. A kill no longer authorizes another
+  autonomous target. Badly damaged aircraft are withdrawn.
+- All real base buildings now count as defence assets; surfaces, walls and
+  turrets do not recursively demand protection. Reactors retain two-cover
+  priority. Coverage checks all footprint corners with octile range rather
+  than a square around the centre. Existing/reserved turrets prevent duplicate
+  coverage purchases by parallel construction yards.
+- After opening workers, peaceful city coverage receives a slot after three
+  non-service construction orders; known enemy aircraft make gap filling
+  urgent. This proactive coverage slot is not capped at two turrets or gated
+  on crime/land-value benefits. It still requires an available rocket turret,
+  legal road-preserving site, power and affordable credits plus a zone reserve.
+- New telemetry: ornithopter_safe_strike, ornithopter_hold, base_air_coverage;
+  performance scope ai.ornithopter_safe_strikes. Policy version v62. No new
+  saved fields, random draws or per-candidate full-map searches.
+
+Validation: 571 runnable tests pass, 3 skipped. New tests cover protected
+footprints, exposed districts, clear/blocked approaches, changing launcher
+coverage, diagonal range, building-edge coverage and the expanded asset set.
+Ninja dependency audits passed. Installed /Applications/dunecity.app 644 with
+verified deep strict signature and matching rebuilt executable SHA256
+d45406a6da1a70573eaed622339e599178337d1fae0463bddf6df7f01337c72c.
+Previous bundle: /Applications/.dunecity-644-bw39wsr8/dunecity-previous.app.
+No running match was interrupted. This is local only,
+not a pushed cross-platform release. Restart to use 644.
+
 # Opening economy, base defence and city traffic — 1.0.643 (local only)
 
 Current source fixes Stefan's live 1.0.642 game reports. All 568 runnable tests

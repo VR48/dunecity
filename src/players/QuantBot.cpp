@@ -49,6 +49,7 @@
 #include <players/CityEconomyInvestmentPolicy.h>
 #include <players/CityPlacementPolicy.h>
 #include <players/RocketTurretPolicy.h>
+#include <players/AirStrikePolicy.h>
 #include <structures/RepairYard.h>
 #include <structures/Palace.h>
 #include <units/UnitBase.h>
@@ -2741,7 +2742,7 @@ Coord QuantBot::findCityTurretPlaceLocation(Uint32 itemID, int* defenseScore, in
     // Existing and planned turrets count as coverage, so additional yards do
     // not buy the same protection/amenity repeatedly.
     std::vector<Coord> turrets;
-    struct Target { Coord position; int defense; int value; bool covered; };
+    struct Target { Coord position; Coord origin; Coord size; int defense; int value; bool covered; };
     std::vector<Target> targets;
     const int defenseRadius = std::max(1,
         currentGame->objectData.data[itemID][getHouse()->getHouseID()].weaponrange - 1);
@@ -2751,7 +2752,7 @@ Coord QuantBot::findCityTurretPlaceLocation(Uint32 itemID, int* defenseScore, in
         if (!weight && !amenity) return;
         // Use the same structure origin that receives city land-value scans.
         const Coord point = weight ? Coord(pos.x + size.x/2, pos.y + size.y/2) : pos;
-        targets.push_back({point, weight, citySim->getLandValueMap().worldGet(point.x, point.y), false});
+        targets.push_back({point, pos, size, weight, citySim->getLandValueMap().worldGet(point.x, point.y), false});
     };
     for (const auto* structure : getStructureList()) {
         if (structure->getOwner() != getHouse() || structure->getHealth() <= 0) continue;
@@ -2770,7 +2771,7 @@ Coord QuantBot::findCityTurretPlaceLocation(Uint32 itemID, int* defenseScore, in
         const int radius = target.defense ? defenseRadius : DuneCity::getParkLandValueRadius(Structure_RocketTurret);
         for (const auto& turret : turrets) {
             if (target.defense
-                ? std::max(std::abs(turret.x-target.position.x), std::abs(turret.y-target.position.y)) <= radius
+                ? RocketTurretPolicy::coversBuilding(turret,target.origin,target.size,radius)
                 : plannedTerrain.marginalGain(turret.x,turret.y,DuneCity::kParkLandValueBonus,
                     target.position.x,target.position.y)>0) {
                 if (++coverage >= (target.defense == 2 ? 2 : 1)) { target.covered = true; break; }
@@ -2837,7 +2838,7 @@ Coord QuantBot::findCityTurretPlaceLocation(Uint32 itemID, int* defenseScore, in
         for (const auto& target : targets) {
             if (target.covered) continue;
             const int distance = std::max(std::abs(x-target.position.x), std::abs(y-target.position.y));
-            if (target.defense && distance <= defenseRadius) {
+            if (target.defense && RocketTurretPolicy::coversBuilding(Coord(x,y),target.origin,target.size,defenseRadius)) {
                 score.defense += target.defense;
                 score.proximity += target.defense * (defenseRadius-distance);
             } else if (!target.defense) {
@@ -4945,6 +4946,30 @@ void QuantBot::build(int militaryValue) {
                     }
                 }
 
+                // Proactively cover the whole city, not just the first two
+                // factories. Planned turrets count, so parallel yards fill gaps.
+                // Preserve the opening worker investment and interleave peaceful
+                // coverage with growth; observed enemy aircraft make it urgent.
+                if (itemID == NONE_ID && !skipRemainingStructureLogic && isCitySim
+                    && !openingWorkersNeeded() && itemCount[Structure_HeavyFactory] > 0
+                    && (maxEnemyOrnithopters > 0 || nonServiceConstructionOrders >= 3)
+                    && pBuilder->isAvailableToBuild(Structure_RocketTurret)
+                    && hasPowerBufferForTurret()
+                    && money >= data[Structure_RocketTurret][houseID].price
+                        + data[Structure_ZoneResidential][houseID].price) {
+                    int uncoveredWeight=0;
+                    const Coord site=findCityTurretPlaceLocation(Structure_RocketTurret,&uncoveredWeight);
+                    if(site.isValid() && uncoveredWeight>0) {
+                        itemID=Structure_RocketTurret;
+                        crimeServiceSite=site;
+                        structureRule="base_air_coverage";
+                        skipRemainingStructureLogic=true; // Do not replace this funded coverage slot with optional tech.
+                        traceDecision("base_air_coverage",AITelemetry::Record()
+                            .set("x",site.x).set("y",site.y).set("uncovered_building_weight",uncoveredWeight)
+                            .set("enemy_aircraft",maxEnemyOrnithopters));
+                    }
+                }
+
                 // Alternate ten-second priority windows so civic unlocks and
                 // other infrastructure still get normal opportunities to build.
                 // Use simulation time, not the crime-service counter (capped at 3).
@@ -5628,6 +5653,9 @@ void QuantBot::build(int militaryValue) {
             }
 			if (emitStatsLog) logDebug("BUILD-CHOICE: CY=%u item=%u credits=%d skip=%d",
 				pBuilder->getObjectID(), itemID, money, skipRemainingStructureLogic);
+            // A later power/tech override cannot reuse a service's 1x1 site.
+            if (itemID != Structure_RocketTurret && itemID != Structure_PoliceStation)
+                crimeServiceSite = Coord::Invalid();
 			Coord selectedPlaceLocation = Coord::Invalid();
 			if (itemID != NONE_ID && pBuilder->isAvailableToBuild(itemID)) {
                 if (crimeServiceSite.isValid()) selectedPlaceLocation = crimeServiceSite;
@@ -6103,244 +6131,96 @@ void QuantBot::scrambleUnitsAndDefend(const ObjectBase* intruder, bool clearingS
 
 bool QuantBot::tryLaunchOrnithopterStrike(const QuantBotConfig::DifficultySettings& diffSettings,
                                           const QuantBotConfig& config) {
-    if (!diffSettings.ornithopterAttackEnabled) {
-        ornithopterStrikeTeam.reset();
-        return false;
-    }
+    const int myTeam=getHouse()->getTeamID();
+    const Map& map=getMap();
+    std::vector<const UnitBase*> aircraft;
+    for(const auto* unit:getUnitList())
+        if(unit->getOwner()==getHouse() && unit->getItemID()==Unit_Ornithopter
+            && unit->isActive() && unit->isRespondable() && !humanControls(unit)) aircraft.push_back(unit);
+    ornithopterStrikeTeam.reset(); // Old saved mass-Hunt missions no longer grant permission to attack.
+    if(aircraft.empty()) return false;
+    AITelemetry::PerformanceScope perfScope("ai.ornithopter_safe_strikes",getGameCycleCount(),getHouse()->getHouseID());
 
-    const Map& map = getMap();
-    const int maxDim = std::max(map.getSizeX(), map.getSizeY());
-
-    int effectiveThreshold = diffSettings.ornithopterAttackThreshold;
-    if (maxDim > 64) {
-        if (maxDim >= 128) {
-            effectiveThreshold *= 3;
-        } else {
-            effectiveThreshold *= 2;
-        }
-    }
-    if (effectiveThreshold <= 0) {
-        effectiveThreshold = 1;
-    }
-
-    std::vector<const UnitBase*> availableOrnithopters;
-    std::set<Uint32> currentMemberIds;
-
-    for (const UnitBase* pUnit : getUnitList()) {
-        if (pUnit->getOwner() != getHouse()
-            || pUnit->getItemID() != Unit_Ornithopter
-            || !pUnit->isActive()
-            || pUnit->isBadlyDamaged()
-            || !pUnit->isRespondable() || humanControls(pUnit)) {
-            continue;
-        }
-
-        availableOrnithopters.push_back(pUnit);
-        currentMemberIds.insert(pUnit->getObjectID());
-    }
-
-    const int totalOrnithopters = getHouse()->getNumItems(Unit_Ornithopter);
-    const int readyOrnithopters = static_cast<int>(availableOrnithopters.size());
-    const bool noFriendlyStructures = (getHouse()->getNumStructures() == 0);
-    const bool forceLastStandStrike = noFriendlyStructures && readyOrnithopters > 0;
-    const int appliedThreshold = forceLastStandStrike ? std::max(readyOrnithopters, 1) : effectiveThreshold;
-
-    if (!forceLastStandStrike && readyOrnithopters < effectiveThreshold) {
-        ornithopterStrikeTeam.reset();
-        return false;
-    }
-
-    if (!ornithopterStrikeTeam.memberIds.empty()) {
-        for (auto it = ornithopterStrikeTeam.memberIds.begin(); it != ornithopterStrikeTeam.memberIds.end();) {
-            if (currentMemberIds.count(*it) == 0U) {
-                it = ornithopterStrikeTeam.memberIds.erase(it);
-            } else {
-                ++it;
-            }
-        }
-    }
-
-    if (ornithopterStrikeTeam.isActive()) {
-        ornithopterStrikeTeam.minMembers = appliedThreshold;
-        if (static_cast<int>(ornithopterStrikeTeam.memberIds.size()) < ornithopterStrikeTeam.minMembers) {
-            ornithopterStrikeTeam.reset();
-        }
-    }
-
-    auto ensureOrders = [&](const ObjectBase* target) -> bool {
-        if (target == nullptr) {
-            return false;
-        }
-
-        bool issued = false;
-        const Uint32 targetId = target->getObjectID();
-
-        for (const UnitBase* pUnit : availableOrnithopters) {
-            const Uint32 unitId = pUnit->getObjectID();
-            ornithopterStrikeTeam.memberIds.insert(unitId);
-
-            if (!pUnit->canAttack(target)) {
-                continue;
-            }
-
-            const ObjectBase* currentTarget = pUnit->hasATarget() ? pUnit->getTarget() : nullptr;
-            const bool needsNewTarget = (currentTarget == nullptr) || (currentTarget->getObjectID() != targetId);
-            const bool needsMode = pUnit->getAttackMode() != HUNT;
-
-            if (needsMode) {
-                doSetAttackMode(pUnit, HUNT);
-                issued = true;
-            }
-
-            if (needsNewTarget) {
-                doAttackObject(pUnit, target, true);
-                issued = true;
-            }
-        }
-
-        return issued;
+    AirStrikePolicy::Coverage coverage(map.getSizeX(),map.getSizeY());
+    int visibleAntiAir=0;
+    auto addDefender=[&](const ObjectBase* defender) {
+        if(!defender || !defender->isActive() || defender->getHealth()<=0
+            || !defender->getOwner() || defender->getOwner()->getTeamID()==myTeam
+            || !defender->isVisible(myTeam) || !AirStrikePolicy::antiAir(defender->getItemID())) return;
+        if(defender->getItemID()==Structure_RocketTurret
+            && currentGame->getGameInitSettings().getGameOptions().rocketTurretsNeedPower
+            && !defender->getOwner()->hasPower()) return;
+        coverage.add(defender->getLocation(),defender->getWeaponRange()+2);
+        ++visibleAntiAir;
     };
+    for(const auto* structure:getStructureList()) addDefender(structure);
+    for(const auto* unit:getUnitList()) addDefender(unit);
 
-    // Opportunistic reactor strike. Require half the ready wing within 12 tiles
-    // and no visible anti-air covering the plant or the straight approach corridor.
-    const StructureBase* nearbyReactor = nullptr;
-    int bestReactorDistance = std::numeric_limits<int>::max();
-    for (const StructureBase* reactor : getStructureList()) {
-        if (reactor->getItemID() != Structure_NuclearPlant || !reactor->isActive()
-            || reactor->getOwner()->getTeamID() == getHouse()->getTeamID()
-            || !reactor->isVisible(getHouse()->getTeamID())) continue;
-        int nearby = 0;
-        int totalDistance = 0;
-        int antiAir = 0;
-        for (const UnitBase* aircraft : availableOrnithopters) {
-            const int distance = blockDistance(aircraft->getLocation(), reactor->getLocation()).lround();
-            if (aircraft->canAttack(reactor) && distance <= 12) ++nearby;
-            totalDistance += distance;
-        }
-        if (!QuantBotBuildPolicy::easyReactorStrike(nearby, readyOrnithopters, 0)) continue;
-        for (const UnitBase* aircraft : availableOrnithopters) {
-            if (antiAir > 0) break;
-            auto checkDefender = [&](const ObjectBase* defender) {
-                if (antiAir > 0 || !defender->isActive() || !defender->isVisible(getHouse()->getTeamID())
-                    || defender->getOwner()->getTeamID() == getHouse()->getTeamID()
-                    || !defender->canAttack(aircraft)) return;
-                const int range = currentGame->objectData.data[defender->getItemID()][defender->getOwner()->getHouseID()].weaponrange;
-                const Coord from = aircraft->getLocation(), to = reactor->getLocation();
-                const Coord dp = defender->getLocation();
-                if (dp.x < std::min(from.x,to.x)-range || dp.x > std::max(from.x,to.x)+range
-                    || dp.y < std::min(from.y,to.y)-range || dp.y > std::max(from.y,to.y)+range) return;
-                const int steps = std::max(1, std::max(std::abs(to.x-from.x), std::abs(to.y-from.y)));
-                for (int step = 0; step <= steps; ++step) {
-                    const Coord point(from.x+(to.x-from.x)*step/steps, from.y+(to.y-from.y)*step/steps);
-                    if (blockDistance(point, defender->getLocation()) <= range) { ++antiAir; break; }
-                }
-            };
-            for (const StructureBase* defender : getStructureList()) checkDefender(defender);
-            for (const UnitBase* defender : getUnitList()) checkDefender(defender);
-        }
-        if (QuantBotBuildPolicy::easyReactorStrike(nearby, readyOrnithopters, antiAir)
-            && totalDistance < bestReactorDistance) {
-            nearbyReactor = reactor;
-            bestReactorDistance = totalDistance;
-        }
-    }
-    if (nearbyReactor != nullptr) {
-        ornithopterStrikeTeam.setTarget(nearbyReactor->getObjectID(), appliedThreshold);
-        const bool issued = ensureOrders(nearbyReactor);
-        if (issued) traceDecision("ornithopter_reactor_strike", AITelemetry::Record()
-            .set("target", nearbyReactor->getObjectID()).set("ready_aircraft", readyOrnithopters)
-            .set("total_distance", bestReactorDistance).set("reason", "nearby_clear_approach"));
-        return issued;
-    }
-
-    if (ornithopterStrikeTeam.isActive()) {
-        const ObjectBase* existingTarget = currentGame->getObjectManager().getObject(ornithopterStrikeTeam.targetId);
-        if (existingTarget == nullptr || !existingTarget->isActive()) {
-            ornithopterStrikeTeam.reset();
-        } else {
-            return ensureOrders(existingTarget);
-        }
-    }
-
-    const int myTeam = getHouse()->getTeamID();
-    const House* myHouse = getHouse();
-
-    const ObjectBase* teamTarget = nullptr;
-    double bestTargetScore = -1.0;
-
-    auto evaluateCandidate = [&](const ObjectBase* candidate, const QuantBotConfig::TargetPriority& priority) {
-        if (!candidate || !candidate->isActive()) {
-            return;
-        }
-
-        const House* owner = candidate->getOwner();
-        if (!owner || owner->getTeamID() == myTeam) {
-            return;
-        }
-
-        if (!candidate->isVisible(myTeam)) {
-            return;
-        }
-
-        const int weight = priority.build + priority.target;
-        if (weight <= 0) {
-            return;
-        }
-
-        double candidateScore = -1.0;
-        for (const UnitBase* pOrnithopter : availableOrnithopters) {
-            if (!pOrnithopter->canAttack(candidate)) {
-                continue;
-            }
-
-            FixPoint distanceFP = blockDistance(pOrnithopter->getLocation(), candidate->getLocation());
-            const double score = static_cast<double>(weight) / (distanceFP.toDouble() + 1.0);
-            if (score > candidateScore) {
-                candidateScore = score;
-            }
-        }
-
-        if (candidateScore <= 0.0) {
-            return;
-        }
-
-        if (candidateScore > bestTargetScore) {
-            bestTargetScore = candidateScore;
-            teamTarget = candidate;
-        }
+    struct Candidate { const ObjectBase* object; int weight; };
+    std::vector<Candidate> candidates;
+    auto addCandidate=[&](const ObjectBase* object,const QuantBotConfig::TargetPriority& priority) {
+        if(!object || !object->isActive() || object->getHealth()<=0 || !object->getOwner()
+            || object->getOwner()->getTeamID()==myTeam || !object->isVisible(myTeam)
+            || object->isAFlyingUnit() || AirStrikePolicy::antiAir(object->getItemID())) return;
+        const Coord size=object->isAStructure()
+            ? static_cast<const StructureBase*>(object)->getStructureSize() : Coord(1,1);
+        if(!coverage.clearFootprint(object->getLocation(),size)) return;
+        // All undefended buildings are eligible, including zones absent from the
+        // combat priority table; retain configured priorities for ranking.
+        candidates.push_back({object,std::max(1,priority.build+priority.target)});
     };
-
-    for (const StructureBase* pStructure : getStructureList()) {
-        evaluateCandidate(pStructure, config.getStructurePriority(pStructure->getItemID()));
+    if(diffSettings.ornithopterAttackEnabled) {
+        for(const auto* structure:getStructureList())
+            addCandidate(structure,config.getStructurePriority(structure->getItemID()));
+        for(const auto* unit:getUnitList())
+            addCandidate(unit,config.getUnitPriority(unit->getItemID()));
     }
 
-    for (const UnitBase* pEnemy : getUnitList()) {
-        if (pEnemy->getOwner() == myHouse) {
-            continue;
+    bool issued=false;
+    const Coord base=findBaseCentre(getHouse()->getHouseID());
+    for(const auto* unit:aircraft) {
+        const ObjectBase* target=nullptr;
+        double bestScore=-1;
+        if(!unit->isBadlyDamaged() && unit->getAttackMode()!=RETREAT) {
+            for(const auto& candidate:candidates) {
+                if(!unit->canAttack(candidate.object)) continue;
+                const Coord endpoint=candidate.object->getClosestPoint(unit->getLocation());
+                double score=double(candidate.weight)/(blockDistance(unit->getLocation(),endpoint).toDouble()+1);
+                if(candidate.object==unit->getTarget()) score*=1.15; // Avoid oscillating between equal safe targets.
+                if(score<=bestScore || !coverage.clearApproach(unit->getLocation(),endpoint)) continue;
+                bestScore=score;
+                target=candidate.object;
+            }
         }
-        evaluateCandidate(pEnemy, config.getUnitPriority(pEnemy->getItemID()));
-    }
-
-    if (teamTarget == nullptr) {
-        ornithopterStrikeTeam.reset();
-        return false;
-    }
-
-    ornithopterStrikeTeam.reset();
-    ornithopterStrikeTeam.setTarget(teamTarget->getObjectID(), appliedThreshold);
-    const bool launched = ensureOrders(teamTarget);
-
-    if (launched) {
-        if (forceLastStandStrike) {
-            logDebug("Ornithopter strike launched despite threshold (last structure destroyed): ready=%d total=%d forcedThreshold=%d",
-                     readyOrnithopters, totalOrnithopters, appliedThreshold);
+        const bool modeChanged=unit->getAttackMode()!=STOP;
+        const bool hadTarget=unit->hasATarget();
+        if(target) {
+            const bool orderNeeded=modeChanged || unit->getTarget()!=target || !unit->wasForced();
+            // STOP suppresses autonomous target acquisition; the explicit forced
+            // attack still flies and fires. No follow-on Hunt after target death.
+            if(modeChanged) doSetAttackMode(unit,STOP);
+            if(orderNeeded) {
+                doAttackObject(unit,target,true);
+                issued=true;
+                traceDecision("ornithopter_safe_strike",AITelemetry::Record().set("unit",unit->getObjectID())
+                    .set("target",target->getObjectID()).set("target_item",target->getItemID())
+                    .set("visible_anti_air",visibleAntiAir).set("reason","uncovered_target_clear_approach"));
+            }
         } else {
-            logDebug("Ornithopter strike launched: %d units (effective threshold %d)",
-                     totalOrnithopters, effectiveThreshold);
+            if(modeChanged || hadTarget) { doSetAttackMode(unit,STOP); issued=true; }
+            // Return to base when an order becomes unsafe, rather than continuing
+            // towards its old destination. Moving launchers are rechecked each pass.
+            if(base.isValid() && (modeChanged || hadTarget
+                || (!unit->wasForced() && blockDistance(unit->getLocation(),base)>17))) {
+                doMove2Pos(unit,base.x,base.y,true);
+                issued=true;
+            }
+            if(modeChanged || hadTarget) traceDecision("ornithopter_hold",AITelemetry::Record()
+                .set("unit",unit->getObjectID()).set("visible_anti_air",visibleAntiAir)
+                .set("reason","no_safe_target_or_approach"));
         }
     }
-
-    return launched;
+    return issued;
 }
 
 

@@ -244,7 +244,7 @@ TEST_CASE("Rocket turrets protect reactors before factories and useful city junc
     using namespace RocketTurretPolicy;
     REQUIRE(defenseWeight(Structure_NuclearPlant) == 2 * defenseWeight(Structure_HeavyFactory));
     REQUIRE(defenseWeight(Structure_RepairYard) == defenseWeight(Structure_HeavyFactory));
-    REQUIRE(defenseWeight(Structure_ZoneResidential) == 0);
+    REQUIRE(defenseWeight(Structure_ZoneResidential) == 1);
     Score reactor{2, 120, 0, 1};
     Score factory{1, 240, 100, 10};
     Score city{0, 240, 1000, 0};
@@ -500,4 +500,17 @@ TEST_CASE("Reactor placement prefers safety and separation without vetoing the o
     REQUIRE(reactorSiteRank(0,0,true,-10000) > reactorSiteRank(0,0,false,10000));
     REQUIRE(reactorSiteRank(0,0,false,0) > reactorSiteRank(100,0,true,10000));
     REQUIRE(reactorSiteRank(100,0,false,0) > reactorSiteRank(200,0,false,10000));
+}
+
+TEST_CASE("Rocket coverage includes city districts and whole diagonal footprints", "[city][placement][air]") {
+    using namespace RocketTurretPolicy;
+    for(int item : {Structure_ZoneResidential,Structure_ZoneCommercial,Structure_ZoneIndustrial,
+        Structure_Refinery,Structure_WindTrap,Structure_HighTechFactory,Structure_PoliceStation,
+        Structure_Silo,Structure_Palace,Structure_ConstructionYard}) CHECK(defenseWeight(item)>0);
+    for(int item : {Structure_Road,Structure_Slab1,Structure_Slab4,Structure_Wall,
+        Structure_RocketTurret,Structure_GunTurret}) CHECK(defenseWeight(item)==0);
+    CHECK(coversBuilding(Coord(10,10),Coord(15,10),Coord(2,2),7));
+    CHECK_FALSE(coversBuilding(Coord(10,10),Coord(15,15),Coord(2,2),7));
+    CHECK_FALSE(coversBuilding(Coord(10,10),Coord(17,10),Coord(2,2),7));
+    CHECK(coversBuilding(Coord(10,10),Coord(17,10),Coord(1,1),7));
 }
