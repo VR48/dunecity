@@ -1289,3 +1289,35 @@ TEST_CASE("Announced civic requirements select a single feasible investment", "[
     CHECK(QuantBotBuildPolicy::spendableCredits(2900,3000)==0);
     CHECK(QuantBotBuildPolicy::spendableCredits(3400,3000)==400);
 }
+
+TEST_CASE("Persistent unloading queues trigger one extra bay without a fleet forecast", "[quantbot][city]") {
+    using namespace CityEconomyInvestmentPolicy;
+    CHECK(unloadingQueueNeedsBay(3,0,0,true));
+    CHECK(unloadingQueueNeedsBay(4,1,0,true));
+    CHECK_FALSE(unloadingQueueNeedsBay(3,0,0,false)); // Transient arrivals.
+    CHECK_FALSE(unloadingQueueNeedsBay(1,0,0,true));
+    CHECK_FALSE(unloadingQueueNeedsBay(3,3,0,true)); // Free bays can absorb arrivals.
+    CHECK_FALSE(unloadingQueueNeedsBay(8,0,1,true)); // Wait for committed capacity.
+}
+
+#include <players/RockExpansionPolicy.h>
+TEST_CASE("Expansion chooses safe reachable new rock rather than adjacent yards", "[quantbot][expansion]") {
+    using namespace RockExpansionPolicy;
+    constexpr int w=80,h=50;
+    std::vector<Tile> tiles(w*h);
+    for(auto& tile:tiles){tile.walkable=true;tile.free=true;}
+    auto rock=[&](int x0,int y0){for(int y=y0;y<y0+10;++y)for(int x=x0;x<x0+10;++x)tiles[y*w+x].rock=true;};
+    rock(2,20); rock(25,20); rock(60,20);
+    tiles[23*w+5].owned=true; // Current base; plenty of rock but not a new formation.
+    const auto safe=choose(w,h,tiles,{23*w+12},{23*w+0},{});
+    REQUIRE(safe.valid());CHECK(safe.x>=60);CHECK(safe.room>=48);
+    const auto other=choose(w,h,tiles,{23*w+12},{23*w+0},{safe.y*w+safe.x});
+    REQUIRE(other.valid());CHECK(other.x>=25);CHECK(other.x<35);
+    // No safe ground route across a mountain barrier: do not order an unreachable MCV.
+    for(int y=0;y<h;++y)tiles[y*w+45].walkable=false;
+    const auto reachable=choose(w,h,tiles,{23*w+12},{23*w+0},{});
+    REQUIRE(reachable.valid());CHECK(reachable.x<45);
+    // The remaining rock is in enemy fire; preserve the MCV instead of deploying at home.
+    for(int y=20;y<30;++y)for(int x=25;x<35;++x)tiles[y*w+x].unsafe=true;
+    CHECK_FALSE(choose(w,h,tiles,{23*w+12},{23*w+0},{}).valid());
+}

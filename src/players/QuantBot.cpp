@@ -1,3 +1,4 @@
+#include <players/RockExpansionPolicy.h>
 #include <dunecity/CityStructurePopulation.h>
 #include <dunecity/ZonePower.h>
 #include <players/LocalPointIndex.h>
@@ -988,8 +989,59 @@ void QuantBot::onDamage(const ObjectBase* pObject, int damage, Uint32 damagerID)
 	}
 }
 
+Coord QuantBot::findRockExpansionSite(const MCV* mcv) {
+    const int w=getMap().getSizeX(),h=getMap().getSizeY();
+    std::vector<RockExpansionPolicy::Tile> tiles(w*h);
+    std::vector<int> starts,enemies,reserved;
+    int freeBase=0;
+    for(int y=0;y<h;++y) for(int x=0;x<w;++x) {
+        const auto* tile=getMap().getTile(x,y);
+        const auto* ground=tile->getNonInfantryGroundObject();
+        auto& out=tiles[y*w+x];
+        out.rock=tile->isRock()&&!tile->isMountain();
+        out.free=!tile->hasAStructure() && (!tile->hasAGroundObject() || ground==mcv);
+        out.walkable=!tile->isMountain()&&!tile->hasAStructure();
+        out.owned=tile->hasAStructure()&&tile->getOwner()==getHouse()->getHouseID();
+        out.unsafe=dangerAt(Coord(x,y),Coord(1,1))>0||nearRecentStructureLoss(x,y,1,1);
+        if(out.rock&&out.free&&getMap().isWithinBuildRange(x,y,getHouse())) {
+            ++freeBase;
+            if(!mcv)starts.push_back(y*w+x);
+        }
+    }
+    if(mcv && mcv->getLocation().isValid()) starts.push_back(mcv->getY()*w+mcv->getX());
+    auto enemy=[&](const ObjectBase* object) {
+        if(object->getOwner() && object->getOwner()->getTeamID()!=getHouse()->getTeamID()
+            && object->isVisible(getHouse()->getTeamID())&&object->getLocation().isValid())
+            enemies.push_back(object->getY()*w+object->getX());
+    };
+    for(const auto* structure:getStructureList())enemy(structure);
+    for(const auto* unit:getUnitList()) {
+        enemy(unit);
+        if(unit->getOwner()==getHouse()&&unit->getItemID()==Unit_MCV&&unit!=mcv) {
+            const auto it=mcvExpansionSites.find(unit->getObjectID());
+            if(it!=mcvExpansionSites.end()&&getMap().tileExists(it->second.x,it->second.y))reserved.push_back(it->second.y*w+it->second.x);
+        }
+    }
+    const auto result=RockExpansionPolicy::choose(w,h,tiles,starts,enemies,reserved);
+    if(!mcv)availableBaseRock=freeBase;
+    if(!result.valid())return Coord::Invalid();
+    const Coord site(result.x,result.y);
+    if(!overlapsReservedStructure(site.x,site.y,2,2)&&preservesGroundAccess(Structure_ConstructionYard,site)) {
+        traceDecision("rock_expansion_site",AITelemetry::Record().set("mcv",mcv?mcv->getObjectID():NONE_ID)
+            .set("x",site.x).set("y",site.y).set("free_base_rock",freeBase)
+            .set("local_free_rock",result.room).set("enemy_clearance",result.clearance).set("route_tiles",result.distance));
+        return site;
+    }
+    return Coord::Invalid();
+}
+
 Coord QuantBot::findMcvPlaceLocation(const MCV* pMCV) {
     AITelemetry::PerformanceScope perfScope("ai.findMcvPlaceLocation", getGameCycleCount(), getHouse()->getHouseID());
+    if(currentGame->isCitySimEnabled()&&getHouse()->getNumItems(Structure_ConstructionYard)>0) {
+        const Coord site=findRockExpansionSite(pMCV);
+        if(site.isValid())mcvExpansionSites[pMCV->getObjectID()]=site;
+        if(site.isValid()||availableBaseRock<48)return site;
+    }
 	// Always search for best location near the MCV's current position
 	// This works for both first MCV and expansion MCVs.
 	//
@@ -1082,6 +1134,8 @@ Coord QuantBot::findMcvPlaceLocation(const MCV* pMCV) {
 			bestLocation.x, bestLocation.y, bestLocationScore);
 	}
 
+	if(bestLocation.isValid()&&currentGame->isCitySimEnabled()&&getHouse()->getNumItems(Structure_ConstructionYard)>0)
+        mcvExpansionSites[pMCV->getObjectID()]=bestLocation;
 	return bestLocation;
 }
 
@@ -3262,6 +3316,37 @@ void QuantBot::build(int militaryValue) {
     const int fundedHarvesterTarget = citySimEnabled
         ? CityEconomyInvestmentPolicy::factoryHarvesterTarget(spiceHarvesterTarget,harvesterLimit)
         : QuantBotBuildPolicy::fundedSpiceHarvesters(mapSpiceHarvesterTarget,getHouse()->getNumItems(Structure_Refinery));
+    int busyRefineries=0,freeRefineries=0,waitingHarvesters=0,waitingCargo=0;
+    AITelemetry::Record refineryQueues;
+    if(citySimEnabled) {
+        for(const auto* structure:getStructureList()) if(structure->getOwner()==getHouse()&&structure->acceptsHarvesterDropoff()) {
+            if(structure->isHarvesterDropoffFree())++freeRefineries;else ++busyRefineries;
+            refineryQueues.set(std::to_string(structure->getObjectID()),AITelemetry::Record()
+                .set("x",structure->getX()).set("y",structure->getY()).set("busy",!structure->isHarvesterDropoffFree())
+                .set("bookings",structure->getHarvesterDropoffBookings()));
+        }
+        for(const auto* unit:getUnitList()) if(unit->getOwner()==getHouse()) {
+            const auto* harvester=dynamic_cast<const Harvester*>(unit);
+            const auto* target=harvester?dynamic_cast<const StructureBase*>(harvester->getTarget()):nullptr;
+            if(harvester&&harvester->isActive()&&harvester->isReturning()&&harvester->getAmountOfSpice()>0
+                && target&&target->getOwner()==getHouse()&&target->acceptsHarvesterDropoff()&&!target->isHarvesterDropoffFree()
+                && blockDistance(harvester->getLocation(),target->getClosestPoint(harvester->getLocation()))<=6) {
+                ++waitingHarvesters;
+                waitingCargo+=std::min(int(HARVESTERMAXSPICE),harvester->getAmountOfSpice().lround());
+            }
+        }
+    }
+    if(waitingHarvesters<freeRefineries+2)refineryQueueSince=std::numeric_limits<Uint32>::max();
+    else if(refineryQueueSince==std::numeric_limits<Uint32>::max())refineryQueueSince=getGameCycleCount();
+    const bool unloadingBacklog=CityEconomyInvestmentPolicy::unloadingQueueNeedsBay(waitingHarvesters,freeRefineries,
+        itemCount[Structure_Refinery]-getHouse()->getNumItems(Structure_Refinery),
+        refineryQueueSince!=std::numeric_limits<Uint32>::max()&&getGameCycleCount()-refineryQueueSince>=MILLI2CYCLES(10000));
+    if(citySimEnabled&&(rockSurveyCycle==std::numeric_limits<Uint32>::max()
+        || getGameCycleCount()-rockSurveyCycle>=MILLI2CYCLES(15000))) {
+        rockSurveyCycle=getGameCycleCount();rockExpansionSite=findRockExpansionSite();
+    }
+    const bool rockExpansionNeeded=citySimEnabled&&rockExpansionSite.isValid()
+        && (availableBaseRock<48 || (unloadingBacklog&&!findPlaceLocation(Structure_Refinery).isValid()));
     const int cityWorkingReserve = data[Unit_Tank][houseID].price
         + (itemCount[Unit_Harvester] < fundedHarvesterTarget ? data[Unit_Harvester][houseID].price : 0)
         + (!citySimEnabled && itemCount[Structure_Refinery] < QuantBotBuildPolicy::desiredSpiceRefineries(
@@ -3330,8 +3415,9 @@ void QuantBot::build(int militaryValue) {
         && QuantBotBuildPolicy::planNuclearInvestment(getHouse()->getPowerRequirement(),
             getHouse()->getProducedPower(),cityPowerReserve,std::max(1,-data[Structure_WindTrap][houseID].power))
         && nuclearBuildAvailable && findPlaceLocation(Structure_NuclearPlant).isValid();
-    const int cityYardTarget = citySimEnabled ? QuantBotBuildPolicy::cityConstructionYardTarget(
+    int cityYardTarget = citySimEnabled ? QuantBotBuildPolicy::cityConstructionYardTarget(
         money, ownResValve, ownComValve, ownIndValve) : 0;
+    if(rockExpansionNeeded)cityYardTarget=std::max(cityYardTarget,getHouse()->getNumItems(Structure_ConstructionYard)+1);
     const int cityConstructionCapacity = itemCount[Structure_ConstructionYard] + itemCount[Unit_MCV];
 
     auto decisionState = [&]() {
@@ -3339,6 +3425,9 @@ void QuantBot::build(int militaryValue) {
             .set("military", militaryValue).set("military_limit", militaryValueLimit)
             .set("unit_limit_reached", getHouse()->isGroundUnitLimitReached()).set("max_units", getHouse()->getMaxUnits())
             .set("power_rules_enabled", powerRules).set("rocket_turrets_need_power", turretPowerRequired).set("city_effects_enabled", citySimEnabled)
+            .set("waiting_to_unload",waitingHarvesters).set("unloading_backlog",unloadingBacklog)
+            .set("free_refineries",freeRefineries).set("busy_refineries",busyRefineries)
+            .set("free_base_rock",availableBaseRock).set("rock_expansion_needed",rockExpansionNeeded)
             .set("economy_reserve", economyReserve).set("queued_production_cost", queuedProductionCost).set("queued_military_value", queuedMilitaryValue)
             .set("power_produced", getHouse()->getProducedPower()).set("power_required", getHouse()->getPowerRequirement())
             .set("zone_power_current",currentZonePower).set("zone_power_mature",matureZonePower)
@@ -3487,7 +3576,7 @@ void QuantBot::build(int militaryValue) {
                 return !factory->isUpgrading() && !factory->isOnHold() && factory->getProductionQueueSize()==0
                     && factoryPrefersHarvester(factory);
             });
-        bool capacityNeeded = false, refineryUseful = false;
+        bool capacityNeeded = unloadingBacklog, refineryUseful = false;
         int workerIncome = 0, bayIncome = 0;
         bool hedge = zone == Structure_ZoneResidential && itemCount[zone] == 0;
         Investment residential, refinery;
@@ -3538,21 +3627,24 @@ void QuantBot::build(int militaryValue) {
                 industry ? 0 : pollution,crime,unfinished);
         }
         Coord refinerySite = Coord::Invalid();
-        if (spiceShare>0 && builder->isAvailableToBuild(Structure_Refinery))
+        if ((spiceShare>0 || unloadingBacklog) && builder->isAvailableToBuild(Structure_Refinery))
             refinerySite = findPlaceLocation(Structure_Refinery);
-        if (refinerySite.isValid()) {
+        Coord forecastSite=refinerySite;
+        if(forecastSite.isInvalid()) for(const auto* structure:getStructureList())
+            if(structure->getOwner()==getHouse()&&structure->getItemID()==Structure_Refinery){forecastSite=structure->getLocation();break;}
+        if (forecastSite.isValid()) {
             if (refineryTripCycles<0) {
                 int distance = 65;
                 Coord field = Coord::Invalid();
                 // Nearest sampled field within 32 tiles. Missing local spice
                 // gets a long-trip estimate; distant spice isn't called depleted.
                 for (int dy=-32;dy<=32;dy+=2) for (int dx=-32;dx<=32;dx+=2) {
-                    const Coord p(refinerySite.x+dx,refinerySite.y+dy);
+                    const Coord p(forecastSite.x+dx,forecastSite.y+dy);
                     if (!getMap().tileExists(p.x,p.y) || !getMap().getTile(p.x,p.y)->hasSpice()) continue;
                     const int d = std::abs(dx)+std::abs(dy);
                     if (d<distance) { distance=d; field=p; }
                 }
-                refineryFieldRisk = dangerAt(refinerySite,getStructureSize(Structure_Refinery))
+                refineryFieldRisk = dangerAt(forecastSite,getStructureSize(Structure_Refinery))
                     + (field.isValid() ? dangerAt(field,Coord(1,1)) : 0);
                 // Harmonic mean of empty outbound and full (60%) return speed.
                 const FixPoint travelSpeed = data[Unit_Harvester][houseID].maxspeed * 0.75_fix;
@@ -3565,7 +3657,8 @@ void QuantBot::build(int militaryValue) {
             // Reserve 25% of ideal unloading capacity for manoeuvring and uneven arrivals.
             // Three/four workers can share a bay; no hypothetical extra fleet is credited.
             bayIncome = int(DuneCity::kCyclesPerCityYear)*15/32;
-            capacityNeeded = processingCapacityNeeded(refs,workers,workerIncome,bayIncome);
+            capacityNeeded = unloadingBacklog || processingCapacityNeeded(refs,workers,workerIncome,bayIncome);
+            if(refinerySite.isValid()) {
             refineryUseful = considerRefinery(capacityNeeded,wantedWorker,!harvesterFactories.empty(),workers < 2 || openingRefinery);
             const bool freeWorker = workers < harvesterLimit;
             const int power = std::max(0,data[Structure_Refinery][houseID].power);
@@ -3578,6 +3671,12 @@ void QuantBot::build(int militaryValue) {
             const int forecastFleetSpice = (workers+int(freeWorker))*workerIncome*4;
             refinery.confidence = static_cast<int>(std::min<int64_t>(1000,int64_t(spiceShare)*1000/std::max(1,forecastFleetSpice)));
             if (refineryFieldRisk>0) refinery.confidence/=2;
+            if(unloadingBacklog) {
+                refinery.projectedProceeds=std::max(refinery.projectedProceeds,
+                    std::min(waitingCargo,2*int(HARVESTERMAXSPICE))-refinery.annualUpkeep*4);
+                refinery.confidence=1000; // Already harvested cargo, no remaining-spice risk.
+            }
+            }
         }
         const int taxIncome = DuneCity::computeAnnualTaxRevenue(ownTaxBaseEighths,tax,land);
         int developingIncome = 0;
@@ -3617,6 +3716,10 @@ void QuantBot::build(int militaryValue) {
             traceDecision("city_economy_comparison",AITelemetry::Record().set("builder",builder->getObjectID())
                 .set("selected",selected).set("zone",zone).set("hedge",hedge).set("funded",funded)
                 .set("capacity_needed",capacityNeeded).set("refinery_useful",refineryUseful)
+                .set("unloading_backlog",unloadingBacklog).set("waiting_to_unload",waitingHarvesters).set("waiting_cargo",waitingCargo)
+                .set("refinery_site_valid",refinerySite.isValid())
+                .set("refinery_available",builder->isAvailableToBuild(Structure_Refinery))
+                .set("refinery_placement",placementScoreDetails[Structure_Refinery])
                 .set("brutal_opening",expandingOpening).set("opening_refinery",openingRefinery)
                 .set("parallel_factory_supply",parallelFactorySupply).set("wanted_included_worker",wantedWorker)
                 .set("worker_income",workerIncome).set("bay_capacity",bayIncome)
@@ -3792,7 +3895,7 @@ void QuantBot::build(int militaryValue) {
                 .set("house_name", getHouseNameByNumber(static_cast<HOUSETYPE>(getHouse()->getHouseID())))
                 .set("team", getHouse()->getTeamID())
                 .set("state", decisionState()).set("city_health", cityHealth).set("actual", actual).set("queued", queued)
-                .set("harvesters", harvesters).set("house_comparison", opponents)
+                .set("harvesters", harvesters).set("refinery_queues",refineryQueues).set("house_comparison", opponents)
                 .set("power_accounting", AITelemetry::Record().set("generators", actualGeneratorPower)
                     .set("reported", getHouse()->getProducedPower())
                     .set("difference", getHouse()->getProducedPower() - actualGeneratorPower))
@@ -4123,6 +4226,8 @@ void QuantBot::build(int militaryValue) {
 					int reserved;
 					~RestoreReservedCredits() { money += reserved; }
                 } reserve{money, 0};
+                const bool expansionProducer=rockExpansionNeeded&&itemCount[Unit_MCV]==0
+                    && pBuilder->getItemID()==Structure_HeavyFactory;
                 const bool openingWorker = openingWorkersNeeded() && getHouse()->hasPower();
                 const bool workerProducer = pBuilder->getItemID() == Structure_HeavyFactory
                     && pBuilder->isAvailableToBuild(Unit_Harvester)
@@ -4130,21 +4235,23 @@ void QuantBot::build(int militaryValue) {
                 const bool firstCarryall = needsFirstTransport() && carryallBuildAvailable && getHouse()->hasPower();
                 const bool transportProducer = firstCarryall && pBuilder->getItemID() == Structure_HighTechFactory
                     && pBuilder->isAvailableToBuild(Unit_Carryall);
-                int protectedCash = pBuilder->getItemID() == Structure_ConstructionYard || transportProducer || workerProducer
+                int protectedCash = pBuilder->getItemID() == Structure_ConstructionYard || transportProducer || workerProducer || expansionProducer
                     ? 0 : std::max({strategicReserveCost,economyReserve,civicReserveCost});
-                if (!openingWorker && pBuilder->getItemID() != Structure_ConstructionYard)
+                if (rockExpansionNeeded && itemCount[Unit_MCV]==0 && !expansionProducer)
+                    protectedCash=std::max(protectedCash,int(data[Unit_MCV][houseID].price));
+                if (!openingWorker && !expansionProducer && pBuilder->getItemID() != Structure_ConstructionYard)
                     protectedCash = std::max(protectedCash,civicReserveCost);
                 if (openingWorker && !workerProducer)
                     protectedCash = std::max(protectedCash,data[Unit_Harvester][houseID].price);
                 if (firstCarryall && !transportProducer)
                     protectedCash = std::max(protectedCash,data[Unit_Carryall][houseID].price);
                 if (nuclearPlan && getHouse()->hasPower() && !powerGenerationPending()
-                    && pBuilder->getItemID() != Structure_ConstructionYard && !transportProducer && !workerProducer)
+                    && pBuilder->getItemID() != Structure_ConstructionYard && !transportProducer && !workerProducer && !expansionProducer)
                     protectedCash = std::max(protectedCash,data[Structure_NuclearPlant][houseID].price);
                 reserve.reserved = money - QuantBotBuildPolicy::spendableCredits(money,protectedCash);
 				money -= reserve.reserved;
 
-				if (!transportProducer && !workerProducer && !pBuilder->isUpgrading() && pBuilder->getProductionQueueSize() < 1
+				if (!transportProducer && !workerProducer && !expansionProducer && !pBuilder->isUpgrading() && pBuilder->getProductionQueueSize() < 1
 					&& money > 1500) {
 					const int customItem = chooseLowPriorityCustomUnit(pBuilder);
 					if (customItem != ItemID_Invalid) {
@@ -4316,10 +4423,13 @@ void QuantBot::build(int militaryValue) {
 							militaryValue, militaryValueLimit, strategicReserveCost);
 					}
                     const int cityMcvCash = money;
-                    const bool prioritizeCityMcv = citySimEnabled && gameMode == GameMode::Custom && !openingWorkersNeeded()
+                    if(expansionProducer && !pBuilder->isUpgrading() && pBuilder->getProductionQueueSize()==0
+                        && money < (pBuilder->isAvailableToBuild(Unit_MCV)
+                            ? data[Unit_MCV][houseID].price : pBuilder->getUpgradeCost())) break;
+                    const bool prioritizeCityMcv = citySimEnabled && gameMode == GameMode::Custom && (!openingWorkersNeeded()||rockExpansionNeeded)
                         && !getHouse()->isGroundUnitLimitReached()
-                        && QuantBotBuildPolicy::canFundCityYard(cityMcvCash, data[Unit_MCV][houseID].price,
-                            itemCount[Structure_ConstructionYard] + itemCount[Unit_MCV], cityYardTarget, cityWorkingReserve);
+                        && (expansionProducer || QuantBotBuildPolicy::canFundCityYard(cityMcvCash, data[Unit_MCV][houseID].price,
+                            itemCount[Structure_ConstructionYard] + itemCount[Unit_MCV], cityYardTarget, cityWorkingReserve));
                     const bool prioritizeMcv = prioritizeCityMcv || (vanillaEconomy && gameMode == GameMode::Custom
                         && !getHouse()->isGroundUnitLimitReached()
                         && DuneCity::prioritizeVanillaMcv(money, getHouse()->getNumItems(Unit_Harvester),
@@ -4358,7 +4468,7 @@ void QuantBot::build(int militaryValue) {
                             && !pBuilder->isAvailableToBuild(Unit_MCV)
                             && pBuilder->getCurrentUpgradeLevel() < pBuilder->getMaxUpgradeLevel()
                             && (citySimEnabled ? cityMcvCash : money) >= pBuilder->getUpgradeCost()
-                                + (citySimEnabled ? std::max(1000, cityWorkingReserve) : 1000)) {
+                                + (expansionProducer ? 0 : citySimEnabled ? std::max(1000, cityWorkingReserve) : 1000)) {
                             if (pBuilder->getHealth() >= pBuilder->getMaxHealth()) {
                                 const bool accepted = doUpgrade(pBuilder);
                                 if (accepted) {
@@ -4989,6 +5099,17 @@ void QuantBot::build(int militaryValue) {
                     }
                 }
 
+                // Cash already harvested but trapped at unloading bays takes
+                // priority over optional civic/defence/zoning investments.
+                if(itemID==NONE_ID&&!skipRemainingStructureLogic&&unloadingBacklog) {
+                    const Uint32 investment=chooseCityEconomy(pBuilder,false);
+                    if(investment==Structure_Refinery) {
+                        skipRemainingStructureLogic=true;
+                        itemID=money>=data[investment][houseID].price?investment:NONE_ID;
+                        structureRule="city_refinery_capacity";
+                    }
+                }
+
                 // An announced growth cap is a funded investment, before
                 // optional tech, extra production, services and additional zoning.
                 if (itemID == NONE_ID && !skipRemainingStructureLogic && isCitySim) {
@@ -5032,15 +5153,15 @@ void QuantBot::build(int militaryValue) {
                 // other infrastructure still get normal opportunities to build.
                 // Use simulation time, not the crime-service counter (capped at 3).
                 if (itemID == NONE_ID && !skipRemainingStructureLogic && isCitySim
-                    && (openingWorkersNeeded() || (getGameCycleCount()/MILLI2CYCLES(10000) + houseID) % 2 == 0)
+                    && (unloadingBacklog || openingWorkersNeeded() || (getGameCycleCount()/MILLI2CYCLES(10000) + houseID) % 2 == 0)
                     && getHouse()->getNumItems(Structure_HeavyFactory) > 0
                     && getHouse()->getProducedPower()-getHouse()->getPowerRequirement() >= 24) {
                     const Uint32 hedgeZone = chooseCityEconomy(pBuilder,false);
                     if (hedgeZone != NONE_ID && (cityRefineryOpening || cityRefineryCatchup || (cityTaxHedge && hedgeZone >= Structure_ZoneResidential
                             && hedgeZone <= Structure_ZoneIndustrial))
-                        && (cityRefineryOpening || money >= data[hedgeZone][houseID].price)) {
+                        && (cityRefineryOpening || cityRefineryCatchup || money >= data[hedgeZone][houseID].price)) {
                         itemID = money >= data[hedgeZone][houseID].price ? hedgeZone : NONE_ID;
-                        if (cityRefineryOpening) skipRemainingStructureLogic = true;
+                        if (cityRefineryOpening || cityRefineryCatchup) skipRemainingStructureLogic = true;
                         structureRule = cityRefineryOpening ? "city_opening_refinery_investment" : cityRefineryCatchup ? "city_refinery_capacity" : "city_income_hedge";
                     }
                 }
@@ -7069,16 +7190,27 @@ void QuantBot::retreatAllUnits() {
                         //logDebug("MCV: forced: %d  moving: %d  canDeploy: %d",
                         //pMCV->wasForced(), pMCV->isMoving(), pMCV->canDeploy());
 
-                        if (pMCV->canDeploy() && !pMCV->wasForced() && !pMCV->isMoving()
+                        const bool expansion=currentGame->isCitySimEnabled()&&getHouse()->getNumItems(Structure_ConstructionYard)>0;
+                        const auto assigned=mcvExpansionSites.find(pMCV->getObjectID());
+                        const bool atExpansion=assigned!=mcvExpansionSites.end()&&assigned->second==pMCV->getLocation();
+                        if ((!expansion||atExpansion) && pMCV->canDeploy() && !pMCV->wasForced() && !pMCV->isMoving()
                             && !overlapsReservedStructure(pMCV->getX(),pMCV->getY(),2,2)
-                            && preservesGroundAccess(Structure_ConstructionYard,pMCV->getLocation())) {
+                            && preservesGroundAccess(Structure_ConstructionYard,pMCV->getLocation())
+                            && (!expansion || (dangerAt(pMCV->getLocation(),Coord(2,2))==0
+                                && !nearRecentStructureLoss(pMCV->getX(),pMCV->getY(),2,2)))) {
                             //logDebug("MCV: Deployed");
                             doDeploy(pMCV);
+                            mcvExpansionSites.erase(pMCV->getObjectID());
+                            mcvSurveyCycles.erase(pMCV->getObjectID());
+                            rockSurveyCycle=std::numeric_limits<Uint32>::max();
                             clearPlacementCache();
                         }
                         else if (!pMCV->isMoving() && !pMCV->wasForced()) {
+                            auto previous=mcvSurveyCycles.find(pMCV->getObjectID());
+                            if(previous!=mcvSurveyCycles.end()&&getGameCycleCount()-previous->second<MILLI2CYCLES(5000))break;
+                            mcvSurveyCycles[pMCV->getObjectID()]=getGameCycleCount();
                             Coord pos = findMcvPlaceLocation(pMCV);
-                                doMove2Pos(pMCV, pos.x, pos.y, true);
+                            if(pos.isValid()) doMove2Pos(pMCV, pos.x, pos.y, true);
                             /*
                             if(getHouse()->getNumItems(Unit_Carryall) > 0){
                                 doRequestCarryallDrop(pMCV);

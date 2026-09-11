@@ -58,6 +58,11 @@ inline int demandedCivic(uint8_t blocked, int stadiumCommitted, bool stadiumAvai
         return Structure_Airport;
     return NONE_ID;
 }
+// Full workers waiting near occupied bays are observed capacity pressure,
+// not a theoretical harvesting/travel estimate. Let an ordered bay arrive first.
+inline bool unloadingQueueNeedsBay(int waiting, int freeBays, int pendingBays, bool persistent) {
+    return persistent && waiting >= std::max(0,freeBays)+2 && pendingBays == 0;
+}
 inline bool processingCapacityNeeded(int refineries, int committedWorkers,
                                     int workerAnnualIncome, int bayAnnualCapacity) {
     return int64_t(std::max(0,committedWorkers)) * std::max(0,workerAnnualIncome)

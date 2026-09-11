@@ -1,3 +1,60 @@
+# Unloading queues and safe rock expansion — 1.0.647 (local)
+
+Stefan reported harvesters queueing at refineries and three adjacent MCV
+expansions instead of colonising new rock. Current 646 session
+1789140497380770-0, Ergsun-Prometh seed1217567228, Rebels house7:
+cycle60293 economy forecast recorded 26 workers / 3 refineries, but zero
+worker income/bay capacity and an empty refinery candidate. Forecasting was
+inside the new-site guard, conflating an unavailable candidate/site with no
+capacity pressure. New diagnostics distinguish availability and site failures.
+MCVs also auto-deployed at a legal factory exit before selecting a site;
+fallback search was only +/-25 tiles with a strong distance penalty.
+
+- Scan owned dropoff occupancy and active loaded harvesters returning within
+  six tiles of a busy bay. A net queue of >=2 beyond free bays sustained for
+  ten simulated seconds triggers capacity investment. A pending refinery
+  suppresses duplicate queue-based orders; normal fleet-capacity forecasts
+  still account for committed bays. No harvester production cap added.
+- Forecast worker/bay throughput using an existing refinery if a new site is
+  unavailable. Queued cargo earns conservative relief credit (at most two
+  loads, capped to actual waiting cargo) without assuming additional spice.
+  Profitable queue relief reserves yard funds before optional civics/defence/
+  zoning. No valid site still cannot authorize an illegal placement.
+- Every fifteen simulated seconds survey free rock in current build range.
+  Under 48 tiles, or sustained unloading queues with no refinery site, a
+  feasible new rock site raises the yard target by one. Reserve MCV money
+  from other producers; the selected heavy factory saves for the MCV/unlock
+  instead of spending the same funds on harvesters or optional units.
+- Expansion MCVs search distinct cardinal rock formations across the map.
+  Require >=48 free rock tiles locally and in the formation, a 2x2 footprint,
+  and a ground route avoiding known fire/recent-loss tiles. Rank distance
+  from visible enemies first, usable space second, travel distance third.
+  Own occupied formations and other MCVs' reserved formations are excluded.
+  Hidden enemies are not consulted as tactical observations. The actual unit
+  movement engine still chooses its route; this does not guarantee its route
+  follows the survey's safe route or remains safe as enemies move.
+- Expansion MCVs cannot immediately deploy at the factory exit. They deploy
+  at assigned sites with fresh local danger/access checks; invalid coordinates
+  are never ordered. First-yard deployment retains existing behaviour. If no
+  new formation exists but current base has ample free rock, ordinary local
+  capacity expansion remains possible; with insufficient space, wait/retry.
+  Failed MCV surveys are throttled to five seconds. All new planning state is
+  derived, not serialized; save version remains 9836.
+- Telemetry policy v65 adds refinery busy/bookings snapshots, waiting cargo,
+  queue pressure, placement rejection details, expansion site/room/enemy
+  clearance/route length and free-base-rock fields.
+
+Validation: 580 tests passed, 3 skipped; dependency audits, version consistency,
+whitespace checks and strict deep signature verification passed. Added queue
+burst/free-bay/pending-bay cases and safe/new/reserved/unreachable/threatened
+formation tests. No fresh full gameplay run: deployment behaviour and queue
+relief must still be observed in the next game. Current 646 game untouched.
+Installed /Applications/dunecity.app 1.0.647, matching build SHA256:
+01352468280c24aadb6020717f765b4878188671eda7cac95b95ccd5174b4a13.
+Previous 646: /Applications/.dunecity-647-1n8_vg2n/dunecity-previous.app.
+Intermediate 647 backup: /Applications/.dunecity-647-final-o6q66g18/dunecity-previous.app.
+No remote release or website changes. Existing reports/ remains unstaged.
+
 # Brutal opening economy, demanded civics and police anchoring — 1.0.646 (local)
 
 Stefan's running 1.0.645 Harkonnen Brutal game, Moshpit seed 406506788,

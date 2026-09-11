@@ -157,6 +157,13 @@ private:
 
 
     Coord findMcvPlaceLocation(const MCV* pMCV);
+    Coord findRockExpansionSite(const MCV* mcv = nullptr);
+    Uint32 rockSurveyCycle = std::numeric_limits<Uint32>::max();
+    Coord rockExpansionSite = Coord::Invalid();
+    int availableBaseRock = 0;
+    Uint32 refineryQueueSince = std::numeric_limits<Uint32>::max();
+    std::unordered_map<Uint32,Coord> mcvExpansionSites;
+    std::unordered_map<Uint32,Uint32> mcvSurveyCycles;
     Coord findPlaceLocation(Uint32 itemID);
     bool preservesGroundAccess(Uint32 item, Coord pos);
     void clearPlacementCache(bool geometryChanged = true);
