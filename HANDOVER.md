@@ -1,3 +1,27 @@
+# Enemy roads are foundations, not construction anchors — 1.0.632 (local only)
+
+Stefan clarified that enemy roads must behave like enemy concrete: a house can
+build over them within its own normal build range, but cannot expand from an
+unrelated enemy road network. This supersedes 1.0.630's shared-access rule below.
+
+- Map::isWithinBuildRange again recognizes only tiles owned by the constructing
+  house, with the existing two-tile search. Road flags and city mode do not grant
+  additional reach. Applies equally to humans and every AI.
+- Road foundations remain prepared ground, independently of owner; footprint
+  placement retains terrain/occupation checks. Building on a road inside normal
+  range clears the road under the footprint and stamps the new building's owner.
+- MCV deployment remains unchanged: its new construction yard creates the owned
+  foothold, allowing normal building around it. Enemy roads beyond that range
+  do not extend the foothold. Existing road upkeep ownership is unchanged.
+- Replaced the regression that endorsed map-wide shared road access with
+  owner-only reach cases, retaining foundation and placement integration checks.
+  No new scans, pathfinding or save fields. Policy owned-construction-reach-v54.
+- Local build/dependency audits passed; CTest550 passed, three optional skips.
+  Includes 1.0.631 power planning. Installed /Applications/dunecity.app version
+  1.0.632, signed and executable verified against build bundle. Prior app backed
+  up under a temporary dunecity-before-632 directory. No game launch/interruption.
+  No remote push/release this turn; published 1.0.630 still has the old road rule.
+
 # Growth-aware nuclear investment — 1.0.631 (local only)
 
 Reviewed completed city 1.0.630 session 1789087168596776-0, SCENA021.INI,

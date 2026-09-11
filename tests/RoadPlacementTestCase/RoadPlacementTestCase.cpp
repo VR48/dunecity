@@ -177,13 +177,14 @@ TEST_CASE("Road foundation is captured before placement clears the road flag", "
     REQUIRE(tile.find("return isConcrete() || isRoad();")!=std::string::npos);
 }
 
-TEST_CASE("City construction can reuse enemy and abandoned roads without taking their upkeep", "[road][placement][regression]") {
-    for (int owner : {-1, 0, 1, 4, 7}) {
-        REQUIRE(DuneCity::isConstructionAnchor(true, true, owner, 1));
-        REQUIRE(DuneCity::isConstructionAnchor(false, true, owner, 1) == (owner == 1));
-        REQUIRE(DuneCity::isConstructionAnchor(true, false, owner, 1) == (owner == 1));
+TEST_CASE("Enemy foundations do not grant construction reach", "[road][placement][regression]") {
+    // The same owner-only rule applies to roads, concrete and bare terrain.
+    for (int builder : {0, 1, 4, 7}) {
+        for (int owner : {-1, 0, 1, 4, 7}) {
+            REQUIRE(DuneCity::isConstructionAnchor(owner, builder) == (owner == builder));
+        }
     }
-    // Public access and responsibility for existing roads remain separate.
+    // An enemy road still belongs to its owner when reused as an access road.
     REQUIRE(DuneCity::roadOwnerAfterPlacement(true, 4, 1) == 4);
     REQUIRE(DuneCity::roadOwnerAfterPlacement(false, 4, 1) == 1);
 }
@@ -201,5 +202,11 @@ TEST_CASE("Road reuse keeps footprint occupancy and the bounded build-range chec
     const auto range = map.substr(end, map.find("return false;",end)-end);
     REQUIRE(range.find("x - BUILDRANGE") != std::string::npos);
     REQUIRE(range.find("x + BUILDRANGE") != std::string::npos);
-    REQUIRE(range.find("DuneCity::isConstructionAnchor") != std::string::npos);
+    REQUIRE(range.find("DuneCity::isConstructionAnchor(tile->getOwner(), pHouse->getHouseID())") != std::string::npos);
+    REQUIRE(range.find("isRoad") == std::string::npos);
+    REQUIRE(checks.find("isWithinBuildRange(i, j, pHouse)") != std::string::npos);
+    // Placing on a road is not rejected by road owner; only reach is owner-gated.
+    REQUIRE(checks.find("getOwner()") == std::string::npos);
+    const auto structure = readSourceFile("src/structures/StructureBase.cpp");
+    REQUIRE(structure.find("pTile->setOwner(getOwner()->getHouseID())") != std::string::npos);
 }

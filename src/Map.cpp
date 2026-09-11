@@ -435,13 +435,11 @@ bool Map::okayToPlaceStructure(int x, int y, int buildingSizeX, int buildingSize
 }
 
 bool Map::isWithinBuildRange(int x, int y, const House* pHouse) const {
-    const bool cityMode = currentGame && currentGame->isCitySimEnabled();
     for (auto i = x - BUILDRANGE; i <= x + BUILDRANGE; i++) {
         for (auto j = y - BUILDRANGE; j <= y + BUILDRANGE; j++) {
             const auto tile = getTile_internal(i, j);
 
-            if (tile && DuneCity::isConstructionAnchor(cityMode, tile->isRoad(),
-                    tile->getOwner(), pHouse->getHouseID()))
+            if (tile && DuneCity::isConstructionAnchor(tile->getOwner(), pHouse->getHouseID()))
                 return true;
         }
     }
