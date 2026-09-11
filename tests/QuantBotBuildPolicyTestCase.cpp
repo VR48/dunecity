@@ -6,6 +6,7 @@
 #include <dunecity/VanillaEconomy.h>
 #include <catch2/catch_test_macros.hpp>
 #include <players/QuantBotBuildPolicy.h>
+#include <players/CityEconomyInvestmentPolicy.h>
 #include <set>
 
 using namespace QuantBotBuildPolicy;
@@ -45,9 +46,46 @@ TEST_CASE("QuantBot does not build residential as a fallback against demand", "[
     for(auto item : rankZones(3, 1, 1, 0, -100, -100, false)) REQUIRE(item == NONE_ID);
 }
 
-TEST_CASE("QuantBot seeds missing jobs before relying on positive demand", "[quantbot][city]") {
-    REQUIRE(rankZones(3, 0, 0, 2000, -1500, -1500, true)[0] == Structure_ZoneIndustrial);
-    REQUIRE(rankZones(3, 0, 1, 2000, -1500, -1500, true)[0] == Structure_ZoneCommercial);
+TEST_CASE("QuantBot opening hedges with demanded housing without forcing missing jobs", "[quantbot][city]") {
+    REQUIRE(rankZones(0,0,0,2000,-1500,-1500,true)[0] == Structure_ZoneResidential);
+    REQUIRE(rankZones(3,0,0,2000,-1500,-1500,true)[0] == Structure_ZoneResidential);
+    REQUIRE(rankZones(3,0,0,2000,-1500,-1500,true)[1] == NONE_ID);
+    REQUIRE(rankZones(0,0,0,-100,500,0,true)[0] == Structure_ZoneCommercial);
+    REQUIRE(rankZones(0,0,0,0,0,0,true)[0] == NONE_ID);
+}
+
+TEST_CASE("City investment compares return per credit and protects the residential hedge", "[quantbot][city]") {
+    using namespace CityEconomyInvestmentPolicy;
+    Investment refinery{400,400,4,7500,1000};
+    Investment residential{100,100,2,3750,1000};
+    REQUIRE_FALSE(preferRefinery(refinery,residential,true,false)); // Four plots earn more for the same cash.
+    residential.annualIncome=30;
+    REQUIRE(preferRefinery(refinery,residential,true,false));
+    REQUIRE_FALSE(preferRefinery(refinery,residential,true,true)); // First demanded residential hedge.
+    REQUIRE_FALSE(preferRefinery(refinery,residential,false,false)); // Bays already cover the fleet.
+    refinery.delayCycles=horizonCycles;
+    REQUIRE_FALSE(preferRefinery(refinery,residential,true,false)); // No returns within the horizon.
+}
+
+TEST_CASE("Refinery expansion follows near-term workers and marginal delivered spice", "[quantbot][city]") {
+    using namespace CityEconomyInvestmentPolicy;
+    REQUIRE(refineryCapacityNeeded(1,3,40));
+    REQUIRE_FALSE(refineryCapacityNeeded(4,9,120)); // Don't build bays for a hypothetical 120 workers.
+    REQUIRE_FALSE(refineryCapacityNeeded(40,120,120));
+    REQUIRE(refineryCapacityNeeded(39,120,120));
+    REQUIRE(marginalSpiceIncome(120,40,false,400,1200)==0);
+    REQUIRE(marginalSpiceIncome(120,39,false,400,1200)==1200);
+    REQUIRE(marginalSpiceIncome(3,1,true,400,1200)==400);
+    REQUIRE(marginalSpiceIncome(3,1,false,400,1200)==0);
+}
+
+TEST_CASE("Tax investment forecasts reflect weak demand, pollution and the existing growth pipeline", "[quantbot][city]") {
+    using namespace CityEconomyInvestmentPolicy;
+    REQUIRE(zoneConfidence(2000,2000,0,0,0)==1000);
+    REQUIRE(zoneConfidence(0,2000,0,0,0)==0);
+    REQUIRE(zoneConfidence(2000,2000,160,0,0)==0);
+    REQUIRE(zoneConfidence(2000,2000,0,0,1)<zoneConfidence(2000,2000,0,0,0));
+    REQUIRE(zoneConfidence(200,2000,100,192,0)<zoneConfidence(2000,2000,0,0,0));
 }
 
 TEST_CASE("QuantBot expands tank production with surplus cash without unbounded factory growth", "[quantbot][production]") {

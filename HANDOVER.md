@@ -1,3 +1,39 @@
+# Demand-led tax/spice investment — 1.0.633 (local only)
+
+Stefan wants an opening R tax hedge, no forced one-each R/C/I seed, and an
+explicit refinery-versus-tax comparison that recognizes existing bay capacity.
+The 1.0.631 Habbanya-Penny log 1789102780668848-0 includes opening C orders at
+zero demand. I was positive at its recorded initial orders; the later screenshot
+alone does not prove I was ordered at negative demand. Source rankZones did
+explicitly allow missing types with zero/negative demand; that override is gone.
+
+- First refinery retained for income/technology. Then a demanded R hedge;
+  missing C/I no longer prerequisites for first vehicle factory. Opening and
+  ongoing custom-city investments use one four-minute proceeds-per-credit model.
+- No additional refinery investment if current/queued bays already cover the
+  sustainable near-term fleet (workers plus three, capped by sustainable target).
+  Compare marginal delivered spice, not a whole fleet credited to a new bay.
+- Tax candidate uses live positive demand and existing valid-site selection,
+  price/foundation/generation cost and future road upkeep, low/medium growth with a 60-second delay,
+  tax/house land value, pollution/crime, pending/undeveloped same-type lots and
+  limited job-enabled residential tax for C/I. Refinery includes fill/unload and
+  construction delays, local sampled trip distance, spice share and danger.
+- Vanilla economy retains its prior refinery policy. No extra pathfinding or
+  save fields; bounded local spice sampling once per build pass. Telemetry-only
+  per-yard throttle added, policy demand-tax-spice-investment-v55. Sampled
+  city_economy_comparison exposes every forecast component and selected item.
+- Tax amounts/budget balance unchanged. See docs/city-economy-balance.md for
+  Micropolis comparison and exact cycle-based harvester equivalences. Budget
+  /60 matches payouts, but excludes separate power/unit/construction costs.
+  Raw R taxation makes mature R ~3.57x Micropolis easy-mode annual revenue;
+  C/I ~0.446x, with upkeep largely retaining original scale.
+- Local build, before/after dependency checks and CTest passed (553 cases,
+  three optional skips). Includes local 631 power and 632 road fixes. No live
+  match validation yet; forecast heuristics need follow-up logged matches.
+- Installed /Applications/dunecity.app 1.0.633, signature checked and executable
+  hash matched to build bundle. Previous app backed up under temporary
+  dunecity-before-633 directory. No launch/interruption, remote push or release.
+
 # Enemy roads are foundations, not construction anchors — 1.0.632 (local only)
 
 Stefan clarified that enemy roads must behave like enemy concrete: a house can

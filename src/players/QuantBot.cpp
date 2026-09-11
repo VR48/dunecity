@@ -46,6 +46,7 @@
 #include <structures/StarPort.h>
 #include <structures/ConstructionYard.h>
 #include <players/QuantBotBuildPolicy.h>
+#include <players/CityEconomyInvestmentPolicy.h>
 #include <players/CityPlacementPolicy.h>
 #include <players/RocketTurretPolicy.h>
 #include <structures/RepairYard.h>
@@ -3209,12 +3210,19 @@ void QuantBot::build(int militaryValue) {
 
     int largestGenerator = 0;
     int currentZonePower = 0, matureZonePower = 0, committedPowerDemand = 0;
+    std::array<int,3> developingZones{};
     for (const auto* structure : getStructureList()) {
         if (structure->getOwner() != getHouse()) continue;
         const int power = data[structure->getItemID()][structure->getOriginalHouseID()].power;
         if (power < 0) largestGenerator = std::max(largestGenerator, -power);
         if (citySimEnabled && DuneCity::isCityZoneStructure(structure->getItemID())) {
-            currentZonePower += static_cast<const ZoneStructure*>(structure)->getZonePowerDraw();
+            const auto* zone = static_cast<const ZoneStructure*>(structure);
+            currentZonePower += zone->getZonePowerDraw();
+            const Coord pos = zone->getLocation();
+            if (getMap().tileExists(pos.x,pos.y)
+                && DuneCity::getStructurePopulation(zone,getMap().getTile(pos.x,pos.y)->getCityZoneDensity())
+                    < DuneCity::getZonePopulation(zone->getItemID(),1))
+                ++developingZones[zone->getItemID()-Structure_ZoneResidential];
             matureZonePower += DuneCity::getZonePower(structure->getItemID(), 3);
         }
     }
@@ -3302,8 +3310,8 @@ void QuantBot::build(int militaryValue) {
         AITelemetry::Record evaluated;
         for (Uint32 candidate : ranked) {
             if (candidate == NONE_ID) continue;
-            // Spare construction capacity develops the city whenever demand
-            // exists. Abundant spice must never veto otherwise useful zoning.
+            // Demand and site suitability select the tax candidate; the economic
+            // comparison below decides whether more spice capacity is better.
             const char* reason = "lower_rank_not_evaluated";
             if (selected == NONE_ID) {
                 if (!builder->isAvailableToBuild(candidate)) reason = "unavailable";
@@ -3319,13 +3327,135 @@ void QuantBot::build(int militaryValue) {
             zoneDecisionIds[builder->getObjectID()] = traceDecision("zone_evaluation", AITelemetry::Record()
                 .set("builder", builder->getObjectID()).set("bootstrap", bootstrap)
                 .set("rule", residentialInfill ? "residential_infill" : "demand_threshold_then_normalized_demand").set("selected", selected)
-                .set("expansion_policy", "demand_led_independent_of_spice")
+                .set("expansion_policy", "demand_led_tax_candidate")
                 .set("result", selected != NONE_ID ? "selected"
                     : ranked[0] == NONE_ID ? "no_positive_demand" : "no_available_site_or_building")
                 .set("state", decisionState()).set("candidates", candidates).set("evaluated", evaluated));
         }
         return selected;
 	};
+
+    // Site searches are already cached. Only inspect a bounded neighbourhood
+    // for transport distance, once per build pass; never run a path search.
+    int refineryTripCycles = -1;
+    int refineryFieldRisk = 0;
+    auto chooseCityEconomy = [&](const BuilderBase* builder, bool opening) {
+        using namespace CityEconomyInvestmentPolicy;
+        const Uint32 zone = chooseCityZone(builder, opening);
+        const auto* sim = currentGame->getCitySimulation();
+        if (!sim) return zone;
+        const int tax = sim->getCityTax();
+        const int land = ownAvgLandValue>0 ? ownAvgLandValue : 128;
+        const int workers = itemCount[Unit_Harvester], refs = itemCount[Structure_Refinery];
+        const bool capacityNeeded = refineryCapacityNeeded(refs,workers,spiceHarvesterTarget);
+        const bool hedge = zone == Structure_ZoneResidential && itemCount[zone] == 0;
+        Investment residential, refinery;
+        auto setupInvestment = [&](Uint32 item, Coord site, int power) {
+            const Coord size = getStructureSize(item);
+            int foundation = 0, roads = 0;
+            for (int y=site.y-1;y<=site.y+size.y;++y) for (int x=site.x-1;x<=site.x+size.x;++x) {
+                if (!getMap().tileExists(x,y)) continue;
+                const auto* tile = getMap().getTile(x,y);
+                const bool footprint = x>=site.x && x<site.x+size.x && y>=site.y && y<site.y+size.y;
+                if (footprint) foundation += !tile->hasPreparedFoundation();
+                else if (!tile->isRoad() && !tile->hasAGroundObject()
+                    && DuneCity::isCityBuildableTerrain(tile->getType())) ++roads;
+            }
+            // Amortize generation even when today's windtrap has spare power.
+            Investment result;
+            result.cost = data[item][houseID].price + foundation*data[Structure_Slab1][houseID].price
+                + power*data[Structure_WindTrap][houseID].price/std::max(1,-data[Structure_WindTrap][houseID].power);
+            // House::placeStructure auto-paves frontage without a construction
+            // charge. Budget only its future ordinary-road maintenance; this
+            // allows for growth beyond the 2,000-pop starter exemption.
+            result.annualUpkeep = power/8 + roads*7/10;
+            return result;
+        };
+        if (zone != NONE_ID) {
+            const Coord site = findPlaceLocation(zone);
+            const bool industry = zone == Structure_ZoneIndustrial;
+            const int pollution = sim->getPollutionDensityMap().worldGet(site.x,site.y);
+            const int crime = sim->getCrimeRateMap().worldGet(site.x,site.y);
+            const int localValue = sim->getLandValueMap().worldGet(site.x,site.y);
+            // Forecast low density on ordinary land, medium on good clean land.
+            // Do not value a newly zoned plot as an instant high-density tower.
+            const int level = localValue>=128 && pollution<=DuneCity::kPollutionGrowthThreshold && crime<128 ? 2 : 1;
+            const int population = DuneCity::getZonePopulation(zone,level);
+            const int power = DuneCity::getZonePower(zone,level);
+            const int unfinished = developingZones[zone-Structure_ZoneResidential]
+                + std::max(0,itemCount[zone]-getHouse()->getNumItems(zone));
+            const int demand = zone == Structure_ZoneResidential ? ownResValve : industry ? ownIndValve : ownComValve;
+            residential = setupInvestment(zone,site,power);
+            residential.annualIncome = DuneCity::computeAnnualTaxRevenue(population,tax,land);
+            if (zone != Structure_ZoneResidential) {
+                // One C/I job supports eight residents. Credit only half the
+                // tax of existing/pending housing currently short of jobs.
+                const int waitingR = developingZones[0] + std::max(0,itemCount[Structure_ZoneResidential]
+                    - getHouse()->getNumItems(Structure_ZoneResidential));
+                const int shortage = std::max(0,ownResPop+waitingR*16-(ownComPop+ownIndPop)*8);
+                residential.annualIncome += DuneCity::computeAnnualTaxRevenue(std::min(shortage,population*8),tax,land)/2;
+            }
+            residential.delayCycles = DuneCity::kCyclesPerCityYear; // ~60 s growth/foundation allowance
+            residential.confidence = zoneConfidence(demand,zone==Structure_ZoneResidential ? 2000 : 1500,
+                industry ? 0 : pollution,crime,unfinished);
+        }
+        Coord refinerySite = Coord::Invalid();
+        if (capacityNeeded && spiceShare>0 && builder->isAvailableToBuild(Structure_Refinery))
+            refinerySite = findPlaceLocation(Structure_Refinery);
+        if (refinerySite.isValid()) {
+            if (refineryTripCycles<0) {
+                int distance = 65;
+                Coord field = Coord::Invalid();
+                // Nearest sampled field within 32 tiles. Missing local spice
+                // gets a long-trip estimate; distant spice isn't called depleted.
+                for (int dy=-32;dy<=32;dy+=2) for (int dx=-32;dx<=32;dx+=2) {
+                    const Coord p(refinerySite.x+dx,refinerySite.y+dy);
+                    if (!getMap().tileExists(p.x,p.y) || !getMap().getTile(p.x,p.y)->hasSpice()) continue;
+                    const int d = std::abs(dx)+std::abs(dy);
+                    if (d<distance) { distance=d; field=p; }
+                }
+                refineryFieldRisk = dangerAt(refinerySite,getStructureSize(Structure_Refinery))
+                    + (field.isValid() ? dangerAt(field,Coord(1,1)) : 0);
+                // Harmonic mean of empty outbound and full (60%) return speed.
+                const FixPoint travelSpeed = data[Unit_Harvester][houseID].maxspeed * 0.75_fix;
+                refineryTripCycles = travelSpeed>0 ? (FixPoint(2*distance*TILESIZE)/travelSpeed).lround() : horizonCycles;
+            }
+            const int fillCycles = (FixPoint(HARVESTERMAXSPICE)/HARVESTSPEED).lround();
+            const int unloadCycles = HARVESTERMAXSPICE*8/5; // Refinery's 0.625 spice/cycle
+            const int roundTrip = fillCycles+unloadCycles+refineryTripCycles;
+            const int workerIncome = HARVESTERMAXSPICE*int(DuneCity::kCyclesPerCityYear)/std::max(1,roundTrip);
+            // Half the theoretical bay throughput allows queues and manoeuvring.
+            const int bayIncome = int(DuneCity::kCyclesPerCityYear)*5/16;
+            const bool freeWorker = workers < harvesterLimit;
+            const int power = std::max(0,data[Structure_Refinery][houseID].power);
+            refinery = setupInvestment(Structure_Refinery,refinerySite,power);
+            refinery.annualIncome = marginalSpiceIncome(workers,refs,freeWorker,workerIncome,bayIncome);
+            refinery.delayCycles = data[Structure_Refinery][houseID].buildtime*15 + roundTrip;
+            const int forecastFleetSpice = (workers+int(freeWorker))*workerIncome*4;
+            refinery.confidence = static_cast<int>(std::min<int64_t>(1000,int64_t(spiceShare)*1000/std::max(1,forecastFleetSpice)));
+            if (refineryFieldRisk>0) refinery.confidence/=2;
+        }
+        Uint32 selected = preferRefinery(refinery,residential,capacityNeeded,hedge) ? Structure_Refinery : zone;
+        if (selected == zone && zone!=NONE_ID && !hedge && residential.confidence==0) selected=NONE_ID;
+        // Save for a winning refinery instead of spending its money on another
+        // cheap lot every pass. The caller preserves urgent non-economic work.
+        const bool funded = selected!=NONE_ID && money>=data[selected][houseID].price;
+        if (AITelemetry::log().enabled() && selected!=NONE_ID
+            && (!lastEconomyTraceCycle.count(builder->getObjectID())
+                || getGameCycleCount()-lastEconomyTraceCycle[builder->getObjectID()]>=MILLI2CYCLES(30000))) {
+            lastEconomyTraceCycle[builder->getObjectID()]=getGameCycleCount();
+            auto describe = [](const Investment& i) { return AITelemetry::Record().set("cost",i.cost)
+                .set("annual_income",i.annualIncome).set("annual_upkeep",i.annualUpkeep)
+                .set("delay_cycles",i.delayCycles).set("confidence_per_mille",i.confidence).set("proceeds",i.proceeds()); };
+            traceDecision("city_economy_comparison",AITelemetry::Record().set("builder",builder->getObjectID())
+                .set("selected",selected).set("zone",zone).set("hedge",hedge).set("funded",funded)
+                .set("capacity_needed",capacityNeeded).set("workers",workers).set("refineries",refs)
+                .set("sustainable_workers",spiceHarvesterTarget).set("horizon_cycles",horizonCycles)
+                .set("spice_share",spiceShare).set("trip_cycles",refineryTripCycles).set("field_risk",refineryFieldRisk)
+                .set("tax_candidate",describe(residential)).set("refinery_candidate",describe(refinery)));
+        }
+        return selected;
+    };
 
 	bool emitStatsLog = false;
 
@@ -4578,11 +4708,11 @@ void QuantBot::build(int militaryValue) {
 				const bool lowSpiceEconomy = (lastCalculatedSpice < 500);
 				const bool isCitySim = (currentGame && currentGame->isCitySimEnabled());
 
-                // Fund workers and dropoff capacity before the city/factory seed.
-                // Queued refineries count, so parallel yards cannot duplicate it.
+                // The first refinery supplies income and unlocks the tech tree.
+                // Further processing capacity competes with demanded tax growth.
                 const int openingRefineries = QuantBotBuildPolicy::openingSpiceRefineries(spiceHarvesterTarget);
                 if (itemID == NONE_ID && !skipRemainingStructureLogic && isCitySim
-                    && itemCount[Structure_Refinery] < openingRefineries
+                    && itemCount[Structure_Refinery] == 0
                     && pBuilder->isAvailableToBuild(Structure_Refinery)
                     && findPlaceLocation(Structure_Refinery).isValid()) {
                     skipRemainingStructureLogic = true;
@@ -4598,6 +4728,27 @@ void QuantBot::build(int militaryValue) {
                         .set("price",data[Structure_Refinery][houseID].price).set("funded",itemID != NONE_ID));
                 }
 
+                // One demanded residential plot hedges spice income immediately.
+                // After that, buy the better return until the small opening
+                // economy exists; don't force a commercial/industrial seed.
+                const int openingZones = itemCount[Structure_ZoneResidential]
+                    + itemCount[Structure_ZoneCommercial] + itemCount[Structure_ZoneIndustrial];
+                if (itemID == NONE_ID && !skipRemainingStructureLogic && isCitySim
+                    && itemCount[Structure_Refinery] > 0
+                    && itemCount[Structure_HeavyFactory] == 0
+                    && ((itemCount[Structure_ZoneResidential] == 0 && ownResValve>0)
+                        || (openingZones<6 && itemCount[Structure_Refinery]<openingRefineries))) {
+                    const Uint32 investment = chooseCityEconomy(pBuilder,true);
+                    if (investment != NONE_ID) {
+                        skipRemainingStructureLogic = true;
+                        structureRule = "city_saving_for_opening_investment";
+                        if (money>=data[investment][houseID].price) {
+                            itemID=investment;
+                            structureRule="city_opening_investment";
+                        }
+                    }
+                }
+
                 // After the seed economy, save for the first vehicle factory and
                 // its available prerequisite. Cheap zoning must not spend that
                 // money afresh on every tick. Unavailable/unplaceable tech does
@@ -4605,9 +4756,7 @@ void QuantBot::build(int militaryValue) {
                 if (itemID == NONE_ID && !skipRemainingStructureLogic && isCitySim
                     && itemCount[Structure_Refinery] > 0
                     && itemCount[Structure_HeavyFactory] == 0
-                    && itemCount[Structure_ZoneResidential] > 0
-                    && itemCount[Structure_ZoneCommercial] > 0
-                    && itemCount[Structure_ZoneIndustrial] > 0) {
+                    && (itemCount[Structure_ZoneResidential] > 0 || ownResValve<=0)) {
                     for (Uint32 candidate : {Structure_HeavyFactory, Structure_Radar, Structure_LightFactory}) {
                         if (itemCount[candidate] > 0 || !pBuilder->isAvailableToBuild(candidate)
                             || !findPlaceLocation(candidate).isValid()) continue;
@@ -4624,76 +4773,8 @@ void QuantBot::build(int militaryValue) {
                     }
                 }
 
-                // Seed the city and scale spice processing with the affordable
-                // harvester fleet. Ongoing city growth is independently demand-led.
-				if (itemID == NONE_ID && !skipRemainingStructureLogic && isCitySim) {
-					int resCount = itemCount[Structure_ZoneResidential];
-					int comCount = itemCount[Structure_ZoneCommercial];
-					int indCount = itemCount[Structure_ZoneIndustrial];
-					int zoneCount = resCount + comCount + indCount;
-					int refCount = itemCount[Structure_Refinery];
-
-					// Bootstrap fires until we have a basic seed economy: 1 each
-					// of R/I/C and a small head start. After that the demand-valve
-					// block (step 18) handles ongoing zone growth, freeing the CY
-					// to build Dune infrastructure (refineries, factories, etc.).
-					//
-					// Population is NOT a usable gate here — freshly-zoned plots
-					// stay at density 0 until growth conditions kick in, so the AI
-					// can place dozens of R-zones with ownTotalPop still at zero.
-					constexpr int kCityBootstrapZoneSeed = 6;  // ~3R + 2I + 1C
-					const int cityRefineryTarget = QuantBotBuildPolicy::desiredSpiceRefineries(
-                        spiceHarvesterTarget, itemCount[Unit_Harvester]);
-
-
-					// First refinery is always required as a tech prerequisite
-					// (unlocks buildings in the tech tree), even on no-spice maps.
-					const bool firstRefineryNeeded = refCount == 0
-						&& pBuilder->isAvailableToBuild(Structure_Refinery)
-						&& findPlaceLocation(Structure_Refinery).isValid();
-
-					// Add processing capacity for the current fleet plus one expansion step.
-					const bool refineryDue = !lowSpiceEconomy
-						&& refCount < cityRefineryTarget
-						&& money >= data[Structure_Refinery][houseID].price + 300
-                        && itemCount[Structure_HeavyFactory] > 0
-						&& pBuilder->isAvailableToBuild(Structure_Refinery)
-						&& findPlaceLocation(Structure_Refinery).isValid();
-
-					if (firstRefineryNeeded || refineryDue) {
-						itemID = Structure_Refinery; structureRule = "refinery_economy";
-						if (itemCount[Unit_Harvester] < harvesterLimit) {
-							itemCount[Unit_Harvester]++;
-						}
-						logDebug("CITY-ECON: Building Refinery (zones=%d ref=%d, %s)",
-							zoneCount, refCount,
-							firstRefineryNeeded ? "tech prerequisite" : "alternation");
-					} else if (itemCount[Structure_HeavyFactory] == 0 && money > 3000
-                        && pBuilder->isAvailableToBuild(Structure_HeavyFactory)
-                        && findPlaceLocation(Structure_HeavyFactory).isValid()) {
-                        itemID = Structure_HeavyFactory; structureRule = "military_recovery";
-                    } else if (zoneCount < kCityBootstrapZoneSeed) {
-						// Seed the economy. Missing-type rule first (the I and C
-						// valves crash to -1500 at game start because nobody is
-						// working yet — plant one of each anyway so jobs can
-						// appear). After all three types exist, pick by the same
-						// demand-AND-ratio rule used in the main zoning block,
-						// otherwise R-valve's wider range dominates and we end
-						// up R-only.
-						const Uint32 zoneID = chooseCityZone(pBuilder, true);
-
-						if (zoneID != NONE_ID
-							&& money > 200
-							&& itemCount[Structure_WindTrap] > 0
-							&& pBuilder->isAvailableToBuild(zoneID)
-							&& findPlaceLocation(zoneID).isValid()) {
-							itemID = zoneID; structureRule = "city_demand";
-							logDebug("CITY-ECON: Building %s (R:%d C:%d I:%d zoneCount=%d valves=R%+d C%+d I%+d)",
-								getItemNameByID(zoneID).c_str(), resCount, comCount, indCount,
-								zoneCount, ownResValve, ownComValve, ownIndValve);
-						}
-					}
-				}
+                // Ongoing economic expansion uses the same comparison after
+                // essential services and military infrastructure below.
                 int developedZones = 0, dangerousZones = 0;
                 if (isCitySim) {
                     const auto* sim = currentGame->getCitySimulation();
@@ -5059,8 +5140,8 @@ void QuantBot::build(int militaryValue) {
 									}
 								}
 							}
-				// 13. Refineries for harvester ratio — skip when no spice
-				if (itemID == NONE_ID && !skipRemainingStructureLogic
+				// 13. Vanilla refinery ratio. City mode compares capacity and tax returns.
+				if (itemID == NONE_ID && !skipRemainingStructureLogic && !isCitySim
 						&& !lowSpiceEconomy
 						&& ((itemCount[Structure_Refinery] * 3.5_fix < itemCount[Unit_Harvester])
 					|| (currentGame && currentGame->techLevel < 4))
@@ -5214,11 +5295,11 @@ void QuantBot::build(int militaryValue) {
 						const int resCount = itemCount[Structure_ZoneResidential];
 						const int comCount = itemCount[Structure_ZoneCommercial];
 						const int indCount = itemCount[Structure_ZoneIndustrial];
-						const Uint32 zoneID = chooseCityZone(pBuilder, false);
+						const Uint32 zoneID = chooseCityEconomy(pBuilder, false);
 
 						if (zoneID != NONE_ID && pBuilder->isAvailableToBuild(zoneID)
 							&& findPlaceLocation(zoneID).isValid()) {
-							itemID = zoneID; structureRule = "city_demand";
+							itemID = zoneID; structureRule = "city_economy";
 							logDebug("CITY-ZONE: Building %s (R:%d C:%d I:%d valves=R%+d C%+d I%+d surplus=%d)",
 								getItemNameByID(zoneID).c_str(), resCount, comCount, indCount,
 								ownResValve, ownComValve, ownIndValve, powerSurplus);
@@ -5320,9 +5401,15 @@ void QuantBot::build(int militaryValue) {
 			if (itemID == NONE_ID && !skipRemainingStructureLogic && isCitySim && money > 200
 				&& getHouse()->getProducedPower() - getHouse()->getPowerRequirement() >= 24
 				&& itemCount[Structure_WindTrap] > 0) {
-				itemID = chooseCityZone(pBuilder, false); structureRule = "city_demand_fallback";
+				itemID = chooseCityEconomy(pBuilder, false); structureRule = "city_economy_fallback";
 			}
 
+            if (isCitySim && itemID != NONE_ID
+                && (structureRule == std::string("city_economy") || structureRule == std::string("city_economy_fallback"))
+                && money < data[itemID][houseID].price) {
+                itemID=NONE_ID;
+                skipRemainingStructureLogic=true;
+            }
             if (vanillaEconomy && itemID != NONE_ID && money < data[itemID][houseID].price) {
                 if (emitStatsLog) traceDecision("construction_rejected", AITelemetry::Record()
                     .set("builder", pBuilder->getObjectID()).set("item", itemID)
@@ -5453,6 +5540,10 @@ void QuantBot::build(int militaryValue) {
                             .set("item",itemID).set("x",selectedPlaceLocation.x).set("y",selectedPlaceLocation.y)
                             .set("removed_zones",removed));
                     }
+                    if (itemID==Structure_Refinery && itemCount[Unit_Harvester]<harvesterLimit
+                        && (structureRule==std::string("city_opening_investment")
+                            || structureRule==std::string("city_economy") || structureRule==std::string("city_economy_fallback")))
+                        ++itemCount[Unit_Harvester];
 					reservedStructures[planningBuilder] = {itemID, selectedPlaceLocation};
                     if (placeLocations.empty()) placeLocations.push_back(selectedPlaceLocation);
                     traceDecision("site_reserved", AITelemetry::Record().set("builder", planningBuilder)

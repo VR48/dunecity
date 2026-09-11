@@ -141,6 +141,7 @@ private:
     std::map<Uint32, uint64_t> lastHarvesterSafetyTrace;
     std::map<Uint32, std::pair<uint64_t, Uint32>> lastHeavyAllocationTrace;
     std::map<Uint32, AITelemetry::Record> placementScoreDetails;
+    std::map<Uint32, Uint32> lastEconomyTraceCycle;
     std::map<Uint32, uint64_t> zoneDecisionIds;
     std::map<Uint32, Uint32> lastZoneTraceCycle;
     uint64_t traceDecision(const std::string& event, AITelemetry::Record details) const;

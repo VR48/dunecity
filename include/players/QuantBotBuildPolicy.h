@@ -227,8 +227,8 @@ inline std::array<Uint32, 3> rankZones(int residential, int commercial, int indu
         ? (comDemand < 500 && indDemand > 0 ? Structure_ZoneIndustrial
             : comDemand > 0 ? Structure_ZoneCommercial : NONE_ID) : NONE_ID;
     std::stable_sort(candidates.begin(), candidates.end(), [bootstrap,preferred](const auto& a, const auto& b) {
-        const bool missingA = bootstrap && a.count == 0;
-        const bool missingB = bootstrap && b.count == 0;
+        const bool missingA = bootstrap && a.item == Structure_ZoneResidential && a.count == 0 && a.demand > 0;
+        const bool missingB = bootstrap && b.item == Structure_ZoneResidential && b.count == 0 && b.demand > 0;
         if(missingA != missingB) return missingA;
         if ((a.item == preferred) != (b.item == preferred)) return a.item == preferred;
         const int demandA = normalizedZoneDemand(a.item, a.demand);
@@ -239,7 +239,7 @@ inline std::array<Uint32, 3> rankZones(int residential, int commercial, int indu
     std::array<Uint32, 3> result{{NONE_ID, NONE_ID, NONE_ID}};
     int index = 0;
     for(const auto& candidate : candidates) {
-        if(candidate.demand > 0 || (bootstrap && candidate.count == 0)) {
+        if(candidate.demand > 0) {
             result[index++] = candidate.item;
         }
     }
