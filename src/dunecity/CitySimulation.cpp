@@ -188,6 +188,7 @@ void HouseCityState::save(OutputStream& stream) const {
 }
 
 void HouseCityState::load(InputStream& stream) {
+    taxablePopulation = 0;
     resPop     = stream.readSint32();
     comPop     = stream.readSint32();
     indPop     = stream.readSint32();

@@ -1,3 +1,37 @@
+# Government tax exemption and infrastructure roles — 1.0.634 (local only)
+
+Stefan requested Micropolis-equivalent R/C/I numbers (comparison only) plus
+non-taxable government infrastructure and revised employment tiers.
+
+- Only actual R/C/I zones pay tax. All government/non-zone infrastructure is
+  excluded, retaining its other jobs/population roles. Partial R lots pay for
+  actual houses. Gross city population still governs unemployment and the
+  under-2000 road-upkeep exemption. Existing tax rate/time conversion unchanged.
+- WindTrap no longer supplies industry. Light Factory/Refinery cap at medium I;
+  Silo low I; Heavy Factory/Repair Yard high I; High Tech high C (final user item
+  overrides its earlier contradictory high-I listing). Starport stays seaport.
+  Sidebar role labels corrected, including old Refinery/Starport mislabelling.
+- Tiers clamp jobs/population/emissions and loaded occupancy; existing aircraft
+  manufacturing emissions retained for High Tech's commercial employment.
+  Derived taxable census added to existing scans, payout, budget and QuantBot /
+  Mentat income forecasts, including service-investment tax gains. No new scan
+  or serialized field; telemetry adds taxable_pop for comparisons with R/C/I.
+- Micropolis easy at tax7%, LV128 would yield high R/C/I approximately
+  52.27/52.27/41.81 annually, also per simulated minute with the existing 60s year.
+  Current zoned high R/C/I remain 186.67/23.33/18.67. R is 3.57x Micropolis;
+  C/I are 0.446x. Formula restructuring has NOT been applied. Full tier table and
+  government scope are in docs/city-economy-balance.md.
+- Local build and dependency audits passed. CTest: 555 passed, 3 optional skips.
+  Role/tier regression
+  tests cover old occupancy, jobs versus tax, government structures and partial
+  R lots. Runtime scans are stubbed in the test target; a live match remains
+  necessary to validate long-term economy balance. No push or remote release.
+
+- Installed /Applications/dunecity.app 1.0.634 without launching the game.
+  Signature verified; executable SHA256 matches the built bundle:
+  b043ad88c521adb18123d12acb18fa957b74ff5bc7a3091ffe914e5ce5309fe1.
+  Previous app backed up in temporary dunecity-before-634.x8wfd95b directory.
+
 # Demand-led tax/spice investment — 1.0.633 (local only)
 
 Stefan wants an opening R tax hedge, no forced one-each R/C/I seed, and an

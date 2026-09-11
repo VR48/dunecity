@@ -56,6 +56,7 @@ HouseCityState& CitySimulation::getHouseStateMut(int houseID) {
 int CitySimulation::getResPop() const { return getHouseState(localHouseID()).resPop; }
 int CitySimulation::getComPop() const { return getHouseState(localHouseID()).comPop; }
 int CitySimulation::getIndPop() const { return getHouseState(localHouseID()).indPop; }
+int CitySimulation::getTaxablePopulation() const { return getHouseState(localHouseID()).taxablePopulation; }
 int CitySimulation::getTotalPop() const { return getHouseState(localHouseID()).getTotalPop(); }
 int16_t CitySimulation::getResValve() const { return getHouseState(localHouseID()).resValve; }
 int16_t CitySimulation::getComValve() const { return getHouseState(localHouseID()).comValve; }
@@ -107,7 +108,7 @@ int cityLevelOf(const Tile* t, const StructureBase* pStruct) {
         return t ? t->getCityZoneDensity() : 0;
     }
     const int occ = pStruct->getCityOccupancy();
-    return occ > 0 ? occ : 1;
+    return DuneCity::effectiveCityLevel(pStruct->getItemID(), std::max(1, occ));
 }
 
 template<typename F>
@@ -744,13 +745,15 @@ void CitySimulation::reconcileLoadedMapState(uint32_t gameCycleCount) {
             }
 
             if (getStructureCityRole(pStruct->getItemID()) == CityRole::None) {
+                pStruct->setCityOccupancy(0);
                 continue;
             }
             ++cityRoleStructures;
 
             auto* pZone = dynamic_cast<ZoneStructure*>(pStruct);
             if (!pZone) {
-                if (pStruct->getItemID() == Structure_WindTrap) pStruct->setCityOccupancy(1);
+                pStruct->setCityOccupancy(effectiveCityLevel(pStruct->getItemID(),
+                    std::max<int>(1, pStruct->getCityOccupancy())));
                 continue;
             }
 
@@ -847,7 +850,7 @@ void CitySimulation::runZoneGrowth() {
 
             ZoneStructure* pZone = dynamic_cast<ZoneStructure*>(pStruct);
             const int level = pZone ? t->getCityZoneDensity()
-                                    : std::max<int>(1, pStruct->getCityOccupancy());
+                                    : effectiveCityLevel(itemID, std::max<int>(1, pStruct->getCityOccupancy()));
             const int maxLevel = getStructureMaxLevel(itemID);
 
             nodes.push_back({
@@ -1332,11 +1335,13 @@ void CitySimulation::runZoneGrowth() {
     for (int h = 0; h < kMaxCityHouses; ++h) {
         auto& hs = houseState_[h];
         int newRes = 0, newCom = 0, newInd = 0;
+        hs.taxablePopulation = 0;
         for (const auto& n : nodes) {
             if (!n.pStruct->getOwner() || n.pStruct->getOwner()->getHouseID() != h)
                 continue;
             const int itemID = n.pStruct->getItemID();
             const int pop = getStructurePopulation(n.pStruct, n.level);
+            hs.taxablePopulation += getStructureTaxablePopulation(n.pStruct, n.level);
             switch (n.role) {
                 case CityRole::Residential: newRes += pop; break;
                 case CityRole::Commercial:  newCom += pop; break;
@@ -1437,7 +1442,10 @@ void CitySimulation::runDailyBudget() {
 
     // One map walk collects population, police and owned road upkeep.
     // All annual amounts are paid fractionally over kBudgetTicksPerYear.
-    for (auto& hs : houseState_) hs.roads = {};
+    for (auto& hs : houseState_) {
+        hs.roads = {};
+        hs.taxablePopulation = 0;
+    }
     struct HouseBudget {
         int     pop       = 0;
         FixPoint policeCost = 0;
@@ -1463,7 +1471,7 @@ void CitySimulation::runDailyBudget() {
 
         if (getStructureCityRole(itemID) != CityRole::None) {
             const int level = cityLevelOf(t, pStruct);
-            hb.pop += getStructurePopulation(pStruct, level);
+            hb.pop += getStructureTaxablePopulation(pStruct, level);
         }
         hb.policeCost += getPoliceAnnualCost(itemID);
     };
@@ -1497,7 +1505,8 @@ void CitySimulation::runDailyBudget() {
         // Annual values divided by cycles-per-year for smooth payout.
         // Revenue scales with the house's own average land value.
         const int hID = house->getHouseID();
-        const auto& hs = houseState_[hID >= 0 && hID < kMaxCityHouses ? hID : 0];
+        auto& hs = houseState_[hID >= 0 && hID < kMaxCityHouses ? hID : 0];
+        hs.taxablePopulation = hb.pop;
         const int32_t annualRevenue = computeAnnualTaxRevenue(hb.pop, cityTax_, hs.avgLandValue);
         const int fundingPct = hs.policeFundingPercent;
         const FixPoint annualPaid = (hb.policeCost * fundingPct) / 100;

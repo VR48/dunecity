@@ -27,7 +27,7 @@ TEST_CASE("getStructureCityRole categorises mapped buildings", "[city-effects][r
     REQUIRE(getStructureCityRole(Structure_ZoneIndustrial)   == CityRole::Industrial);
     REQUIRE(getStructureCityRole(Structure_Silo)             == CityRole::Industrial);
     REQUIRE(getStructureCityRole(Structure_Radar)            == CityRole::Commercial);
-    REQUIRE(getStructureCityRole(Structure_HighTechFactory)  == CityRole::Industrial);
+    REQUIRE(getStructureCityRole(Structure_HighTechFactory)  == CityRole::Commercial);
     REQUIRE(getStructureCityRole(Structure_IX)               == CityRole::Commercial);
     REQUIRE(getStructureCityRole(Structure_LightFactory)     == CityRole::Industrial);
     REQUIRE(getStructureCityRole(Structure_HeavyFactory)     == CityRole::Industrial);
@@ -39,7 +39,7 @@ TEST_CASE("getStructureCityRole categorises mapped buildings", "[city-effects][r
     // Barracks/WOR are residential (infantry garrison = population)
     REQUIRE(getStructureCityRole(Structure_Barracks)         == CityRole::Residential);
     REQUIRE(getStructureCityRole(Structure_WOR)              == CityRole::Residential);
-    REQUIRE(getStructureCityRole(Structure_WindTrap)         == CityRole::Industrial);
+    REQUIRE(getStructureCityRole(Structure_WindTrap)         == CityRole::None);
     // Non-role structures
     REQUIRE(getStructureCityRole(Structure_Wall)             == CityRole::None);
 }
@@ -48,17 +48,17 @@ TEST_CASE("getStructureMaxLevel matches structure tier", "[city-effects][role]")
     REQUIRE(getStructureMaxLevel(Structure_ZoneResidential)  == 3);
     REQUIRE(getStructureMaxLevel(Structure_ZoneCommercial)   == 3);
     REQUIRE(getStructureMaxLevel(Structure_ZoneIndustrial)   == 3);
-    REQUIRE(getStructureMaxLevel(Structure_Silo)             == 3);  // I-high (no pollution)
+    REQUIRE(getStructureMaxLevel(Structure_Silo)             == 1);  // I-low (no pollution)
     REQUIRE(getStructureMaxLevel(Structure_Radar)            == 2);  // C-medium
-    REQUIRE(getStructureMaxLevel(Structure_HighTechFactory)  == 3);  // I-high
+    REQUIRE(getStructureMaxLevel(Structure_HighTechFactory)  == 3);  // C-high
     REQUIRE(getStructureMaxLevel(Structure_IX)               == 3);  // C-high
     REQUIRE(getStructureMaxLevel(Structure_LightFactory)     == 2);  // I-medium
     REQUIRE(getStructureMaxLevel(Structure_HeavyFactory)     == 3);  // I-high
     REQUIRE(getStructureMaxLevel(Structure_RepairYard)       == 3);  // I-high
-    REQUIRE(getStructureMaxLevel(Structure_Refinery)         == 3);  // I-high
+    REQUIRE(getStructureMaxLevel(Structure_Refinery)         == 2);  // I-medium
     REQUIRE(getStructureMaxLevel(Structure_Barracks)         == 3);  // R-high
     REQUIRE(getStructureMaxLevel(Structure_WOR)              == 3);  // R-high
-    REQUIRE(getStructureMaxLevel(Structure_WindTrap)         == 1);  // clean I-light
+    REQUIRE(getStructureMaxLevel(Structure_WindTrap)         == 0);  // power only
 }
 
 // --- Pollution ---------------------------------------------------------------
@@ -87,12 +87,12 @@ TEST_CASE("Pollution: civic / commercial / residential / defensive structures ar
 }
 
 TEST_CASE("Pollution: Silo is clean (spice store, no smokestack)", "[city-effects][pollution]") {
-    // Silo is I-medium for supply but per-spec override emits no pollution.
+    // Silo is I-low for supply but per-spec override emits no pollution.
     REQUIRE(getPollutionEmission(Structure_Silo, 1) == 0);
     REQUIRE(getPollutionEmission(Structure_Silo, 2) == 0);
 }
 
-TEST_CASE("Pollution: HighTechFactory pollutes (industrial role)", "[city-effects][pollution]") {
+TEST_CASE("Pollution: HighTechFactory retains aircraft manufacturing emissions", "[city-effects][pollution]") {
     REQUIRE(getPollutionEmission(Structure_HighTechFactory, 1) == 10);
     REQUIRE(getPollutionEmission(Structure_HighTechFactory, 3) == 50);
 }
@@ -105,7 +105,7 @@ TEST_CASE("Pollution: industrial sources scale uniformly with level", "[city-eff
     REQUIRE(getPollutionEmission(Structure_LightFactory, 2)   == 25);
     REQUIRE(getPollutionEmission(Structure_HeavyFactory, 3)   == 50);
     REQUIRE(getPollutionEmission(Structure_RepairYard, 3)     == 50);
-    // Refinery is I-low: only ever runs at level 1 in the sim.
+    // Refinery grows up to medium density.
     REQUIRE(getPollutionEmission(Structure_Refinery, 1)       == 10);
 }
 
@@ -129,7 +129,7 @@ TEST_CASE("Commercial supply scales by level for any commercial-role structure",
     REQUIRE(getCommercialSupply(Structure_HeavyFactory, 3) == 0);
     REQUIRE(getCommercialSupply(Structure_Refinery, 1)     == 0);
     REQUIRE(getCommercialSupply(Structure_Silo, 1)         == 0);       // now industrial
-    REQUIRE(getCommercialSupply(Structure_HighTechFactory, 3) == 0);    // now industrial
+    REQUIRE(getCommercialSupply(Structure_HighTechFactory, 3) == 50);   // C-high
 }
 
 TEST_CASE("Industrial supply scales by level for any industrial-role structure",
@@ -140,9 +140,9 @@ TEST_CASE("Industrial supply scales by level for any industrial-role structure",
     REQUIRE(getIndustrialSupply(Structure_LightFactory, 2)   == 25);
     REQUIRE(getIndustrialSupply(Structure_HeavyFactory, 3)   == 50);
     REQUIRE(getIndustrialSupply(Structure_RepairYard, 3)     == 50);
-    REQUIRE(getIndustrialSupply(Structure_Refinery, 3)       == 50);   // I-high
+    REQUIRE(getIndustrialSupply(Structure_Refinery, 3)       == 25);   // capped I-medium
     REQUIRE(getIndustrialSupply(Structure_Silo, 1)           == 10);   // I-low (was C-low)
-    REQUIRE(getIndustrialSupply(Structure_HighTechFactory, 3) == 50);  // I-high (was C-high)
+    REQUIRE(getIndustrialSupply(Structure_HighTechFactory, 3) == 0);   // C-high
 }
 
 TEST_CASE("Residential supply comes from R zones and residential-role structures",
@@ -253,14 +253,14 @@ TEST_CASE("Non-zone city-role buildings ALSO contribute population at their leve
           "[city-effects][population]") {
     // SC Classic values: Industrial L3=4, Commercial L3=5
     REQUIRE(getZonePopulation(Structure_HeavyFactory, 3)   == 4);   // Industrial
-    REQUIRE(getZonePopulation(Structure_HighTechFactory, 3) == 4);   // Industrial (was Commercial)
+    REQUIRE(getZonePopulation(Structure_HighTechFactory, 3) == 5);   // Commercial
     REQUIRE(getZonePopulation(Structure_IX, 3)             == 5);   // Commercial
     REQUIRE(getZonePopulation(Structure_Silo, 1)           == 1);   // Industrial L1 (was Commercial)
     REQUIRE(getZonePopulation(Structure_Radar, 2)          == 3);   // Commercial L2
     // Refinery is I-high: grows to level 3 = 4 jobs.
     REQUIRE(getZonePopulation(Structure_Refinery, 1)       == 1);
     REQUIRE(getZonePopulation(Structure_Refinery, 2)       == 3);
-    REQUIRE(getZonePopulation(Structure_Refinery, 3)       == 4);
+    REQUIRE(getZonePopulation(Structure_Refinery, 3)       == 3);
     // Barracks/WOR are residential high
     REQUIRE(getZonePopulation(Structure_Barracks, 1)       == 16);
     REQUIRE(getZonePopulation(Structure_Barracks, 3)       == 40);
@@ -268,8 +268,8 @@ TEST_CASE("Non-zone city-role buildings ALSO contribute population at their leve
     // Vacant — contributes nothing
     REQUIRE(getZonePopulation(Structure_Refinery, 0)       == 0);
     REQUIRE(getZonePopulation(Structure_WindTrap, 0)       == 0);
-    REQUIRE(getZonePopulation(Structure_WindTrap, 1)       == 1);
-    REQUIRE(getZonePopulation(Structure_WindTrap, 2)       == 1);
+    REQUIRE(getZonePopulation(Structure_WindTrap, 1)       == 0);
+    REQUIRE(getZonePopulation(Structure_WindTrap, 2)       == 0);
 }
 
 TEST_CASE("Residential zones contribute people, scaled with level (SC Classic values)",
@@ -883,18 +883,47 @@ TEST_CASE("Church count: auto-created 1 per 256 res pop",
     CHECK(computeChurchCount(512) == 2);
 }
 
-TEST_CASE("Windtraps provide light industrial jobs without emissions", "[city-effects][windtrap]") {
-    const int maxLevel = getStructureMaxLevel(Structure_WindTrap);
-    REQUIRE(maxLevel == 1);
-    REQUIRE(getIndustrialSupply(Structure_WindTrap, maxLevel) == 10);
-    REQUIRE(getZonePopulation(Structure_WindTrap, maxLevel) == 1);
-    REQUIRE(getZonePopulation(Structure_WindTrap, 2) == 1); // old saves
-    REQUIRE(getIndustrialSupply(Structure_WindTrap, 2) == 10);
+TEST_CASE("Windtraps supply power without city jobs even with old occupancy", "[city-effects][windtrap]") {
+    REQUIRE(getStructureMaxLevel(Structure_WindTrap) == 0);
     for (int level = 0; level <= 3; ++level) {
+        REQUIRE(getZonePopulation(Structure_WindTrap, level) == 0);
+        REQUIRE(getIndustrialSupply(Structure_WindTrap, level) == 0);
         REQUIRE(getPollutionEmission(Structure_WindTrap, level) == 0);
         REQUIRE(getCommercialSupply(Structure_WindTrap, level) == 0);
         REQUIRE(getResidentialSupply(Structure_WindTrap, level) == 0);
     }
+}
+
+TEST_CASE("Government buildings retain roles without paying tax", "[city-effects][tax]") {
+    for (const int item : {Structure_ConstructionYard, Structure_WindTrap,
+            Structure_LightFactory, Structure_Refinery, Structure_Silo,
+            Structure_HeavyFactory, Structure_HighTechFactory, Structure_RepairYard,
+            Structure_StarPort, Structure_Airport, Structure_Palace, Structure_Barracks,
+            Structure_WOR, Structure_Radar, Structure_IX, Structure_TechCenter,
+            Structure_PoliceStation, Structure_RocketTurret, Structure_GunTurret}) {
+        CAPTURE(item);
+        CHECK_FALSE(isTaxableCityStructure(item));
+        CHECK(taxableCityPopulation(item, 40) == 0);
+    }
+    CHECK(getZonePopulation(Structure_HeavyFactory, 3) == 4);
+    CHECK(getZonePopulation(Structure_HighTechFactory, 3) == 5);
+    CHECK(getZonePopulation(Structure_Barracks, 3) == 40);
+    CHECK(taxableCityPopulation(Structure_ZoneResidential, 2) == 2); // one house
+    CHECK(taxableCityPopulation(Structure_ZoneResidential, 40) == 40);
+    CHECK(taxableCityPopulation(Structure_ZoneCommercial, 5) == 5);
+    CHECK(taxableCityPopulation(Structure_ZoneIndustrial, 4) == 4);
+    CHECK(taxableCityPopulation(Structure_ZoneResidential, 0) == 0);
+}
+
+TEST_CASE("Reduced infrastructure tiers cap loaded jobs and emissions", "[city-effects][role]") {
+    CHECK(effectiveCityLevel(Structure_Refinery, 3) == 2);
+    CHECK(getIndustrialSupply(Structure_Refinery, 3) == 25);
+    CHECK(getZonePopulation(Structure_Refinery, 3) == 3);
+    CHECK(getPollutionEmission(Structure_Refinery, 3) == 25);
+    CHECK(effectiveCityLevel(Structure_Silo, 3) == 1);
+    CHECK(getIndustrialSupply(Structure_Silo, 3) == 10);
+    CHECK(getZonePopulation(Structure_Silo, 3) == 1);
+    CHECK(getPollutionEmission(Structure_Silo, 3) == 0);
 }
 
 TEST_CASE("Rocket coverage and upkeep are fifteen percent of a police station", "[city-effects][police]") {

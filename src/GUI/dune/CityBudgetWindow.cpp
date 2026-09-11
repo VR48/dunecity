@@ -304,10 +304,10 @@ void CityBudgetWindow::updateDisplay() {
     treasuryLabel.setText(fmt::sprintf("Treasury: %d credits", citySim->getTotalFunds()));
 
     // Projected annual revenue using the pending tax slider and land value.
-    const int totalPop  = citySim->getTotalPop();
+    const int taxablePop = citySim->getTaxablePopulation();
     const int taxRate   = pendingTaxRate;
     const int avgLV     = citySim->getAvgLandValue();
-    const int projected = DuneCity::computeAnnualTaxRevenue(totalPop, taxRate, avgLV);
+    const int projected = DuneCity::computeAnnualTaxRevenue(taxablePop, taxRate, avgLV);
     incomeLabel.setText(fmt::sprintf("Projected Tax: +%d/yr", projected));
 
     // Police: nominal cost is full-funded; actual paid is scaled by the

@@ -23,6 +23,7 @@ static constexpr int kMaxCityHouses = NUM_HOUSES;
 
 struct HouseCityState {
     int resPop = 0, comPop = 0, indPop = 0;
+    int taxablePopulation = 0; // Derived zone-only census; not serialized.
     int prevResPop = 0, prevComPop = 0, prevIndPop = 0;
     int16_t resValve = 0, comValve = 0, indValve = 0;
     int avgLandValue = 0;
@@ -81,6 +82,7 @@ public:
     int getComPop() const;
     int getIndPop() const;
     int getTotalPop() const;
+    int getTaxablePopulation() const;
 
     // Display population (SC multiplied for UI — what players see)
     static constexpr int kPopDisplayMultiplier = 20;

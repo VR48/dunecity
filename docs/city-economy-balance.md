@@ -1,12 +1,13 @@
-# City tax and spice economics (1.0.633, 2026-09-11)
+# City tax and spice economics (1.0.634, 2026-09-11)
 
 These are source-derived estimates at normal simulation speed, not measured
-match income. Tax/budget constants are unchanged by 1.0.633.
+match income. Tax-rate constants are unchanged. As of 1.0.634, only R/C/I
+zones pay tax; all Dune government infrastructure is exempt.
 
 ## Runtime tax and budget
 
-`CityEffects.h::computeAnnualTaxRevenue` taxes the sum of raw R population and
-C/I jobs: approximately `population * (200/3) * taxPercent/100 * averageLandValue/128`.
+`CityEffects.h::computeAnnualTaxRevenue` taxes the sum of raw zoned R population and
+zoned C/I jobs: approximately `population * (200/3) * taxPercent/100 * averageLandValue/128`.
 The runtime aggregates by house, rounds the annual total, and pays fractional
 credits each cycle. Average land value is house-wide, not the individual lot's.
 The displayed population multiplier of 20 is not used in tax calculation.
@@ -72,7 +73,68 @@ population 2,000. Smaller 2x2 zones also need fewer frontage tiles than 3x3 zone
 Thus current city margins are not an exact Micropolis balance. Keep the correct
 60-second payout conversion; separately review tax population weighting and show
 power costs before choosing a broad tax reduction/upkeep increase. No such
-balance change has been made in this version.
+formula change has been made in this version. The government exemption below
+is implemented, independently of this hypothetical Micropolis restructuring.
+
+## Government infrastructure (1.0.634)
+
+Taxable status is independent of employment, demand, pollution and density.
+Only actual R/C/I zones pay tax, including the actual population of partially
+built residential lots. Palace/garrisons, all factories, refineries, storage,
+research/communications and transport infrastructure earn no direct tax.
+Their remaining jobs/population still count for demand and employment. WindTrap
+has no city employment role. Road upkeep exemption still uses total displayed
+population, not taxable population.
+
+| Infrastructure | Economic role / maximum density |
+| --- | --- |
+| WindTrap | Power only, no industry |
+| Light Factory, Refinery | Medium I |
+| Spice Silo | Low I; clean |
+| Heavy Factory, Repair Yard | High I |
+| High Tech Factory | High C (Stefan's final item overrides the earlier high-I listing) |
+| Starport | Seaport, existing high-I employment / demand gate |
+
+Other existing roles are preserved. High Tech retains aircraft manufacturing
+emissions despite C employment; refinery emission caps at medium. Loaded
+occupancy is clamped to the new maximum; no save-format fields added. The
+zone-only census is derived from existing scans and feeds payout, budget and
+QuantBot/Mentat income forecasts. Government jobs can still indirectly support
+tax-paying R, but government property is excluded from direct tax/land-value
+revenue forecasts. Telemetry includes `taxable_pop` alongside gross population.
+
+Direct infrastructure tax at maximum **previous** occupancy, tax7%, land value128,
+approximate gross credits per simulated minute (before/after the exemption):
+
+| Building(s) | Before | Now |
+| --- | ---: | ---: |
+| WindTrap | 4.67 | 0 |
+| Light Factory, Radar | 14.00 each | 0 |
+| Refinery, Silo, Heavy Factory, Repair Yard | 18.67 each | 0 |
+| High Tech Factory, Construction Yard, Starport | 18.67 each | 0 |
+| IX, Airport | 23.33 each | 0 |
+| Barracks, WOR, Palace | 186.67 each | 0 |
+
+Palace previously contributed its R portion to the actual budget payout; its
+extra C census contribution was not included in that payout. The new zone-only
+census also removes the resulting budget projection mismatch. Other non-role
+infrastructure already had zero tax. Spice delivery is separate: refineries
+still receive harvested spice, despite earning no city tax.
+
+For the hypothetical Micropolis easy formula at tax 7%, land value 128:
+
+| Density | R annual | C annual | I annual |
+| --- | ---: | ---: | ---: |
+| Low | 20.91 | 10.45 | 10.45 |
+| Medium | 31.36 | 31.36 | 31.36 |
+| High | 52.27 | 52.27 | 41.81 |
+
+Approximate marginal contributions: Micropolis rounds city aggregates, not
+individual zone bills. With DuneCity's existing 60-simulated-second year these
+annual values would also be credits per simulated minute. High R would fall
+72%; high C/I would rise 124%. The whole-city effect depends on the zone mix;
+this is not a blanket 3.57x tax reduction. At ~320 delivered spice/minute, one
+harvester would match ~6.1 high R or C zones, or ~7.7 high I zones, gross.
 
 ## QuantBot investment policy
 

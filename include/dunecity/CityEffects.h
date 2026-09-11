@@ -144,13 +144,12 @@ inline CityRole getStructureCityRole(int itemID) {
         case Structure_Radar:
         case Structure_IX:
         case Structure_Airport:
+        case Structure_HighTechFactory:
             return CityRole::Commercial;
         case Structure_ZoneIndustrial:
         case Structure_ConstructionYard:
-        case Structure_WindTrap:
         case Structure_LightFactory:
         case Structure_HeavyFactory:
-        case Structure_HighTechFactory:
         case Structure_RepairYard:
         case Structure_Refinery:
         case Structure_Silo:
@@ -170,14 +169,15 @@ inline int getStructureMaxLevel(int itemID) {
         case Structure_ZoneIndustrial:
         case Structure_Palace:          // civic dual — grows to max density
             return 3;
-        case Structure_WindTrap:        // clean light industry, fixed at level 1
+        case Structure_WindTrap:        // government power, no industry
+            return 0;
+        case Structure_Silo:            // industrial low (no pollution)
             return 1;
         case Structure_Radar:           // commercial medium
         case Structure_LightFactory:    // industrial medium
+        case Structure_Refinery:        // industrial medium
             return 2;
-        case Structure_Refinery:        // industrial high
-        case Structure_Silo:            // industrial high (no pollution)
-        case Structure_HighTechFactory: // industrial high
+        case Structure_HighTechFactory: // commercial high
         case Structure_IX:              // commercial high
         case Structure_ConstructionYard: // industrial high (acts as factory)
         case Structure_HeavyFactory:    // industrial high
@@ -193,24 +193,39 @@ inline int getStructureMaxLevel(int itemID) {
     }
 }
 
+/// Government infrastructure may provide jobs/population, but only zoned
+/// private development pays tax. Keep fiscal status independent of city role.
+inline bool isTaxableCityStructure(int itemID) {
+    return itemID == Structure_ZoneResidential || itemID == Structure_ZoneCommercial
+        || itemID == Structure_ZoneIndustrial;
+}
+
+/// Population is supplied separately so partial residential lots pay only
+/// for their actual houses, rather than a whole low-density zone.
+inline int taxableCityPopulation(int itemID, int population) {
+    return isTaxableCityStructure(itemID) ? std::max(0, population) : 0;
+}
+
+inline int effectiveCityLevel(int itemID, int level) {
+    return std::clamp(level, 0, getStructureMaxLevel(itemID));
+}
+
 // --- Pollution emission ------------------------------------------------------
 
 /// Per-source pollution emission (0-100 scale), scaled by current level.
-/// Industrial-role structures pollute proportionally to their level; all
-/// other roles emit zero.
+/// Industrial sources and aircraft manufacturing pollute by level. Fiscal
+/// exemption and commercial jobs do not remove factory emissions.
 inline int getPollutionEmission(int itemID, int level) {
+    level = effectiveCityLevel(itemID, level);
     if (level <= 0) return 0;
-    if (level > 3) level = 3;
-    if (getStructureCityRole(itemID) != CityRole::Industrial) return 0;
-
-    // Wind power supplies industrial jobs without emitting pollution.
-    if (itemID == Structure_WindTrap) return 0;
+    if (getStructureCityRole(itemID) != CityRole::Industrial
+        && itemID != Structure_HighTechFactory) return 0;
 
     // Starport is Industrial for jobs/demand but does not pollute (it's a
     // trade hub, not a factory). Per spec override.
     if (itemID == Structure_StarPort) return 0;
 
-    // Spice Silo is industrial-high for jobs/demand but stores spice — no
+    // Spice Silo is industrial-low for jobs/demand but stores spice — no
     // smokestacks, no pollution.
     if (itemID == Structure_Silo) return 0;
 
@@ -237,18 +252,17 @@ inline int supplyForLevel(int level) {
 
 inline int getCommercialSupply(int itemID, int level) {
     return (getStructureCityRole(itemID) == CityRole::Commercial || itemID == Structure_Palace)
-        ? detail::supplyForLevel(level) : 0;
+        ? detail::supplyForLevel(effectiveCityLevel(itemID, level)) : 0;
 }
 
 inline int getIndustrialSupply(int itemID, int level) {
-    if (itemID == Structure_WindTrap) level = std::min(level,1);
     return (getStructureCityRole(itemID) == CityRole::Industrial)
-        ? detail::supplyForLevel(level) : 0;
+        ? detail::supplyForLevel(effectiveCityLevel(itemID, level)) : 0;
 }
 
 inline int getResidentialSupply(int itemID, int level) {
     return (getStructureCityRole(itemID) == CityRole::Residential)
-        ? detail::supplyForLevel(level) : 0;
+        ? detail::supplyForLevel(effectiveCityLevel(itemID, level)) : 0;
 }
 
 // --- Police coverage (crime reduction in radius) -----------------------------
@@ -545,7 +559,7 @@ inline int getZoneValueTier(int landValue, int numTiers) {
 /// getZonePopulation returns the residential portion; use
 /// getPalaceCommercialPopulation() for the commercial half.
 inline int getZonePopulation(int itemID, int level) {
-    if (itemID == Structure_WindTrap) level = std::min(level,1);
+    level = effectiveCityLevel(itemID, level);
     if (level <= 0) return 0;
     if (level > 3) level = 3;
 
@@ -976,9 +990,9 @@ constexpr uint32_t kCyclesPerCityDay  = kCyclesPerCityYear / kCityDaysPerYear;
 constexpr uint32_t kCyclesPerBudgetTick = 1;
 constexpr int      kBudgetTicksPerYear  = static_cast<int>(kCyclesPerCityYear);
 
-/// Compute annual tax revenue (in credits). Revenue scales with population,
-/// tax rate, AND average land value — richer neighbourhoods pay more tax,
-/// matching SimCity Classic's `taxFund = cityTax * totalPop * landValueAvg / 120`.
+/// Compute annual tax revenue from taxable zone population (in credits).
+/// Government jobs/garrisons must be excluded by the caller. Revenue scales
+/// with tax and land value; this legacy rate is not Micropolis's R/8 formula.
 /// `avgLandValue` is 0..250; at 128 (midpoint) the multiplier is ~1.0x.
 /// When avgLandValue is 0 (unknown / not passed), falls back to the
 /// population-only formula for backward compatibility.

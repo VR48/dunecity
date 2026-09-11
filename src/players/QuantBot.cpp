@@ -2547,7 +2547,7 @@ bool QuantBot::selectCityServiceInvestment(const BuilderBase* builder, int money
         const auto* zone = dynamic_cast<const ZoneStructure*>(structure);
         const int level = zone ? getMap().getTile(p.x,p.y)->getCityZoneDensity() : structure->getCityOccupancy();
         const int pop = DuneCity::getStructurePopulation(structure, level);
-        totalPopulation += pop;
+        totalPopulation += DuneCity::getStructureTaxablePopulation(structure, level);
         const int value = sim->getLandValueMap().worldGet(p.x,p.y);
         if (value > 0) ++sampleCount;
         int coverage = plannedPolice.worldGet(p.x,p.y);
@@ -3070,7 +3070,7 @@ void QuantBot::build(int militaryValue) {
         data[Structure_Refinery][houseID].price + 2 * data[Unit_Harvester][houseID].price) : 0;
 
 	// Per-house city stats — CitySimulation now tracks these per player.
-	int ownResPop = 0, ownComPop = 0, ownIndPop = 0, ownTotalPop = 0;
+	int ownResPop = 0, ownComPop = 0, ownIndPop = 0, ownTotalPop = 0, ownTaxablePop = 0;
 	int ownAvgLandValue = 0;
 	int16_t ownResValve = 0, ownComValve = 0, ownIndValve = 0;
 	bool ownHasStadium = false, ownHasAirport = false;
@@ -3082,6 +3082,7 @@ void QuantBot::build(int militaryValue) {
 			ownComPop = hs.comPop;
 			ownIndPop = hs.indPop;
 			ownTotalPop = hs.getTotalPop();
+            ownTaxablePop = hs.taxablePopulation;
 			ownAvgLandValue = hs.avgLandValue;
 			ownResValve = hs.resValve;
 			ownComValve = hs.comValve;
@@ -3533,6 +3534,7 @@ void QuantBot::build(int militaryValue) {
             cityHealth.set("unemployment", hs.unemploymentRate).set("tax_rate", sim->getCityTax())
                 .set("last_tax_revenue", hs.budget.getLastTaxRevenue()).set("police_expense", hs.lastPoliceExpense)
                 .set("road_tiles", hs.roads.tiles).set("heavy_road_tiles", hs.roads.heavyTiles)
+                .set("taxable_pop", hs.taxablePopulation)
                 .set("road_expense", hs.roads.annualCost(hs.getTotalPop() * DuneCity::CitySimulation::kPopDisplayMultiplier))
                 .set("zone_origin_samples", samples).set("pollution_mean", samples ? pollution / samples : 0)
                 .set("crime_mean", samples ? crime / samples : 0).set("traffic_mean", samples ? traffic / samples : 0)
@@ -4415,7 +4417,7 @@ void QuantBot::build(int militaryValue) {
 						itemCount[Structure_ZoneIndustrial], strategicReserveItem, strategicReserveCost);
 					auto* balanceCity = currentGame ? currentGame->getCitySimulation() : nullptr;
 					const int taxIncome = citySimEnabled
-						? DuneCity::computeAnnualTaxRevenue(ownTotalPop, balanceCity ? balanceCity->getCityTax() : 7, ownAvgLandValue) / 60 : 0;
+						? DuneCity::computeAnnualTaxRevenue(ownTaxablePop, balanceCity ? balanceCity->getCityTax() : 7, ownAvgLandValue) / 60 : 0;
 					int factoryTarget = QuantBotBuildPolicy::desiredHeavyFactories(citySimEnabled, taxIncome, money, getHouse()->getNumItems(Structure_HeavyFactory), activeHeavyFactoryCount, recentFactoryLossCount());
                     if (vanillaEconomy) factoryTarget = DuneCity::vanillaFactoryTarget(factoryTarget, getHouse()->getNumItems(Unit_Harvester), money);
 					const int tech = currentGame ? currentGame->techLevel : 8;
@@ -5107,7 +5109,7 @@ void QuantBot::build(int militaryValue) {
 								if (isCitySim) {
 									auto* citySim = currentGame ? currentGame->getCitySimulation() : nullptr;
 									int tax = citySim ? citySim->getCityTax() : 7;
-									int32_t annual = DuneCity::computeAnnualTaxRevenue(ownTotalPop, tax, ownAvgLandValue);
+									int32_t annual = DuneCity::computeAnnualTaxRevenue(ownTaxablePop, tax, ownAvgLandValue);
 									creditsPerSec = annual / 60;
 								}
 								int desiredHFs = QuantBotBuildPolicy::desiredHeavyFactories(isCitySim, creditsPerSec, money, getHouse()->getNumItems(Structure_HeavyFactory), activeHeavyFactoryCount, recentFactoryLossCount());
