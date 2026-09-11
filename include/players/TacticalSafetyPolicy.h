@@ -66,6 +66,14 @@ inline bool protectedReactorNeighbour(int type) {
 inline bool blastClearance(int x, int y, int w, int h, int bx, int by, int bw, int bh) {
     return CityPlacementPolicy::footprintDistance(x,y,w,h,bx,by,bw,bh) >= 5;
 }
+// A safe, separated reactor site wins. If none exists, rank the remaining
+// legal sites instead of preventing essential generation indefinitely.
+inline auto reactorSiteRank(int threat, int loss, bool clearance, int score) {
+    return std::make_tuple(threat == 0 && loss == 0, clearance, -threat-loss, score);
+}
+inline bool reactorPlacementAllowed(int item, bool clearance) {
+    return item == Structure_NuclearPlant || clearance;
+}
 inline int lossStrength(unsigned age, unsigned lifetime) {
     if (!lifetime || age >= lifetime) return 0;
     return 1 + 100 * (lifetime-age) / lifetime;

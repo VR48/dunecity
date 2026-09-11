@@ -293,14 +293,24 @@ inline int openingSpiceRefineries(int sustainableHarvesters) {
 inline int fundedSpiceHarvesters(int sustainable, int refineries) {
     return std::max(0, std::min(sustainable, std::max(0, refineries) * 3));
 }
-// Compare the capacity actually needed, not the nominal cost per power of
-// a reactor that would sit mostly idle. A shortage of legal wind sites can
-// justify paying for compact generation. Cash for other work stays protected.
+// Compare useful capacity, available space and the ability to fund a larger
+// reserve. Small starts keep cheap wind; rich cities and blackout recovery
+// prefer nuclear. Cash already committed to other work stays protected.
 inline bool preferNuclearPower(int need, int windOutput, int windPrice, int nuclearPrice,
-                              int availableWindSites, int cash, int protectedCash) {
+                              int availableWindSites, int cash, int protectedCash, bool powerShortage = false) {
     if (need <= 0 || windOutput <= 0 || cash < nuclearPrice + std::max(0,protectedCash)) return false;
     const int windCount = (need + windOutput - 1) / windOutput;
-    return availableWindSites < windCount || int64_t(windCount) * windPrice > nuclearPrice;
+    // A rich city can afford useful spare capacity. During a blackout,
+    // restore enough capacity for zones to recover instead of topping up wind.
+    return powerShortage || int64_t(cash) >= int64_t(nuclearPrice) * 5 + std::max(0,protectedCash)
+        || availableWindSites < windCount || int64_t(windCount) * windPrice >= nuclearPrice;
+}
+// Reserve the latent load of existing lots even after blackout shrinkage.
+// Observed growth and latent growth overlap, so use the larger, not their sum.
+inline int cityGrowthPowerHeadroom(int zonePower, int matureZonePower, int observedGrowth,
+                                   int committedDemand) {
+    return std::max(0, committedDemand)
+        + std::max(std::max(0, observedGrowth), std::max(0, matureZonePower-zonePower));
 }
 inline int projectedPowerGrowth(int previous, int current, unsigned elapsed, unsigned horizon) {
     if (!elapsed || current <= previous) return 0;

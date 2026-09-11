@@ -60,6 +60,7 @@ public:
     /// the owner's House::powerRequirement. Idempotent; safe to call from
     /// setLocation, density-change hooks, and load.
     void refreshZonePowerDraw();
+    int getZonePowerDraw() const { return registeredZonePower_; }
 
     /// Update curAnimFrame from current tile density (column in the atlas)
     /// and the sampled land-value tier (row). Called every tick so the

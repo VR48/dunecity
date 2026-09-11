@@ -1,3 +1,51 @@
+# Growth-aware nuclear investment — 1.0.631 (local only)
+
+Reviewed completed city 1.0.630 session 1789087168596776-0, SCENA021.INI,
+62x62, ending cycle180523 (~48.14 simulated minutes). The logged QuantBot is
+house1. Of 41 generator-choice records, 40 chose wind and one nuclear. At40.75min,
+it chose wind with234,226 spendable credits, need489 and a valid reactor site:
+five100-output windtraps cost1,500, below the2,000 reactor, so the old incremental
+cost rule ignored the wealthy city's need for reserve capacity. 34 records had
+nuclear_site=false; old telemetry combined unavailable tech and rejected sites,
+so it cannot prove which placement restriction caused each failure. A completed
+reactor was placed through power-recovery fallback at29.81min, risk500.
+
+The log contains1,446 power_shortage decline events (all reduce population;
+1,236 also reduce density). Only2/95 periodic snapshots showed deficits, so
+snapshot averages hide short blackouts and subsequent zone shrinkage. The old
+30-second trend discarded forecast growth when density/power demand fell.
+
+Changes:
+- Account for every owned zone's mature density3 load minus its exact registered
+  power draw (including individual residential houses), plus mature queued zones
+  and other queued consumers. Use the larger of latent zone load and observed
+  two-minute growth, avoiding double counting. This headroom drives the early
+  power trigger as well as generator selection, retaining normal reserve.
+- When additional power is needed, prefer an affordable reactor during a deficit
+  or when spendable cash after queued orders covers five reactor prices plus
+  working capital (normally ~10k). Small funded starts still compare wind cost
+  and space; exact cost parity now favours nuclear. Pending-generator guards stay.
+- Reactor search ranks safe separated sites first; known threat/loss halos and
+  four-tile blast clearance are preferences rather than blanket reactor vetoes.
+  If none is safe/separated, use the best remaining legal footprint. Terrain,
+  occupied buildings, ground exits, roads and neighbouring access remain checked.
+  New critical buildings retain the separation veto beside existing reactors.
+  Completed generator placement uses the same separation preference. Existing
+  redevelopment paths remain conservative. Nuclear placement risks are logged.
+- Add zone current/mature draw, committed load, growth headroom, shortage,
+  nuclear availability and detailed candidate rejection/risk telemetry. Skip the
+  extra wind-site counting scan when wealth/recovery already decides nuclear;
+  zone loads share the existing structure loop. Policy zone-growth-power-v53.
+- Regression tests cover the recorded rich-city decision, protected cash,
+  blackout-recovery load invariance and reactor safety/separation ranking.
+  CTest550 passed/3optional skips; dependency audits and build passed. Save layout
+  unchanged. No final full-match replay validation or remote release this turn.
+- Signed 1.0.631 installed at /Applications/dunecity.app; executable matches
+  build/bin/dunecity.app SHA256
+  b55294a1d3f74cda0696f46292b7f98a0ca5a55ba7c192948c238341c7ab1082.
+  Prior app preserved in temporary dunecity-before-631.28kyr3x6 directory.
+  No running match interrupted and no launch used for version verification.
+
 # Shared city road access and desktop release — 1.0.630
 
 Stefan requested enemy roads be reusable, then authorized local/remote builds

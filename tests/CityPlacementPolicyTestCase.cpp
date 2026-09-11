@@ -48,6 +48,30 @@ TEST_CASE("Power growth forecast escapes repeated small windtrap top-ups", "[ai]
     REQUIRE(projectedPowerGrowth(0,100,30,120) == 100); // bounded startup/rebuild jump
 }
 
+TEST_CASE("Rich cities and blackout recovery invest in nuclear capacity", "[ai][power]") {
+    using namespace QuantBotBuildPolicy;
+    // Recorded 40.75-minute choice: rich, legal nuclear site, only 489 short.
+    REQUIRE(preferNuclearPower(489,100,300,2000,5,234226,300));
+    REQUIRE(preferNuclearPower(50,100,300,2000,20,2300,300,true));
+    REQUIRE_FALSE(preferNuclearPower(50,100,300,2000,20,2299,300,true));
+    REQUIRE_FALSE(preferNuclearPower(50,100,300,2000,20,2300,300,false));
+    REQUIRE_FALSE(preferNuclearPower(0,100,300,2000,20,300000,300,true));
+    REQUIRE(preferNuclearPower(50,100,300,2000,20,10300,300));
+    REQUIRE_FALSE(preferNuclearPower(50,100,300,2000,20,10299,300));
+}
+
+TEST_CASE("Zone recovery preserves the same planned load after blackout shrinkage", "[ai][power]") {
+    using namespace QuantBotBuildPolicy;
+    const int otherLoad = 800, matureLots = 1200;
+    const int before = otherLoad + 600 + cityGrowthPowerHeadroom(600,matureLots,80,24);
+    const int after = otherLoad + 200 + cityGrowthPowerHeadroom(200,matureLots,0,24);
+    REQUIRE(before == 2024);
+    REQUIRE(after == before);
+    REQUIRE(cityGrowthPowerHeadroom(1200,1200,400,24) == 424);
+    REQUIRE(cityGrowthPowerHeadroom(0,0,0,0) == 0);
+    REQUIRE(cityGrowthPowerHeadroom(0,36,20,18) == 54);
+}
+
 TEST_CASE("Early land-value turrets must repay costs without relying on crime utility", "[city][placement]") {
     CityServiceInvestmentPolicy::Value v;
     v.buildCost=250; v.upkeep=15; v.powerCost=50;
@@ -467,4 +491,13 @@ TEST_CASE("Service placement penalises clusters and favours underserved crime", 
     // An exceptionally bad district can still justify overlapping stations.
     cluster.crimeUtility=underservedUtility(20000,200);
     REQUIRE(cluster.useful(false));
+}
+
+TEST_CASE("Reactor placement prefers safety and separation without vetoing the only site", "[city][safety]") {
+    using namespace TacticalSafetyPolicy;
+    REQUIRE(reactorPlacementAllowed(Structure_NuclearPlant,false));
+    REQUIRE_FALSE(reactorPlacementAllowed(Structure_HeavyFactory,false));
+    REQUIRE(reactorSiteRank(0,0,true,-10000) > reactorSiteRank(0,0,false,10000));
+    REQUIRE(reactorSiteRank(0,0,false,0) > reactorSiteRank(100,0,true,10000));
+    REQUIRE(reactorSiteRank(100,0,false,0) > reactorSiteRank(200,0,false,10000));
 }
