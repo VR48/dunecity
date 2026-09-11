@@ -1632,7 +1632,8 @@ Coord QuantBot::findRedevelopmentSite(Uint32 item) {
 Coord QuantBot::findPlaceLocation(Uint32 itemID) {
     AITelemetry::PerformanceScope perfScope("ai.findPlaceLocation", getGameCycleCount(), getHouse()->getHouseID(), itemID);
     refreshTacticalDanger();
-    int accessRejected = 0, pollutionRejected = 0;
+    int accessRejected = 0, pollutionRejected = 0, reservedRejected = 0, roadRejected = 0, neighbourRejected = 0;
+    int searchPassUsed = 0;
 	// Check per-build-cycle cache first
 	auto cacheIt = placementCache.find(itemID);
 	if (cacheIt != placementCache.end()) {
@@ -1719,14 +1720,24 @@ Coord QuantBot::findPlaceLocation(Uint32 itemID) {
 		}
 	}
 
+    // Keep the fast ordinary search, but never treat its averaged base centre
+    // as the limit of a spread-out city's buildable territory.
+    for (int searchPass=0; searchPass<2; ++searchPass) {
+        if (searchPass==1) {
+            if (bestLocation.isValid()) break;
+            startX=0; startY=0; endX=mapW-newSizeX; endY=mapH-newSizeY;
+        }
+        searchPassUsed=searchPass;
 	for (int placeLocationX = startX; placeLocationX <= endX; placeLocationX++) {
 		for (int placeLocationY = startY; placeLocationY <= endY; placeLocationY++) {
-			// First check if this location is valid for building
+			if (!CityPlacementPolicy::inPlacementSearchPass(placeLocationX,placeLocationY,
+                baseCenter.x,baseCenter.y,searchRadius,searchPass)) continue;
+            // First check if this location is valid for building
 			if (getMap().okayToPlaceStructure(placeLocationX, placeLocationY, newSizeX, newSizeY,
 				false, (itemID == Structure_ConstructionYard) ? nullptr : getHouse(), false, itemID)) {
 
                 ++candidates;
-                if (overlapsReservedStructure(placeLocationX, placeLocationY, newSizeX, newSizeY)) continue;
+                if (overlapsReservedStructure(placeLocationX, placeLocationY, newSizeX, newSizeY)) { ++reservedRejected; continue; }
                 // Use the same origin sample and role-specific gate as zone growth.
                 // Industry tolerates pollution; R/C must not become vacant dead lots.
                 if (citySim && cityZonePlacement && DuneCity::isPollutionBlockingGrowth(
@@ -1743,9 +1754,9 @@ Coord QuantBot::findPlaceLocation(Uint32 itemID) {
                     if (!TacticalSafetyPolicy::reactorPlacementAllowed(itemID, reactorClearance(itemID, Coord(placeLocationX, placeLocationY)))) { ++blastRejected; continue; }
                 }
                 const auto roads = cityRoadImpact(getMap(), placeLocationX, placeLocationY, newSizeX, newSizeY, itemID);
-                if (!roads.preservesConnections) continue;
+                if (!roads.preservesConnections) { ++roadRejected; continue; }
                 if (currentGame && currentGame->isCitySimEnabled()
-                    && wouldLandlockNeighbouringZone(getMap(), houseID, placeLocationX, placeLocationY, newSizeX, newSizeY)) continue;
+                    && wouldLandlockNeighbouringZone(getMap(), houseID, placeLocationX, placeLocationY, newSizeX, newSizeY)) { ++neighbourRejected; continue; }
 				int locationScore = 0;
                 const int blockBonus = cityZonePlacement ? fourZoneBlockBonus(getMap(),houseID,placeLocationX,placeLocationY) : 0;
                 locationScore += roads.junctionBonus + roads.redundantRoadsCovered * 40;
@@ -2226,6 +2237,7 @@ Coord QuantBot::findPlaceLocation(Uint32 itemID) {
 		}
 	}
 
+    } // search passes
     if (bestLocation.isInvalid()) {
         bestLocation = findRedevelopmentSite(itemID);
         if (bestLocation.isValid()) bestQuality.set("redevelopment",1);
@@ -2233,6 +2245,8 @@ Coord QuantBot::findPlaceLocation(Uint32 itemID) {
 	placementCache[itemID] = bestLocation;
     bestQuality.set("legal_candidates",candidates).set("threat_rejections",threatRejected)
         .set("blast_rejections",blastRejected).set("recent_loss_rejections",lossRejected)
+        .set("search_pass",searchPassUsed).set("search_center_x",baseCenter.x).set("search_center_y",baseCenter.y)
+        .set("reserved_rejections",reservedRejected).set("road_rejections",roadRejected).set("neighbour_rejections",neighbourRejected)
         .set("ground_access_rejections",accessRejected).set("pollution_rejections",pollutionRejected);
     placementScoreDetails[itemID] = bestQuality;
 	return bestLocation;
@@ -5876,7 +5890,7 @@ void QuantBot::build(int militaryValue) {
                             .set("recent_loss_nearby", site.isValid() && nearRecentStructureLoss(site.x, site.y, size.x, size.y))
                             .set("enemy_fire_risk", dangerAt(site,size)).set("recent_loss_risk", dangerAt(site,size,true))
                             .set("reactor_clearance", site.isValid() && reactorClearance(itemToBePlaced,site))
-                            .set("planned_locations_remaining", placeLocations.size()).set("tiles", tiles));
+                            .set("placement_quality",placementScoreDetails[itemToBePlaced]).set("planned_locations_remaining", placeLocations.size()).set("tiles", tiles));
                     };
 
 
@@ -6022,7 +6036,8 @@ void QuantBot::build(int militaryValue) {
 							logDebug("PRODUCTION: Placed structure itemID: %d at (%d,%d)", itemToBePlaced, location.x, location.y);
 						}
 						else if (!placementIssueHandled) {
-							if (emitStatsLog) logDebug("PRODUCTION: Holding finished item %d until a legal site is available", itemToBePlaced);
+							if (emitStatsLog) logDebug("PRODUCTION: Holding finished item %d until a legal site is available; search=%s",
+                                itemToBePlaced, placementScoreDetails[itemToBePlaced].json().c_str());
 							if (emitStatsLog) tracePlacementIssue("placement_deferred", "no_dynamic_site", location);
 						}
 					}

@@ -6,6 +6,13 @@
 #include <cstddef>
 
 namespace CityPlacementPolicy {
+// Partition candidate origins into a cheap central pass and a disjoint fallback.
+// The second pass must include disconnected districts and map-edge outposts.
+inline bool inPlacementSearchPass(int x, int y, int cx, int cy, int radius, int pass) {
+    const bool central = x >= cx-radius && x <= cx+radius && y >= cy-radius && y <= cy+radius;
+    return pass == 0 ? central : !central;
+}
+
 // Match ground-unit movement: neighbouring road tiles may connect diagonally.
 constexpr int dx[8] = {0, 1, 0, -1, 1, 1, -1, -1};
 constexpr int dy[8] = {-1, 0, 1, 0, -1, 1, 1, -1};

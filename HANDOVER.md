@@ -1,3 +1,55 @@
+# Outlying placement and city reinforcements — 1.0.645 (local)
+
+Stefan reported finished R zones stuck despite open sites in widely separated
+edge districts (Harkonnen/Neutral, live 1.0.642 Moshpit game). Verified that
+findPlaceLocation searched only +/-50 tiles from the arithmetic base centre.
+The screenshot supports this limitation; do not claim each shown tile was
+individually proved legal. Normal build-range, terrain, occupancy, pollution,
+road/exit, reactor and threat restrictions remain in force.
+
+- Placement first evaluates its existing central region, then, only if no
+  suitable site exists, the remaining map origins. Passes are disjoint; both
+  results use the existing per-build cache and waiting-yard scheduling.
+  Successful central searches incur no broad second search. Diagnostics add
+  search centre/pass and reservation/road/neighbour rejection counters;
+  completed-yard deferrals include placement quality.
+- Harkonnen city-sim light factories can build trikes. The existing Harkonnen
+  high-tech ornithopter exception is preserved in the shared CityFactionPolicy
+  helper. Tech/upgrades/enabled flags still apply. Vanilla faction restrictions
+  remain unchanged. Actual build lists feed QuantBot's available unit mix.
+- Police always use Palace's HOUSE_FREMEN cooldown (5 simulated minutes),
+  replacing twice the owning faction's palace cooldown (20 min for Harkonnen,
+  10 for most houses). Patrol remains 3 troopers + 1 trike with existing caps.
+  Harkonnen's earlier JSONL already records successful one-trike patrols; it
+  was factory availability, not a universal police spawn ban.
+- Airports automatically deploy a pair of free ornithopters every Palace
+  Harkonnen missile cooldown (10 simulated minutes). Starts with a full timer;
+  requires power to deploy, observes air-unit caps and enabled units, retries
+  local blocked/capped deployment every five simulated seconds. Only on-map
+  unoccupied air tiles qualify (AirUnit::canPass always returns true). Partial pairs
+  retain only their missing aircraft; cooldown resets after the full pair.
+  AI aircraft start STOP for QuantBot's explicit safe-target controller; human
+  aircraft start GUARD, not Hunt. Airport sidebar shows countdown/power/cap
+  status. New airport_unit_spawned/airport_reinforcements telemetry.
+- Save format 9836 adds airport countdown and pending pair count. Older saves
+  give existing airports a fresh timer. New saves restore partial batches.
+  Policy version v63. Existing detailed telemetry stops routine capture near
+  240 MiB of its 256 MiB limit: the still-running game's events.jsonl ends at
+  cycle ~541k while Dune City.log continues past 1.1m. This limits attribution
+  of the latest screenshot; do not present the old JSONL snapshot as current.
+
+Installed /Applications/dunecity.app 1.0.645; strict deep signature verified.
+Built/installed executable SHA256:
+a3c883454b9e01707037c02a0cd2601f56e9c262b21c5b2154d21db057744099.
+Previous app: /Applications/.dunecity-645-b4u98vvi/dunecity-previous.app.
+The running 642 game was not interrupted.
+
+Validation: dependency audits passed; 574 test cases passed, 3 skipped via
+ctest. Added exhaustive disjoint search-region coverage for remote outposts,
+Harkonnen factory/mode restrictions, and partial airport patrol persistence.
+No tactical learner/kiting changes from the preceding analysis were requested
+or implemented here. No remote release or website update in this task.
+
 # Safe ornithopter raids and base air coverage — 1.0.644 (local only)
 
 Stefan requested that ornithopters exploit buildings/units outside launcher and

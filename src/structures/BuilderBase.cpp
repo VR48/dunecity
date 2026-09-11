@@ -1,3 +1,4 @@
+#include <dunecity/CityFactionPolicy.h>
 #include <players/AIDecisionLog.h>
 /*
  *  This file is part of Dune Legacy.
@@ -64,10 +65,9 @@ bool isWorfineryDirectProduct(Uint32 itemID) {
         || itemID == Unit_Harvester;
 }
 
-bool isCityHarkonnenOrnithopterBuilder(Uint32 builderID, Uint32 productID, int originalHouseID) {
-    return currentGame && currentGame->isCitySimEnabled()
-        && originalHouseID == HOUSE_HARKONNEN
-        && builderID == Structure_HighTechFactory && productID == Unit_Ornithopter;
+bool isCityHarkonnenProductBuilder(Uint32 builderID, Uint32 productID, int originalHouseID) {
+    return DuneCity::cityHarkonnenProduct(currentGame && currentGame->isCitySimEnabled(),
+        originalHouseID,builderID,productID);
 }
 
 bool isAlternateTornieBuilder(Uint32 builderID, Uint32 itemID) {
@@ -368,7 +368,7 @@ int BuilderBase::getMaxUpgradeLevel() const {
         const ObjectData::ObjectDataStruct& objData = currentGame->objectData.data[i][dataHouseID];
 
         if(objData.enabled && (objData.builder == (int) itemID
-            || isCityHarkonnenOrnithopterBuilder(itemID, i, originalHouseID))
+            || isCityHarkonnenProductBuilder(itemID, i, originalHouseID))
             && (objData.techLevel <= currentGame->techLevel)) {
             upgradeLevel = std::max(upgradeLevel, (int) objData.upgradeLevel);
         }
@@ -439,7 +439,7 @@ void BuilderBase::updateBuildList()
             ? std::max(9, configuredTechLevel)
             : configuredTechLevel;
         const bool producedHere = objData.builder == static_cast<int>(itemID)
-                               || isCityHarkonnenOrnithopterBuilder(itemID, itemID2Add, originalHouseID)
+                               || isCityHarkonnenProductBuilder(itemID, itemID2Add, originalHouseID)
                                || isAlternateTornieBuilder(itemID, itemID2Add)
                                || specialChemicalCarryall;
         const bool directWorfineryProduct = itemID == Structure_Worfinery

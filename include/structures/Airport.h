@@ -2,6 +2,7 @@
 #define AIRPORT_H
 
 #include <structures/StructureBase.h>
+#include <dunecity/AirPatrolCycle.h>
 
 /**
  * Airport — DuneCity economic building.
@@ -16,8 +17,14 @@ public:
     explicit Airport(House* newOwner);
     explicit Airport(InputStream& stream);
     virtual ~Airport();
+    void save(OutputStream& stream) const override;
+    int getMaxSpawnTimer() const;
+    int getSpawnTimer() const { return patrol.remainingCycles; }
+    int getPendingAircraft() const { return patrol.pendingAircraft; }
+    ObjectInterface* getInterfaceContainer() override;
 
 private:
+    DuneCity::AirPatrolCycle patrol{getMaxSpawnTimer()};
     void init();
     void updateStructureSpecificStuff() override;
 };

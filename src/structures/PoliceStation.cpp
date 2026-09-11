@@ -64,7 +64,7 @@ void PoliceStation::handleSpawnClick() {
 }
 
 int PoliceStation::getMaxSpawnTimer() const {
-    return 2 * Palace::getSpecialWeaponCooldownForHouse(originalHouseID);
+    return Palace::getSpecialWeaponCooldownForHouse(HOUSE_FREMEN);
 }
 
 bool PoliceStation::isReinforcementLimitReached() const {

@@ -36,7 +36,7 @@ TEST_CASE("Save compat: current Num_ItemID >= legacy",
 
 TEST_CASE("Save compat: SAVEGAMEVERSION is 9811 or higher",
           "[save-compat][regression]") {
-    REQUIRE(SAVEGAMEVERSION == 9835);
+    REQUIRE(SAVEGAMEVERSION == 9836);
     REQUIRE(SAVEGAMEVERSION >= 9818);
 }
 

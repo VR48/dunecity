@@ -514,3 +514,17 @@ TEST_CASE("Rocket coverage includes city districts and whole diagonal footprints
     CHECK_FALSE(coversBuilding(Coord(10,10),Coord(17,10),Coord(2,2),7));
     CHECK(coversBuilding(Coord(10,10),Coord(17,10),Coord(1,1),7));
 }
+
+TEST_CASE("Placement fallback reaches disconnected districts without rescanning the centre", "[city][placement][regression]") {
+    using CityPlacementPolicy::inPlacementSearchPass;
+    // A base extending along two edges has an empty averaged centre.
+    REQUIRE(inPlacementSearchPass(63,63,63,63,50,0));
+    REQUIRE_FALSE(inPlacementSearchPass(1,120,63,63,50,0));
+    REQUIRE(inPlacementSearchPass(1,120,63,63,50,1));
+    REQUIRE(inPlacementSearchPass(126,3,63,63,50,1));
+    for (int y=0;y<127;++y) for (int x=0;x<127;++x) {
+        const int visits=int(inPlacementSearchPass(x,y,63,63,50,0))
+            + int(inPlacementSearchPass(x,y,63,63,50,1));
+        REQUIRE(visits==1);
+    }
+}

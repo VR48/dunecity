@@ -67,3 +67,33 @@ TEST_CASE("PoliceStation: turrets keep their fractional coverage",
     REQUIRE(getPoliceCoverage(Structure_GunTurret)    == kPoliceCoverageGunTurret);
     REQUIRE(getPoliceCoverage(Structure_RocketTurret) == kPoliceCoverageRocketTurret);
 }
+
+#include <dunecity/CityFactionPolicy.h>
+#include <dunecity/AirPatrolCycle.h>
+
+TEST_CASE("DuneCity gives Harkonnen trike and ornithopter production only at the right factory", "[city][factions]") {
+    for (const auto city : {false,true}) {
+        CHECK(cityHarkonnenProduct(city,HOUSE_HARKONNEN,Structure_LightFactory,Unit_Trike)==city);
+        CHECK(cityHarkonnenProduct(city,HOUSE_HARKONNEN,Structure_HighTechFactory,Unit_Ornithopter)==city);
+    }
+    CHECK_FALSE(cityHarkonnenProduct(true,HOUSE_HARKONNEN,Structure_HeavyFactory,Unit_Trike));
+    CHECK_FALSE(cityHarkonnenProduct(true,HOUSE_ORDOS,Structure_LightFactory,Unit_Trike));
+    CHECK_FALSE(cityHarkonnenProduct(true,HOUSE_HARKONNEN,Structure_LightFactory,Unit_Ornithopter));
+}
+
+TEST_CASE("Airport patrol cooldown preserves a partially deployed pair across reload", "[city][airport][save]") {
+    AirPatrolCycle patrol(10);
+    for (int i=0;i<9;++i) { patrol.tick(); CHECK_FALSE(patrol.ready()); }
+    patrol.tick(); REQUIRE(patrol.ready());
+    patrol.deployed(10);
+    CHECK(patrol.ready()); CHECK(patrol.pendingAircraft==1);
+    AirPatrolCycle loaded(10);
+    loaded.restore(patrol.remainingCycles,patrol.pendingAircraft,10);
+    loaded.tick(); CHECK(loaded.ready()); CHECK(loaded.pendingAircraft==1);
+    loaded.deployed(10);
+    CHECK_FALSE(loaded.ready()); CHECK(loaded.remainingCycles==10); CHECK(loaded.pendingAircraft==2);
+    // Blocked deployments don't consume the pair or restart its cooldown.
+    AirPatrolCycle blocked(0);
+    for (int i=0;i<20;++i) blocked.tick();
+    CHECK(blocked.ready()); CHECK(blocked.pendingAircraft==2);
+}
