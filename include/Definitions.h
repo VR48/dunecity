@@ -115,7 +115,7 @@
 #define DEFAULT_STARTINGCREDITS 3000
 
 #define HUMANPLAYERCLASS        "HumanPlayer"
-#define DEFAULTAIPLAYERCLASS    "CampaignAIPlayer"
+#define DEFAULTAIPLAYERCLASS    "qBotEasy"
 
 
 #ifndef RESTRICT

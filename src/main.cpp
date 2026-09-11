@@ -698,7 +698,7 @@ void createDefaultConfigFile(const std::string& configfilepath, const std::strin
                                 "MetaServer = %s\n"
                                 "\n"
                                 "[AI]\n"
-                                "Campaign AI = CampaignAIPlayer\n"
+                                "Campaign AI = qBotEasy\n"
                                 "\n"
                                 "[Game Options]\n"
                                 "Game Speed = 16                         # The default speed of the game: 32 = very slow, 8 = very fast, 16 = default\n"

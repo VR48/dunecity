@@ -589,11 +589,17 @@ TEST_CASE("Light raiders evade tanks and prefer vulnerable mobile prey", "[quant
     REQUIRE_FALSE(isLightRaiderPreferredTarget(Structure_Refinery));
 }
 
-TEST_CASE("Only ornithopter saturation justifies extra air production", "[quantbot][production]") {
-    REQUIRE(allAirFactoriesBuildingOrnithopters(3,3,3));
-    REQUIRE_FALSE(allAirFactoriesBuildingOrnithopters(3,3,2)); // one carryall, idle or held
-    REQUIRE_FALSE(allAirFactoriesBuildingOrnithopters(3,4,3)); // incoming capacity
-    REQUIRE_FALSE(allAirFactoriesBuildingOrnithopters(0,0,0));
+TEST_CASE("Funded ornithopter backlog expands mixed air production", "[quantbot][production]") {
+    CHECK(needsAirProductionLane(1,1,1,1,1800,6000,1000,500,600,2000,false));
+    CHECK(needsAirProductionLane(3,3,3,1,1800,6000,1000,500,600,2000,false)); // two carryall lanes
+    CHECK(needsAirProductionLane(4,4,3,3,1800,6000,1000,500,600,2000,false));
+    CHECK_FALSE(needsAirProductionLane(3,4,3,3,1800,6000,1000,500,600,2000,false)); // pending factory
+    CHECK_FALSE(needsAirProductionLane(3,3,1,3,1800,6000,1000,500,600,2000,false)); // idle capacity
+    CHECK_FALSE(needsAirProductionLane(1,1,1,0,1800,6000,1000,500,600,2000,false)); // tech locked
+    CHECK_FALSE(needsAirProductionLane(1,1,1,1,569,6000,1000,500,600,2000,false)); // queued units meet most demand
+    CHECK_FALSE(needsAirProductionLane(1,1,1,1,1800,3000,1000,500,600,2000,false)); // cannot fund lane + unit
+    CHECK_FALSE(needsAirProductionLane(1,1,1,1,1800,6000,1000,500,600,50,false)); // current Sardaukar army cap
+    CHECK_FALSE(needsAirProductionLane(1,1,1,1,1800,6000,1000,500,600,2000,true));
 }
 
 TEST_CASE("Rocket turret power setting is independent of vanilla power bypass", "[quantbot][power]") {
@@ -1320,4 +1326,25 @@ TEST_CASE("Expansion chooses safe reachable new rock rather than adjacent yards"
     // The remaining rock is in enemy fire; preserve the MCV instead of deploying at home.
     for(int y=20;y<30;++y)for(int x=25;x<35;++x)tiles[y*w+x].unsafe=true;
     CHECK_FALSE(choose(w,h,tiles,{23*w+12},{23*w+0},{}).valid());
+}
+
+TEST_CASE("Air raids prefer buildings and only intercept defensive ground contacts", "[quantbot][air]") {
+    CHECK(AirStrikePolicy::targetRank(true,false)>AirStrikePolicy::targetRank(false,true));
+    CHECK(AirStrikePolicy::targetRank(false,false)==0);
+    CHECK(AirStrikePolicy::targetRank(false,true)>0);
+    CHECK(AirStrikePolicy::safetyRange(7)==12);
+}
+TEST_CASE("Air withdrawal exits new coverage without crossing a second defended area", "[quantbot][air]") {
+    AirStrikePolicy::Coverage map(40,40);
+    map.add(Coord(10,20),5);
+    map.add(Coord(25,20),4);
+    CHECK(map.clearWithdrawal(Coord(10,20),Coord(17,20)));
+    CHECK_FALSE(map.clearWithdrawal(Coord(10,20),Coord(35,20)));
+    CHECK_FALSE(map.clearWithdrawal(Coord(5,5),Coord(10,20)));
+    const Coord exit=map.escape(Coord(10,20));
+    CHECK(exit.isValid());
+    CHECK(map.safe(exit));
+    CHECK(map.clearWithdrawal(Coord(10,20),exit));
+    AirStrikePolicy::Coverage trapped(2,2); trapped.add(Coord(0,0),10);
+    CHECK(trapped.escape(Coord(0,0)).isInvalid());
 }

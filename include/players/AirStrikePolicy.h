@@ -12,6 +12,13 @@ inline bool antiAir(int item) {
         || item == Unit_EliteLauncher || item == Unit_Deviator;
 }
 
+// Offensive sorties prefer exposed structures. Ground units are intercepted only
+// when threatening the base or harvesters, never hunted across the map.
+inline int targetRank(bool structure, bool defensiveContact) {
+    return structure ? 2 : defensiveContact ? 1 : 0;
+}
+inline int safetyRange(int weaponRange) { return weaponRange + 5; }
+
 // One shared coverage map per tactical pass; no per-target scan of all weapons.
 // Use the combat distance metric, including diagonal range, plus manoeuvre room.
 class Coverage {
@@ -36,6 +43,32 @@ public:
         for(int step=0;step<=steps;++step)
             if (!safe(Coord(from.x+(to.x-from.x)*step/steps,from.y+(to.y-from.y)*step/steps))) return false;
         return true;
+    }
+    // Escape may start inside newly arrived AA coverage, but cannot re-enter it.
+    bool clearWithdrawal(Coord from, Coord to) const {
+        if (!safe(to)) return false;
+        bool reachedSafety = safe(from);
+        const int steps=std::max({1,std::abs(to.x-from.x),std::abs(to.y-from.y)});
+        for(int step=0;step<=steps;++step) {
+            const bool clear=safe(Coord(from.x+(to.x-from.x)*step/steps,
+                from.y+(to.y-from.y)*step/steps));
+            if(reachedSafety && !clear) return false;
+            reachedSafety = reachedSafety || clear;
+        }
+        return true;
+    }
+    Coord escape(Coord from) const {
+        // Closest safe straight exit; deterministic and used only during danger.
+        Coord best; best.invalidate();
+        int distance=width_+height_;
+        for(int y=0;y<height_;++y) for(int x=0;x<width_;++x) {
+            const Coord point(x,y);
+            const int d=std::abs(x-from.x)+std::abs(y-from.y);
+            if(d<distance && safe(point) && clearWithdrawal(from,point)) {
+                best=point; distance=d;
+            }
+        }
+        return best;
     }
 private:
     int width_,height_;

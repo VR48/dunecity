@@ -3075,6 +3075,7 @@ void QuantBot::build(int militaryValue) {
     int activeLightFactoryCount = 0;
 	int activeHighTechFactoryCount = 0;
     int ornithopterFactoryCount = 0;
+    int ornithopterCapableFactoryCount = 0;
 	int activeRepairYardCount = 0;
     int queuedProductionCost = 0;
     int queuedMilitaryValue = 0;
@@ -3098,6 +3099,9 @@ void QuantBot::build(int militaryValue) {
                     && pBuilder->isAvailableToBuild(Structure_NuclearPlant)) nuclearBuildAvailable = true;
                 if (pBuilder->getItemID() == Structure_HighTechFactory && pBuilder->getHealth() > 0
                     && pBuilder->isAvailableToBuild(Unit_Carryall)) carryallBuildAvailable = true;
+                if (pBuilder->getItemID() == Structure_HighTechFactory && pBuilder->getHealth() > 0
+                    && !pBuilder->isUpgrading() && !pBuilder->isOnHold()
+                    && pBuilder->isAvailableToBuild(Unit_Ornithopter)) ++ornithopterCapableFactoryCount;
                 if (pBuilder->getItemID() == Structure_HeavyFactory && pBuilder->getHealth() > 0
                     && pBuilder->isAvailableToBuild(Unit_Harvester)) harvesterFactories.push_back(pBuilder);
                 if (pBuilder->getItemID() == Structure_HeavyFactory && pBuilder->isUpgrading()
@@ -4706,12 +4710,12 @@ void QuantBot::build(int militaryValue) {
                     && QuantBotBuildPolicy::needsProductionLane(getHouse()->getNumItems(Structure_HeavyFactory),
                         itemCount[Structure_HeavyFactory], activeHeavyFactoryCount, heavyDeficit,
                         money, economyReserve, data[Structure_HeavyFactory][houseID].price);
-                const bool airBacklog = QuantBotBuildPolicy::allAirFactoriesBuildingOrnithopters(
-                        getHouse()->getNumItems(Structure_HighTechFactory), itemCount[Structure_HighTechFactory], ornithopterFactoryCount)
-                    && !getHouse()->isAirUnitLimitReached()
-                    && QuantBotBuildPolicy::needsProductionLane(getHouse()->getNumItems(Structure_HighTechFactory),
-                        itemCount[Structure_HighTechFactory], activeHighTechFactoryCount, airDeficit,
-                        money, economyReserve, data[Structure_HighTechFactory][houseID].price);
+                const bool airBacklog = QuantBotBuildPolicy::needsAirProductionLane(
+                    getHouse()->getNumItems(Structure_HighTechFactory), itemCount[Structure_HighTechFactory],
+                    activeHighTechFactoryCount, ornithopterCapableFactoryCount, airDeficit,
+                    money, economyReserve, data[Structure_HighTechFactory][houseID].price,
+                    data[Unit_Ornithopter][houseID].price, militaryValueLimit-militaryValue,
+                    getHouse()->isAirUnitLimitReached());
 
 				// Each yard owns its concrete/structure placement sequence. Sharing
 				// a single FIFO lets the faster yard consume the other's locations.
@@ -4748,6 +4752,8 @@ void QuantBot::build(int militaryValue) {
                         .set("heavy_backlog", heavyBacklog).set("air_backlog", airBacklog)
                         .set("light_backlog",lightBacklog).set("light_busy",activeLightFactoryCount).set("light_deficit",lightDeficit)
                         .set("high_tech_busy", activeHighTechFactoryCount)
+                        .set("high_tech_air_capable", ornithopterCapableFactoryCount)
+                        .set("air_army_room", militaryValueLimit-militaryValue)
                         .set("high_tech_building_ornithopters", ornithopterFactoryCount)
                         .set("heavy_economy_target", vanillaEconomy ? std::max(1, getHouse()->getNumItems(Unit_Harvester) / 3) : 0)
                         .set("heavy_cash_target", vanillaEconomy ? 1 + std::max(0, money - 10000) / 4000 : 0)
@@ -5293,6 +5299,13 @@ void QuantBot::build(int militaryValue) {
 					+ itemCount[Structure_ZoneIndustrial];
 				const bool cityIncomeReady = !isCitySim || kCityZoneCount >= kCityIncomeReadyZones || money > 3000;
 
+                // Fund combat-air capacity before optional ground-factory expansion.
+                // Pending factories prevent duplicate lanes across parallel yards.
+                if (itemID == NONE_ID && !skipRemainingStructureLogic && airBacklog
+                    && pBuilder->isAvailableToBuild(Structure_HighTechFactory)
+                    && findPlaceLocation(Structure_HighTechFactory).isValid()) {
+                    itemID = Structure_HighTechFactory; structureRule = "air_unit_backlog";
+                }
                 // Expand saturated light production before optional heavy capacity.
                 // Pending factories count, so parallel yards add one lane at a time.
                 if (itemID == NONE_ID && !skipRemainingStructureLogic && lightBacklog
@@ -5573,14 +5586,6 @@ void QuantBot::build(int militaryValue) {
 							logDebug("Build Repair Yard: have=%d busy=%d cap=%d military=%d", itemCount[Structure_RepairYard], activeRepairYardCount,
 								QuantBotBuildPolicy::repairYardCap(getHouse()->getNumItems(Structure_HeavyFactory)), militaryValue);
 						}
-				// 15. Extra air capacity only for funded aircraft demand, after heavy backlog.
-				if (itemID == NONE_ID && !skipRemainingStructureLogic
-									&& money > std::max(3000, economyReserve + data[Structure_HighTechFactory][houseID].price) && pBuilder->isAvailableToBuild(Structure_HighTechFactory)
-									&& itemCount[Structure_HighTechFactory] > 0
-                                    && airBacklog && (!heavyBacklog || itemCount[Structure_HeavyFactory] >= 24)
-                                    && activeHighTechFactoryCount >= itemCount[Structure_HighTechFactory]) {
-									itemID = Structure_HighTechFactory; structureRule = "air_production";
-								}
 				// 16. Silos (when storage is 80%+ full)
 				if (itemID == NONE_ID && !skipRemainingStructureLogic
 					&& itemCount[Structure_HeavyFactory] > 0
@@ -6245,7 +6250,8 @@ void QuantBot::scrambleUnitsAndDefend(const ObjectBase* intruder, bool clearingS
             && blockDistance(contact,unit->getLocation()) <= 8) threatValue += value(unit);
         if (unit->getOwner()!=getHouse() || !unit->isRespondable() || humanControls(unit)
             || !unit->canAttack(intruder) || unit->isBadlyDamaged() || unit->getAttackMode()==RETREAT
-            || unit->getItemID()==Unit_Saboteur || unit->getItemID()==Unit_Harvester) continue;
+            || unit->getItemID()==Unit_Saboteur || unit->getItemID()==Unit_Harvester
+            || unit->getItemID()==Unit_Ornithopter) continue; // Air planner checks AA before defending.
         if (clearingSpice && blockDistance(contact,unit->getLocation())>clearingRadius) continue;
         const auto* target=unit->getTarget();
         const auto assignment=defenceAssignments.find(unit->getObjectID());
@@ -6306,16 +6312,32 @@ bool QuantBot::tryLaunchOrnithopterStrike(const QuantBotConfig::DifficultySettin
         if(!defender || !defender->isActive() || defender->getHealth()<=0
             || !defender->getOwner() || defender->getOwner()->getTeamID()==myTeam
             || !defender->isVisible(myTeam) || !AirStrikePolicy::antiAir(defender->getItemID())) return;
-        if(defender->getItemID()==Structure_RocketTurret
-            && currentGame->getGameInitSettings().getGameOptions().rocketTurretsNeedPower
-            && !defender->getOwner()->hasPower()) return;
-        coverage.add(defender->getLocation(),defender->getWeaponRange()+2);
+        // A temporary power outage does not make a turret district a safe sortie.
+        coverage.add(defender->getLocation(),AirStrikePolicy::safetyRange(defender->getWeaponRange()));
         ++visibleAntiAir;
     };
     for(const auto* structure:getStructureList()) addDefender(structure);
     for(const auto* unit:getUnitList()) addDefender(unit);
 
-    struct Candidate { const ObjectBase* object; int weight; };
+    std::vector<const ObjectBase*> defendedAssets;
+    for(const auto* structure:getStructureList())
+        if(structure->getOwner()==getHouse() && structure->isActive() && structure->getHealth()>0)
+            defendedAssets.push_back(structure);
+    for(const auto* worker:getUnitList())
+        if(worker->getOwner()==getHouse() && worker->isActive() && worker->getHealth()>0
+            && (worker->getItemID()==Unit_Harvester || worker->getItemID()==Unit_RebelHarvester))
+            defendedAssets.push_back(worker);
+    LocalPointIndex defendedIndex(map.getSizeX(),map.getSizeY());
+    int largestAsset=1;
+    for(size_t i=0;i<defendedAssets.size();++i) {
+        const auto* asset=defendedAssets[i];
+        defendedIndex.add(asset->getLocation().x,asset->getLocation().y,i);
+        if(asset->isAStructure()) {
+            const Coord size=static_cast<const StructureBase*>(asset)->getStructureSize();
+            largestAsset=std::max({largestAsset,size.x,size.y});
+        }
+    }
+    struct Candidate { const ObjectBase* object; int weight; int rank; };
     std::vector<Candidate> candidates;
     auto addCandidate=[&](const ObjectBase* object,const QuantBotConfig::TargetPriority& priority) {
         if(!object || !object->isActive() || object->getHealth()<=0 || !object->getOwner()
@@ -6326,27 +6348,40 @@ bool QuantBot::tryLaunchOrnithopterStrike(const QuantBotConfig::DifficultySettin
         if(!coverage.clearFootprint(object->getLocation(),size)) return;
         // All undefended buildings are eligible, including zones absent from the
         // combat priority table; retain configured priorities for ranking.
-        candidates.push_back({object,std::max(1,priority.build+priority.target)});
+        bool defensiveContact=false;
+        if(!object->isAStructure() && object->canAttack()) {
+            defendedIndex.visit(object->getLocation().x,object->getLocation().y,
+                object->getWeaponRange()+3+largestAsset,[&](size_t i) {
+                    if(!defensiveContact && blockDistance(object->getLocation(),
+                        defendedAssets[i]->getClosestPoint(object->getLocation())) <= object->getWeaponRange()+3)
+                        defensiveContact=true;
+                });
+        }
+        const int rank=AirStrikePolicy::targetRank(object->isAStructure(),defensiveContact);
+        if(rank>0) candidates.push_back({object,std::max(1,priority.build+priority.target),rank});
     };
     if(diffSettings.ornithopterAttackEnabled) {
         for(const auto* structure:getStructureList())
             addCandidate(structure,config.getStructurePriority(structure->getItemID()));
-        for(const auto* unit:getUnitList())
-            addCandidate(unit,config.getUnitPriority(unit->getItemID()));
     }
+    // Defensive interception is available even when offensive raids are disabled.
+    for(const auto* unit:getUnitList())
+        addCandidate(unit,config.getUnitPriority(unit->getItemID()));
 
     bool issued=false;
-    const Coord base=findBaseCentre(getHouse()->getHouseID());
     for(const auto* unit:aircraft) {
         const ObjectBase* target=nullptr;
         double bestScore=-1;
+        int bestRank=0;
         if(!unit->isBadlyDamaged() && unit->getAttackMode()!=RETREAT) {
             for(const auto& candidate:candidates) {
                 if(!unit->canAttack(candidate.object)) continue;
                 const Coord endpoint=candidate.object->getClosestPoint(unit->getLocation());
                 double score=double(candidate.weight)/(blockDistance(unit->getLocation(),endpoint).toDouble()+1);
                 if(candidate.object==unit->getTarget()) score*=1.15; // Avoid oscillating between equal safe targets.
-                if(score<=bestScore || !coverage.clearApproach(unit->getLocation(),endpoint)) continue;
+                if(candidate.rank<bestRank || (candidate.rank==bestRank && score<=bestScore)
+                    || !coverage.clearApproach(unit->getLocation(),endpoint)) continue;
+                bestRank=candidate.rank;
                 bestScore=score;
                 target=candidate.object;
             }
@@ -6363,16 +6398,35 @@ bool QuantBot::tryLaunchOrnithopterStrike(const QuantBotConfig::DifficultySettin
                 issued=true;
                 traceDecision("ornithopter_safe_strike",AITelemetry::Record().set("unit",unit->getObjectID())
                     .set("target",target->getObjectID()).set("target_item",target->getItemID())
-                    .set("visible_anti_air",visibleAntiAir).set("reason","uncovered_target_clear_approach"));
+                    .set("visible_anti_air",visibleAntiAir).set("safety_margin_tiles",5)
+                    .set("reason",bestRank==2 ? "exposed_building" : "defend_base_or_harvester"));
             }
         } else {
             if(modeChanged || hadTarget) { doSetAttackMode(unit,STOP); issued=true; }
-            // Return to base when an order becomes unsafe, rather than continuing
-            // towards its old destination. Moving launchers are rechecked each pass.
-            if(base.isValid() && (modeChanged || hadTarget
-                || (!unit->wasForced() && blockDistance(unit->getLocation(),base)>17))) {
-                doMove2Pos(unit,base.x,base.y,true);
-                issued=true;
+            // Return along a clear corridor to a real owned building, not a base
+            // centroid that can sit in enemy fire. Escape newly arrived AA first.
+            Coord home; home.invalidate();
+            int bestDistance=std::numeric_limits<int>::max();
+            for(const auto* asset:defendedAssets) {
+                if(!asset->isAStructure()) continue;
+                const Coord point=asset->getLocation();
+                const int distance=(blockDistance(unit->getLocation(),point)*100).lround();
+                if(distance<bestDistance && coverage.clearApproach(unit->getLocation(),point)) {
+                    home=point; bestDistance=distance;
+                }
+            }
+            if(home.isInvalid() && !coverage.safe(unit->getLocation())) home=coverage.escape(unit->getLocation());
+            if(home.isValid()) {
+                const_cast<UnitBase*>(unit)->setGuardPoint(home.x,home.y);
+                const bool unsafeDestination=unit->getDestination().isValid()
+                    && !coverage.clearApproach(unit->getLocation(),unit->getDestination());
+                if(modeChanged || hadTarget || unsafeDestination
+                    || blockDistance(unit->getLocation(),home)>3) {
+                    if(unit->getDestination()!=home || hadTarget || modeChanged) {
+                        doMove2Pos(unit,home.x,home.y,true);
+                        issued=true;
+                    }
+                }
             }
             if(modeChanged || hadTarget) traceDecision("ornithopter_hold",AITelemetry::Record()
                 .set("unit",unit->getObjectID()).set("visible_anti_air",visibleAntiAir)
@@ -7077,6 +7131,7 @@ void QuantBot::retreatAllUnits() {
             const auto* unit=dynamic_cast<const UnitBase*>(getObject(it->first));
             const auto* target=getObject(it->second);
             if (!unit || unit->getOwner()!=getHouse() || humanControls(unit)
+                || unit->getItemID()==Unit_Ornithopter
                 || !target || target->getHealth()<=0 || !target->isActive()
                 || target->getOwner()->getTeamID()==getHouse()->getTeamID()
                 || unit->isBadlyDamaged() || unit->getAttackMode()==RETREAT) {
@@ -7282,21 +7337,7 @@ void QuantBot::retreatAllUnits() {
                 } break;
 
                 case Unit_Ornithopter: {
-                    if (!diffSettings.ornithopterAttackEnabled) {
-                        if (!pUnit->hasATarget() && !pUnit->wasForced()) {
-                            Coord ownBaseCentre = findBaseCentre(getHouse()->getHouseID());
-                            if (ownBaseCentre.isValid() && ownBaseCentre != pUnit->getGuardPoint()) {
-                                const_cast<UnitBase*>(pUnit)->setGuardPoint(ownBaseCentre.x, ownBaseCentre.y);
-                            }
-                        }
-                    } else if(!supportMode) {
-                        if (!pUnit->hasATarget() && !pUnit->wasForced()) {
-                            Coord rally = findSquadRallyLocation();
-                            if (rally.isValid() && rally != pUnit->getGuardPoint()) {
-                                const_cast<UnitBase*>(pUnit)->setGuardPoint(rally.x, rally.y);
-                            }
-                        }
-                    }
+                    // Safe strike/defence planner owns targeting and patrol locations.
                 } break;
 
                 case Unit_Saboteur: {

@@ -62,11 +62,7 @@ const char* const kSupportPlayerClasses[] = {
 constexpr int kSupportOptionCount = sizeof(kSupportPlayerClasses) / sizeof(kSupportPlayerClasses[0]);
 
 const char* const kEnemyAIClasses[] = {
-    "CampaignAIPlayer",
-    "qBotEasy",
-    "qBotMedium",
-    "qBotHard",
-    "qBotBrutal"
+    "qBotEasy", "qBotMedium", "qBotHard", "qBotBrutal", "qBotDefend", "CampaignAIPlayer"
 };
 
 constexpr int kEnemyAIOptionCount = sizeof(kEnemyAIClasses) / sizeof(kEnemyAIClasses[0]);
@@ -78,7 +74,7 @@ SinglePlayerSkirmishMenu::SinglePlayerSkirmishMenu() : MenuBase()
     selectedButton = 1;
     mission = 1;
     supportBotIndex = 0;
-    enemyAIIndex = 0;  // Default to CampaignAIPlayer
+    enemyAIIndex = 0;  // Default to QuantBot Easy
     currentGameOptions = effectiveGameOptions;  // Use mod-aware effective options
 
     // set up window
@@ -139,11 +135,12 @@ SinglePlayerSkirmishMenu::SinglePlayerSkirmishMenu() : MenuBase()
     menuButtonsVBox.addWidget(enemyAILabel);
     menuButtonsVBox.addWidget(VSpacer::create(2));
 
-    enemyAIDropDown.addEntry(_("Enemy AI: Campaign AI"), 0);
-    enemyAIDropDown.addEntry(_("Enemy AI: QuantBot Easy"), 1);
-    enemyAIDropDown.addEntry(_("Enemy AI: QuantBot Medium"), 2);
-    enemyAIDropDown.addEntry(_("Enemy AI: QuantBot Hard"), 3);
-    enemyAIDropDown.addEntry(_("Enemy AI: QuantBot Brutal"), 4);
+    enemyAIDropDown.addEntry(_("QuantBot Easy"), 0);
+    enemyAIDropDown.addEntry(_("QuantBot Medium"), 1);
+    enemyAIDropDown.addEntry(_("QuantBot Hard"), 2);
+    enemyAIDropDown.addEntry(_("QuantBot Brutal"), 3);
+    enemyAIDropDown.addEntry(_("QuantBot Defend"), 4);
+    enemyAIDropDown.addEntry(_("Campaign AI"), 5);
     enemyAIDropDown.setSelectedItem(0);
     enemyAIDropDown.setOnSelectionChange(std::bind(&SinglePlayerSkirmishMenu::onEnemyAISelectionChanged, this, std::placeholders::_1));
     menuButtonsVBox.addWidget(&enemyAIDropDown);

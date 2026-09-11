@@ -383,8 +383,15 @@ inline bool needsProductionLane(int actual, int committed, int busy, int deficit
         && deficit >= factoryPrice && credits >= reserve + factoryPrice + 1000;
 }
 
-inline bool allAirFactoriesBuildingOrnithopters(int actual, int committed, int producing) {
-    return actual > 0 && committed == actual && producing == actual;
+// A carryall sharing the production line must not hide combat-air demand.
+// Count incoming factories and aircraft, and fund both the lane and its next unit.
+inline bool needsAirProductionLane(int actual, int committed, int busy, int capable,
+    int deficit, int credits, int reserve, int factoryPrice, int aircraftPrice,
+    int armyRoom, bool airLimit) {
+    return !airLimit && capable > 0 && aircraftPrice > 0 && armyRoom >= aircraftPrice
+        && actual > 0 && committed == actual && busy * 4 >= actual * 3
+        && deficit >= aircraftPrice
+        && credits >= reserve + factoryPrice + aircraftPrice + 1000;
 }
 
 inline bool needsKiting(int distance, int weaponRange, bool easy, bool groundTarget) {

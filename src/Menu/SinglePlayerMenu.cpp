@@ -127,11 +127,7 @@ void SinglePlayerMenu::onCampaign() {
     };
 
     const char* const kEnemyAIClasses[] = {
-        "CampaignAIPlayer",
-        "qBotEasy",
-        "qBotMedium",
-        "qBotHard",
-        "qBotBrutal"
+        "qBotEasy", "qBotMedium", "qBotHard", "qBotBrutal", "qBotDefend", "CampaignAIPlayer"
     };
 
     const bool supportSelected = (supportBotIndex > 0);

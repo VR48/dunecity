@@ -1,3 +1,50 @@
+# Ornithopter capacity, safe defence and AI defaults — 1.0.648 (local)
+
+Current 647 session 1789142209744263-0 (Ergsun-Prometh, seed1050788573),
+Sardaukar house4: High Tech completed cycle56346 at89,37 and IX cycle63946
+at80,1. Both remained at400/400 health at cycle140646. At cycle161546,
+Sardaukar had ~51.8k credits but army79950/80000 and air deficit569 at a
+600-credit ornithopter price. This observation does not justify forced extra
+factories at the cap. Source did reveal extra air capacity was behind all
+heavy expansion (unless24 heavy factories), and required every air factory
+currently producing an ornithopter, hiding mixed carryall workloads.
+
+- Additional High Tech: funded unmet ornithopter demand of at least one plane,
+  >=75% busy capacity, an operational unlocked producer, aircraft/military
+  headroom, funds for factory + aircraft + working buffer. Queued factories
+  prevent duplicate capacity. Evaluate before optional light/heavy expansion;
+  essential economy, power and civic priorities remain. No one-factory cap.
+- Ornithopters raid exposed buildings first; ground units are candidates only
+  when in weapon range +3 tiles of a live own building or harvester. No roaming
+  unit hunts. Defence uses the same visible launcher/rocket-turret coverage
+  checks as raids, including footprint and direct approach. Safety margin is
+  five tiles beyond weapon range (previously two), including turning room.
+  Temporarily unpowered enemy rocket turrets still prohibit attacks nearby.
+- General damage-response scramble previously bypassed safe-air planning and
+  could assign ornithopters directly into covered combat. Exclude them and
+  discard legacy air defence assignments. Safe planner owns their orders and
+  guard points. On withdrawal use a reachable safe actual owned building,
+  avoiding a dangerous base centroid; inside new AA coverage find a nearest
+  safe straight exit. No guarantee against hidden/moving AA or missiles
+  already in flight. Ground contact checks use LocalPointIndex.
+- Dropdowns lead QuantBot Easy, Medium, Hard, Brutal, Defend, then other AIs.
+  Registry labels now spell QuantBot; class identifiers remain qBot* for saves.
+  Campaign and skirmish launch mappings match displayed order. New campaign
+  default and fallback/config-generation default are qBotEasy. Existing explicit
+  saved settings remain user choices. The campaign selector visibly starts Easy.
+- Telemetry policy v66 adds usable air producers / military headroom and raid
+  versus defensive-intercept reasons. Derived logic only; save version9836.
+
+Validation: 582 tests passed, 3 skipped, dependency audits, version consistency,
+menu-to-launch mapping checks, whitespace checks. Coverage includes mixed air
+workloads, pending capacity, tech/funds/unit-cap blockers, raid ranking and
+withdrawal through/around AA coverage. No fresh full-match or interactive menu
+run; the live game was not interrupted. Local app signature/hash verified.
+Installed /Applications/dunecity.app SHA256
+de20ef211518ab0c038928bcecc1b724e29627076ca5612c32009d342d113216.
+Previous647: /Applications/.dunecity-648-6z69dkyn/dunecity-previous.app.
+No remote release or website changes. Existing reports/ remains unstaged.
+
 # Unloading queues and safe rock expansion — 1.0.647 (local)
 
 Stefan reported harvesters queueing at refineries and three adjacent MCV
