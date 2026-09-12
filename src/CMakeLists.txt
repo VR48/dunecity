@@ -221,6 +221,11 @@ target_sources(dunecity
         # Network
         Network/LANGameFinderAndAnnouncer.cpp
         Network/NetworkManager.cpp
+        Network/GamePayloadRouter.cpp
+        Network/RelayWebSocketCurl.cpp
+        Network/RelayWebSocketEmscripten.cpp
+        Network/RoomAdmissionClient.cpp
+        Network/RoomRelayClient.cpp
         Network/ENetHttp.cpp
         Network/MetaServerClient.cpp
         Network/VersionChecker.cpp
@@ -476,6 +481,8 @@ if(EMSCRIPTEN)
         "SHELL:-sEXIT_RUNTIME=0"
         "SHELL:-sEXPORTED_RUNTIME_METHODS=['FS']"
         "SHELL:-lidbfs.js"
+        "SHELL:-lwebsocket.js"
+        "SHELL:-sFETCH=1"
         "SHELL:--shell-file ${CMAKE_SOURCE_DIR}/web/shell.html"
         "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/data@/"
         "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/config@/config"
