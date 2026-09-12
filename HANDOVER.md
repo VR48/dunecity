@@ -3903,3 +3903,15 @@ JS and relay-session regression coverage. The lobby has a separate Join Game
 button and Change name action. Local two-browser gameplay has started successfully;
 this does not attest public Apache multiplayer. Test service 18790 and web8768
 serve the local 1.0.658 candidate, separate from old8787/8766 clients.
+
+Follow-up verification on the same candidate: metaserver Node22.23.2 passed all
+200 relay tests and its PHP8.3 gateway contract checks. A bounded launch of the
+exact candidate under Landlock + Node permissions reported analytics enabled,
+answered authenticated health and refused unauthenticated health. It was stopped
+and the prior candidate symlink restored; no public gateway or cron installed.
+Hermes reviewed frozen source402caf4 (artifact SHA256 recorded in the review),
+reported no new source-verified blocker, and passed200 tests. Its bounded run
+interrupted one parallel review worker; this is limited review, not full security
+certification. Existing production/watchdog gates remain. Browser match logs
+advanced beyond31500 cycles with a tested movement order and no reported state
+digest mismatch; host and guest continued exchanging performance reports.
