@@ -16,6 +16,7 @@
  */
 
 #include <Menu/HouseChoiceMenu.h>
+#include <Menu/SinglePlayerSkirmishMenu.h>
 #include <mod/ModManager.h>
 
 #include <globals.h>
@@ -161,6 +162,9 @@ HouseChoiceMenu::HouseChoiceMenu() : MenuBase()
     gameOptionsButton.setOnClick(std::bind(&HouseChoiceMenu::onGameOptions, this));
     windowWidget.addWidget(&gameOptionsButton, Point(optionsX, optionsY + 100), Point(160, 20));
 
+    hostCoopButton.setText(_("Host Co-op"));
+    hostCoopButton.setOnClick([] { SinglePlayerSkirmishMenu(true).showMenu(); });
+    windowWidget.addWidget(&hostCoopButton, Point(optionsX, optionsY + 128), Point(160, 20));
     updateHouseChoice();
 }
 

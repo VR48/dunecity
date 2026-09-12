@@ -25,10 +25,10 @@
 #define TEST_NETWORKPACKET_SENDGAMEINFO         1
 #define TEST_NETWORKPACKET_CLIENTSTATS          13
 #define TEST_NETWORKPACKET_KEEPALIVE            19
-#define TEST_NETWORK_PROTOCOL_VERSION           4
+#define TEST_NETWORK_PROTOCOL_VERSION           5
 
-TEST_CASE("NetworkManager: nine-house state requires protocol 4", "[network][protocol]") {
-    REQUIRE(NETWORK_PROTOCOL_VERSION == 4);
+TEST_CASE("NetworkManager: co-op mission synchronization requires protocol 5", "[network][protocol]") {
+    REQUIRE(NETWORK_PROTOCOL_VERSION == 5);
     REQUIRE(TEST_NETWORK_PROTOCOL_VERSION != 3);
     REQUIRE(NETWORKDISCONNECT_PROTOCOL_MISMATCH == 5);
 }

@@ -104,8 +104,10 @@ private:
     Sint32  attackTimer;    ///< When to build the next structure/unit
     Sint32  retreatTimer;   ///< When you last retreated>
 
-    int initialItemCount[Num_ItemID];
-    int initialMilitaryValue = 0;
+    int initialItemCount[Num_ItemID]{};
+    // Negative until the first update, after scenario/save objects are loaded.
+    // This sentinel also survives saving before a newly added partner updates.
+    int initialMilitaryValue = -1;
     int militaryValueLimit = 0;
     int harvesterLimit = 4;
     int lastCalculatedSpice = 0;

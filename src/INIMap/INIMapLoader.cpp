@@ -645,7 +645,7 @@ void INIMapLoader::loadHouses()
 
             auto pPlayer = pPlayerData->create(pNewHouse, playerInfo.playerName);
 
-            if( ((pGame->getGameInitSettings().getGameType() != GameType::CustomMultiplayer) && (dynamic_cast<HumanPlayer*>(pPlayer.get()) != nullptr))
+            if( ((!isNetworkGameType(pGame->getGameInitSettings().getGameType())) && (dynamic_cast<HumanPlayer*>(pPlayer.get()) != nullptr))
                 || (playerInfo.playerName == pGame->getLocalPlayerName())) {
                 pLocalHouse = pNewHouse;
                 pLocalPlayer = dynamic_cast<HumanPlayer*>(pPlayer.get());
@@ -1090,7 +1090,7 @@ House* INIMapLoader::getOrCreateHouse(int houseID) {
         return pGame->house[houseID].get();
     } else {
         Uint8 team = 0;
-        if(pGame->gameType == GameType::Campaign || pGame->gameType == GameType::Skirmish) {
+        if(isScenarioGameType(pGame->gameType)) {
             // in campaign all "other" units are in the same team as the AI
             team = 2;
         }

@@ -169,6 +169,11 @@ public:
 
     void save(OutputStream& stream) const;
     void migrateLegacyHouseColorSlots();
+    void enableCoop(bool campaign, const std::string& serverName);
+    static GameInitSettings readSaveSetup(InputStream& stream, HouseInfoList& houses);
+    void configureCoopSave(const GameInitSettings& saved, const HouseInfoList& houses);
+    void setScenarioData(const std::string& data) { filedata = data; }
+
 
     inline GameType getGameType() const { return gameType; };
     inline HOUSETYPE getHouseID() const { return houseID; };

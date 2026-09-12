@@ -60,7 +60,7 @@ RocketTurret::~RocketTurret() = default;
 
 void RocketTurret::updateStructureSpecificStuff() {
     if( ( DuneCity::rocketTurretPowered(currentGame->getGameInitSettings().getGameOptions().rocketTurretsNeedPower, getOwner()->getProducedPower(), getOwner()->getPowerRequirement()) )
-        || ( ((currentGame->gameType == GameType::Campaign) || (currentGame->gameType == GameType::Skirmish)) && getOwner()->isAI() && getOwner()->isPowerRequired()) ) {
+        || ( ((isCampaignGameType(currentGame->gameType)) || ((currentGame->gameType == GameType::Skirmish || currentGame->gameType == GameType::SkirmishCoop))) && getOwner()->isAI() && getOwner()->isPowerRequired()) ) {
         TurretBase::updateStructureSpecificStuff();
     }
 }

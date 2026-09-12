@@ -451,7 +451,7 @@ void UnitBase::deploy(const Coord& newLocation) {
                 
                 // Check if unit should be destroyed by the bloom
                 GameType gameType = currentGame->getGameInitSettings().getGameType();
-                bool isImmortal = (gameType != GameType::CustomMultiplayer 
+                bool isImmortal = (!isNetworkGameType(gameType)
                                   && gameType != GameType::LoadMultiplayer
                                   && currentGame->getGameInitSettings().getGameOptions().immortalHumanPlayer
                                   && getOwner() == pLocalHouse);

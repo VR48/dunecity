@@ -1,3 +1,61 @@
+# Campaign and mission shared-house co-op — 1.0.652 (local)
+
+Campaign house selection and single-mission/skirmish setup have Host Co-op.
+Multiplayer has Create LAN Game, Host Internet Custom Game, Host Campaign Co-op.
+The campaign setup chooses house and mission (1–22), Internet or LAN only,
+or loads a solo campaign save (save/) or shared campaign save (mpsave/).
+The fixed-house lobby exposes exactly two controllers: primary human plus
+another human or QuantBot (Easy/Medium/Hard/Brutal/Defend; support variants also
+available). Existing server listing, connection, mod/config synchronization
+and countdown machinery is used. Scenario enemy identities/teams are preserved.
+
+Campaign continuation preserves both controllers and campaign progress, with
+host-selected next scenario/seed sent reliably to the client. Old simulation
+packets are rejected using their mission seed; callbacks are cleared before
+replacing Game. Initial shared missions skip the blocking solo briefing.
+Save loading distinguishes the original solo/network binary layout before
+converting to co-op, including the outer mod header and saved house colors.
+Existing matching partner state is retained; new partners initialize only
+after all saved objects exist. New controller setup also preserves planned
+future campaign enemy slots not present in the current save.
+
+Stefan observed an inactive QuantBot partner after advancing an early mission.
+The partner was present, but Campaign mode only rebuilt initial scenario
+buildings: a human starting with only a construction yard had no windtrap
+baseline. QuantBot now detects an actual HumanPlayer sharing its house and
+uses Custom/normal economic and military planning at the selected difficulty,
+while still obeying mission tech/build availability. Campaign enemies retain
+campaign behavior. This also migrates saved partners on their first update.
+Fresh QuantBot initialMilitaryValue=-1 is a serialized pending-init sentinel:
+new midgame partners no longer skip initialization because cycle!=0 or read
+uninitialized initialItemCount. Existing initialized bots keep saved baselines.
+
+Save format is 9837 and network protocol 5. Both network clients need 1.0.652;
+older saves remain readable, older executables reject new saves. POSIX
+DUNECITY_USERDIR optionally selects an absolute isolated profile; ordinary
+user paths are unchanged. Tests used separate app IDs, profiles and ports.
+
+Validation: dependency audits before/after Release build, ctest (588 passed,
+3 expected skips), version/whitespace checks, app signature and binary hash.
+New tests exercise shared controller/settings/scenario round trips, human and
+bot next-mission retention, old save headers/colors, malformed headers, and
+preservation of absent future enemy slots when hosting a save.
+Two separate localhost clients joined Atreides, ran in lockstep (462 CitySim
+valve rows and 57 day rows had identical shared prefixes), and saved a shared
+campaign. A separate test loaded that save with a new QuantBot Easy partner
+at tech1/cycle15747; correct initial counts and Custom mode were logged.
+Accepted construction began Windtrap, Residential, Industrial, Refinery,
+then further economy/power construction. Stefan also confirmed it worked.
+Evidence: /tmp/coop-two-client-host.log, /tmp/coop-two-client-guest.log;
+/tmp/dunecity-coop-economy-verify/ai-decisions/1789179844509552-0/events.jsonl.
+No live two-machine Internet test or complete two-human campaign transition;
+next-mission settings are covered by tests and the bot transition was observed
+in Stefan's test. Original user profile/logs were not overwritten.
+
+Installed /Applications/dunecity.app, SHA256 4265200d009b95f97957b823b513282f4dcafc540a4a62a3d982cc99b3f885b6.
+Previous app: /Applications/.dunecity-652-fyt_4fmo/dunecity-previous.app.
+No remote deployment. Existing reports/ remains unstaged.
+
 # Original single-mission house identities — 1.0.651 (local)
 
 Current session1789170044652756-0 loads SCENA022.INI as GameType::Skirmish.

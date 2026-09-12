@@ -27,6 +27,14 @@
 
 #include <GameInitSettings.h>
 #include <sand.h>
+#include <Menu/CustomGamePlayers.h>
+#include <Network/NetworkManager.h>
+#include <FileClasses/FileManager.h>
+#include <misc/IMemoryStream.h>
+#include <misc/FileSystem.h>
+#include <misc/fnkdat.h>
+#include <GUI/dune/LoadSaveWindow.h>
+#include <GUI/MsgBox.h>
 
 namespace {
 const int houseOrder[] = {
@@ -68,7 +76,7 @@ const char* const kEnemyAIClasses[] = {
 constexpr int kEnemyAIOptionCount = sizeof(kEnemyAIClasses) / sizeof(kEnemyAIClasses[0]);
 }
 
-SinglePlayerSkirmishMenu::SinglePlayerSkirmishMenu() : MenuBase()
+SinglePlayerSkirmishMenu::SinglePlayerSkirmishMenu(bool campaignCoop) : MenuBase(), campaignCoop(campaignCoop)
 {
     currentHouseChoiceScrollPos = 0;
     selectedButton = 1;
@@ -100,7 +108,7 @@ SinglePlayerSkirmishMenu::SinglePlayerSkirmishMenu() : MenuBase()
     // set up menu buttons
     windowWidget.addWidget(&menuButtonsVBox,Point((getRendererWidth() - 160)/2,getRendererHeight()/2 + 64), Point(160,166));
 
-    startButton.setText(_("Start"));
+    startButton.setText(campaignCoop ? _("Host Campaign Co-op") : _("Start"));
     startButton.setOnClick(std::bind(&SinglePlayerSkirmishMenu::onStart, this));
     menuButtonsVBox.addWidget(&startButton);
     startButton.setActive();
@@ -156,6 +164,22 @@ SinglePlayerSkirmishMenu::SinglePlayerSkirmishMenu() : MenuBase()
     backButton.setText(_("Back"));
     backButton.setOnClick(std::bind(&SinglePlayerSkirmishMenu::onCancel, this));
     menuButtonsVBox.addWidget(&backButton);
+
+    hostCoopButton.setText(_("Host Co-op"));
+    hostCoopButton.setOnClick(std::bind(&SinglePlayerSkirmishMenu::onHostCoop, this));
+    loadCoopButton.setText(_("Load Campaign Save"));
+    loadCoopButton.setOnClick([this]() { onLoadCoop(false); });
+    loadSharedSaveButton.setText(_("Load Co-op Save"));
+    loadSharedSaveButton.setOnClick([this]() { onLoadCoop(true); });
+    coopNetworkDropDown.addEntry(_("Internet"), 0);
+    coopNetworkDropDown.addEntry(_("LAN only"), 1);
+    coopNetworkDropDown.setSelectedItem(0);
+    const int coopX = getRendererWidth()/2 - 280;
+    const int coopY = getRendererHeight()/2 + 64;
+    windowWidget.addWidget(&hostCoopButton, Point(coopX, coopY), Point(180, 24));
+    windowWidget.addWidget(&coopNetworkDropDown, Point(coopX, coopY+32), Point(180, 24));
+    windowWidget.addWidget(&loadCoopButton, Point(coopX, coopY+64), Point(180, 24));
+    windowWidget.addWidget(&loadSharedSaveButton, Point(coopX, coopY+96), Point(180, 24));
 
     // set up house choice
 
@@ -241,6 +265,21 @@ SinglePlayerSkirmishMenu::~SinglePlayerSkirmishMenu()
 }
 
 void SinglePlayerSkirmishMenu::onChildWindowClose(Window* pChildWindow) {
+    if(auto* load = dynamic_cast<LoadSaveWindow*>(pChildWindow)) {
+        if(load->getFilename().empty()) return;
+        try {
+            const auto data = readCompleteFile(load->getFilename());
+            IMemoryStream stream(data.data(), data.size());
+            GameInitSettings::HouseInfoList houses;
+            auto saved = GameInitSettings::readSaveSetup(stream, houses);
+            if(!isScenarioGameType(saved.getGameType()))
+                throw std::runtime_error("Choose a campaign or single-mission save.");
+            GameInitSettings init(load->getFilename(), data, settings.general.playerName + "'s Campaign Co-op");
+            init.configureCoopSave(saved, houses);
+            hostCoopGame(init);
+        } catch(const std::exception& error) { openWindow(MsgBox::create(error.what())); }
+        return;
+    }
     GameOptionsWindow* pGameOptionsWindow = dynamic_cast<GameOptionsWindow*>(pChildWindow);
     if(pGameOptionsWindow != nullptr) {
         currentGameOptions = pGameOptionsWindow->getGameOptions();
@@ -293,8 +332,48 @@ void SinglePlayerSkirmishMenu::onStart()
         }
     }
 
-    startSinglePlayerGame(init);
-    quit();
+    if(hostingCoop || campaignCoop) {
+        hostCoopGame(init);
+    } else {
+        startSinglePlayerGame(init);
+        quit();
+    }
+}
+
+void SinglePlayerSkirmishMenu::onHostCoop() {
+    hostingCoop = true;
+    onStart();
+    hostingCoop = false;
+}
+
+void SinglePlayerSkirmishMenu::onLoadCoop(bool sharedSave) {
+    char path[FILENAME_MAX];
+    fnkdat(sharedSave ? "mpsave/" : "save/", path, FILENAME_MAX, FNKDAT_USER | FNKDAT_CREAT);
+    openWindow(LoadSaveWindow::create(false, sharedSave ? _("Load Co-op Save") : _("Load Campaign Save"), path, "dls"));
+}
+
+void SinglePlayerSkirmishMenu::hostCoopGame(GameInitSettings init) {
+    const bool ownNetwork = !pNetworkManager;
+    try {
+        if(init.getModName() != ModManager::instance().getActiveModName()
+           && !ModManager::instance().setActiveMod(init.getModName()))
+            throw std::runtime_error("Install the saved campaign's mod before hosting it.");
+        init.enableCoop(campaignCoop, settings.general.playerName + (campaignCoop ? "'s Campaign Co-op" : "'s Mission Co-op"));
+        if(init.getGameType() != GameType::LoadCoop) {
+            auto file = pFileManager->openCampaignFile(init.getFilename());
+            const auto size = SDL_RWsize(file.get());
+            if(size <= 0) throw std::runtime_error("Cannot read campaign scenario.");
+            std::string data(static_cast<size_t>(size), '\0');
+            if(SDL_RWread(file.get(), data.data(), 1, data.size()) != data.size())
+                throw std::runtime_error("Incomplete campaign scenario.");
+            init.setScenarioData(data);
+        }
+        if(ownNetwork) pNetworkManager = std::make_unique<NetworkManager>(settings.network.serverPort, settings.network.metaServer);
+        CustomGamePlayers(init, true, coopNetworkDropDown.getSelectedEntryIntData() == 1).showMenu();
+    } catch(const std::exception& error) {
+        openWindow(MsgBox::create(error.what()));
+    }
+    if(ownNetwork) pNetworkManager.reset();
 }
 
 void SinglePlayerSkirmishMenu::onCancel()

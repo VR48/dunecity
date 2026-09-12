@@ -33,11 +33,12 @@
 
 #include <misc/string_util.h>
 #include <DataTypes.h>
+#include <GameInitSettings.h>
 
 class SinglePlayerSkirmishMenu : public MenuBase
 {
 public:
-    SinglePlayerSkirmishMenu();
+    explicit SinglePlayerSkirmishMenu(bool campaignCoop = false);
     virtual ~SinglePlayerSkirmishMenu();
 
     /**
@@ -50,6 +51,9 @@ public:
 private:
 
     void onStart();
+    void onHostCoop();
+    void onLoadCoop(bool sharedSave = false);
+    void hostCoopGame(GameInitSettings init);
     void onCancel();
     void onGameOptions();
 
@@ -86,6 +90,12 @@ private:
     StaticContainer houseChoiceContainer;
     VBox            menuButtonsVBox;
 
+    bool campaignCoop = false;
+    bool hostingCoop = false;
+    TextButton hostCoopButton;
+    TextButton loadCoopButton;
+    TextButton loadSharedSaveButton;
+    DropDownBox coopNetworkDropDown;
     TextButton      startButton;
     DropDownBox     supportBotDropDown;
     DropDownBox     enemyAIDropDown;

@@ -373,6 +373,8 @@ Game::~Game() {
         pNetworkManager->setOnReceiveCommandList(std::function<void (const std::string&, const CommandList&)>());
         pNetworkManager->setOnReceiveSelectionList(std::function<void (const std::string&, const std::set<Uint32>&, int)>());
         pNetworkManager->setOnPeerDisconnected(std::function<void (const std::string&, bool, int)>());
+        pNetworkManager->setOnReceiveClientStats({});
+        pNetworkManager->setOnReceiveSetPathBudget({});
     }
 
     for(StructureBase* pStructure : structureList) {
@@ -516,6 +518,7 @@ void Game::initGame(const GameInitSettings& newGameInitSettings) {
             }
         } break;
 
+        case GameType::LoadCoop:
         case GameType::LoadMultiplayer: {
             IMemoryStream memStream(gameInitSettings.getFiledata().c_str(), gameInitSettings.getFiledata().size());
 
@@ -524,6 +527,8 @@ void Game::initGame(const GameInitSettings& newGameInitSettings) {
             }
         } break;
 
+        case GameType::CampaignCoop:
+        case GameType::SkirmishCoop:
         case GameType::Campaign:
         case GameType::Skirmish:
         case GameType::CustomGame:
@@ -570,7 +575,7 @@ void Game::initGame(const GameInitSettings& newGameInitSettings) {
                 citySimulation_.reset();
             }
 
-            if(bReplay == false && gameInitSettings.getGameType() != GameType::CustomGame && gameInitSettings.getGameType() != GameType::CustomMultiplayer) {
+            if(bReplay == false && gameInitSettings.getGameType() != GameType::CustomGame && !isNetworkGameType(gameInitSettings.getGameType())) {
                 /* do briefing */
                 SDL_Log("Briefing...");
                 BriefingMenu(gameInitSettings.getHouseID(), gameInitSettings.getMission(),BRIEFING).showMenu();
@@ -606,7 +611,7 @@ void Game::startMatchAnalytics() {
     // A multiplayer game is reported by its host only. The reporter is kept
     // separate from lobby announcement state, which is deliberately stopped
     // once the countdown ends.
-    if (gameInitSettings.getGameType() == GameType::CustomMultiplayer
+    if (isNetworkGameType(gameInitSettings.getGameType())
         && (!pNetworkManager || !pNetworkManager->isServer())) {
         return;
     }
@@ -2703,7 +2708,7 @@ void Game::runMainLoop() {
         mapName = mapName.substr(0, lastDot);
     }
     
-    if (gameInitSettings.getGameType() == GameType::CustomMultiplayer || 
+    if (isNetworkGameType(gameInitSettings.getGameType()) ||
         gameInitSettings.getGameType() == GameType::LoadMultiplayer) {
         // Count human players from game init settings (not alive houses which can change during game)
         int humanPlayerCount = 0;
@@ -3358,6 +3363,7 @@ void Game::initializeReplay() {
 
 void Game::initializeNetwork() {
     if(pNetworkManager != nullptr) {
+        pNetworkManager->beginSimulation(gameInitSettings.getRandomSeed());
         pNetworkManager->setOnReceiveChatMessage(
             std::bind(&ChatManager::addChatMessage, &(pInterface->getChatManager()), 
             std::placeholders::_1, std::placeholders::_2));
@@ -3652,7 +3658,7 @@ void Game::onOptions()
         quitGame();
     } else {
         Uint32 color = getHouseColorRGB(getHouseVisualHouse(pLocalHouse->getHouseID()), 3);
-        pInGameMenu = std::make_unique<InGameMenu>((gameType == GameType::CustomMultiplayer), color);
+        pInGameMenu = std::make_unique<InGameMenu>((isNetworkGameType(gameType)), color);
         bMenu = true;
         pauseGame();
     }
@@ -3730,6 +3736,7 @@ GameInitSettings Game::getNextGameInitSettings()
     }
 
     switch(gameInitSettings.getGameType()) {
+        case GameType::CampaignCoop:
         case GameType::Campaign: {
             int currentMission = gameInitSettings.getMission();
             if(!won) {
@@ -3747,7 +3754,17 @@ GameInitSettings Game::getNextGameInitSettings()
             }
 
             Uint32 alreadyShownTutorialHints = won ? pLocalPlayer->getAlreadyShownTutorialHints() : gameInitSettings.getAlreadyShownTutorialHints();
-            return GameInitSettings(gameInitSettings, nextMission, alreadyPlayedRegions, alreadyShownTutorialHints);
+            GameInitSettings next(gameInitSettings, nextMission, alreadyPlayedRegions, alreadyShownTutorialHints);
+            if(next.getGameType() == GameType::CampaignCoop) {
+                auto file = pFileManager->openCampaignFile(next.getFilename());
+                const auto size = SDL_RWsize(file.get());
+                if(size <= 0) THROW(std::runtime_error, "Cannot read next co-op mission.");
+                std::string data(static_cast<size_t>(size), '\0');
+                if(SDL_RWread(file.get(), data.data(), 1, data.size()) != data.size())
+                    THROW(std::runtime_error, "Incomplete next co-op mission.");
+                next.setScenarioData(data);
+            }
+            return next;
         } break;
 
         default: {
@@ -3771,6 +3788,7 @@ int Game::whatNext()
     }
 
     switch(gameType) {
+        case GameType::CampaignCoop:
         case GameType::Campaign: {
             if(bQuitGame == true) {
                 return GAME_RETURN_TO_MENU;
@@ -3791,6 +3809,7 @@ int Game::whatNext()
             }
         } break;
 
+        case GameType::SkirmishCoop:
         case GameType::Skirmish: {
             if(bQuitGame == true) {
                 return GAME_RETURN_TO_MENU;
@@ -3915,7 +3934,9 @@ bool Game::loadSaveGame(InputStream& stream) {
     }
 
     // if this is a multiplayer load we need to save some information before we overwrite gameInitSettings with the settings saved in the savegame
-    bool bMultiplayerLoad = (gameInitSettings.getGameType() == GameType::LoadMultiplayer);
+    const bool bCoopLoad = gameInitSettings.getGameType() == GameType::LoadCoop;
+    const std::string coopServer = gameInitSettings.getServername();
+    bool bMultiplayerLoad = (gameInitSettings.getGameType() == GameType::LoadMultiplayer || bCoopLoad);
     GameInitSettings::HouseInfoList oldHouseInfoList = gameInitSettings.getHouseInfoList();
 
     // read gameInitSettings
@@ -3924,6 +3945,8 @@ bool Game::loadSaveGame(InputStream& stream) {
     if(savegameVersion <= 9820) {
         gameInitSettings.migrateLegacyHouseColorSlots();
     }
+
+    const bool savedNetworkLayout = isNetworkGameType(gameInitSettings.getGameType());
 
     // read the actual house setup choosen at the beginning of the game
     logLoadStage("house setup");
@@ -4014,6 +4037,19 @@ bool Game::loadSaveGame(InputStream& stream) {
 
     // we have to set the local player
     logLoadStage("local player and flags");
+    // Single-player saves contain a local-player byte even when hosted online.
+    Uint8 savedLocalPlayerID = 0;
+    if(!savedNetworkLayout) savedLocalPlayerID = stream.readUint8();
+    if(bCoopLoad) {
+        for(const auto& info : oldHouseInfoList) {
+            if(info.houseID != gameInitSettings.getHouseID()) continue;
+            House* shared = getHouse(info.houseID);
+            if(!shared) THROW(std::runtime_error, "The saved player house no longer exists.");
+            std::vector<std::pair<std::string, std::string>> desired;
+            for(const auto& player : info.playerInfoList) desired.emplace_back(player.playerName, player.playerClass);
+            shared->configureCoopPlayers(desired);
+        }
+    }
     if(bMultiplayerLoad) {
         // get it from the gameInitSettings that started the game (not the one saved in the savegame)
         for(const GameInitSettings::HouseInfo& houseInfo : oldHouseInfoList) {
@@ -4053,10 +4089,11 @@ bool Game::loadSaveGame(InputStream& stream) {
         }
     } else {
         // it is stored in the savegame, so set it up
-        Uint8 localPlayerID = stream.readUint8();
-        pLocalPlayer = dynamic_cast<HumanPlayer*>(getPlayerByID(localPlayerID));
+        pLocalPlayer = dynamic_cast<HumanPlayer*>(getPlayerByID(savedLocalPlayerID));
         pLocalHouse = house[pLocalPlayer->getHouse()->getHouseID()].get();
     }
+
+    if(!pLocalPlayer || !pLocalHouse) THROW(std::runtime_error, "Cannot assign the local co-op player.");
 
     debug = stream.readBool();
     bCheatsEnabled = stream.readBool();
@@ -4137,18 +4174,15 @@ bool Game::loadSaveGame(InputStream& stream) {
     }
 
     logLoadStage("selection and screen position");
-    if(bMultiplayerLoad) {
-        screenborder->adjustScreenBorderToMapsize(currentGameMap->getSizeX(), currentGameMap->getSizeY());
-
-        screenborder->setNewScreenCenter(pLocalHouse->getCenterOfMainBase()*TILESIZE);
-
-    } else {
-        //load selection list
+    screenborder->adjustScreenBorderToMapsize(currentGameMap->getSizeX(), currentGameMap->getSizeY());
+    if(!savedNetworkLayout) {
         selectedList = stream.readUint32Set();
-
-        //load the screenborder info
-        screenborder->adjustScreenBorderToMapsize(currentGameMap->getSizeX(), currentGameMap->getSizeY());
         screenborder->load(stream);
+    }
+    if(bMultiplayerLoad) {
+        unselectAll(selectedList);
+        selectedList.clear();
+        screenborder->setNewScreenCenter(pLocalHouse->getCenterOfMainBase()*TILESIZE);
     }
 
     // load city simulation state (version 9807+)
@@ -4189,6 +4223,16 @@ bool Game::loadSaveGame(InputStream& stream) {
     logLoadStage("command history");
     cmdManager.load(stream);
 
+    if(bCoopLoad) {
+        const bool campaign = isCampaignGameType(gameInitSettings.getGameType());
+        gameInitSettings.enableCoop(campaign, coopServer);
+        gameInitSettings.clearHouseInfo();
+        for(const auto& info : oldHouseInfoList) gameInitSettings.addHouseInfo(info);
+        for(auto& actual : houseInfoListSetup)
+            for(const auto& requested : oldHouseInfoList)
+                if(actual.houseID == requested.houseID) actual.playerInfoList = requested.playerInfoList;
+        gameType = gameInitSettings.getGameType();
+    }
     logLoadStage("complete");
     finished = false;
 
@@ -4276,7 +4320,7 @@ bool Game::saveGame(const std::string& filename)
         }
     }
 
-    if(gameInitSettings.getGameType() != GameType::CustomMultiplayer) {
+    if(!isNetworkGameType(gameInitSettings.getGameType())) {
         fs.writeUint8(pLocalPlayer->getPlayerID());
     }
 
@@ -4301,7 +4345,7 @@ bool Game::saveGame(const std::string& filename)
         pExplosion->save(fs);
     }
 
-    if(gameInitSettings.getGameType() != GameType::CustomMultiplayer) {
+    if(!isNetworkGameType(gameInitSettings.getGameType())) {
         // save selection lists
 
         // write out selected units list
@@ -4606,32 +4650,32 @@ void Game::handleChatInput(SDL_KeyboardEvent& keyboardEvent) {
             } else if((bCheatsEnabled == true) && (md5string == "0xB8766C8EC7A61036B69893FC17AAF21E")) {
                 pInterface->getChatManager().addInfoMessage("Cheat mode already enabled");
             } else if((bCheatsEnabled == true) && (md5string == "0x57583291CB37F8167EDB0611D8D19E58")) {
-                if (gameType != GameType::CustomMultiplayer) {
+                if (!isNetworkGameType(gameType)) {
                     pInterface->getChatManager().addInfoMessage("You win this game");
                     setGameWon();
                 }
             } else if((bCheatsEnabled == true) && (md5string == "0x1A12BE3DBE54C5A504CAA6EE9782C1C8")) {
                 if(debug == true) {
                     pInterface->getChatManager().addInfoMessage("You are already in debug mode");
-                } else if (gameType != GameType::CustomMultiplayer) {
+                } else if (!isNetworkGameType(gameType)) {
                     pInterface->getChatManager().addInfoMessage("Debug mode enabled");
                     debug = true;
                 }
             } else if((bCheatsEnabled == true) && (md5string == "0x54F68155FC64A5BC66DCD50C1E925C0B")) {
                 if(debug == false) {
                     pInterface->getChatManager().addInfoMessage("You are not in debug mode");
-                } else if (gameType != GameType::CustomMultiplayer) {
+                } else if (!isNetworkGameType(gameType)) {
                     pInterface->getChatManager().addInfoMessage("Debug mode disabled");
                     debug = false;
                 }
             } else if((bCheatsEnabled == true) && (md5string == "0xCEF1D26CE4B145DE985503CA35232ED8")) {
-                if (gameType != GameType::CustomMultiplayer) {
+                if (!isNetworkGameType(gameType)) {
                     pInterface->getChatManager().addInfoMessage("You got some credits");
                     pLocalHouse->returnCredits(10000);
                 }
             } else if(md5string == "0x05362BF626E467A93FFE6FF0D8A899E3") {
                 // Toggle immortality cheat (muaddib) - works in single-player only, no cheat mode required
-                if (gameType != GameType::CustomMultiplayer && gameType != GameType::LoadMultiplayer) {
+                if (!isNetworkGameType(gameType) && gameType != GameType::LoadMultiplayer) {
                     bool currentState = gameInitSettings.getGameOptions().immortalHumanPlayer;
                     gameInitSettings.setImmortalHumanPlayer(!currentState);
                     if(!currentState) {
@@ -4760,7 +4804,7 @@ void Game::handleKeyInput(SDL_KeyboardEvent& keyboardEvent) {
 
         case SDLK_KP_MINUS:
         case SDLK_MINUS: {
-            if(gameType != GameType::CustomMultiplayer) {
+            if(!isNetworkGameType(gameType)) {
                 settings.gameOptions.gameSpeed = std::min(settings.gameOptions.gameSpeed+1,GAMESPEED_MAX);
                 INIFile myINIFile(getConfigFilepath());
                 myINIFile.setIntValue("Game Options","Game Speed", settings.gameOptions.gameSpeed);
@@ -4772,7 +4816,7 @@ void Game::handleKeyInput(SDL_KeyboardEvent& keyboardEvent) {
         case SDLK_KP_PLUS:
         case SDLK_PLUS:
         case SDLK_EQUALS: {
-            if(gameType != GameType::CustomMultiplayer) {
+            if(!isNetworkGameType(gameType)) {
                 settings.gameOptions.gameSpeed = std::max(settings.gameOptions.gameSpeed-1,GAMESPEED_MIN);
                 INIFile myINIFile(getConfigFilepath());
                 myINIFile.setIntValue("Game Options","Game Speed", settings.gameOptions.gameSpeed);
@@ -4847,21 +4891,21 @@ void Game::handleKeyInput(SDL_KeyboardEvent& keyboardEvent) {
 
         case SDLK_F4: {
             // skip a 30 seconds
-            if(gameType != GameType::CustomMultiplayer || bReplay) {
+            if(!isNetworkGameType(gameType) || bReplay) {
                 skipToGameCycle = gameCycleCount + (10*1000)/GAMESPEED_DEFAULT;
             }
         } break;
 
         case SDLK_F5: {
             // skip a 30 seconds
-            if(gameType != GameType::CustomMultiplayer || bReplay) {
+            if(!isNetworkGameType(gameType) || bReplay) {
                 skipToGameCycle = gameCycleCount + (30*1000)/GAMESPEED_DEFAULT;
             }
         } break;
 
         case SDLK_F6: {
             // skip 2 minutes
-            if(gameType != GameType::CustomMultiplayer || bReplay) {
+            if(!isNetworkGameType(gameType) || bReplay) {
                 skipToGameCycle = gameCycleCount + (120*1000)/GAMESPEED_DEFAULT;
             }
         } break;
@@ -5022,7 +5066,7 @@ void Game::handleKeyInput(SDL_KeyboardEvent& keyboardEvent) {
         } break;
 
         case SDLK_SPACE: {
-            bool isMultiplayer = (gameType == GameType::CustomMultiplayer);
+            bool isMultiplayer = (isNetworkGameType(gameType));
 
             if(bPause) {
                 resumeGame();
@@ -5749,7 +5793,7 @@ void Game::selectNextStructureOfType(const std::set<Uint32>& itemIDs) {
 }
 
 int Game::getGameSpeed() const {
-    if(gameType == GameType::CustomMultiplayer) {
+    if(isNetworkGameType(gameType)) {
         return gameInitSettings.getGameOptions().gameSpeed;
     } else {
         return settings.gameOptions.gameSpeed;

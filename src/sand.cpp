@@ -17,6 +17,7 @@
  */
 
 #include <sand.h>
+#include <Network/NetworkManager.h>
 
 #include <globals.h>
 #include <mod/ModManager.h>
@@ -937,29 +938,69 @@ void startSinglePlayerGame(const GameInitSettings& init)
     Starts a new multiplayer game.
     \param init contains all the information to start the game
 */
+namespace {
+class CoopMissionWait : public MenuBase {
+public:
+    std::unique_ptr<GameInitSettings> next;
+    CoopMissionWait() {
+        setCurrentPosition(50, 50, 520, 100);
+        setWindowWidget(&layout);
+        layout.addWidget(Label::create(_("Waiting for host to choose the next mission...")));
+    }
+    void update() override {
+        next = pNetworkManager->takeCoopMission();
+        if(next || pNetworkManager->getConnectedPeers().empty()) quit();
+    }
+private:
+    VBox layout;
+};
+}
+
 void startMultiPlayerGame(const GameInitSettings& init)
 {
     GameInitSettings currentGameInitInfo = init;
-
-    SDL_Log("Initializing game...");
     try {
-        currentGame = new Game();
-        currentGame->initGame(currentGameInitInfo);
-
-        // get init settings from game as it might have changed (through loading the game)
-        currentGameInitInfo = currentGame->getGameInitSettings();
-
-        currentGame->runMainLoop();
-
-        if(currentGame->whatNext() == GAME_CUSTOM_GAME_STATS) {
-            SDL_Log("Game statistics...");
-            CustomGameStatsMenu stats;
-            stats.showMenu();
+        while(true) {
+            currentGame = new Game();
+            currentGame->initGame(currentGameInitInfo);
+            currentGameInitInfo = currentGame->getGameInitSettings();
+            currentGame->runMainLoop();
+            int action = currentGame->whatNext();
+            if(action == GAME_CUSTOM_GAME_STATS) {
+                CustomGameStatsMenu().showMenu();
+            } else if(action == GAME_DEBRIEFING_WIN || action == GAME_DEBRIEFING_LOST) {
+                BriefingMenu(currentGameInitInfo.getHouseID(), currentGameInitInfo.getMission(),
+                    action == GAME_DEBRIEFING_WIN ? DEBRIEFING_WIN : DEBRIEFING_LOST).showMenu();
+                if(action == GAME_DEBRIEFING_WIN) {
+                    const int level = missionNumberToLevelNumber(currentGameInitInfo.getMission());
+                    CampaignStatsMenu(level).showMenu();
+                    if(currentGameInitInfo.getGameType() == GameType::CampaignCoop) {
+                        const auto house = currentGameInitInfo.getHouseID();
+                        if((level == 4 || level == 8)
+                           && (house == HOUSE_HARKONNEN || house == HOUSE_ATREIDES || house == HOUSE_ORDOS))
+                            Meanwhile(house, level == 4).run();
+                        else if(level == 9) Finale(house).run();
+                    }
+                }
+            }
+            std::unique_ptr<GameInitSettings> next;
+            if(currentGameInitInfo.getGameType() == GameType::CampaignCoop) {
+                if(pNetworkManager->isServer()) {
+                    if(action != GAME_RETURN_TO_MENU && currentGame->whatNext() == GAME_NEXTMISSION)
+                        next = std::make_unique<GameInitSettings>(currentGame->getNextGameInitSettings());
+                    pNetworkManager->sendCoopMission(next ? *next : GameInitSettings());
+                } else if(action != GAME_RETURN_TO_MENU) {
+                    CoopMissionWait wait;
+                    wait.showMenu();
+                    next = std::move(wait.next);
+                }
+            }
+            delete currentGame;
+            currentGame = nullptr;
+            resetHouseVisualHouseMapping();
+            if(!next || next->getGameType() == GameType::Invalid) break;
+            currentGameInitInfo = *next;
         }
-
-        delete currentGame;
-        currentGame = nullptr;
-        resetHouseVisualHouseMapping();
     } catch(...) {
         delete currentGame;
         currentGame = nullptr;

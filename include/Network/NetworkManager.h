@@ -64,11 +64,13 @@
 #define NETWORKPACKET_MOD_ACK               18  // Client -> Host: acknowledge mod sync complete
 #define NETWORKPACKET_KEEPALIVE             19  // Periodic ping to keep NAT mappings alive
 
+#define NETWORKPACKET_COOP_MISSION          20
+
 // Network protocol version - increment when packet formats change
 // Version 2: Added simMsAvg to NETWORKPACKET_CLIENTSTATS (5 fields instead of 4)
 // Version 3: Added mod transfer packets (MOD_INFO, MOD_REQUEST, MOD_CHUNK, MOD_COMPLETE)
 // Version 4: Fixed nine-house deterministic state and versioned visibility storage
-#define NETWORK_PROTOCOL_VERSION            4
+#define NETWORK_PROTOCOL_VERSION            5
 
 /**
  * Reject an incompatible config-hash handshake and dispatch its disconnect cause.
@@ -124,7 +126,10 @@ public:
     void sendConfigHash(const std::string& quantBotHash, const std::string& objectDataHash, const std::string& gameVersion);
 
     void sendStartGame(unsigned int timeLeft);
+    void sendCoopMission(const GameInitSettings& settings);
+    std::unique_ptr<GameInitSettings> takeCoopMission();
 
+    void beginSimulation(Uint32 seed) { simulationSeed = seed; }
     void sendCommandList(const CommandList& commandList);
 
     void sendSelectedList(const std::set<Uint32>& selectedList, int groupListIndex = -1);
@@ -368,6 +373,8 @@ private:
         std::list<ENetPeer*>    notYetConnectedPeers;
     };
 
+    std::unique_ptr<GameInitSettings> pendingCoopMission;
+    Uint32 simulationSeed = 0;
     ENetHost* host = nullptr;
     bool bIsServer = false;
     bool bLANServer = false;

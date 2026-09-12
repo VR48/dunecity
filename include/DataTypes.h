@@ -153,9 +153,25 @@ enum class GameType {
     CustomGame        = 2,
     Skirmish          = 3,
     CustomMultiplayer = 4,
-    LoadMultiplayer   = 5
+    LoadMultiplayer   = 5,
+    CampaignCoop     = 6,
+    SkirmishCoop     = 7,
+    LoadCoop         = 8
 };
 
+
+constexpr bool isCoopGameType(GameType type) {
+    return type == GameType::CampaignCoop || type == GameType::SkirmishCoop || type == GameType::LoadCoop;
+}
+constexpr bool isNetworkGameType(GameType type) {
+    return type == GameType::CustomMultiplayer || type == GameType::LoadMultiplayer || isCoopGameType(type);
+}
+constexpr bool isCampaignGameType(GameType type) {
+    return type == GameType::Campaign || type == GameType::CampaignCoop;
+}
+constexpr bool isScenarioGameType(GameType type) {
+    return isCampaignGameType(type) || type == GameType::Skirmish || type == GameType::SkirmishCoop;
+}
 
 class SettingsClass
 {

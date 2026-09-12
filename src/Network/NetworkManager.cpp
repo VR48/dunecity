@@ -162,6 +162,7 @@ void NetworkManager::startServer(bool bLANServer, const std::string& serverName,
     this->bLANServer = bLANServer;
     this->numPlayers = numPlayers;
     this->maxPlayers = maxPlayers;
+    pendingCoopMission.reset();
     this->playerName = playerName;
     this->pGameInitSettings = pGameInitSettings;
 }
@@ -326,6 +327,7 @@ void NetworkManager::connect(ENetAddress address, const std::string& playerName)
         THROW(std::runtime_error, "NetworkManager: No available peers for initiating a connection.");
     }
 
+    pendingCoopMission.reset();
     this->playerName = playerName;
 
     connectPeer->data = new PeerData(connectPeer, PeerData::PeerState::WaitingForConnect);
@@ -1130,6 +1132,15 @@ void NetworkManager::handlePacket(ENetPeer* peer, ENetPacketIStream& packetStrea
                 }
             } break;
 
+            case NETWORKPACKET_COOP_MISSION: {
+                // Co-op has only one remote peer; only the host can choose a mission.
+                if(!bIsServer && peerList.size() == 1 && peerList.front() == peer) {
+                    auto next = std::make_unique<GameInitSettings>(packetStream);
+                    if(next->getGameType() == GameType::CampaignCoop || next->getGameType() == GameType::Invalid)
+                        pendingCoopMission = std::move(next);
+                }
+            } break;
+
             case NETWORKPACKET_STARTGAME: {
                 Uint32 timeLeft = packetStream.readUint32();
 
@@ -1139,6 +1150,7 @@ void NetworkManager::handlePacket(ENetPeer* peer, ENetPacketIStream& packetStrea
             } break;
 
             case NETWORKPACKET_COMMANDLIST: {
+                if(packetStream.readUint32() != simulationSeed) break;
                 PeerData* peerData = static_cast<PeerData*>(peer->data);
                 if(!peerData) {
                     break;
@@ -1152,6 +1164,7 @@ void NetworkManager::handlePacket(ENetPeer* peer, ENetPacketIStream& packetStrea
             } break;
 
             case NETWORKPACKET_SELECTIONLIST: {
+                if(packetStream.readUint32() != simulationSeed) break;
                 PeerData* peerData = static_cast<PeerData*>(peer->data);
                 if(!peerData) {
                     break;
@@ -1166,6 +1179,7 @@ void NetworkManager::handlePacket(ENetPeer* peer, ENetPacketIStream& packetStrea
             } break;
 
             case NETWORKPACKET_CLIENTSTATS: {
+                if(packetStream.readUint32() != simulationSeed) break;
                 // Host receives client performance stats (including simulation timing)
                 if(!bIsServer) {
                     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "NetworkManager: Client received CLIENTSTATS packet (should only be sent to host)");
@@ -1188,6 +1202,7 @@ void NetworkManager::handlePacket(ENetPeer* peer, ENetPacketIStream& packetStrea
             } break;
 
             case NETWORKPACKET_SETPATHBUDGET: {
+                if(packetStream.readUint32() != simulationSeed) break;
                 // Client receives budget change order from host
                 if(bIsServer) {
                     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "NetworkManager: Host received SETPATHBUDGET packet (should only be sent to clients)");
@@ -1495,6 +1510,18 @@ void NetworkManager::sendConfigHash(const std::string& quantBotHash, const std::
     SDL_Log("==========================================");
 }
 
+void NetworkManager::sendCoopMission(const GameInitSettings& settings) {
+    if(!bIsServer) return;
+    ENetPacketOStream packet(ENET_PACKET_FLAG_RELIABLE);
+    packet.writeUint32(NETWORKPACKET_COOP_MISSION);
+    settings.save(packet);
+    sendPacketToAllConnectedPeers(packet);
+}
+
+std::unique_ptr<GameInitSettings> NetworkManager::takeCoopMission() {
+    return std::move(pendingCoopMission);
+}
+
 void NetworkManager::sendStartGame(unsigned int timeLeft) {
     for(ENetPeer* pCurrentPeer : peerList) {
         ENetPacketOStream packetStream(ENET_PACKET_FLAG_RELIABLE);
@@ -1509,6 +1536,7 @@ void NetworkManager::sendStartGame(unsigned int timeLeft) {
 void NetworkManager::sendCommandList(const CommandList& commandList) {
     ENetPacketOStream packetStream(ENET_PACKET_FLAG_UNSEQUENCED);
     packetStream.writeUint32(NETWORKPACKET_COMMANDLIST);
+    packetStream.writeUint32(simulationSeed);
     commandList.save(packetStream);
 
     sendPacketToAllConnectedPeers(packetStream, 1);
@@ -1517,6 +1545,7 @@ void NetworkManager::sendCommandList(const CommandList& commandList) {
 void NetworkManager::sendSelectedList(const std::set<Uint32>& selectedList, int groupListIndex) {
     ENetPacketOStream packetStream(ENET_PACKET_FLAG_RELIABLE);
     packetStream.writeUint32(NETWORKPACKET_SELECTIONLIST);
+    packetStream.writeUint32(simulationSeed);
     packetStream.writeSint32(groupListIndex);
     packetStream.writeUint32Set(selectedList);
 
@@ -1551,6 +1580,7 @@ void NetworkManager::sendClientStats(float avgFps, float simMsAvg, Uint32 queueD
 
     ENetPacketOStream packetStream(ENET_PACKET_FLAG_RELIABLE);
     packetStream.writeUint32(NETWORKPACKET_CLIENTSTATS);
+    packetStream.writeUint32(simulationSeed);
     packetStream.writeUint32(gameCycle);
     packetStream.writeFloat(avgFps);
     packetStream.writeFloat(simMsAvg);  // POST-VSYNC: Add simulation timing
@@ -1569,6 +1599,7 @@ void NetworkManager::broadcastPathBudget(size_t newBudget, Uint32 applyCycle) {
 
     ENetPacketOStream packetStream(ENET_PACKET_FLAG_RELIABLE);
     packetStream.writeUint32(NETWORKPACKET_SETPATHBUDGET);
+    packetStream.writeUint32(simulationSeed);
     packetStream.writeUint32(static_cast<Uint32>(newBudget));
     packetStream.writeUint32(applyCycle);
 

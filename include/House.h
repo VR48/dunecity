@@ -50,6 +50,7 @@ public:
     virtual void save(OutputStream& stream) const;
 
     void addPlayer(std::unique_ptr<Player> newPlayer);
+    void configureCoopPlayers(const std::vector<std::pair<std::string, std::string>>& desired);
 
     inline int getHouseID() const { return houseID; }
     inline int getTeamID() const { return teamID; }

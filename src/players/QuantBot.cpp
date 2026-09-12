@@ -33,6 +33,7 @@
 
 
 #include <players/QuantBot.h>
+#include <players/HumanPlayer.h>
 #include <players/SimpleArmyPolicy.h>
 #include <players/QuantBotConfig.h>
 
@@ -171,7 +172,7 @@ QuantBot::QuantBot(House* associatedHouse, const std::string& playername, Diffic
     retreatTimer = MILLI2CYCLES(60000); //turning off
 
 	// Different AI logic for Campaign. Assumption is if player is loading they are playing a campaign game
-	if ((currentGame->gameType == GameType::Campaign) || (currentGame->gameType == GameType::LoadSavegame) || (currentGame->gameType == GameType::Skirmish)) {
+	if ((isCampaignGameType(currentGame->gameType)) || (currentGame->gameType == GameType::LoadSavegame) || ((currentGame->gameType == GameType::Skirmish || currentGame->gameType == GameType::SkirmishCoop))) {
 		gameMode = GameMode::Campaign;
 	}
 	else {
@@ -410,9 +411,27 @@ void QuantBot::update() {
 		attackTimer = std::numeric_limits<Sint32>::max();
 	}
 
-	if (getGameCycleCount() == 0) {
-		// The game just started and we gather some
-		// Count the items once initially
+    // Campaign enemies rebuild the scenario's starting base. A human's
+    // co-controller must instead develop a base from the mission's limited
+    // starting assets. Inspect actual controllers after loading, not isAI():
+    // legacy saves may mark a mixed human/bot house as AI-controlled.
+    const auto& controllers = getHouse()->getPlayerList();
+    const bool sharesHumanHouse = std::any_of(controllers.begin(), controllers.end(), [](const auto& player) {
+        return dynamic_cast<const HumanPlayer*>(player.get()) != nullptr;
+    });
+    if (sharesHumanHouse && gameMode == GameMode::Campaign) {
+        gameMode = GameMode::Custom;
+        initialMilitaryValue = -1;
+        const auto& config = getQuantBotConfig();
+        attackTimer = supportMode ? std::numeric_limits<Sint32>::max()
+            : SimpleArmyPolicy::attackDelay(MILLI2CYCLES(config.attackTimerMs),
+                currentGame->getGameInitSettings().getRandomSeed(), getGameCycleCount(), getHouse()->getHouseID());
+        logDebug("Shared human house: using economy development instead of campaign enemy rebuild limits");
+    }
+
+	if (initialMilitaryValue < 0) {
+		// Run once after objects exist, including a new partner added to a
+        // mid-mission save. Existing saved bots retain their initialized state.
 
 		// First count all the objects we have
 		for (int i = ItemID_FirstID; i <= ItemID_LastID; i++) {
@@ -422,7 +441,7 @@ void QuantBot::update() {
 
 		// Allow Campaign AI (including support mode) one Repair Yard
 		// Note: supportMode sets gameMode to Custom, so check currentGame->gameType instead
-		if ((initialItemCount[Structure_RepairYard] == 0) && currentGame && currentGame->gameType == GameType::Campaign && currentGame->techLevel > 4) {
+		if ((initialItemCount[Structure_RepairYard] == 0) && currentGame && isCampaignGameType(currentGame->gameType) && currentGame->techLevel > 4) {
 			initialItemCount[Structure_RepairYard] = 1;
 			if (initialItemCount[Structure_Radar] == 0) {
 				initialItemCount[Structure_Radar] = 1;

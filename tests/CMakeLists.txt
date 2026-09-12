@@ -10,6 +10,9 @@ add_executable(dunelegacy_tests)
 # Note: Catch2WithMain provides main(), no testmain.cpp needed
 target_sources(dunelegacy_tests
     PRIVATE
+        CoopGameSettingsTestCase.cpp
+        ${CMAKE_SOURCE_DIR}/src/GameInitSettings.cpp
+        ${CMAKE_SOURCE_DIR}/src/misc/IFileStream.cpp
         CityTrafficPolicyTestCase.cpp
         CitySpritePolicyTestCase.cpp
         RendererSizeTestCase.cpp

@@ -157,7 +157,7 @@ ObjectBase::ObjectBase(InputStream& stream) {
     respondable = stream.readBool();
     byScenario = stream.readBool();
 
-    if(currentGame->getGameInitSettings().getGameType() != GameType::CustomMultiplayer) {
+    if(!isNetworkGameType(currentGame->getGameInitSettings().getGameType())) {
         selected = stream.readBool();
         selectedByOtherPlayer = stream.readBool();
     } else {
@@ -234,7 +234,7 @@ void ObjectBase::save(OutputStream& stream) const {
     stream.writeBool(respondable);
     stream.writeBool(byScenario);
 
-    if(currentGame->getGameInitSettings().getGameType() != GameType::CustomMultiplayer) {
+    if(!isNetworkGameType(currentGame->getGameInitSettings().getGameType())) {
         stream.writeBool(selected);
         stream.writeBool(selectedByOtherPlayer);
     }
@@ -273,7 +273,7 @@ void ObjectBase::handleDamage(int damage, Uint32 damagerID, House* damagerOwner)
     // This applies when ANY human player controls the house (not just AI players)
     if(damage > 0) {
         GameType gameType = currentGame->getGameInitSettings().getGameType();
-        if(gameType != GameType::CustomMultiplayer 
+        if(!isNetworkGameType(gameType)
            && gameType != GameType::LoadMultiplayer
            && currentGame->getGameInitSettings().getGameOptions().immortalHumanPlayer
            && getOwner() == pLocalHouse) {
