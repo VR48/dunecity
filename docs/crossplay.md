@@ -230,7 +230,7 @@ ctest --test-dir build --output-on-failure \
 cmake --build build --target relay_transport_harness
 tests/relay/run-relay-transport-harness.sh
 tests/relay/run-relay-transport-harness.sh diverge   # injected divergence must be detected
-tests/relay/run-relay-transport-harness.sh bulk      # partial writes, every byte verified
+tests/relay/run-relay-transport-harness.sh bulk      # large frames, every byte verified
 ```
 
 `relay_session_tests` is a separate executable rather than another file in the main test target,
@@ -240,12 +240,10 @@ of them instead of linking `RelayWebSocketCurl.cpp`: the code under test is exac
 the production build carries no hook for it. That is what makes the queue bounds testable at all —
 overflowing them against a real relay would mean pushing a gigabyte through a socket.
 
-`bulk` mode pushes messages far larger than a socket buffer, so `curl_ws_send()` consumes part of
-a frame and the rest has to be offered again as a continuation. It verifies every byte on the far
-side rather than the message count, because a continuation that resumes at the wrong offset still
-produces a message of exactly the right length. Whether the partial path actually runs depends on
-the machine's socket buffers; the script says which happened, and `RELAY_BULK_COUNT` and
-`RELAY_BULK_BYTES` push harder.
+`bulk` mode verifies every byte of large frames at the receiver. It paces traffic below the
+production relay's bandwidth limit; an unpaced burst exercises rate-limit disconnection instead.
+A successful transfer does not prove partial socket writes occurred. The script reports outgoing
+backlog as a diagnostic, but a backlog alone does not establish which libcurl write path ran.
 
 The browser side cannot be driven from a shell. Build the web target, open it with
 `?relay=http://127.0.0.1:8787&relaydev=1`, and host or join against the same relay the native
@@ -260,3 +258,32 @@ harness is using. The relay's lifecycle log shows `runtime=browser` for that par
 - The state digest detects divergence; it does not repair it. There is no resynchronisation.
 - There is no reconnect. A dropped player is out of that match.
 - Relay rooms are not advertised anywhere. Room codes only.
+
+## 11. Local browser verification — 12 September 2026
+
+Two in-app browser clients played a real Dune City match on Habbanya-Penny over the loopback
+relay. The initial run accepted movement commands and matched sampled 28-byte state digests
+through cycle 16,800. Opening the host menu exposed a 45-second lockstep timeout: local pause
+froze the cycle that would transmit the pause command itself.
+
+Relay menus now leave simulation running, closing menus emits no pause/resume command, and
+Space explains that online games cannot pause. Local single-player and legacy ENet pause paths
+are preserved; the new lockstep deadline applies only to relay sessions. On browser build
+8a793d6, the host menu stayed open for over 70 seconds while both games continued and sampled
+digests matched at cycles 3,600, 3,800, 5,600 and 5,800. Closing the menu returned to gameplay.
+
+The retest also found that a guest joining before map selection received an empty seat snapshot.
+Commit c5db43d registers the seat-assignment callback before starting the lobby. This ordering fix
+is built but still needs a fresh early-join UI regression run.
+
+Native CTest's four targets pass, the standalone wasm32 wire harness passes 140 checks, and the
+real native transport harness passes agreement, injected-divergence detection and all 48 large
+messages with no corrupt bytes. That bulk run did not exercise partial socket writes. The real
+Game command probe passes authorization, atomic batch recovery and relay/local pause behavior.
+The Node lifecycle publisher also delivered seven signed fixture events through the PHP receiver
+to isolated SQLite successfully.
+
+These are local development results, not public WSS deployment or security approval. Actual
+browser-to-native gameplay, final review reconciliation, public TLS/proxy verification and tests
+under real latency/loss remain outstanding. The running local test page has explicit loopback
+CSP permissions and must not be used as the production package.
