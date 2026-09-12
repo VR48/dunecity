@@ -311,6 +311,26 @@ test('addressing a peer that just left is a dropped message, not a disconnect', 
   host.client.close();
 });
 
+test('two players cannot share one name in a room', async (t) => {
+  const relay = await startRelay();
+  t.after(() => relay.stop());
+
+  const host = await joinAsHost(relay, { name: 'stefan' });
+  const admission = await admitJoin(relay, host.room);
+  const twin = await TestClient.connect(relay.socketUrl);
+  twin.send(protocol.encodeHello({
+    grant: admission.fields.grant, gameProtocol: GAME_PROTOCOL, displayName: 'stefan',
+  }));
+
+  assert.equal((await twin.expect(S2C.ERROR)).code, CLOSE.FORBIDDEN);
+  assert.equal((await twin.waitForClose()).code, CLOSE.FORBIDDEN);
+
+  await delay(120);
+  assert.equal(host.client.drain().length, 0, 'the host must not see a phantom member');
+
+  host.client.close();
+});
+
 test('a full room refuses a third peer', async (t) => {
   const relay = await startRelay();
   t.after(() => relay.stop());

@@ -45,6 +45,24 @@
     NetworkManager::handlePacket(), so normal joins, late name exchange, co-op mission
     selection and config/mod synchronisation keep working.
 */
+/**
+ * Reject an incompatible config-hash handshake and dispatch its disconnect cause.
+ * Returns true when the peer must be rejected.
+ */
+template<typename DisconnectFunction>
+inline bool rejectIncompatibleNetworkProtocol(Uint32 peerProtocolVersion, DisconnectFunction&& disconnect) {
+    if(peerProtocolVersion == NETWORK_PROTOCOL_VERSION) return false;
+    disconnect(NETWORKDISCONNECT_PROTOCOL_MISMATCH);
+    return true;
+}
+
+template<typename DisconnectFunction>
+inline bool rejectIncompatibleGameVersion(const std::string& peer, const std::string& local, DisconnectFunction&& disconnect) {
+    if (peer == local) return false;
+    disconnect(NETWORKDISCONNECT_PROTOCOL_MISMATCH);
+    return true;
+}
+
 namespace NetworkPacketPolicy {
 
 /// What the local process is in this session.

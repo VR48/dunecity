@@ -24,6 +24,8 @@
 #include <Network/CommandList.h>
 #include <Network/NetworkPacketTypes.h>
 #include <Network/NetworkPacketPolicy.h>
+#include <Network/GamePayloadRouter.h>
+#include <Network/RoomRelayClient.h>
 
 #include <Network/LANGameFinderAndAnnouncer.h>
 #include <Network/MetaServerClient.h>
@@ -39,23 +41,9 @@
 #include <functional>
 #include <stdarg.h>
 
-/**
- * Reject an incompatible config-hash handshake and dispatch its disconnect cause.
- * Returns true when the peer must be rejected.
- */
-template<typename DisconnectFunction>
-inline bool rejectIncompatibleNetworkProtocol(Uint32 peerProtocolVersion, DisconnectFunction&& disconnect) {
-    if(peerProtocolVersion == NETWORK_PROTOCOL_VERSION) return false;
-    disconnect(NETWORKDISCONNECT_PROTOCOL_MISMATCH);
-    return true;
-}
-
-template<typename DisconnectFunction>
-inline bool rejectIncompatibleGameVersion(const std::string& peer, const std::string& local, DisconnectFunction&& disconnect) {
-    if (peer == local) return false;
-    disconnect(NETWORKDISCONNECT_PROTOCOL_MISMATCH);
-    return true;
-}
+// rejectIncompatibleNetworkProtocol() and rejectIncompatibleGameVersion() moved to
+// Network/NetworkPacketPolicy.h so both transports can use them; they are still reachable
+// through this header.
 
 #define AWAITING_CONNECTION_TIMEOUT     5000
 
@@ -63,12 +51,71 @@ class GameInitSettings;
 
 class NetworkManager {
 public:
+    /// Which transport carries this session.
+    enum class Transport {
+        EnetMesh,   ///< legacy UDP mesh with LAN discovery, the metaserver and UPnP
+        RoomRelay   ///< crossplay through the room relay over one outbound WebSocket
+    };
+
+    /// Legacy ENet mesh session.
     NetworkManager(int port, const std::string& metaserver);
+
+    /**
+        Room relay session.
+
+        Deliberately creates no ENet host and starts no LAN discovery, metaserver thread or UPnP
+        mapping. None of those work in a browser, and a relay session has no use for any of them
+        anywhere: the only socket it opens is one outbound WebSocket to the relay.
+    */
+    explicit NetworkManager(Transport transport);
+
     NetworkManager(const NetworkManager& o) = delete;
     ~NetworkManager();
 
     bool isServer() const { return bIsServer; };
     bool isLANServer() const { return bLANServer; };
+
+    bool isRelaySession() const { return transport == Transport::RoomRelay; }
+
+    /**
+        Relay v1 carries bundled, matching content only: mod transfer packets are refused by the
+        relay, so the lobby must not wait for mod acknowledgements on that transport.
+    */
+    bool supportsModTransfer() const { return transport == Transport::EnetMesh; }
+
+    /**
+        Starts the relay session with a grant that HTTPS admission already produced.
+        \param  config  session parameters
+        \param  error   set to a player-facing reason on failure
+        \return true if the session is connecting
+    */
+    bool startRelaySession(const RoomRelayClient::Config& config, std::string& error);
+
+    /// The relay session, or nullptr on the ENet transport.
+    RoomRelayClient* getRelayClient() { return pRelayClient.get(); }
+    const RoomRelayClient* getRelayClient() const { return pRelayClient.get(); }
+
+    /// The room code a player can pass to a friend, or empty when there is no relay session.
+    std::string getRoomCode() const {
+        return pRelayClient ? pRelayClient->roomCode() : std::string();
+    }
+
+    /**
+        Sends a bounded diagnostic to the room. Carried in the relay envelope, never as a game
+        packet, so the ENet wire format and NETWORK_PROTOCOL_VERSION are untouched.
+        \return false if there is no relay session or the payload was refused
+    */
+    bool sendRelayDiagnostic(RoomRelay::DiagnosticKind kind, const std::uint8_t* payload,
+                             std::size_t length);
+
+    /**
+        Sets the function called when a diagnostic arrives from another peer.
+        \param  callback    function(senderName, kind, payload, length)
+    */
+    void setOnReceiveRelayDiagnostic(
+        std::function<void (const std::string&, std::uint8_t, const std::uint8_t*, std::size_t)> callback) {
+        pOnReceiveRelayDiagnostic = std::move(callback);
+    }
 
     void startServer(bool bLANServer, const std::string& serverName, const std::string& playerName, GameInitSettings* pGameInitSettings, int numPlayers, int maxPlayers);
     void updateServer(int numPlayers);
@@ -98,13 +145,20 @@ public:
         transfers, stop being accepted from this point on.
         \param  seed    the shared simulation seed
     */
-    void beginSimulation(Uint32 seed) { simulationSeed = seed; bGameInProgress = true; }
+    void beginSimulation(Uint32 seed);
     void sendCommandList(const CommandList& commandList);
 
     void sendSelectedList(const std::set<Uint32>& selectedList, int groupListIndex = -1);
 
     std::list<std::string> getConnectedPeers() const {
         std::list<std::string> peerNameList;
+
+        if(pRelayClient) {
+            for(const RoomRelayClient::Peer& peer : pRelayClient->peers()) {
+                peerNameList.push_back(peer.name);
+            }
+            return peerNameList;
+        }
 
         for(const ENetPeer* pPeer : peerList) {
             PeerData* peerData = static_cast<PeerData*>(pPeer->data);
@@ -301,6 +355,28 @@ public:
 private:
     static void debugNetwork(PRINTF_FORMAT_STRING const char* fmt, ...) PRINTF_VARARG_FUNC(1);
 
+    /// Bundles the game's callbacks for the shared payload handling.
+    NetworkSessionCallbacks sessionCallbacks() const;
+
+    /// Drives the relay session and drains its event queue. Called from update().
+    void updateRelaySession();
+
+    /// Applies one game payload received over the relay.
+    void handleRelayGamePayload(RoomRelayClient::Peer& peer, const std::uint8_t* payload,
+                                std::size_t length);
+
+    /**
+        Hands one relay message to the transport.
+        \param  packetStream    the packet to send; its ENetPacket is consumed
+        \param  channel         0 or 1
+        \param  recipient       0 for every other peer in the room, or a relay peer id
+    */
+    void sendPacketOverRelay(ENetPacketOStream& packetStream, int channel,
+                             std::uint32_t recipient);
+
+    /// The relay peer id of the designated host, or 0 if this process is the host.
+    std::uint32_t relayHostPeerId() const;
+
     void sendPacketToHost(ENetPacketOStream& packetStream, int channel = 0);
 
     void sendPacketToPeer(ENetPeer* peer, ENetPacketOStream& packetStream, int channel = 0);
@@ -315,6 +391,12 @@ private:
     void sendPacketToAllConnectedPeers(ENetPacketOStream& packetStream, int channel = 0);
 
     void handlePacket(ENetPeer* peer, ENetPacketIStream& packetStream);
+
+    /**
+        Hands a mesh packet to the payload handling that both transports share.
+        \return true if this packet id belongs to the shared set
+    */
+    bool routeSharedPayload(ENetPeer* peer, Uint32 packetType, ENetPacketIStream& packetStream);
 
     class PeerData;
 
@@ -424,6 +506,8 @@ private:
     static constexpr std::size_t MAX_ENET_WAITING_DATA = 16u * 1024 * 1024;
 
     std::unique_ptr<GameInitSettings> pendingCoopMission;
+    Transport transport = Transport::EnetMesh;
+    std::unique_ptr<RoomRelayClient> pRelayClient;
     Uint32 nextClientId = 1;        ///< source of the stable per-connection client ids
     Uint32 lastUnidentifiedLogTime = 0;  ///< throttles logging for connections without peer state
     Uint32 simulationSeed = 0;
@@ -458,6 +542,12 @@ private:
     std::function<void (size_t, size_t)>                                     pOnModDownloadProgress;     // Client: (bytesReceived, totalBytes)
     std::function<void (bool, const std::string&)>                          pOnModDownloadComplete;     // Client: (success, errorMsg)
     std::function<void (const std::string&, bool, const std::string&)>      pOnReceiveModAck;           // Host: (playerName, success, modChecksum)
+    std::function<void (const std::string&, std::uint8_t, const std::uint8_t*, std::size_t)> pOnReceiveRelayDiagnostic;
+    /// Bridges the shared payload handling back into pendingCoopMission; set by both constructors.
+    std::function<void (const GameInitSettings&)>                          pOnReceiveCoopMissionBridge;
+
+    /// Installs the callbacks the shared payload handling needs from the session itself.
+    void installSessionBridges();
 
     // Mod transfer state (for chunked transfer)
     struct ModTransferState {

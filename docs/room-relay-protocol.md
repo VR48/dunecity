@@ -186,8 +186,14 @@ u8   nameLen                   ; 1..64
 The room and the role come from the grant, not from this frame. A client cannot ask to be the
 host, cannot pick its room and cannot pick its peer id.
 
-Failure modes: `4450` on relay version mismatch, `4401` on an unknown/expired/consumed grant,
-`4409` if the room filled while the grant was outstanding, `4400` on a malformed frame.
+Failure modes: `4450` on relay version mismatch or a game protocol that differs from the room's,
+`4401` on an unknown/expired/consumed grant, `4409` if the room filled while the grant was
+outstanding, `4403` if the room already has a host or if `displayName` is already used in that
+room, `4400` on a malformed frame.
+
+The display-name check matters because the game resolves a command list to a player by name;
+two players in one room sharing a name would let one take over the other's commands. The relay
+is the only component that sees both names before the match starts.
 
 #### 4.2.2 `0x02 RELAY`
 

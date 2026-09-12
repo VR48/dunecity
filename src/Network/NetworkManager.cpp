@@ -39,11 +39,104 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iterator>
 #include <limits>
 #include <set>
 
+namespace {
+
+/**
+    Presents one peer of either transport to the shared payload handling.
+
+    The adapter holds pointers to the fields that actually live in the transport's own peer
+    record and small hooks for the four things that differ (refusing a payload, binding a name,
+    answering a config hash, ending the session). That is enough for GamePayloadRouter to be
+    written once, and it keeps the relay path from ever seeing an ENetPeer.
+*/
+class PayloadPeerAdapter final : public GamePayloadPeer {
+public:
+    struct Fields {
+        Uint32       clientId           = 0;
+        std::string* name               = nullptr;
+        bool*        nameAssigned       = nullptr;
+        bool         isHost             = false;
+        std::string* gameVersion        = nullptr;
+        std::string* quantBotConfigHash = nullptr;
+        std::string* objectDataHash     = nullptr;
+    };
+
+    PayloadPeerAdapter(const Fields& fields,
+                       std::function<void (const char*)> refuseFn,
+                       std::function<bool (const std::string&)> bindNameFn,
+                       std::function<void ()> replyConfigHashFn,
+                       std::function<void (int)> disconnectFn)
+     : fields_(fields), refuse_(std::move(refuseFn)), bindName_(std::move(bindNameFn)),
+       replyConfigHash_(std::move(replyConfigHashFn)), disconnect_(std::move(disconnectFn)) {
+    }
+
+    Uint32 clientId() const override { return fields_.clientId; }
+
+    const std::string& name() const override {
+        static const std::string empty;
+        return fields_.name != nullptr ? *fields_.name : empty;
+    }
+
+    bool nameAssigned() const override {
+        return fields_.nameAssigned != nullptr && *fields_.nameAssigned;
+    }
+
+    bool bindName(const std::string& newName) override {
+        return bindName_ ? bindName_(newName) : false;
+    }
+
+    bool isHostPeer() const override { return fields_.isHost; }
+
+    void refuse(const char* reason) override {
+        if(refuse_) {
+            refuse_(reason);
+        }
+    }
+
+    void replyConfigHash() override {
+        if(replyConfigHash_) {
+            replyConfigHash_();
+        }
+    }
+
+    std::string& gameVersion() override { return field(fields_.gameVersion); }
+    std::string& quantBotConfigHash() override { return field(fields_.quantBotConfigHash); }
+    std::string& objectDataHash() override { return field(fields_.objectDataHash); }
+
+    void disconnectWithCause(int cause) override {
+        if(disconnect_) {
+            disconnect_(cause);
+        }
+    }
+
+private:
+    std::string& field(std::string* pointer) {
+        return pointer != nullptr ? *pointer : discard_;
+    }
+
+    Fields      fields_;
+    std::string discard_;
+    std::function<void (const char*)>        refuse_;
+    std::function<bool (const std::string&)> bindName_;
+    std::function<void ()>                   replyConfigHash_;
+    std::function<void (int)>                disconnect_;
+};
+
+} // namespace
+
+void NetworkManager::installSessionBridges() {
+    pOnReceiveCoopMissionBridge = [this](const GameInitSettings& settings) {
+        pendingCoopMission = std::make_unique<GameInitSettings>(settings);
+    };
+}
+
 NetworkManager::NetworkManager(int port, const std::string& metaserver) {
+    installSessionBridges();
 
     if(enet_initialize() != 0) {
         THROW(std::runtime_error, "NetworkManager: An error occurred while initializing ENet.");
@@ -86,7 +179,32 @@ NetworkManager::NetworkManager(int port, const std::string& metaserver) {
 }
 
 
+NetworkManager::NetworkManager(Transport transportMode)
+ : transport(transportMode) {
+    installSessionBridges();
+
+    if(transportMode == Transport::EnetMesh) {
+        THROW(std::runtime_error,
+              "NetworkManager: the mesh transport needs a port and a metaserver.");
+    }
+
+    // enet_initialize() only installs the allocation callbacks; it opens no socket. The packet
+    // streams are reused verbatim on the relay so the serialized game payloads stay identical,
+    // which is why this is called even though no ENet host is ever created here.
+    if(enet_initialize() != 0) {
+        THROW(std::runtime_error, "NetworkManager: An error occurred while initializing ENet.");
+    }
+
+    // No LAN announcer, no metaserver thread, no UPnP: a browser cannot run any of them, and a
+    // relay session does not need them on any platform.
+}
+
 NetworkManager::~NetworkManager() {
+    if(pRelayClient) {
+        pRelayClient->stop(1);
+        pRelayClient.reset();
+    }
+
     // Remove UPnP port mapping if active
     // Note: We attempt removal even if previous attempts failed, and log but don't block on failure
     if (upnpMappedPort != 0 && pUPnPManager) {
@@ -102,7 +220,10 @@ NetworkManager::~NetworkManager() {
     pUPnPManager.reset();
     pMetaServerClient.reset();
     pLANGameFinderAndAnnouncer.reset();
-    enet_host_destroy(host);
+    if(host != nullptr) {
+        enet_host_destroy(host);
+        host = nullptr;
+    }
     enet_deinitialize();
 }
 
@@ -113,6 +234,31 @@ void NetworkManager::startServer(bool bLANServer, const std::string& serverName,
     bGameInProgress = false;
     simulationSeed = 0;
 
+    if(isRelaySession()) {
+        // The room already exists and the relay already knows who the host is. There is nothing
+        // to announce, no port to forward and no address to discover.
+        bIsServer = true;
+        this->bLANServer = false;
+        this->numPlayers = numPlayers;
+        this->maxPlayers = maxPlayers;
+        pendingCoopMission.reset();
+        this->playerName = playerName;
+        this->pGameInitSettings = pGameInitSettings;
+
+        // Any peer that is already in the room needs the lobby state now.
+        if(pRelayClient && pGameInitSettings != nullptr) {
+            for(const RoomRelayClient::Peer& peer : pRelayClient->peers()) {
+                ENetPacketOStream packetStream(ENET_PACKET_FLAG_RELIABLE);
+                packetStream.writeUint32(NETWORKPACKET_SENDGAMEINFO);
+                pGameInitSettings->save(packetStream);
+                ChangeEventList changeEventList = pGetChangeEventListForNewPlayerCallback
+                    ? pGetChangeEventListForNewPlayerCallback(peer.name) : ChangeEventList();
+                changeEventList.save(packetStream);
+                sendPacketOverRelay(packetStream, 0, peer.id);
+            }
+        }
+        return;
+    }
 
     if(bLANServer == true) {
         if(pLANGameFinderAndAnnouncer != nullptr) {
@@ -182,6 +328,11 @@ void NetworkManager::startServer(bool bLANServer, const std::string& serverName,
 }
 
 void NetworkManager::updateServer(int numPlayers) {
+    if(isRelaySession()) {
+        this->numPlayers = numPlayers;
+        return;
+    }
+
     if(bLANServer == true) {
         if(pLANGameFinderAndAnnouncer != nullptr) {
             pLANGameFinderAndAnnouncer->updateAnnounce(numPlayers);
@@ -196,6 +347,13 @@ void NetworkManager::updateServer(int numPlayers) {
 }
 
 void NetworkManager::stopAnnouncing() {
+    if(isRelaySession()) {
+        // Nothing is announced, but the phase flip still matters: it is what stops lobby-only
+        // packets being accepted from this point on.
+        bGameInProgress = true;
+        return;
+    }
+
     // Stop announcing the game in the lobby/server list
     // This is called when the game starts, but the server should remain active
     if(bLANServer == true) {
@@ -217,7 +375,14 @@ void NetworkManager::stopAnnouncing() {
 
 void NetworkManager::stopServer() {
     stopAnnouncing();
-    
+
+    if(isRelaySession()) {
+        bIsServer = false;
+        bLANServer = false;
+        pGameInitSettings = nullptr;
+        return;
+    }
+
     // Remove UPnP port mapping if active
     if (upnpPortMapped && pUPnPManager && upnpMappedPort != 0) {
         if (pUPnPManager->removePortMapping(upnpMappedPort, "UDP")) {
@@ -334,6 +499,13 @@ void NetworkManager::connect(const std::string& hostname, int port, const std::s
 }
 
 void NetworkManager::connect(ENetAddress address, const std::string& playerName) {
+    if(isRelaySession() || host == nullptr) {
+        // A relay session reaches other players through the room, never through an address of
+        // somebody else's choosing. There is no code path from here to a UDP connect.
+        THROW(std::runtime_error,
+              "NetworkManager: this session does not connect to addresses.");
+    }
+
     debugNetwork("Connecting to %s:%d\n", Address2String(address).c_str(), address.port);
 
     // A new client session starts in the lobby again. The same NetworkManager instance is
@@ -356,6 +528,13 @@ void NetworkManager::connect(ENetAddress address, const std::string& playerName)
 }
 
 void NetworkManager::disconnect() {
+    if(isRelaySession()) {
+        if(pRelayClient) {
+            pRelayClient->stop(1 /* the player left */);
+        }
+        return;
+    }
+
     for(ENetPeer* pAwaitingConnectionPeer : awaitingConnectionList) {
         enet_peer_disconnect_later(pAwaitingConnectionPeer, NETWORKDISCONNECT_QUIT);
     }
@@ -366,6 +545,11 @@ void NetworkManager::disconnect() {
 
 void NetworkManager::update()
 {
+    if(isRelaySession()) {
+        updateRelaySession();
+        return;
+    }
+
     if(pLANGameFinderAndAnnouncer != nullptr) {
         pLANGameFinderAndAnnouncer->update();
     }
@@ -773,6 +957,281 @@ void NetworkManager::update()
     }
 }
 
+NetworkSessionCallbacks NetworkManager::sessionCallbacks() const {
+    NetworkSessionCallbacks callbacks;
+    callbacks.onReceiveChatMessage     = &pOnReceiveChatMessage;
+    callbacks.onReceiveGameInfo        = &pOnReceiveGameInfo;
+    callbacks.onReceiveChangeEventList = &pOnReceiveChangeEventList;
+    callbacks.onStartGame              = &pOnStartGame;
+    callbacks.onReceiveCommandList     = &pOnReceiveCommandList;
+    callbacks.onReceiveSelectionList   = &pOnReceiveSelectionList;
+    callbacks.onReceiveClientStats     = &pOnReceiveClientStats;
+    callbacks.onReceiveSetPathBudget   = &pOnReceiveSetPathBudget;
+    callbacks.onReceiveCoopMission     = &pOnReceiveCoopMissionBridge;
+    return callbacks;
+}
+
+bool NetworkManager::startRelaySession(const RoomRelayClient::Config& config, std::string& error) {
+    if(!isRelaySession()) {
+        error = "This game session is not using the game service.";
+        return false;
+    }
+
+    bGameInProgress = false;
+    simulationSeed = 0;
+    pendingCoopMission.reset();
+    playerName = config.displayName;
+
+    pRelayClient = std::make_unique<RoomRelayClient>();
+    if(!pRelayClient->start(config, error)) {
+        pRelayClient.reset();
+        return false;
+    }
+    return true;
+}
+
+std::uint32_t NetworkManager::relayHostPeerId() const {
+    if(!pRelayClient) {
+        return 0;
+    }
+    for(const RoomRelayClient::Peer& peer : pRelayClient->peers()) {
+        if(peer.isHost()) {
+            return peer.id;
+        }
+    }
+    return 0;
+}
+
+void NetworkManager::sendPacketOverRelay(ENetPacketOStream& packetStream, int channel,
+                                         std::uint32_t recipient) {
+    ENetPacket* enetPacket = packetStream.getPacket();
+    if(enetPacket == nullptr) {
+        return;
+    }
+
+    if(pRelayClient) {
+        pRelayClient->sendGamePayload(enetPacket->data, enetPacket->dataLength, channel,
+                                      recipient);
+    }
+    enet_packet_destroy(enetPacket);
+}
+
+bool NetworkManager::sendRelayDiagnostic(RoomRelay::DiagnosticKind kind,
+                                         const std::uint8_t* payload, std::size_t length) {
+    if(!pRelayClient) {
+        return false;
+    }
+    return pRelayClient->sendDiagnostic(kind, payload, length);
+}
+
+void NetworkManager::updateRelaySession() {
+    if(!pRelayClient) {
+        return;
+    }
+
+    pRelayClient->update();
+
+    RoomRelayClient::Event event;
+    while(pRelayClient->pollEvent(event)) {
+        switch(event.type) {
+            case RoomRelayClient::Event::Type::PeerJoined: {
+                debugNetwork("Relay peer '%s' joined (%s, %s)\n", event.name.c_str(),
+                             event.role == RoomRelay::Role::Host ? "host" : "client",
+                             event.runtime.c_str());
+                if(bIsServer && pGameInitSettings != nullptr) {
+                    // The lobby state is what a joining player needs first, exactly as on the
+                    // mesh transport - only addressed to a relay peer id instead of an address.
+                    ENetPacketOStream packetStream(ENET_PACKET_FLAG_RELIABLE);
+                    packetStream.writeUint32(NETWORKPACKET_SENDGAMEINFO);
+                    pGameInitSettings->save(packetStream);
+                    ChangeEventList changeEventList = pGetChangeEventListForNewPlayerCallback
+                        ? pGetChangeEventListForNewPlayerCallback(event.name) : ChangeEventList();
+                    changeEventList.save(packetStream);
+                    sendPacketOverRelay(packetStream, 0, event.peerId);
+                }
+            } break;
+
+            case RoomRelayClient::Event::Type::PeerLeft: {
+                debugNetwork("Relay peer '%s' left (reason %u)\n", event.name.c_str(),
+                             static_cast<unsigned>(event.reason));
+                if(pOnPeerDisconnected) {
+                    const bool wasHost = (event.role == RoomRelay::Role::Host);
+                    const int cause = (event.reason == 2) ? NETWORKDISCONNECT_TIMEOUT
+                                                          : NETWORKDISCONNECT_QUIT;
+                    pOnPeerDisconnected(event.name, wasHost, cause);
+                }
+            } break;
+
+            case RoomRelayClient::Event::Type::GamePayload: {
+                RoomRelayClient::Peer* peer = pRelayClient->findPeer(event.peerId);
+                if(peer != nullptr) {
+                    handleRelayGamePayload(*peer, event.payload.data(), event.payload.size());
+                }
+            } break;
+
+            case RoomRelayClient::Event::Type::Diagnostic: {
+                const RoomRelayClient::Peer* peer = pRelayClient->findPeer(event.peerId);
+                if(peer != nullptr && pOnReceiveRelayDiagnostic) {
+                    pOnReceiveRelayDiagnostic(peer->name, event.diagnosticKind,
+                                              event.payload.data(), event.payload.size());
+                }
+            } break;
+
+            case RoomRelayClient::Event::Type::PhaseChanged: {
+                debugNetwork("Relay room phase is now %s\n",
+                             event.phase == RoomRelay::Phase::Match ? "match" : "lobby");
+            } break;
+
+            case RoomRelayClient::Event::Type::Refused: {
+                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                            "NetworkManager: the game service refused a message: %s",
+                            event.message.c_str());
+            } break;
+
+            case RoomRelayClient::Event::Type::Closed: {
+                SDL_Log("NetworkManager: relay session ended: %s", event.message.c_str());
+                if(pOnPeerDisconnected) {
+                    // Look like a lost host connection so every existing menu and the running
+                    // game react the way they already do when a session ends.
+                    int cause = NETWORKDISCONNECT_QUIT;
+                    switch(event.code) {
+                        case RoomRelay::Close::Timeout:         cause = NETWORKDISCONNECT_TIMEOUT; break;
+                        case RoomRelay::Close::RoomFull:        cause = NETWORKDISCONNECT_GAME_FULL; break;
+                        case RoomRelay::Close::VersionMismatch: cause = NETWORKDISCONNECT_PROTOCOL_MISMATCH; break;
+                        default: break;
+                    }
+                    pOnPeerDisconnected(std::string(), true, cause);
+                }
+            } break;
+        }
+    }
+
+    // The relay knows the role authoritatively; mirror it so isServer() is right everywhere.
+    if(pRelayClient->isJoined()) {
+        bIsServer = pRelayClient->isHost();
+    }
+}
+
+void NetworkManager::handleRelayGamePayload(RoomRelayClient::Peer& peer,
+                                            const std::uint8_t* payload, std::size_t length) {
+    if(payload == nullptr || length < 4) {
+        return;
+    }
+
+    // The payload is the same serialized packet the mesh transport carries, so it is read with
+    // the same hardened reader rather than a second, parallel parser.
+    ENetPacket* packet = enet_packet_create(payload, length, 0);
+    if(packet == nullptr) {
+        return;
+    }
+    ENetPacketIStream packetStream(packet);
+
+    try {
+        const Uint32 packetType = packetStream.readUint32();
+
+        // The central admission policy applies unchanged. On the relay a peer is always fully
+        // established (the relay would not route for anybody else) and "the host connection"
+        // means "the peer the relay designated as host".
+        NetworkPacketPolicy::PacketContext context;
+        context.packetType       = packetType;
+        context.localRole        = bIsServer ? NetworkPacketPolicy::LocalRole::Host
+                                             : NetworkPacketPolicy::LocalRole::Client;
+        context.phase            = bGameInProgress ? NetworkPacketPolicy::SessionPhase::InGame
+                                                   : NetworkPacketPolicy::SessionPhase::Lobby;
+        context.admission        = NetworkPacketPolicy::PeerAdmission::Established;
+        context.isHostConnection = peer.isHost();
+
+        const NetworkPacketPolicy::PacketVerdict verdict =
+            NetworkPacketPolicy::classifyPacket(context);
+        if(verdict != NetworkPacketPolicy::PacketVerdict::Accept) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "NetworkManager: refused relay packet %u from '%s': %s",
+                        static_cast<unsigned>(packetType), peer.name.c_str(),
+                        NetworkPacketPolicy::describeVerdict(verdict));
+            return;
+        }
+
+        // Address-bearing and mod-transfer packets have no relay code path at all. The relay
+        // refuses to carry them; this is the second, independent refusal.
+        if(!GamePayloadRouter::handles(packetType)) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "NetworkManager: packet %u is not carried over the game service",
+                        static_cast<unsigned>(packetType));
+            return;
+        }
+
+        PayloadPeerAdapter::Fields fields;
+        fields.clientId           = peer.id;
+        fields.name               = &peer.name;
+        fields.isHost             = peer.isHost();
+        fields.gameVersion        = &peer.gameVersion;
+        fields.quantBotConfigHash = &peer.quantBotConfigHash;
+        fields.objectDataHash     = &peer.objectDataHash;
+
+        // The relay bound this peer's name when it admitted it, and a peer cannot change it
+        // afterwards: there is no rename message on this transport.
+        static bool alwaysAssigned = true;
+        fields.nameAssigned = &alwaysAssigned;
+
+        PayloadPeerAdapter adapter(
+            fields,
+            [this, &peer](const char* reason) {
+                const Uint32 now = SDL_GetTicks();
+                if(peer.lastRefuseTime != 0 && (now - peer.lastRefuseTime) > REJECT_DECAY_MS) {
+                    peer.refusedMessages = 0;
+                }
+                peer.lastRefuseTime = now;
+                peer.refusedMessages++;
+                if(peer.refusedMessages <= 3
+                   || (now - peer.lastRefuseLog) >= REJECT_LOG_INTERVAL_MS) {
+                    peer.lastRefuseLog = now;
+                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                                "NetworkManager: refused relay payload from '%s': %s (%u so far)",
+                                peer.name.c_str(), reason,
+                                static_cast<unsigned>(peer.refusedMessages));
+                }
+                if(peer.refusedMessages >= MAX_REJECTED_PACKETS_PER_PEER && pRelayClient) {
+                    pRelayClient->stop(3 /* ended because of an error */);
+                }
+            },
+            [](const std::string&) { return false; },   // names are not rebindable on the relay
+            [this]() {
+                sendConfigHash(getQuantBotConfig().getConfigHash(), getObjectDataHash(),
+                               VERSIONSTRING);
+            },
+            [this](int cause) {
+                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                             "NetworkManager: ending the relay session (cause %d)", cause);
+                if(pOnPeerDisconnected) {
+                    pOnPeerDisconnected(std::string(), true, cause);
+                }
+                if(pRelayClient) {
+                    pRelayClient->stop(3);
+                }
+            });
+
+        GamePayloadContext payloadContext;
+        payloadContext.isHost         = bIsServer;
+        payloadContext.inGame         = bGameInProgress;
+        payloadContext.simulationSeed = simulationSeed;
+        // Relay v1 plays bundled, matching content: the map text is used from memory and never
+        // becomes a file on disk.
+        payloadContext.allowMapWrite  = false;
+        payloadContext.coopPartnerIsSolePeer =
+            (pRelayClient->peers().size() == 1) && peer.isHost();
+
+        GamePayloadRouter::handle(packetType, packetStream, adapter, payloadContext,
+                                  sessionCallbacks());
+    } catch(InputStream::eof&) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "NetworkManager: truncated relay payload from '%s'", peer.name.c_str());
+    } catch(std::exception& e) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "NetworkManager: unusable relay payload from '%s': %s",
+                    peer.name.c_str(), e.what());
+    }
+}
+
 NetworkManager::PeerData* NetworkManager::createPeerData(ENetPeer* peer, PeerData::PeerState peerState) {
     PeerData* peerData = new PeerData(peer, peerState);
     peerData->clientId = nextClientId++;
@@ -1109,516 +1568,8 @@ void NetworkManager::handlePacket(ENetPeer* peer, ENetPacketIStream& packetStrea
             } break;
 
             case NETWORKPACKET_SENDGAMEINFO: {
-                if(!connectPeer) {
-                    break;
-                }
-
-                PeerData* peerData = static_cast<PeerData*>(connectPeer->data);
-                if(!peerData) {
-                    break;
-                }
-
-                // Decode into temporaries and validate the whole snapshot *before* any session
-                // state changes: a malformed or oversized packet must leave this client exactly
-                // as it was, not half-committed with its peer list already replaced.
-                GameInitSettings gameInitSettings(packetStream);
-                ChangeEventList changeEventList(packetStream);
-
-                std::string rejectionReason;
-                if(!GameInitSettingsPolicy::isAcceptableReceivedGameInitSettings(gameInitSettings,
-                                                                                 rejectionReason)) {
-                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                                "NetworkManager: refusing game info from the host: %s",
-                                rejectionReason.c_str());
-                    noteRejectedPacket(peer, "unacceptable game info");
-                    break;
-                }
-
-                const bool bHasMapPayload =
-                    gameInitSettings.getGameType() == GameType::CustomMultiplayer
-                    && !gameInitSettings.getFiledata().empty()
-                    && !gameInitSettings.getFilename().empty();
-
-                // A map we cannot store safely is a packet we do not accept at all - playing it
-                // from memory while refusing to write it would hide the problem from the player.
-                std::string mapFilename;
-                if(bHasMapPayload
-                   && !NetworkPacketPolicy::sanitizeReceivedMapFilename(
-                          gameInitSettings.getFilename(), mapFilename)) {
-                    noteRejectedPacket(peer, "unsafe received map filename");
-                    break;
-                }
-
-                // Commit membership only now that the packet is known to be usable.
-                peerList = awaitingConnectionList;
-                peerData->peerState = PeerData::PeerState::Connected;
-                peerData->timeout = 0;
-                awaitingConnectionList.clear();
-
-                // Save the received map to the user's maps/multiplayer directory
-                if(bHasMapPayload) {
-                    try {
-                        {
-                            char tmp[FILENAME_MAX];
-                            if(fnkdat("maps/multiplayer/", tmp, FILENAME_MAX, FNKDAT_USER | FNKDAT_CREAT) >= 0) {
-                                const std::filesystem::path mapDirectory =
-                                    std::filesystem::path(std::string(tmp));
-                                const std::filesystem::path fullPathObject = mapDirectory / mapFilename;
-
-                                // Belt and braces: whatever the name did, the file has to land
-                                // directly inside the multiplayer maps directory.
-                                std::error_code pathError;
-                                const std::filesystem::path resolvedParent =
-                                    std::filesystem::weakly_canonical(fullPathObject.parent_path(), pathError);
-                                const std::filesystem::path resolvedDirectory =
-                                    std::filesystem::weakly_canonical(mapDirectory, pathError);
-
-                                if(pathError || resolvedParent != resolvedDirectory) {
-                                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                                                "NetworkManager: refusing to write a received map outside '%s'",
-                                                mapDirectory.string().c_str());
-                                } else {
-                                    const std::string fullPath = fullPathObject.string();
-
-                                    // Only save if the file doesn't exist yet (avoid overwriting user-modified maps)
-                                    if(!existsFile(fullPath)) {
-                                        if(writeCompleteFile(fullPath, gameInitSettings.getFiledata())) {
-                                            SDL_Log("NetworkManager: Successfully saved received map to '%s'", fullPath.c_str());
-                                        } else {
-                                            SDL_Log("NetworkManager: Failed to save received map to '%s'", fullPath.c_str());
-                                        }
-                                    } else {
-                                        SDL_Log("NetworkManager: Map '%s' already exists locally, skipping save", fullPath.c_str());
-                                    }
-                                }
-                            } else {
-                                SDL_Log("NetworkManager: Failed to get maps/multiplayer directory path");
-                            }
-                        }
-                    } catch(std::exception& e) {
-                        SDL_Log("NetworkManager: Error saving received map: %s", e.what());
-                    }
-                }
-
-                if(pOnReceiveGameInfo) {
-                    pOnReceiveGameInfo(gameInitSettings, changeEventList);
-                }
-            } break;
-
-            case NETWORKPACKET_SENDNAME: {
-                PeerData* peerData = static_cast<PeerData*>(peer->data);
-                if(!peerData) {
-                    break;
-                }
-
-                std::string newName = packetStream.readString();
-
-                if(!NetworkPacketPolicy::isAcceptablePlayerName(newName)) {
-                    noteRejectedPacket(peer, "unacceptable player name");
-                    break;
-                }
-
-                // Identity is bound exactly once per connection. CommandManager resolves a
-                // command list to a player by this name, so a later rename would let a peer
-                // take over another player's commands.
-                if(peerData->bNameAssigned) {
-                    noteRejectedPacket(peer, "peer tried to change its established name");
-                    break;
-                }
-
-                // A name has to be unique on *every* peer, not just on the host. Command lists
-                // are resolved to a player by this name, so a mesh peer that binds a name
-                // another connection already holds would have its commands attributed to that
-                // player on this machine. The host already refused duplicates; a client that
-                // did not check was the remaining way in (an unsolicited peer reaching a
-                // joining client during its mesh window).
-                bool bFoundName = false;
-
-                if(playerName == newName) {
-                    enet_peer_disconnect_later(peer, NETWORKDISCONNECT_PLAYER_EXISTS);
-                    bFoundName = true;
-                }
-
-                if(bFoundName == false) {
-                    for(ENetPeer* pCurrentPeer : peerList) {
-                        if(pCurrentPeer == peer) {
-                            continue;
-                        }
-                        PeerData* pCurrentPeerData = static_cast<PeerData*>(pCurrentPeer->data);
-                        if(!pCurrentPeerData) {
-                            continue;
-                        }
-                        if(pCurrentPeerData->bNameAssigned && pCurrentPeerData->name == newName) {
-                            enet_peer_disconnect_later(peer, NETWORKDISCONNECT_PLAYER_EXISTS);
-                            bFoundName = true;
-                            break;
-                        }
-                    }
-                }
-
-                if(bFoundName == false) {
-                    for(ENetPeer* pAwaitingConnectionPeer : awaitingConnectionList) {
-                        if(pAwaitingConnectionPeer == peer) {
-                            continue;
-                        }
-                        PeerData* pAwaitingConnectionPeerData = static_cast<PeerData*>(pAwaitingConnectionPeer->data);
-                        if(pAwaitingConnectionPeerData && pAwaitingConnectionPeerData->bNameAssigned
-                           && (pAwaitingConnectionPeerData->name == newName)) {
-                            enet_peer_disconnect_later(peer, NETWORKDISCONNECT_PLAYER_EXISTS);
-                            bFoundName = true;
-                            break;
-                        }
-                    }
-                }
-
-                if(bFoundName == false) {
-                    peerData->name = newName;
-                    peerData->bNameAssigned = true;
-
-                    if(peerData->peerState == PeerData::PeerState::WaitingForName) {
-                        peerData->peerState = PeerData::PeerState::ReadyForOtherPeersToConnect;
-                    }
-                }
-            } break;
-
-            case NETWORKPACKET_CHATMESSAGE: {
-                PeerData* peerData = static_cast<PeerData*>(peer->data);
-                if(!peerData) {
-                    break;
-                }
-
-                std::string message = packetStream.readString();
-                if(message.size() > MAX_CHAT_MESSAGE_LENGTH) {
-                    noteRejectedPacket(peer, "chat message exceeds the length limit");
-                    break;
-                }
-                if(pOnReceiveChatMessage) {
-                    pOnReceiveChatMessage(peerData->name, message);
-                }
-            } break;
-
-            case NETWORKPACKET_CHANGEEVENTLIST: {
-                ChangeEventList changeEventList(packetStream);
-
-                PeerData* peerData = static_cast<PeerData*>(peer->data);
-                if(peerData == nullptr) {
-                    break;
-                }
-
-                if(bIsServer) {
-                    // A client only ever seats itself: every lobby slot claim it sends carries
-                    // its own name (CustomGamePlayers::onClickPlayerDropDownBox). Anything else
-                    // is a peer trying to move another player around.
-                    bool bForeignSlotClaim = false;
-                    for(const ChangeEventList::ChangeEvent& changeEvent : changeEventList.changeEventList) {
-                        if(changeEvent.eventType == ChangeEventList::ChangeEvent::EventType::SetHumanPlayer
-                           && changeEvent.newStringValue != peerData->name) {
-                            bForeignSlotClaim = true;
-                            break;
-                        }
-                    }
-
-                    if(bForeignSlotClaim) {
-                        noteRejectedPacket(peer, "lobby slot claim for another player");
-                        break;
-                    }
-                }
-
-                if(pOnReceiveChangeEventList) {
-                    pOnReceiveChangeEventList(peerData->name, changeEventList);
-                }
-            } break;
-
-            case NETWORKPACKET_CONFIG_HASH: {
-                Uint32 peerProtocolVersion = packetStream.readUint32();
-                std::string gameVersion = packetStream.readString();
-                std::string quantBotHash = packetStream.readString();
-                std::string objectDataHash = packetStream.readString();
-                
-                PeerData* peerData = static_cast<PeerData*>(peer->data);
-                if(peerData) {
-                    peerData->gameVersion = gameVersion;
-                    peerData->quantBotConfigHash = quantBotHash;
-                    peerData->objectDataHash = objectDataHash;
-                    
-                    SDL_Log("========== CONFIG HASH RECEIVED ==========");
-                    SDL_Log("From: %s", peerData->name.c_str());
-                    SDL_Log("Protocol version: %d", peerProtocolVersion);
-                    SDL_Log("Game version: %s", gameVersion.c_str());
-                    SDL_Log("QuantBot Config.ini hash: %s", quantBotHash.c_str());
-                    SDL_Log("ObjectData.ini hash: %s", objectDataHash.c_str());
-                    SDL_Log("==========================================");
-                    
-                    // Get our own version and hashes (local)
-                    std::string localVersion = VERSIONSTRING;
-                    std::string localQuantBotHash = getQuantBotConfig().getConfigHash();
-                    std::string localObjectDataHash = getObjectDataHash();
-
-                    const bool protocolRejected = rejectIncompatibleNetworkProtocol(
-                        peerProtocolVersion,
-                        [peer](int cause) {
-                            enet_peer_disconnect_later(peer, static_cast<enet_uint32>(cause));
-                        });
-                    if(protocolRejected) {
-                        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                                     "NetworkManager: rejecting incompatible protocol from %s (peer=%u, local=%u)",
-                                     peerData->name.c_str(), peerProtocolVersion, NETWORK_PROTOCOL_VERSION);
-                        break;
-                    }
-                    
-                    // Mod transfer cannot replace executable simulation code.
-                    if (rejectIncompatibleGameVersion(peerData->gameVersion, localVersion,
-                        [peer](int cause) { enet_peer_disconnect_later(peer, static_cast<enet_uint32>(cause)); })) {
-                        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Rejecting game version mismatch: peer=%s local=%s",
-                                     peerData->gameVersion.c_str(), localVersion.c_str());
-                        break;
-                    }
-
-                    if(bIsServer) {
-                        // Server: verify client matches server config
-                        SDL_Log("========== SERVER CONFIG VERIFICATION ==========");
-                        SDL_Log("Server protocol version: %d", NETWORK_PROTOCOL_VERSION);
-                        SDL_Log("Server game version: %s", localVersion.c_str());
-                        SDL_Log("Server QuantBot Config.ini hash: %s", localQuantBotHash.c_str());
-                        SDL_Log("Server ObjectData.ini hash: %s", localObjectDataHash.c_str());
-                        SDL_Log("Checking peer: %s", peerData->name.c_str());
-                        SDL_Log("  Peer protocol: %d (Match: %s)", peerProtocolVersion,
-                                (peerProtocolVersion == NETWORK_PROTOCOL_VERSION) ? "YES" : "NO");
-                        SDL_Log("  Peer version: %s (Match: %s)", peerData->gameVersion.c_str(),
-                                (peerData->gameVersion == localVersion) ? "YES" : "NO");
-                        SDL_Log("  Peer QuantBot: %s (Match: %s)", peerData->quantBotConfigHash.c_str(), 
-                                (peerData->quantBotConfigHash == localQuantBotHash) ? "YES" : "NO");
-                        SDL_Log("  Peer ObjectData: %s (Match: %s)", peerData->objectDataHash.c_str(),
-                                (peerData->objectDataHash == localObjectDataHash) ? "YES" : "NO");
-                        
-                        // Check if this peer has mismatched configs
-                        bool mismatchFound = false;
-                        std::string mismatchMessage;
-                        
-                        if(peerProtocolVersion != NETWORK_PROTOCOL_VERSION) {
-                            mismatchFound = true;
-                            mismatchMessage += fmt::sprintf("\n- %s has incompatible network protocol version\n  Client: %d\n  Server: %d",
-                                                           peerData->name.c_str(), peerProtocolVersion, NETWORK_PROTOCOL_VERSION);
-                            SDL_Log("*** MISMATCH: Network protocol version differs!");
-                        }
-                        if(peerData->gameVersion != localVersion) {
-                            mismatchFound = true;
-                            mismatchMessage += fmt::sprintf("\n- %s has different game version\n  Client: %s\n  Server: %s",
-                                                           peerData->name.c_str(), peerData->gameVersion.c_str(), localVersion.c_str());
-                            SDL_Log("*** MISMATCH: Game version differs!");
-                        }
-                        if(peerData->quantBotConfigHash != localQuantBotHash) {
-                            mismatchFound = true;
-                            mismatchMessage += fmt::sprintf("\n- %s has different QuantBot Config.ini\n  Client: %s\n  Server: %s",
-                                                           peerData->name.c_str(), peerData->quantBotConfigHash.c_str(), localQuantBotHash.c_str());
-                            SDL_Log("*** MISMATCH: QuantBot Config.ini differs!");
-                        }
-                        if(peerData->objectDataHash != localObjectDataHash) {
-                            mismatchFound = true;
-                            mismatchMessage += fmt::sprintf("\n- %s has different ObjectData.ini\n  Client: %s\n  Server: %s",
-                                                           peerData->name.c_str(), peerData->objectDataHash.c_str(), localObjectDataHash.c_str());
-                            SDL_Log("*** MISMATCH: ObjectData.ini differs!");
-                        }
-                        
-                        SDL_Log("================================================");
-                        
-                        if(mismatchFound) {
-                            // Don't abort - mod sync system will handle this
-                            // Host already sent MOD_INFO, client will download and sync
-                            SDL_Log("Config mismatch for %s - mod sync will resolve this", peerData->name.c_str());
-                        } else {
-                            SDL_Log("Config verification passed for %s", peerData->name.c_str());
-                        }
-                    } else {
-                        // Client: verify server matches client config AND send our hash back
-                        SDL_Log("========== CLIENT CONFIG VERIFICATION ==========");
-                        SDL_Log("Client protocol version: %d", NETWORK_PROTOCOL_VERSION);
-                        SDL_Log("Client game version: %s", localVersion.c_str());
-                        SDL_Log("Client QuantBot Config.ini hash: %s", localQuantBotHash.c_str());
-                        SDL_Log("Client ObjectData.ini hash: %s", localObjectDataHash.c_str());
-                        SDL_Log("Checking server: %s", peerData->name.c_str());
-                        SDL_Log("  Server protocol: %d (Match: %s)", peerProtocolVersion,
-                                (peerProtocolVersion == NETWORK_PROTOCOL_VERSION) ? "YES" : "NO");
-                        SDL_Log("  Server version: %s (Match: %s)", peerData->gameVersion.c_str(),
-                                (peerData->gameVersion == localVersion) ? "YES" : "NO");
-                        SDL_Log("  Server QuantBot: %s (Match: %s)", peerData->quantBotConfigHash.c_str(), 
-                                (peerData->quantBotConfigHash == localQuantBotHash) ? "YES" : "NO");
-                        SDL_Log("  Server ObjectData: %s (Match: %s)", peerData->objectDataHash.c_str(),
-                                (peerData->objectDataHash == localObjectDataHash) ? "YES" : "NO");
-                        
-                        // Check if server has mismatched configs
-                        bool mismatchFound = false;
-                        std::string mismatchMessage;
-                        
-                        if(peerProtocolVersion != NETWORK_PROTOCOL_VERSION) {
-                            mismatchFound = true;
-                            mismatchMessage += fmt::sprintf("\n- Network protocol version differs\n  Your version: %d\n  Server version: %d",
-                                                           NETWORK_PROTOCOL_VERSION, peerProtocolVersion);
-                            SDL_Log("*** MISMATCH: Network protocol version differs!");
-                        }
-                        if(peerData->gameVersion != localVersion) {
-                            mismatchFound = true;
-                            mismatchMessage += fmt::sprintf("\n- Game version differs\n  Your version: %s\n  Server version: %s",
-                                                           localVersion.c_str(), peerData->gameVersion.c_str());
-                            SDL_Log("*** MISMATCH: Game version differs!");
-                        }
-                        if(peerData->quantBotConfigHash != localQuantBotHash) {
-                            mismatchFound = true;
-                            mismatchMessage += fmt::sprintf("\n- QuantBot Config.ini differs\n  Your hash: %s\n  Server hash: %s",
-                                                           localQuantBotHash.c_str(), peerData->quantBotConfigHash.c_str());
-                            SDL_Log("*** MISMATCH: QuantBot Config.ini differs!");
-                        }
-                        if(peerData->objectDataHash != localObjectDataHash) {
-                            mismatchFound = true;
-                            mismatchMessage += fmt::sprintf("\n- ObjectData.ini differs\n  Your hash: %s\n  Server hash: %s",
-                                                           localObjectDataHash.c_str(), peerData->objectDataHash.c_str());
-                            SDL_Log("*** MISMATCH: ObjectData.ini differs!");
-                        }
-                        
-                        SDL_Log("================================================");
-                        
-                        // ALWAYS send our config back to server for server-side validation
-                        // (even if client-side validation failed, server needs to validate too)
-                        SDL_Log("Sending client config to server for verification");
-                        ENetPacketOStream responsePacket(ENET_PACKET_FLAG_RELIABLE);
-                        responsePacket.writeUint32(NETWORKPACKET_CONFIG_HASH);
-                        responsePacket.writeUint32(NETWORK_PROTOCOL_VERSION);
-                        responsePacket.writeString(localVersion);
-                        responsePacket.writeString(localQuantBotHash);
-                        responsePacket.writeString(localObjectDataHash);
-                        sendPacketToHost(responsePacket);
-                        
-                        if(mismatchFound) {
-                            // Don't block connection - mod sync system will handle this
-                            // The client will receive MOD_INFO next and download the correct mod
-                            SDL_Log("Config mismatch detected - waiting for mod sync to resolve");
-                        } else {
-                            SDL_Log("Config verification passed - configs match server");
-                        }
-                    }
-                }
-            } break;
-
-            case NETWORKPACKET_COOP_MISSION: {
-                // Co-op has only one remote peer; only the host can choose a mission.
-                if(!bIsServer && peerList.size() == 1 && peerList.front() == peer) {
-                    auto next = std::make_unique<GameInitSettings>(packetStream);
-
-                    std::string coopRejectionReason;
-                    if(!GameInitSettingsPolicy::isAcceptableReceivedGameInitSettings(
-                           *next, coopRejectionReason, true)) {
-                        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                                    "NetworkManager: refusing co-op mission from the host: %s",
-                                    coopRejectionReason.c_str());
-                        noteRejectedPacket(peer, "unacceptable co-op mission");
-                        break;
-                    }
-
-                    // Either the next campaign mission, or the empty settings that end the
-                    // campaign; nothing else may replace the pending mission.
-                    if(next->getGameType() == GameType::CampaignCoop || next->getGameType() == GameType::Invalid)
-                        pendingCoopMission = std::move(next);
-                }
-            } break;
-
-            case NETWORKPACKET_STARTGAME: {
-                // Only a client, only on the host connection, only in the lobby
-                // (enforced by admitPacket).
-                Uint32 timeLeft = packetStream.readUint32();
-
-                if(timeLeft > MAX_START_GAME_COUNTDOWN_MS) {
-                    noteRejectedPacket(peer, "start-game countdown out of range");
-                    break;
-                }
-
-                if(pOnStartGame) {
-                    pOnStartGame(timeLeft);
-                }
-            } break;
-
-            case NETWORKPACKET_COMMANDLIST: {
-                if(packetStream.readUint32() != simulationSeed) break;
-                PeerData* peerData = static_cast<PeerData*>(peer->data);
-                if(!peerData) {
-                    break;
-                }
-
-                CommandList commandList(packetStream);
-
-                if(pOnReceiveCommandList) {
-                    pOnReceiveCommandList(peerData->name, commandList);
-                }
-            } break;
-
-            case NETWORKPACKET_SELECTIONLIST: {
-                if(packetStream.readUint32() != simulationSeed) break;
-                PeerData* peerData = static_cast<PeerData*>(peer->data);
-                if(!peerData) {
-                    break;
-                }
-
-                int groupListIndex = packetStream.readSint32();
-                std::set<Uint32> selectedList = packetStream.readUint32Set();
-
-                if(selectedList.size() > NetworkPacketPolicy::kMaxSelectionSize) {
-                    noteRejectedPacket(peer, "selection list exceeds the size limit");
-                    break;
-                }
-
-                // -1 means "current selection"; anything else indexes HumanPlayer::selectedLists.
-                if(groupListIndex < -1 || groupListIndex >= NUMSELECTEDLISTS) {
-                    noteRejectedPacket(peer, "selection group index out of range");
-                    break;
-                }
-
-                if(pOnReceiveSelectionList) {
-                    pOnReceiveSelectionList(peerData->name, selectedList, groupListIndex);
-                }
-            } break;
-
-            case NETWORKPACKET_CLIENTSTATS: {
-                if(packetStream.readUint32() != simulationSeed) break;
-                // Host only, established client, match running (enforced by admitPacket).
-                PeerData* peerData = static_cast<PeerData*>(peer->data);
-                if(!peerData) {
-                    break;
-                }
-
-                Uint32 gameCycle = packetStream.readUint32();
-                float avgFps = packetStream.readFloat();
-                float simMsAvg = packetStream.readFloat();  // POST-VSYNC: Read simulation timing
-                Uint32 queueDepth = packetStream.readUint32();
-                Uint32 currentBudget = packetStream.readUint32();
-
-                if(!NetworkPacketPolicy::isUsableStatValue(avgFps)
-                   || !NetworkPacketPolicy::isUsableStatValue(simMsAvg)) {
-                    noteRejectedPacket(peer, "non-finite client stats");
-                    break;
-                }
-
-                // Identity is the connection, not an address hash: behind NAT (or later behind
-                // a relay) host^port collides across players and is trivially spoofable.
-                const Uint32 clientId = peerData->clientId;
-
-                if(pOnReceiveClientStats) {
-                    pOnReceiveClientStats(clientId, gameCycle, avgFps, simMsAvg, queueDepth, currentBudget);
-                }
-            } break;
-
-            case NETWORKPACKET_SETPATHBUDGET: {
-                if(packetStream.readUint32() != simulationSeed) break;
-                // Client only, host connection only, match running (enforced by admitPacket).
-                Uint32 newBudget = packetStream.readUint32();
-                Uint32 applyCycle = packetStream.readUint32();
-
-                if(newBudget > MAX_PATH_BUDGET_ORDER) {
-                    noteRejectedPacket(peer, "path budget order out of range");
-                    break;
-                }
-
-                if(pOnReceiveSetPathBudget) {
-                    pOnReceiveSetPathBudget(newBudget, applyCycle);
-                }
+                if(!connectPeer || !connectPeer->data) break;
+                routeSharedPayload(peer, packetType, packetStream);
             } break;
 
             case NETWORKPACKET_MOD_INFO: {
@@ -1803,16 +1754,14 @@ void NetworkManager::handlePacket(ENetPeer* peer, ENetPacketIStream& packetStrea
                 }
             } break;
             
-            case NETWORKPACKET_KEEPALIVE: {
-                // NAT keep-alive ping - just receiving it is enough to keep the NAT mapping alive
-                // The reliable packet triggers ACKs which count as bidirectional traffic
-                // No action needed, packet is silently consumed
-            } break;
-
             default: {
-                // Unreachable: admitPacket() already refuses unknown packet types.
-                noteRejectedPacket(peer, "unknown packet type");
-            };
+                // Everything that is not part of the mesh handshake or a mod transfer is
+                // handled by the code the relay transport shares.
+                if(!routeSharedPayload(peer, packetType, packetStream)) {
+                    // Unreachable: admitPacket() already refuses unknown packet types.
+                    noteRejectedPacket(peer, "unknown packet type");
+                }
+            } break;
         }
 
     } catch (InputStream::eof&) {
@@ -1823,8 +1772,93 @@ void NetworkManager::handlePacket(ENetPeer* peer, ENetPacketIStream& packetStrea
     }
 }
 
+bool NetworkManager::routeSharedPayload(ENetPeer* peer, Uint32 packetType,
+                                        ENetPacketIStream& packetStream) {
+    if(!GamePayloadRouter::handles(packetType)) {
+        return false;
+    }
+
+    PeerData* peerData = static_cast<PeerData*>(peer->data);
+    if(peerData == nullptr) {
+        return true;
+    }
+
+    PayloadPeerAdapter::Fields fields;
+    fields.clientId           = peerData->clientId;
+    fields.name               = &peerData->name;
+    fields.nameAssigned       = &peerData->bNameAssigned;
+    fields.isHost             = (!bIsServer) && (connectPeer != nullptr) && (peer == connectPeer);
+    fields.gameVersion        = &peerData->gameVersion;
+    fields.quantBotConfigHash = &peerData->quantBotConfigHash;
+    fields.objectDataHash     = &peerData->objectDataHash;
+
+    PayloadPeerAdapter adapter(
+        fields,
+        [this, peer](const char* reason) { noteRejectedPacket(peer, reason); },
+        [this, peer](const std::string& newName) {
+            PeerData* data = static_cast<PeerData*>(peer->data);
+            if(data == nullptr) {
+                return false;
+            }
+
+            // Bind names uniquely on every receiver, including clients in the mesh join window.
+            bool nameTaken = (playerName == newName);
+            for(const auto& peers : {peerList, awaitingConnectionList}) {
+                for(ENetPeer* otherPeer : peers) {
+                    if(otherPeer == peer) continue;
+                    auto* other = static_cast<PeerData*>(otherPeer->data);
+                    if(other && other->bNameAssigned && other->name == newName) nameTaken = true;
+                }
+            }
+            if(nameTaken) {
+                enet_peer_disconnect_later(peer, NETWORKDISCONNECT_PLAYER_EXISTS);
+                return false;
+            }
+
+            data->name = newName;
+            data->bNameAssigned = true;
+            if(data->peerState == PeerData::PeerState::WaitingForName) {
+                data->peerState = PeerData::PeerState::ReadyForOtherPeersToConnect;
+            }
+            return true;
+        },
+        [this]() {
+            sendConfigHash(getQuantBotConfig().getConfigHash(), getObjectDataHash(),
+                           VERSIONSTRING);
+        },
+        [peer](int cause) {
+            enet_peer_disconnect_later(peer, static_cast<enet_uint32>(cause));
+        });
+
+    GamePayloadContext context;
+    context.isHost         = bIsServer;
+    context.inGame         = bGameInProgress;
+    context.simulationSeed = simulationSeed;
+    context.allowMapWrite  = true;
+    // Co-op has exactly one remote partner; on the mesh that is "the peer list holds only this
+    // peer", which is also the connection to the host.
+    context.coopPartnerIsSolePeer =
+        (!bIsServer) && (peerList.size() == 1) && (peerList.front() == peer);
+
+    auto callbacks = sessionCallbacks();
+    callbacks.onGameInfoAccepted = [this]() {
+        auto* data = static_cast<PeerData*>(connectPeer->data);
+        peerList = awaitingConnectionList;
+        data->peerState = PeerData::PeerState::Connected;
+        data->timeout = 0;
+        awaitingConnectionList.clear();
+    };
+    GamePayloadRouter::handle(packetType, packetStream, adapter, context, callbacks);
+    return true;
+}
+
 
 void NetworkManager::sendPacketToHost(ENetPacketOStream& packetStream, int channel) {
+    if(isRelaySession()) {
+        sendPacketOverRelay(packetStream, channel, relayHostPeerId());
+        return;
+    }
+
     if(connectPeer == nullptr) {
         // This can happen if host disconnected but game hasn't processed the quit yet
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "NetworkManager: sendPacketToHost() failed - no host connection");
@@ -1852,6 +1886,13 @@ void NetworkManager::sendPacketToPeer(ENetPeer* peer, ENetPacketOStream& packetS
 
 
 void NetworkManager::sendPacketToAllConnectedPeers(ENetPacketOStream& packetStream, int channel) {
+    if(isRelaySession()) {
+        // Recipient 0 means "every other peer in this room"; the relay fans it out, and a peer
+        // in another room can never be reached from here.
+        sendPacketOverRelay(packetStream, channel, 0);
+        return;
+    }
+
     ENetPacket* enetPacket = packetStream.getPacket();
 
     for(ENetPeer* pCurrentPeer : peerList) {
@@ -1897,6 +1938,22 @@ void NetworkManager::sendConfigHash(const std::string& quantBotHash, const std::
     SDL_Log("QuantBot: %s", quantBotHash.c_str());
     SDL_Log("ObjectData: %s", objectDataHash.c_str());
     
+    if(isRelaySession()) {
+        ENetPacketOStream packetStream(ENET_PACKET_FLAG_RELIABLE);
+        packetStream.writeUint32(NETWORKPACKET_CONFIG_HASH);
+        packetStream.writeUint32(NETWORK_PROTOCOL_VERSION);
+        packetStream.writeString(gameVersion);
+        packetStream.writeString(quantBotHash);
+        packetStream.writeString(objectDataHash);
+        if(bIsServer) {
+            sendPacketOverRelay(packetStream, 0, 0);
+        } else {
+            sendPacketOverRelay(packetStream, 0, relayHostPeerId());
+        }
+        SDL_Log("Config sent successfully");
+        return;
+    }
+
     if(bIsServer) {
         // Server sends to all clients
         SDL_Log("Sending to %d client(s)", (int)peerList.size());
@@ -1937,7 +1994,46 @@ std::unique_ptr<GameInitSettings> NetworkManager::takeCoopMission() {
     return std::move(pendingCoopMission);
 }
 
+void NetworkManager::beginSimulation(Uint32 seed) {
+    simulationSeed = seed;
+    bGameInProgress = true;
+
+    if(pRelayClient) {
+        if(bIsServer) {
+            // The host owns the room phase; it is what stops the relay carrying lobby traffic.
+            pRelayClient->setRoomPhase(RoomRelay::Phase::Match);
+        } else {
+            // A client's own simulation may start a moment before the host's phase change
+            // arrives. Assuming the match locally means its first command is never refused by
+            // its own outgoing check - a dropped command is a desynchronised match.
+            pRelayClient->assumeMatchPhase();
+        }
+    }
+}
+
 void NetworkManager::sendStartGame(unsigned int timeLeft) {
+    if(isRelaySession()) {
+        // Every peer shares one relay hop, so one countdown serves them all.
+        const unsigned int halfRoundTrip =
+            pRelayClient ? (pRelayClient->roundTripTimeMs() / 2) : 0u;
+        const unsigned int peerTimeLeft =
+            (halfRoundTrip >= timeLeft) ? 0u : (timeLeft - halfRoundTrip);
+
+        ENetPacketOStream packetStream(ENET_PACKET_FLAG_RELIABLE);
+        packetStream.writeUint32(NETWORKPACKET_STARTGAME);
+        packetStream.writeUint32(peerTimeLeft);
+        sendPacketOverRelay(packetStream, 0, 0);
+
+        // Switch the room to the match phase immediately afterwards. The relay routes in order,
+        // and no client can send a command before its own countdown has run, so the phase change
+        // is always in place before the first command arrives - a command refused for being in
+        // the wrong phase would be a lost lockstep message.
+        if(pRelayClient) {
+            pRelayClient->setRoomPhase(RoomRelay::Phase::Match);
+        }
+        return;
+    }
+
     for(ENetPeer* pCurrentPeer : peerList) {
         ENetPacketOStream packetStream(ENET_PACKET_FLAG_RELIABLE);
         packetStream.writeUint32(NETWORKPACKET_STARTGAME);
@@ -1972,6 +2068,11 @@ void NetworkManager::sendSelectedList(const std::set<Uint32>& selectedList, int 
 }
 
 int NetworkManager::getMaxPeerRoundTripTime() {
+    if(isRelaySession()) {
+        // Every peer is reached through the same relay hop; that round trip is the bound.
+        return pRelayClient ? static_cast<int>(pRelayClient->roundTripTimeMs()) : 0;
+    }
+
     int maxPeerRTT = 0;
 
     for(ENetPeer* pCurrentPeer : peerList) {
@@ -2026,6 +2127,12 @@ void NetworkManager::broadcastPathBudget(size_t newBudget, Uint32 applyCycle) {
 }
 
 void NetworkManager::sendModInfoToPeer(ENetPeer* peer, const std::string& modName, const std::string& modChecksum) {
+    if(isRelaySession()) {
+        // Relay v1 carries bundled, matching content only. Custom content transfer is refused
+        // by the relay itself; there is no client-side path for it either.
+        return;
+    }
+
     // Host → Single Client: Send active mod info
     if(!bIsServer) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "NetworkManager: Client trying to send mod info (only host can send)");
@@ -2044,6 +2151,10 @@ void NetworkManager::sendModInfoToPeer(ENetPeer* peer, const std::string& modNam
 }
 
 void NetworkManager::sendModInfo(const std::string& modName, const std::string& modChecksum) {
+    if(isRelaySession()) {
+        return;     // see sendModInfoToPeer()
+    }
+
     // Host → All Clients: Send active mod info for verification
     if(!bIsServer) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "NetworkManager: Client trying to send mod info (only host can send)");
@@ -2062,6 +2173,10 @@ void NetworkManager::sendModInfo(const std::string& modName, const std::string& 
 }
 
 void NetworkManager::requestModDownload(const std::string& modName) {
+    if(isRelaySession()) {
+        return;     // see sendModInfoToPeer()
+    }
+
     // Client → Host: Request mod files because of checksum mismatch
     if(bIsServer) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "NetworkManager: Host trying to request mod download (only clients can request)");
@@ -2283,6 +2398,10 @@ void NetworkManager::sendModFilesToPeer(ENetPeer* peer, const std::string& modNa
 }
 
 void NetworkManager::sendModAck(bool success, const std::string& modChecksum) {
+    if(isRelaySession()) {
+        return;     // see sendModInfoToPeer()
+    }
+
     // Client → Host: Acknowledge mod sync complete
     if(bIsServer) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "NetworkManager: Host trying to send mod ACK (only clients can send)");

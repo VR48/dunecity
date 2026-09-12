@@ -1,0 +1,217 @@
+/*
+ *  This file is part of Dune Legacy.
+ *
+ *  Dune Legacy is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 2 of the License, or
+ *  (at your option) any later version.
+ *
+ *  Dune Legacy is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with Dune Legacy.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+#ifndef ROOMRELAYCLIENT_H
+#define ROOMRELAYCLIENT_H
+
+/**
+    The relay session: logical peers, the handshake, membership, heartbeats and deadlines.
+
+    This owns its own idea of a peer. It does not fabricate ENetPeer objects: a relay peer has a
+    relay-assigned id and nothing that looks like an address, which is the whole point - there is
+    no field anywhere in this path that can name a host and port to connect to.
+
+    Everything is queued. update() drains the socket into a queue of typed events; the caller
+    drains that queue from the game loop. No relay event ever calls into the simulation directly.
+*/
+
+#include <Network/RelayWebSocket.h>
+#include <Network/RoomRelayProtocol.h>
+
+#include <misc/SDL2pp.h>
+
+#include <cstdint>
+#include <deque>
+#include <memory>
+#include <string>
+#include <vector>
+
+class RoomRelayClient {
+public:
+    /// A peer in the room, as the relay describes it.
+    struct Peer {
+        std::uint32_t   id      = 0;
+        RoomRelay::Role role    = RoomRelay::Role::Unknown;
+        std::string     name;
+        std::string     runtime;        ///< client-reported, never trusted for anything
+
+        // Config verification state, mirroring what the ENet path keeps per connection.
+        std::string     gameVersion;
+        std::string     quantBotConfigHash;
+        std::string     objectDataHash;
+
+        // Abuse accounting for messages this peer sent that the client itself refused.
+        Uint32          refusedMessages = 0;
+        Uint32          lastRefuseTime  = 0;
+        Uint32          lastRefuseLog   = 0;
+
+        bool isHost() const { return role == RoomRelay::Role::Host; }
+    };
+
+    struct Config {
+        std::string   socketUrl;
+        std::string   origin;                   ///< browsers set this themselves; empty natively
+        std::string   grant;
+        std::string   displayName;
+        std::string   appVersion;
+        std::string   contentHash;
+        std::string   runtime;                  ///< "native" or "browser"
+        std::uint16_t gameProtocolVersion = 0;
+        bool          allowLoopbackPlaintext = false;
+    };
+
+    enum class Status {
+        Idle,           ///< nothing started
+        Connecting,     ///< socket opening
+        Handshaking,    ///< HELLO sent, waiting for WELCOME
+        Joined,         ///< in a room
+        Closed          ///< finished; see statusMessage() and closeCode()
+    };
+
+    /// One thing that happened, for the game loop to act on.
+    struct Event {
+        enum class Type {
+            PeerJoined,
+            PeerLeft,
+            GamePayload,
+            Diagnostic,
+            PhaseChanged,
+            Refused,        ///< the relay refused something we sent; not fatal
+            Closed          ///< the session ended
+        };
+
+        Type              type              = Type::Closed;
+        std::uint32_t     peerId            = 0;
+        std::string       name;
+        std::string       runtime;
+        RoomRelay::Role   role              = RoomRelay::Role::Unknown;
+        std::uint8_t      reason            = 0;
+        std::uint8_t      channel           = 0;
+        std::uint16_t     gameMessageType   = 0;
+        std::uint8_t      diagnosticKind    = 0;
+        RoomRelay::Phase  phase             = RoomRelay::Phase::Lobby;
+        std::uint16_t     code              = 0;
+        std::string       message;
+        std::vector<std::uint8_t> payload;
+    };
+
+    RoomRelayClient();
+    RoomRelayClient(const RoomRelayClient&) = delete;
+    RoomRelayClient& operator=(const RoomRelayClient&) = delete;
+    ~RoomRelayClient();
+
+    /**
+        Validates the endpoint, opens the socket and sends the handshake once it is open.
+        \param  config  session parameters, including the single-use grant
+        \param  error   set to a player-facing reason if the session cannot be started
+        \return true if the session is now connecting
+    */
+    bool start(const Config& config, std::string& error);
+
+    /// Drives the socket and fills the event queue. Call once per game loop iteration.
+    void update();
+
+    /// Sends LEAVE and closes. Safe to call more than once.
+    void stop(std::uint8_t reason);
+
+    bool pollEvent(Event& event);
+
+    Status status() const { return status_; }
+    bool   isJoined() const { return status_ == Status::Joined; }
+    bool   isHost() const { return localRole_ == RoomRelay::Role::Host; }
+    const std::string& roomCode() const { return roomCode_; }
+    std::uint32_t localPeerId() const { return localPeerId_; }
+    std::uint8_t  maxPeers() const { return maxPeers_; }
+    RoomRelay::Phase phase() const { return phase_; }
+
+    /// A player-facing sentence describing the current state or the reason it ended.
+    const std::string& statusMessage() const { return statusMessage_; }
+    std::uint16_t closeCode() const { return closeCode_; }
+
+    /// Round-trip time to the relay in milliseconds, or 0 before the first heartbeat answer.
+    Uint32 roundTripTimeMs() const { return roundTripMs_; }
+
+    const std::vector<Peer>& peers() const { return peers_; }
+    Peer* findPeer(std::uint32_t peerId);
+    const Peer* findPeer(std::uint32_t peerId) const;
+
+    /**
+        Sends one serialized game packet.
+        \param  payload     the packet exactly as ENetPacketOStream produced it
+        \param  length      its length
+        \param  channel     0 or 1
+        \param  recipient   0 for every other peer in the room, or a peer id
+        \return false if the message was refused locally; the reason is in statusMessage()
+    */
+    bool sendGamePayload(const std::uint8_t* payload, std::size_t length, int channel,
+                         std::uint32_t recipient);
+
+    /// Host only: declares the room phase so the relay can apply the right rules.
+    bool setRoomPhase(RoomRelay::Phase phase);
+
+    /**
+        Marks the local view of the room as in-match without telling the relay.
+
+        A client calls this when its own simulation starts, so that a command is never refused
+        locally because the host's phase change has not been applied yet. The relay's own view
+        is still what authorises routing; this only stops the client refusing itself.
+    */
+    void assumeMatchPhase() { phase_ = RoomRelay::Phase::Match; }
+
+    /// Sends a bounded diagnostic to the room. Never part of the ENet game protocol.
+    bool sendDiagnostic(RoomRelay::DiagnosticKind kind, const std::uint8_t* payload,
+                        std::size_t length);
+
+private:
+    void handleFrame(const std::vector<std::uint8_t>& frame);
+    void handleWelcome(const RoomRelay::ServerFrame& frame);
+    void handlePeerJoined(const RoomRelay::ServerFrame& frame);
+    void handlePeerLeft(const RoomRelay::ServerFrame& frame);
+    void handleRelayPayload(RoomRelay::ServerFrame& frame);
+    void finish(std::uint16_t code, const std::string& message);
+    void pushEvent(Event&& event);
+    bool sendFrame(const std::vector<std::uint8_t>& frame);
+
+    std::unique_ptr<RelayWebSocket> socket_;
+    Config          config_;
+    Status          status_        = Status::Idle;
+    RoomRelay::Role localRole_     = RoomRelay::Role::Unknown;
+    RoomRelay::Phase phase_        = RoomRelay::Phase::Lobby;
+    std::uint32_t   localPeerId_   = 0;
+    std::uint8_t    maxPeers_      = 0;
+    std::string     roomCode_;
+    std::string     statusMessage_;
+    std::uint16_t   closeCode_     = 0;
+
+    std::vector<Peer>  peers_;
+    std::deque<Event>  events_;
+
+    bool   helloSent_          = false;
+    Uint32 lastHeartbeatSent_  = 0;
+    Uint32 lastFrameReceived_  = 0;
+    Uint32 roundTripMs_        = 0;
+    Uint32 heartbeatIntervalMs_ = 5000;
+    Uint32 livenessTimeoutMs_   = 20000;
+
+    /// A relay that keeps refusing what we send means the two sides disagree about the rules.
+    Uint32 refusalsFromRelay_  = 0;
+
+    static constexpr std::size_t kMaxQueuedEvents = 4096;
+    static constexpr Uint32      kMaxRelayRefusals = 32;
+};
+
+#endif // ROOMRELAYCLIENT_H

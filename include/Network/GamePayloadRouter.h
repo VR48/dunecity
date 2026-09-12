@@ -1,0 +1,151 @@
+/*
+ *  This file is part of Dune Legacy.
+ *
+ *  Dune Legacy is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 2 of the License, or
+ *  (at your option) any later version.
+ *
+ *  Dune Legacy is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with Dune Legacy.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+#ifndef GAMEPAYLOADROUTER_H
+#define GAMEPAYLOADROUTER_H
+
+/**
+    The half of the receive path that is the same on every transport.
+
+    Everything that reads a game packet's payload, validates it and hands it to the game lives
+    here, once. The ENet mesh and the room relay both call it. What stays outside is the part
+    that is genuinely transport specific: the ENet mesh handshake (CONNECT, DISCONNECT,
+    PEER_CONNECTED) and mod transfers, neither of which exists on the relay.
+
+    The point of sharing is that a validation fix lands on both transports at the same time.
+*/
+
+#include <Network/ChangeEventList.h>
+#include <Network/CommandList.h>
+
+#include <misc/InputStream.h>
+#include <misc/SDL2pp.h>
+
+#include <functional>
+#include <set>
+#include <string>
+
+class GameInitSettings;
+
+/**
+    The callbacks the game installs on its network session. Held by pointer so both transports
+    can share one set without either of them copying std::function objects per packet.
+*/
+struct NetworkSessionCallbacks {
+    // Called only after complete game-info validation, before handing it to the lobby.
+    std::function<void ()> onGameInfoAccepted;
+    const std::function<void (const std::string&, const std::string&)>*           onReceiveChatMessage = nullptr;
+    const std::function<void (const GameInitSettings&, const ChangeEventList&)>*  onReceiveGameInfo = nullptr;
+    const std::function<void (const std::string&, const ChangeEventList&)>*                           onReceiveChangeEventList = nullptr;
+    const std::function<void (unsigned int)>*                                     onStartGame = nullptr;
+    const std::function<void (const std::string&, const CommandList&)>*           onReceiveCommandList = nullptr;
+    const std::function<void (const std::string&, const std::set<Uint32>&, int)>* onReceiveSelectionList = nullptr;
+    const std::function<void (Uint32, Uint32, float, float, Uint32, Uint32)>*     onReceiveClientStats = nullptr;
+    const std::function<void (size_t, Uint32)>*                                   onReceiveSetPathBudget = nullptr;
+    /// Campaign continuation chosen by the host; empty settings mean "leave the campaign".
+    const std::function<void (const GameInitSettings&)>*                          onReceiveCoopMission = nullptr;
+};
+
+/**
+    One peer, as the shared payload handling needs to see it.
+
+    Deliberately has no address, no port and no socket: an implementation of this interface for
+    the relay could not expose one, and the shared code therefore cannot grow a dependency on
+    something only the ENet mesh has.
+*/
+class GamePayloadPeer {
+public:
+    virtual ~GamePayloadPeer() = default;
+
+    /// Stable identity for this connection. Never an address hash.
+    virtual Uint32 clientId() const = 0;
+
+    virtual const std::string& name() const = 0;
+    virtual bool nameAssigned() const = 0;
+
+    /**
+        Binds this peer's name, once.
+        \return false if the name was refused (already bound, or taken by another player); the
+                implementation has already dealt with the consequence.
+    */
+    virtual bool bindName(const std::string& newName) = 0;
+
+    /// True when this peer is the designated host of the session.
+    virtual bool isHostPeer() const = 0;
+
+    /// Records a refused payload against this peer and applies the abuse policy.
+    virtual void refuse(const char* reason) = 0;
+
+    /// Sends this peer our own protocol version, game version and content hashes.
+    virtual void replyConfigHash() = 0;
+
+    virtual std::string& gameVersion() = 0;
+    virtual std::string& quantBotConfigHash() = 0;
+    virtual std::string& objectDataHash() = 0;
+
+    /// Ends the session with this peer, using a NETWORKDISCONNECT_* cause.
+    virtual void disconnectWithCause(int cause) = 0;
+};
+
+/// What the local process is doing right now.
+struct GamePayloadContext {
+    bool   isHost         = false;
+    bool   inGame         = false;
+    Uint32 simulationSeed = 0;
+    /**
+        Whether a received multiplayer map may be written into the user's maps directory.
+
+        The ENet path does this so a custom map can be replayed later. The relay path does not:
+        relay v1 plays bundled, manifest-matched content only, so the map text is used from
+        memory and never becomes a file.
+    */
+    bool   allowMapWrite  = true;
+    /**
+        Whether the peer that sent a campaign continuation is this client's only remote partner.
+
+        Co-op is a two-player arrangement and the continuation replaces the whole session, so
+        it is only accepted when there is exactly one remote peer and it is the sender. The
+        caller decides this because "how many peers are there" is transport bookkeeping.
+    */
+    bool   coopPartnerIsSolePeer = false;
+};
+
+namespace GamePayloadRouter {
+
+/**
+    Handles one game packet payload.
+
+    The packet id has already been read from `stream`, and the caller has already applied
+    NetworkPacketPolicy::classifyPacket() to decide that this peer is allowed to send this packet
+    at all. What happens here is the payload validation and the hand-off to the game.
+
+    \param  packetType  the packet id
+    \param  stream      positioned immediately after the packet id
+    \param  peer        the peer the packet arrived from
+    \param  context     local role, phase and simulation seed
+    \param  callbacks   the game's callbacks
+    \return true if this packet id belongs to the shared set and was dealt with here
+*/
+bool handle(Uint32 packetType, InputStream& stream, GamePayloadPeer& peer,
+            const GamePayloadContext& context, const NetworkSessionCallbacks& callbacks);
+
+/// True if handle() would claim this packet id. Used by the relay to reject anything else.
+bool handles(Uint32 packetType);
+
+} // namespace GamePayloadRouter
+
+#endif // GAMEPAYLOADROUTER_H

@@ -292,6 +292,14 @@ function createRelay(userConfig = {}) {
       closeConnection(conn, CLOSE.VERSION_MISMATCH, 'This room expects another game version.');
       return;
     }
+    for (const existing of room.peers.values()) {
+      if (existing.displayName === msg.displayName) {
+        // The game resolves a command list to a player by name, so two players in one room can
+        // never share one. This is the only place that sees both names before the game starts.
+        closeConnection(conn, CLOSE.FORBIDDEN, 'That player name is already used in this game.');
+        return;
+      }
+    }
 
     conn.authenticated = true;
     conn.role = admitted.role;
