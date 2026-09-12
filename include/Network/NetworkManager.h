@@ -363,6 +363,7 @@ private:
 
         // Abuse accounting: a legitimate peer never trips these.
         Uint32                  rejectedPackets = 0;
+        Uint32                  lastRejectTime = 0;
         Uint32                  lastRejectLogTime = 0;
         Uint32                  packetWindowStart = 0;
         Uint32                  packetsInWindow = 0;
@@ -388,8 +389,11 @@ private:
     static constexpr std::size_t MAX_CHAT_MESSAGE_LENGTH = 512;
     /// The ENet host is created with 32 peer slots; the mesh can never legitimately exceed it.
     static constexpr std::size_t MAX_MESH_PEERS = 32;
-    /// A peer is dropped after this many refused packets.
+    /// A peer is dropped after this many refused packets in one burst.
     static constexpr Uint32     MAX_REJECTED_PACKETS_PER_PEER = 64;
+    /// Isolated refusals decay, so the handful of packets that can race the lobby/match
+    /// transition never accumulate into a disconnect over a long session.
+    static constexpr Uint32     REJECT_DECAY_MS = 10000;
     /// Rejection log lines per peer are throttled to one per this many milliseconds.
     static constexpr Uint32     REJECT_LOG_INTERVAL_MS = 5000;
     /// Packets per second a single peer may send before it is dropped. A full 10 MiB mod

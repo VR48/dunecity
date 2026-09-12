@@ -778,6 +778,13 @@ void NetworkManager::noteRejectedPacket(ENetPeer* peer, const char* reason) {
         return;
     }
 
+    // Refusals that are far apart are not an attack: a few in-game packets can legitimately
+    // race the lobby/match transition, because clients start their countdown half a round trip
+    // before the host does.
+    if(peerData->lastRejectTime != 0 && (now - peerData->lastRejectTime) > REJECT_DECAY_MS) {
+        peerData->rejectedPackets = 0;
+    }
+    peerData->lastRejectTime = now;
     peerData->rejectedPackets++;
 
     if(peerData->rejectedPackets <= 3
