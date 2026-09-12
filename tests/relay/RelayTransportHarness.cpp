@@ -112,10 +112,12 @@ bool parseOptions(int argc, char** argv, Options& options) {
     if(options.seconds < 1 || options.seconds > 600) {
         return false;
     }
-    if(options.bulkMessages < 0 || options.bulkMessages > 100000) {
+    // The deterministic byte pattern identifies indices modulo 256. Refuse larger runs
+    // instead of treating message 256 as a duplicate of message 0.
+    if(options.bulkMessages < 0 || options.bulkMessages > 256) {
         return false;
     }
-    if(options.expectBulk < 0 || options.expectBulk > 100000) {
+    if(options.expectBulk < 0 || options.expectBulk > 256) {
         return false;
     }
     // Four bytes of the payload are the packet id, and the whole relay frame has to stay under

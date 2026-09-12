@@ -218,6 +218,7 @@ describe('grant claims bound at admission', () => {
       assert.equal((await client.expect(S2C.ERROR)).code, CLOSE.UNAUTHORIZED);
       assert.equal((await client.waitForClose()).code, CLOSE.UNAUTHORIZED);
       assert.equal([...relay.store.rooms.values()][0].peers.size, 1);
+      assert.equal(relay.log.events('connection_denied').at(-1).code, CLOSE.UNAUTHORIZED);
       host.client.close();
     } finally {
       await relay.stop();
@@ -236,6 +237,9 @@ describe('grant claims bound at admission', () => {
       const b = await admitJoin(relay, host.room);
       const contentSwap = await helloWith(relay, b.fields.grant, { contentHash: 'b'.repeat(16) });
       assert.equal((await contentSwap.expect(S2C.ERROR)).code, CLOSE.VERSION_MISMATCH);
+      const denial = relay.log.events('connection_denied').at(-1);
+      assert.equal(denial.code, CLOSE.VERSION_MISMATCH);
+      assert.deepEqual(Object.keys(denial).sort(), ['addressTag', 'code', 'event', 'ts']);
 
       const c = await admitJoin(relay, host.room);
       const empty = await helloWith(relay, c.fields.grant, { contentHash: '' });

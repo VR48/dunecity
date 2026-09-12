@@ -393,6 +393,10 @@ function createRelay(userConfig = {}) {
     // runtime and version remain claims, and a peer can still lie about them consistently.
     const claims = admitted.claims;
     if (msg.gameProtocol !== claims.gameProtocol || msg.contentHash !== claims.contentHash) {
+      log.emit('connection_denied', {
+        code: CLOSE.VERSION_MISMATCH,
+        addressTag: log.addressTag(conn.address),
+      });
       closeConnection(conn, CLOSE.VERSION_MISMATCH,
         'This game needs the same version and content as the invitation was issued for.');
       return;
