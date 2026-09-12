@@ -166,6 +166,34 @@ Requests with no `Origin` header are accepted because native clients do not send
 **not** treated as proof of a native client. Authentication is the grant; Origin is defence in
 depth for browsers only.
 
+Allowlist entries must be canonical origins: `scheme://host[:port]`, `http` or `https`, with a
+non-default port only, and no credentials, path, query, fragment or trailing slash. Anything
+else could never equal a real `Origin` header, so it is refused at startup rather than becoming
+a silently dead entry. The literal `null` is refused by name as well.
+
+### 3.6 CORS
+
+A browser may *send* an admission POST cross-origin without any CORS involvement — `POST` with
+`application/x-www-form-urlencoded` and no custom headers is a simple request — but it cannot
+**read** the response, which is where the grant is. So the relay answers with:
+
+| Header | Value |
+| --- | --- |
+| `Access-Control-Allow-Origin` | the request's exact `Origin`, and only when that origin is on the allowlist |
+| `Vary` | `Origin`, on every response |
+
+- Never `*`, and a foreign or `null` origin is never reflected: it gets `403 forbidden_origin`
+  with no allow-origin header at all.
+- `Access-Control-Allow-Credentials` is never sent. A grant must never be issued on the strength
+  of an ambient cookie, so the client uses the default `credentials: 'omit'`.
+- Error responses carry the same headers. Without them a browser cannot read the status or the
+  `code`, and every refusal is indistinguishable from the relay being down.
+- `OPTIONS` on the two admission endpoints answers a preflight for an allowlisted origin with
+  `POST`, `content-type` and a 600-second `Access-Control-Max-Age`, i.e. nothing beyond what a
+  simple request already allows. It is not needed by a client that sends simple requests, and it
+  is not a second way in: it creates nothing, and it is refused for a foreign origin, for a
+  method other than `POST`, and for any other path.
+
 ## 4. WebSocket protocol
 
 ### 4.1 Framing

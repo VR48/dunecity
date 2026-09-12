@@ -8,6 +8,73 @@ const { NULL_LIFECYCLE } = require('./analytics');
 // room policy, invitation checks and rate limits are applied here, and the credential never
 // appears in a WebSocket URL (where it would land in proxy logs and browser history).
 
+const MAX_ORIGIN_CHARS = 256;
+/** Preflights are only useful for a few minutes; a long cache would outlive a config change. */
+const PREFLIGHT_MAX_AGE_SECONDS = 600;
+
+/**
+ * A canonical HTTP(S) origin is exactly what a browser puts in the `Origin` header:
+ * `scheme://host[:port]` with a non-default port only, and nothing else. Anything with
+ * credentials, a path, a query, a fragment, a trailing slash or a default port would never
+ * match a real header, so accepting it in the allowlist would silently do nothing.
+ * The literal `null` is not a URL and is refused here as well as by name.
+ */
+function isCanonicalOrigin(value) {
+  if (typeof value !== 'string' || value.length === 0 || value.length > MAX_ORIGIN_CHARS) {
+    return false;
+  }
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
+  if (url.username !== '' || url.password !== '') return false;
+  if (url.hostname === '') return false;
+  if (url.search !== '' || url.hash !== '') return false;
+  // `origin` drops a default port and everything after the authority, so this equality is the
+  // whole check: the operator wrote an origin and only an origin.
+  return url.origin === value;
+}
+
+/**
+ * @throws {Error} with a message an operator can act on. An origin is not a secret, so the
+ *   offending value is quoted; nothing else about the configuration is.
+ */
+function assertAllowedOrigins(origins) {
+  for (const origin of origins) {
+    if (origin === 'null') {
+      throw new Error("'null' is not an acceptable Origin; remove it from allowedOrigins");
+    }
+    if (!isCanonicalOrigin(origin)) {
+      throw new Error(`allowedOrigins entry ${JSON.stringify(origin)} is not a canonical `
+        + 'http(s) origin: expected scheme://host[:port] with no credentials, path, query, '
+        + 'fragment, trailing slash or default port');
+    }
+  }
+  return origins;
+}
+
+/**
+ * CORS headers for one request.
+ *
+ * Only an exact allowlisted origin is ever echoed: no wildcard, and a foreign or `null` origin
+ * gets no header at all rather than a reflected one. `Access-Control-Allow-Credentials` is
+ * never sent, because a grant is carried in the response body and must never be handed out on
+ * the strength of an ambient cookie. `Vary: Origin` is always present so that no cache can
+ * serve one origin's response to another.
+ */
+function corsHeaders(headers, allowedOrigins) {
+  const out = { vary: 'Origin' };
+  const origin = headers.origin;
+  if (typeof origin === 'string' && origin.length <= MAX_ORIGIN_CHARS
+      && allowedOrigins.includes(origin)) {
+    out['access-control-allow-origin'] = origin;
+  }
+  return out;
+}
+
 const FIELD_RULES = {
   app: { max: 32, pattern: /^[A-Za-z0-9_-]{1,32}$/ },
   appVersion: { max: 32, pattern: /^[A-Za-z0-9._-]{1,32}$/ },
@@ -129,30 +196,33 @@ function renderResponse(lines) {
   return `${text}\n`;
 }
 
-function sendText(res, status, lines, closeConnection = false) {
+function sendText(res, status, lines, closeConnection = false, extraHeaders = {}) {
   const body = renderResponse(lines);
   const headers = {
     'content-type': 'text/plain; charset=utf-8',
     'content-length': Buffer.byteLength(body),
     'cache-control': 'no-store',
     'x-content-type-options': 'nosniff',
+    ...extraHeaders,
   };
   if (closeConnection) headers.connection = 'close';
   res.writeHead(status, headers);
   res.end(body);
 }
 
-function sendError(res, err) {
+function sendError(res, err, extraHeaders = {}) {
   const isAdmission = err instanceof AdmissionError;
   const status = isAdmission ? err.httpStatus : 500;
   const code = isAdmission ? err.code : 'bad_request';
   const message = isAdmission ? err.message : 'The request could not be handled.';
   // A refused request never continues on the same connection: the body may be half-read.
+  // The CORS headers go on errors too: without them a browser cannot read the status or the
+  // code, and every refusal looks like "the relay is down".
   sendText(res, status, [
     ['status', 'error'],
     ['code', code],
     ['message', message.slice(0, 200)],
-  ], true);
+  ], true, extraHeaders);
 }
 
 /**
@@ -197,6 +267,8 @@ function createAdmissionHandler(ctx) {
   return async function handleRequest(req, res) {
     const address = clientAddress(req, ctx.config.trustForwardedFor);
     const url = (req.url || '').split('?')[0];
+    const cors = corsHeaders(req.headers, ctx.config.allowedOrigins);
+    const isAdmissionPath = url === '/v1/admission/host' || url === '/v1/admission/join';
 
     try {
       if (req.method === 'GET' && url === '/v1/health') {
@@ -205,11 +277,35 @@ function createAdmissionHandler(ctx) {
           ['protocol', String(RELAY_PROTOCOL_VERSION)],
           ['rooms', String(ctx.store.roomCount)],
           ['connections', String(ctx.connectionCount())],
-        ]);
+        ], false, cors);
         return;
       }
 
-      if (req.method !== 'POST' || (url !== '/v1/admission/host' && url !== '/v1/admission/join')) {
+      if (req.method === 'OPTIONS' && isAdmissionPath) {
+        // Admission is a simple CORS request (POST + urlencoded), so a browser normally never
+        // gets here. This exists so that a client which does preflight is not left guessing,
+        // and it allows nothing beyond what a simple request already allows.
+        checkOrigin(req.headers, ctx.config.allowedOrigins);
+        if (cors['access-control-allow-origin'] === undefined) {
+          throw new AdmissionError(403, 'forbidden_origin', 'That origin is not allowed.');
+        }
+        const requested = req.headers['access-control-request-method'];
+        if (requested !== undefined && requested !== 'POST') {
+          throw new AdmissionError(403, 'forbidden_origin', 'Only POST is allowed here.');
+        }
+        res.writeHead(204, {
+          ...cors,
+          'access-control-allow-methods': 'POST',
+          'access-control-allow-headers': 'content-type',
+          'access-control-max-age': String(PREFLIGHT_MAX_AGE_SECONDS),
+          'cache-control': 'no-store',
+          'content-length': 0,
+        });
+        res.end();
+        return;
+      }
+
+      if (req.method !== 'POST' || !isAdmissionPath) {
         throw new AdmissionError(404, 'bad_request', 'Unknown endpoint.');
       }
 
@@ -275,7 +371,7 @@ function createAdmissionHandler(ctx) {
         ['grantExpiresMs', String(ctx.store.grantTtlMs)],
         ['maxPeers', String(result.room.maxPeers)],
         ['url', ctx.config.publicSocketUrl],
-      ]);
+      ], false, cors);
       void role;
     } catch (err) {
       if (err instanceof AdmissionError) {
@@ -301,13 +397,16 @@ function createAdmissionHandler(ctx) {
           }
         });
       }
-      sendError(res, err);
+      sendError(res, err, cors);
     }
   };
 }
 
 module.exports = {
+  assertAllowedOrigins,
+  corsHeaders,
   createAdmissionHandler,
+  isCanonicalOrigin,
   parseForm,
   readBoundedBody,
   checkOrigin,

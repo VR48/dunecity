@@ -33,6 +33,7 @@ npm test
 | `test/abuse.test.js` | grant replay/expiry, foreign origins, wrong roles, banned packet types, cross-room routing, duplicate names, full rooms, deadlines, floods, rate limits, backpressure |
 | `test/analytics.test.js` | lifecycle DTO schema, configuration and startup failures, HMAC over exact bytes, idempotent retries, queue drops, absolute deadlines, refused redirects, TLS verification, full relay lifecycle into a captured receiver |
 | `test/phase.test.js` | admission and grant redemption once a match has started, co-op intermission, lobby leave/rejoin |
+| `test/cors.test.js` | CORS for allowlisted origins on success and error, foreign/null refusal, preflight, origin allowlist validation |
 | `test/ingress.test.js` | slow bodies, unfinished headers, the admission socket ceiling, and that game sockets are not charged to it |
 
 The TLS tests generate a throwaway certificate with the `openssl` binary and skip themselves if
@@ -66,7 +67,7 @@ npm start
 | `RELAY_HOST` / `RELAY_PORT` | Bind address. Keep it on loopback behind the reverse proxy. |
 | `RELAY_PUBLIC_URL` | The `wss://` URL clients are told to connect to. Required, and must be `wss://`, unless `--dev`. |
 | `RELAY_OBSERVED_TRANSPORT` | What the proxy actually serves; recorded in lifecycle logs as server-observed. |
-| `RELAY_ALLOWED_ORIGINS` | Comma-separated exact browser origins. Empty means "no browser origin is accepted". `null` is refused outright. |
+| `RELAY_ALLOWED_ORIGINS` | Comma-separated canonical browser origins (`scheme://host[:port]`, no path or trailing slash). Empty means "no browser origin is accepted". `null` and non-canonical entries fail startup. A listed origin is echoed back in `Access-Control-Allow-Origin` so the page can read the response; nothing else ever is. |
 | `RELAY_TRUST_FORWARDED_FOR` | Only enable when exactly one trusted proxy sits in front; the last `X-Forwarded-For` hop is then used for rate limiting. |
 | `RELAY_GAME_PROTOCOL` | Pin `NETWORK_PROTOCOL_VERSION`; `0` accepts any. |
 | `RELAY_MAX_ROOMS`, `RELAY_MAX_CONNECTIONS` | Capacity caps. |

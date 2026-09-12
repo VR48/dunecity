@@ -19,7 +19,7 @@ const { RoomStore } = require('./rooms');
 const { WindowCounter, BoundedRateTable } = require('./limits');
 const { LifecycleLog } = require('./logging');
 const { NULL_LIFECYCLE } = require('./analytics');
-const { createAdmissionHandler, clientAddress } = require('./admission');
+const { createAdmissionHandler, clientAddress, assertAllowedOrigins } = require('./admission');
 
 const DEFAULT_CONFIG = {
   host: '127.0.0.1',
@@ -83,9 +83,9 @@ class Connection {
 
 function createRelay(userConfig = {}) {
   const config = { ...DEFAULT_CONFIG, ...userConfig };
-  if (config.allowedOrigins.includes('null')) {
-    throw new Error("'null' is not an acceptable Origin; remove it from allowedOrigins");
-  }
+  // A non-canonical entry could never match a real Origin header, so it would be a silently
+  // dead allowlist rather than a working one. Refuse it at startup instead.
+  assertAllowedOrigins(config.allowedOrigins);
 
   const now = config.now || (() => Date.now());
   const log = config.log || new LifecycleLog({ enabled: config.logEnabled !== false });

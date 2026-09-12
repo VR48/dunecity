@@ -35,7 +35,12 @@ async function postForm(relay, path, fields, headers = {}) {
     body,
   });
   const text = await res.text();
-  return { status: res.status, text, fields: parseKeyValue(text) };
+  return {
+    status: res.status,
+    text,
+    headers: Object.fromEntries(res.headers),
+    fields: parseKeyValue(text),
+  };
 }
 
 function parseKeyValue(text) {

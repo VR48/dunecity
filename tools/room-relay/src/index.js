@@ -3,6 +3,7 @@
 const { createRelay } = require('./server');
 const { LifecycleLog } = require('./logging');
 const { createLifecycleSink } = require('./analytics');
+const { assertAllowedOrigins } = require('./admission');
 
 // Entry point. The relay never terminates TLS itself: in production it listens on loopback
 // behind a reverse proxy that holds the certificate, and `RELAY_OBSERVED_TRANSPORT=wss` records
@@ -10,10 +11,12 @@ const { createLifecycleSink } = require('./analytics');
 
 function parseOrigins(raw) {
   if (!raw) return [];
-  return raw
+  // Validated here as well as in createRelay, so a typo in the unit file is a clean startup
+  // failure rather than a browser that is quietly refused at the door.
+  return assertAllowedOrigins(raw
     .split(',')
     .map((s) => s.trim())
-    .filter((s) => s.length > 0 && s.length <= 256);
+    .filter((s) => s.length > 0));
 }
 
 function boolEnv(name, fallback) {
