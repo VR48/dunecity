@@ -42,6 +42,8 @@ function normalizeRoomCode(raw) {
 class Room {
   constructor(id, code, spec) {
     this.id = id;
+    // Independent of the invitation credential; only this ID belongs in telemetry.
+    this.logId = crypto.randomBytes(16).toString("base64url");
     this.code = code;
     this.maxPeers = spec.maxPeers;
     this.mode = spec.mode;

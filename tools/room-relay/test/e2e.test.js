@@ -329,7 +329,8 @@ test('the lifecycle log records the room, both participants and their runtimes',
 
   const created = relay.log.events('room_created');
   assert.equal(created.length, 1);
-  assert.equal(created[0].room, host.room);
+  assert.match(created[0].room, /^[A-Za-z0-9_-]{22}$/);
+  assert.notEqual(created[0].room, host.room);
   assert.equal(created[0].hostRuntime, 'native');
   assert.equal(created[0].transport, relay.config.observedTransport);
 
@@ -338,7 +339,7 @@ test('the lifecycle log records the room, both participants and their runtimes',
   assert.deepEqual(joined.map((e) => e.role).sort(), ['client', 'host']);
   assert.deepEqual(joined.map((e) => e.runtime).sort(), ['browser', 'native']);
   for (const event of joined) {
-    assert.equal(event.room, host.room);
+    assert.equal(event.room, created[0].room);
     assert.equal(event.appVersion, '1.0.655');
     assert.ok(event.addressTag.length > 0);
   }
@@ -354,6 +355,7 @@ test('the lifecycle log records the room, both participants and their runtimes',
 
   // Nothing in the log is a credential or game content.
   const serialized = JSON.stringify(relay.log.events());
+  assert.ok(!serialized.includes(host.room));
   assert.ok(!serialized.includes(host.admission.fields.grant));
   assert.ok(!serialized.includes(guest.admission.fields.grant));
 

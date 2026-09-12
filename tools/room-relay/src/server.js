@@ -132,7 +132,7 @@ function createRelay(userConfig = {}) {
     conn.softErrors += 1;
     sendFrame(conn, protocol.encodeError(code, message));
     log.emit('message_refused', {
-      room: conn.room ? conn.room.code : undefined,
+      room: conn.room ? conn.room.logId : undefined,
       peerId: conn.peerId,
       code,
       detail: message,
@@ -201,7 +201,7 @@ function createRelay(userConfig = {}) {
     if (room.closed) return;
     const members = [...room.peers.values()];
     store.closeRoom(room, message);
-    log.emit('room_closed', { room: room.code, code, reason: message, peers: members.length });
+    log.emit('room_closed', { room: room.logId, code, reasonCode: reason, peers: members.length });
 
     for (const member of members) {
       room.peers.delete(member.peerId);
@@ -214,12 +214,12 @@ function createRelay(userConfig = {}) {
         member.ws.terminate();
       }
       log.emit('participant_left', {
-        room: room.code,
+        room: room.logId,
         peerId: member.peerId,
         role: member.isHost ? 'host' : 'client',
         runtime: member.runtime,
         appVersion: member.appVersion,
-        reason: message,
+        reasonCode: reason,
         transport: config.observedTransport,
         runtimeMs: member.joinedAt ? now() - member.joinedAt : 0,
       });
@@ -241,12 +241,12 @@ function createRelay(userConfig = {}) {
     if (room.formerPeerIds.size < 64) room.formerPeerIds.add(conn.peerId);
 
     log.emit('participant_left', {
-      room: room.code,
+      room: room.logId,
       peerId: conn.peerId,
       role: conn.isHost ? 'host' : 'client',
       runtime: conn.runtime,
       appVersion: conn.appVersion,
-      reason: detail === undefined ? 'closed' : String(detail),
+      reasonCode: reason,
       transport: config.observedTransport,
       runtimeMs: conn.joinedAt ? now() - conn.joinedAt : 0,
     });
@@ -317,7 +317,7 @@ function createRelay(userConfig = {}) {
     announceJoin(room, conn);
 
     log.emit('participant_joined', {
-      room: room.code,
+      room: room.logId,
       peerId: conn.peerId,
       role: conn.isHost ? 'host' : 'client',
       runtime: conn.runtime,
@@ -391,7 +391,7 @@ function createRelay(userConfig = {}) {
     for (const other of room.peers.values()) {
       if (other !== conn) deliver(other, frame);
     }
-    log.emit('room_phase', { room: room.code, phase: room.phase, byPeerId: conn.peerId });
+    log.emit('room_phase', { room: room.logId, phase: room.phase, byPeerId: conn.peerId });
   }
 
   function handleDiagnostic(conn, msg) {

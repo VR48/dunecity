@@ -236,7 +236,7 @@ function createAdmissionHandler(ctx) {
         result = ctx.store.createRoom({ maxPeers, mode, gameProtocol, contentHash, appVersion });
         role = ROLE.HOST;
         ctx.log.emit('room_created', {
-          room: result.room.code,
+          room: result.room.logId,
           mode,
           maxPeers,
           gameProtocol,

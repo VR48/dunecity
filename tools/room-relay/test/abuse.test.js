@@ -391,7 +391,7 @@ test('a message flood is disconnected rather than amplified', async (t) => {
   // deterministic assertion.
   const left = relay.log.events('participant_left');
   assert.equal(left.length, 1);
-  assert.equal(left[0].reason, 'Too many messages.');
+  assert.equal(left[0].reasonCode, LEAVE_REASON.RATE_LIMITED);
   assert.ok(host.client.closeInfo.code === CLOSE.RATE_LIMITED || host.client.closeInfo.code === 1006);
 });
 
@@ -413,7 +413,7 @@ test('repeated refused messages eventually close the connection', async (t) => {
   const refusals = relay.log.events('message_refused');
   assert.ok(refusals.length >= LIMITS.MAX_SOFT_ERRORS);
   const left = relay.log.events('participant_left');
-  assert.equal(left[0].reason, 'Too many refused messages.');
+  assert.equal(left[0].reasonCode, LEAVE_REASON.PROTOCOL_ERROR);
   assert.ok(host.client.closeInfo.code === CLOSE.PROTOCOL_ERROR || host.client.closeInfo.code === 1006);
 });
 
@@ -453,7 +453,7 @@ test('a slow consumer is disconnected instead of having its commands dropped', a
   const left = relay.log.events('participant_left');
   assert.equal(left.length, 1);
   assert.equal(left[0].peerId, guest.welcome.peerId);
-  assert.match(left[0].reason, /fell too far behind/);
+  assert.equal(left[0].reasonCode, LEAVE_REASON.SLOW_CONSUMER);
   assert.equal(host.client.closeInfo, null, 'the sender must stay connected');
 
   host.client.close();

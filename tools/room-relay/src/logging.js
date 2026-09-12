@@ -11,18 +11,19 @@ const crypto = require('node:crypto');
 // abuse from one source is still correlatable within a run without retaining the address.
 
 const MAX_STRING = 64;
-const ALLOWED_EVENTS = new Set([
-  'relay_started',
-  'relay_stopped',
-  'room_created',
-  'room_phase',
-  'room_closed',
-  'participant_joined',
-  'participant_left',
-  'admission_denied',
-  'connection_denied',
-  'message_refused',
-]);
+const FIELDS = {
+  relay_started: ['port', 'protocol', 'transport'],
+  relay_stopped: [],
+  room_created: ['room', 'mode', 'maxPeers', 'gameProtocol', 'appVersion', 'hostRuntime', 'transport', 'addressTag'],
+  room_phase: ['room', 'phase', 'byPeerId'],
+  room_closed: ['room', 'code', 'peers', 'reasonCode'],
+  participant_joined: ['room', 'peerId', 'role', 'runtime', 'appVersion', 'transport', 'addressTag'],
+  participant_left: ['room', 'peerId', 'role', 'runtime', 'appVersion', 'transport', 'runtimeMs', 'reasonCode'],
+  admission_denied: ['endpoint', 'code', 'addressTag'],
+  connection_denied: ['code', 'addressTag'],
+  message_refused: ['room', 'peerId', 'code'],
+};
+const ALLOWED_EVENTS = new Set(Object.keys(FIELDS));
 
 function clampToken(value, maxLength = MAX_STRING) {
   if (typeof value !== 'string') return '';
@@ -41,7 +42,14 @@ class LifecycleLog {
    * @param {boolean} [options.enabled]
    */
   constructor(options = {}) {
-    this.sink = options.sink || ((event) => process.stdout.write(`${JSON.stringify(event)}\n`));
+    this.sink = options.sink || ((event) => {
+      // Drop diagnostics while stdout is congested; never queue more data behind it.
+      if (!process.stdout.writableNeedDrain) process.stdout.write(`${JSON.stringify(event)}\n`);
+    });
+    this.now = options.now || Date.now;
+    this.windowStart = this.now();
+    this.windowCount = 0;
+    this.dropped = 0;
     this.enabled = options.enabled !== false;
     this.addressSalt = crypto.randomBytes(16);
     this.recent = [];
@@ -62,9 +70,15 @@ class LifecycleLog {
       throw new Error(`lifecycle event '${event}' is not in the schema`);
     }
 
-    const record = { ts: new Date().toISOString(), event };
-    for (const [key, value] of Object.entries(fields)) {
+    const now = this.now();
+    if (now - this.windowStart >= 1000) { this.windowStart = now; this.windowCount = 0; }
+    if (this.windowCount++ >= 100) { this.dropped += 1; return; }
+    const record = { ts: new Date(now).toISOString(), event };
+    for (const key of FIELDS[event]) {
+      const value = fields[key];
       if (value === undefined || value === null) continue;
+      if (key === 'reasonCode' && ![0, 1, 2, 3, 4, 5, 'host_left', 'shutdown'].includes(value)) continue;
+      if (key === 'room' && (typeof value !== 'string' || !/^[A-Za-z0-9_-]{22}$/.test(value))) continue;
       if (typeof value === 'number') {
         record[key] = Number.isFinite(value) ? value : 0;
       } else if (typeof value === 'boolean') {
