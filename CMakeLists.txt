@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.15)
 
 # Project name and version
-project(DuneCity VERSION 1.0.531 LANGUAGES C CXX)
+project(DuneCity VERSION 1.0.655 LANGUAGES C CXX)
 
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
@@ -54,9 +54,8 @@ option(DUNECITY_BUILD_TESTS "Build test suite" OFF)
 option(DUNECITY_ENABLE_PCH "Enable precompiled headers" ON)
 option(DUNECITY_STATIC_RUNTIME "Use static runtime libraries" OFF)
 
-# Find required packages
-# When using vcpkg, these will be automatically found via CMAKE_TOOLCHAIN_FILE.
-# Emscripten uses SDL2/SDL_mixer/SDL2_ttf ports via link flags (see src/CMakeLists.txt).
+# Native dependencies come from vcpkg. Emscripten supplies browser ports for
+# SDL and HTTP is handled through the browser fetch layer.
 if(NOT EMSCRIPTEN)
     find_package(SDL2 CONFIG REQUIRED)
     find_package(SDL2_mixer CONFIG REQUIRED)
@@ -89,7 +88,7 @@ if(WIN32)
         endif()
     endif()
 elseif(NOT EMSCRIPTEN)
-    # Unix-like native builds only; browser target is single-threaded + ASYNCIFY.
+    # Unix-like systems
     find_package(Threads REQUIRED)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
 endif()
@@ -122,8 +121,7 @@ if(DUNECITY_BUILD_TESTS)
 endif()
 
 # Create a custom target for copying data files (non-macOS platforms)
-# macOS bundles handle data copying in src/CMakeLists.txt.
-# Emscripten preloads data via --preload-file in the web build script.
+# macOS bundles handle data copying in src/CMakeLists.txt
 if(NOT APPLE AND NOT EMSCRIPTEN)
     add_custom_target(copy_data ALL
         COMMAND ${CMAKE_COMMAND} -E copy_directory
@@ -136,6 +134,10 @@ if(NOT APPLE AND NOT EMSCRIPTEN)
     add_dependencies(copy_data dunecity)
 endif()
 
+
+# Browser builds are copied directly into the website by package-web.ps1 and
+# do not use the native install or CPack rules below.
+if(NOT EMSCRIPTEN)
 
 # Platform-specific install configuration
 if(WIN32)
@@ -373,3 +375,5 @@ else()
 endif()
 
 include(CPack) 
+
+endif()
