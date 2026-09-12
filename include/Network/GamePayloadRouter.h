@@ -123,6 +123,15 @@ struct GamePayloadContext {
         caller decides this because "how many peers are there" is transport bookkeeping.
     */
     bool   coopPartnerIsSolePeer = false;
+    /**
+        Whether a client answers a received config hash with its own.
+
+        True on the mesh, where the exchange is a request/response pair. False on the relay,
+        where the host may declare the match started in the same breath as it sends its hashes:
+        a reply sent a moment later would arrive after the room had left the lobby and be
+        refused. The relay client sends its hashes once when it enters the lobby instead.
+    */
+    bool   replyToConfigHash = true;
 };
 
 namespace GamePayloadRouter {

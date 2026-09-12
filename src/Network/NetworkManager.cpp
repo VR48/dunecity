@@ -1219,6 +1219,9 @@ void NetworkManager::handleRelayGamePayload(RoomRelayClient::Peer& peer,
         // Relay v1 plays bundled, matching content: the map text is used from memory and never
         // becomes a file on disk.
         payloadContext.allowMapWrite  = false;
+        // On the relay a client sends its hashes once when it enters the lobby; answering the
+        // host's would race the host's own move to the match phase and be refused.
+        payloadContext.replyToConfigHash = false;
         payloadContext.coopPartnerIsSolePeer =
             (pRelayClient->peers().size() == 1) && peer.isHost();
 

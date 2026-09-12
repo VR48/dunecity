@@ -157,7 +157,7 @@ void handleConfigHash(InputStream& stream, GamePayloadPeer& peer,
         SDL_Log("Config verification passed for '%s'", peer.name().c_str());
     }
 
-    if(!context.isHost) {
+    if(!context.isHost && context.replyToConfigHash) {
         // Always answer, even on a mismatch: the host validates independently.
         peer.replyConfigHash();
     }

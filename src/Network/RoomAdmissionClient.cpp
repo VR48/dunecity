@@ -138,14 +138,20 @@ public:
 
     ~Impl() { abandon(); }
 
+    /**
+        Lets go of a request without closing it.
+
+        The fetch owns itself until one of its callbacks runs, and that callback is the only
+        thing that may close it. Closing it here as well would be a double free the moment a
+        request completes and is then cancelled, which is exactly what happens on every
+        successful admission. Marking the shared state cancelled is enough: the callback then
+        writes nothing and simply cleans up.
+    */
     void abandon() {
         if(state) {
             state->cancelled = true;
         }
-        if(fetch != nullptr) {
-            emscripten_fetch_close(fetch);
-            fetch = nullptr;
-        }
+        fetch = nullptr;
     }
 
     static void onSucceeded(emscripten_fetch_t* fetch) {

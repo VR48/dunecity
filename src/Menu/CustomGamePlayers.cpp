@@ -600,6 +600,14 @@ CustomGamePlayers::CustomGamePlayers(const GameInitSettings& newGameInitSettings
                 addInfoMessage(_("Give that code to a friend so they can join."));
             }
         }
+
+        if(pNetworkManager->isRelaySession() && !bServer) {
+            // Send our content fingerprint now, while the room is certainly still a lobby. On
+            // the relay the host may declare the match started in the same breath as it sends
+            // its own hashes, so answering that message later would be too late.
+            pNetworkManager->sendConfigHash(getQuantBotConfig().getConfigHash(),
+                                            getObjectDataHash(), VERSIONSTRING);
+        }
     }
 }
 
