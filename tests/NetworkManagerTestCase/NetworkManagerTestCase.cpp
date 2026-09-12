@@ -20,16 +20,26 @@
 #include <chrono>
 #include <fstream>
 
-// Packet type constants (copied from NetworkManager.h for testing)
-// These are validated to ensure they don't change accidentally
-#define TEST_NETWORKPACKET_SENDGAMEINFO         1
-#define TEST_NETWORKPACKET_CLIENTSTATS          13
-#define TEST_NETWORKPACKET_KEEPALIVE            19
-#define TEST_NETWORK_PROTOCOL_VERSION           5
+// The wire values every shipped client agrees on. These are written out independently of
+// NetworkManager.h and then compared against the production constants, so a renumbering shows
+// up here instead of silently breaking compatibility with released builds.
+// The previous version of this file carried 1 for SENDGAMEINFO - the wrong value, and never
+// compared - so it protected nothing.
+static constexpr int kWireSendGameInfo  = 4;
+static constexpr int kWireClientStats   = 13;
+static constexpr int kWireKeepAlive     = 19;
+static constexpr int kWireCoopMission   = 20;
+static constexpr int kWireProtocolVersion = 5;
+
+TEST_CASE("NetworkManager: wire constants match the shipped protocol", "[network][protocol]") {
+    REQUIRE(NETWORKPACKET_SENDGAMEINFO == kWireSendGameInfo);
+    REQUIRE(NETWORKPACKET_CLIENTSTATS == kWireClientStats);
+    REQUIRE(NETWORKPACKET_KEEPALIVE == kWireKeepAlive);
+    REQUIRE(NETWORKPACKET_COOP_MISSION == kWireCoopMission);
+}
 
 TEST_CASE("NetworkManager: co-op mission synchronization requires protocol 5", "[network][protocol]") {
-    REQUIRE(NETWORK_PROTOCOL_VERSION == 5);
-    REQUIRE(TEST_NETWORK_PROTOCOL_VERSION != 3);
+    REQUIRE(NETWORK_PROTOCOL_VERSION == kWireProtocolVersion);
     REQUIRE(NETWORKDISCONNECT_PROTOCOL_MISMATCH == 5);
 }
 
@@ -254,7 +264,7 @@ TEST_CASE_METHOD(ENetFixture, "NetworkManager: Packet stream write/read string",
 TEST_CASE_METHOD(ENetFixture, "NetworkManager: Packet stream complex packet", "[network][packet]") {
     // Write a complex packet similar to NETWORKPACKET_CLIENTSTATS
     ENetPacketOStream ostream(ENET_PACKET_FLAG_RELIABLE);
-    ostream.writeUint32(TEST_NETWORKPACKET_CLIENTSTATS);
+    ostream.writeUint32(NETWORKPACKET_CLIENTSTATS);
     ostream.writeUint32(750);
     ostream.writeFloat(60.0f);
     ostream.writeFloat(0.5f);
@@ -265,7 +275,7 @@ TEST_CASE_METHOD(ENetFixture, "NetworkManager: Packet stream complex packet", "[
     REQUIRE(packet != nullptr);
     
     ENetPacketIStream istream(packet);
-    REQUIRE(istream.readUint32() == TEST_NETWORKPACKET_CLIENTSTATS);
+    REQUIRE(istream.readUint32() == NETWORKPACKET_CLIENTSTATS);
     REQUIRE(istream.readUint32() == 750);
     REQUIRE(istream.readFloat() == Catch::Approx(60.0f));
     REQUIRE(istream.readFloat() == Catch::Approx(0.5f));

@@ -13,6 +13,7 @@
 
 #include <catch2/catch_all.hpp>
 
+#include <CommandAuthorization.h>
 #include <CommandValidation.h>
 #include <DataTypes.h>
 #include <Network/ChangeEventList.h>
@@ -1008,5 +1009,209 @@ TEST_CASE("Mod unpack: payload paths stay inside the mod directory",
     for(const char* name : dangerous) {
         INFO("path " << name);
         REQUIRE_FALSE(ModTransferValidation::normalizeRelativeFilePath(name, normalized));
+    }
+}
+
+// =============================================================================
+// Command authorization: the decision Command::executeCommand() makes per object
+// =============================================================================
+
+namespace {
+
+using CommandAuthorization::ActorContext;
+using CommandAuthorization::Decision;
+
+/// One player in the fixture, as Command::executeCommand() sees it.
+struct FixturePlayer {
+    bool exists = true;
+    bool hasHouse = true;
+    int  houseID = 0;
+};
+
+/// One object in the fixture, as the command's own dynamic_cast sees it.
+struct FixtureObject {
+    bool exists = true;
+    bool typeMatches = true;
+    bool hasOwner = true;
+    int  ownerHouseID = 0;
+};
+
+/// Mirrors makeActorContext() in Command.cpp: the facts come from the simulation, the verdict
+/// comes from the production function under test.
+Decision decide(const FixturePlayer& issuer, const FixtureObject& object) {
+    ActorContext context;
+    context.issuerExists = issuer.exists;
+    context.issuerHasHouse = issuer.exists && issuer.hasHouse;
+    context.issuerHouseID = issuer.houseID;
+    context.objectExists = object.exists;
+    context.objectTypeMatches = object.exists && object.typeMatches;
+    context.objectHasOwner = object.exists && object.hasOwner;
+    context.objectOwnerHouseID = object.ownerHouseID;
+    return CommandAuthorization::authorizeActor(context);
+}
+
+FixturePlayer playerOf(int houseID) {
+    FixturePlayer player;
+    player.houseID = houseID;
+    return player;
+}
+
+FixtureObject objectOf(int ownerHouseID) {
+    FixtureObject object;
+    object.ownerHouseID = ownerHouseID;
+    return object;
+}
+
+} // namespace
+
+TEST_CASE("Command authorization: a player may only act on objects of its own house",
+          "[command][security][authorization]") {
+    const FixturePlayer atreides = playerOf(HOUSE_ATREIDES);
+    const FixturePlayer harkonnen = playerOf(HOUSE_HARKONNEN);
+
+    SECTION("own object") {
+        REQUIRE(decide(atreides, objectOf(HOUSE_ATREIDES)) == Decision::Allow);
+    }
+
+    SECTION("co-op: a second player in the same house keeps control") {
+        // Two humans share one house: different player ids, same house.
+        const FixturePlayer coopPartner = playerOf(HOUSE_ATREIDES);
+        const FixtureObject sharedTank = objectOf(HOUSE_ATREIDES);
+        REQUIRE(decide(atreides, sharedTank) == Decision::Allow);
+        REQUIRE(decide(coopPartner, sharedTank) == Decision::Allow);
+    }
+
+    SECTION("an enemy object is refused") {
+        const FixtureObject enemyTank = objectOf(HOUSE_HARKONNEN);
+        REQUIRE(decide(atreides, enemyTank) == Decision::NotOwner);
+        REQUIRE(decide(harkonnen, enemyTank) == Decision::Allow);
+    }
+
+    SECTION("a destroyed or unknown object id is a no-op, not an error") {
+        FixtureObject destroyed = objectOf(HOUSE_ATREIDES);
+        destroyed.exists = false;
+        REQUIRE(decide(atreides, destroyed) == Decision::MissingObject);
+    }
+
+    SECTION("an object of the wrong type is refused") {
+        // e.g. CMD_MCV_DEPLOY naming a windtrap: the object exists, the cast fails.
+        FixtureObject wrongType = objectOf(HOUSE_ATREIDES);
+        wrongType.typeMatches = false;
+        REQUIRE(decide(atreides, wrongType) == Decision::WrongObjectType);
+    }
+
+    SECTION("an ownerless object is refused") {
+        FixtureObject ownerless = objectOf(-1);
+        ownerless.hasOwner = false;
+        REQUIRE(decide(atreides, ownerless) == Decision::NotOwner);
+    }
+
+    SECTION("a command from a player that is not in the game is refused") {
+        FixturePlayer ghost = playerOf(HOUSE_ATREIDES);
+        ghost.exists = false;
+        REQUIRE(decide(ghost, objectOf(HOUSE_ATREIDES)) == Decision::NoIssuer);
+
+        FixturePlayer houseless = playerOf(-1);
+        houseless.hasHouse = false;
+        REQUIRE(decide(houseless, objectOf(HOUSE_ATREIDES)) == Decision::NoIssuer);
+    }
+
+    SECTION("only the owning house may act, whichever house that is") {
+        // The issuer's house comes from the simulation, never from the packet, so a forged
+        // player id only ever selects another player - it cannot select another house's units.
+        const FixtureObject harkonnenTank = objectOf(HOUSE_HARKONNEN);
+        for(int houseID = 0; houseID < NUM_HOUSES; houseID++) {
+            const Decision decision = decide(playerOf(houseID), harkonnenTank);
+            INFO("issuer house " << houseID);
+            REQUIRE(decision == (houseID == HOUSE_HARKONNEN ? Decision::Allow : Decision::NotOwner));
+        }
+    }
+}
+
+TEST_CASE("Command authorization: every object action is covered, control commands are not",
+          "[command][security][authorization]") {
+    // Commands whose parameter 0 names an object Command::executeCommand() acts on.
+    const CMDTYPE objectActions[] = {
+        CMD_PLACE_STRUCTURE, CMD_UNIT_MOVE2POS, CMD_UNIT_MOVE2OBJECT, CMD_UNIT_ATTACKPOS,
+        CMD_UNIT_ATTACKOBJECT, CMD_UNIT_HEAL, CMD_INFANTRY_CAPTURE, CMD_UNIT_REQUESTCARRYALLDROP,
+        CMD_UNIT_SENDTOREPAIR, CMD_UNIT_SETMODE, CMD_DEVASTATOR_STARTDEVASTATE, CMD_MCV_DEPLOY,
+        CMD_HARVESTER_RETURN, CMD_STRUCTURE_SETDEPLOYPOSITION, CMD_STRUCTURE_REPAIR,
+        CMD_BUILDER_UPGRADE, CMD_BUILDER_PRODUCEITEM, CMD_BUILDER_CANCELITEM,
+        CMD_BUILDER_SETONHOLD, CMD_PALACE_SPECIALWEAPON, CMD_PALACE_DEATHHAND,
+        CMD_STARPORT_PLACEORDER, CMD_STARPORT_CANCELORDER, CMD_TURRET_ATTACKOBJECT,
+        CMD_TECHCENTER_SPAWN, CMD_SCOUTPOST_UPGRADE, CMD_SCOUTPOST_CHEMIPOST_UPGRADE,
+        CMD_POLICE_REINFORCEMENTS, CMD_ZONE_DEMOLISH, CMD_STRUCTURE_DEMOLISH
+    };
+    for(const CMDTYPE commandID : objectActions) {
+        INFO("command " << static_cast<int>(commandID));
+        REQUIRE(CommandAuthorization::actsOnOwnedObject(commandID));
+    }
+
+    // Commands that carry no acting object: they are authorized by issuer identity alone.
+    const CMDTYPE nonObjectCommands[] = {
+        CMD_PLAYER_PAUSE, CMD_PLAYER_RESUME, CMD_TEST_SYNC, CMD_HOUSE_AUTO_REPAIR,
+        CMD_CITY_PLACE_ZONE, CMD_CITY_SET_TAX_RATE, CMD_CITY_SET_BUDGET, CMD_CITY_TOOL
+    };
+    for(const CMDTYPE commandID : nonObjectCommands) {
+        INFO("command " << static_cast<int>(commandID));
+        REQUIRE_FALSE(CommandAuthorization::actsOnOwnedObject(commandID));
+    }
+
+    // Every command is classified one way or the other, so one added later cannot silently
+    // fall outside the rule.
+    for(Uint32 commandID = static_cast<Uint32>(CMD_NONE) + 1;
+        commandID < static_cast<Uint32>(CMD_MAX); commandID++) {
+        const CMDTYPE typed = static_cast<CMDTYPE>(commandID);
+        bool listedAsControl = false;
+        for(const CMDTYPE control : nonObjectCommands) {
+            if(control == typed) {
+                listedAsControl = true;
+            }
+        }
+        INFO("command " << commandID);
+        REQUIRE((CommandAuthorization::actsOnOwnedObject(typed) || listedAsControl));
+    }
+}
+
+TEST_CASE("Command authorization: enum and boolean parameters are validated exactly",
+          "[command][security][authorization]") {
+    SECTION("attack modes") {
+        REQUIRE(CommandAuthorization::isValidAttackMode(GUARD));
+        REQUIRE(CommandAuthorization::isValidAttackMode(HUNT));
+        REQUIRE(CommandAuthorization::isValidAttackMode(RETREAT));
+        REQUIRE_FALSE(CommandAuthorization::isValidAttackMode(ATTACKMODE_MAX));
+        REQUIRE_FALSE(CommandAuthorization::isValidAttackMode(0xFFFFFFFFu));
+    }
+
+    SECTION("booleans") {
+        REQUIRE(CommandAuthorization::isValidBooleanParameter(0));
+        REQUIRE(CommandAuthorization::isValidBooleanParameter(1));
+        REQUIRE_FALSE(CommandAuthorization::isValidBooleanParameter(2));
+        REQUIRE_FALSE(CommandAuthorization::isValidBooleanParameter(0xFFFFFFFFu));
+    }
+
+    SECTION("city zone types and tools") {
+        REQUIRE(CommandAuthorization::isValidCityZoneType(0));
+        REQUIRE(CommandAuthorization::isValidCityZoneType(3));
+        REQUIRE_FALSE(CommandAuthorization::isValidCityZoneType(4));
+        REQUIRE_FALSE(CommandAuthorization::isValidCityZoneType(0xFFFFFFFFu));
+
+        REQUIRE(CommandAuthorization::isValidCityToolType(0));
+        REQUIRE(CommandAuthorization::isValidCityToolType(2));
+        REQUIRE_FALSE(CommandAuthorization::isValidCityToolType(3));
+        REQUIRE_FALSE(CommandAuthorization::isValidCityToolType(0xFFFFFFFFu));
+    }
+
+    SECTION("city tax and funding stay inside the ranges the UI can produce") {
+        REQUIRE(CommandAuthorization::isValidCityTaxRate(0));
+        REQUIRE(CommandAuthorization::isValidCityTaxRate(CommandAuthorization::kMaxCityTaxRate));
+        REQUIRE_FALSE(CommandAuthorization::isValidCityTaxRate(
+            CommandAuthorization::kMaxCityTaxRate + 1));
+        REQUIRE_FALSE(CommandAuthorization::isValidCityTaxRate(0xFFFFFFFFu));
+
+        REQUIRE(CommandAuthorization::isValidFundingPercent(0));
+        REQUIRE(CommandAuthorization::isValidFundingPercent(100));
+        REQUIRE_FALSE(CommandAuthorization::isValidFundingPercent(101));
+        REQUIRE_FALSE(CommandAuthorization::isValidFundingPercent(0xFFFFFFFFu));
     }
 }

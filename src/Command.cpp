@@ -17,6 +17,7 @@
  */
 
 #include <Command.h>
+#include <CommandAuthorization.h>
 #include <CommandValidation.h>
 
 #include <globals.h>
@@ -126,6 +127,80 @@ void Command::save(OutputStream& stream) const {
     stream.flush();
 }
 
+namespace {
+
+/**
+    Builds the authorization facts for a command that acts on an object.
+
+    The decision must be identical on every peer, so it only looks at simulation state: the
+    issuing player, the object, and the object's owner. pObject is the result of the command's
+    own dynamic_cast, so a null pointer here means either "no such object" or "wrong type";
+    the raw lookup separates the two for the log.
+
+    \param  playerID    the player the command claims to come from
+    \param  objectID    parameter 0 of the command
+    \param  pObject     the object after the command's own cast, or nullptr
+    \return the gathered facts
+*/
+CommandAuthorization::ActorContext makeActorContext(Uint8 playerID, Uint32 objectID,
+                                                    const ObjectBase* pObject) {
+    CommandAuthorization::ActorContext context;
+
+    const Player* pIssuer = currentGame->getPlayerByID(playerID);
+    context.issuerExists = (pIssuer != nullptr);
+    if(pIssuer != nullptr && pIssuer->getHouse() != nullptr) {
+        context.issuerHasHouse = true;
+        context.issuerHouseID = pIssuer->getHouse()->getHouseID();
+    }
+
+    const ObjectBase* pRawObject = currentGame->getObjectManager().getObject(objectID);
+    context.objectExists = (pRawObject != nullptr);
+    context.objectTypeMatches = (pObject != nullptr);
+
+    if(pObject != nullptr && pObject->getOwner() != nullptr) {
+        context.objectHasOwner = true;
+        context.objectOwnerHouseID = pObject->getOwner()->getHouseID();
+    }
+
+    return context;
+}
+
+/**
+    Authorizes one object action and logs refusals at a bounded rate.
+    \param  playerID    the player the command claims to come from
+    \param  commandID   the command being executed
+    \param  objectID    parameter 0 of the command
+    \param  pObject     the object after the command's own cast, or nullptr
+    \return true if the command may run
+*/
+bool mayActOnObject(Uint8 playerID, CMDTYPE commandID, Uint32 objectID, const ObjectBase* pObject) {
+    const CommandAuthorization::ActorContext context = makeActorContext(playerID, objectID, pObject);
+    const CommandAuthorization::Decision decision = CommandAuthorization::authorizeActor(context);
+
+    if(decision == CommandAuthorization::Decision::Allow) {
+        return true;
+    }
+
+    // Missing or already destroyed objects are ordinary in a lockstep game (the order was
+    // given a few cycles ago); only an ownership or type violation is worth reporting, and
+    // even then at a bounded rate so a hostile peer cannot spin the log.
+    if(decision == CommandAuthorization::Decision::NotOwner
+       || decision == CommandAuthorization::Decision::WrongObjectType) {
+        static Uint32 lastRefusalCycle = 0;
+        const Uint32 cycle = currentGame->getGameCycleCount();
+        if(cycle != lastRefusalCycle) {
+            lastRefusalCycle = cycle;
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "Command: player %u may not act on object %u with command %d",
+                        static_cast<unsigned int>(playerID), objectID, static_cast<int>(commandID));
+        }
+    }
+
+    return false;
+}
+
+} // namespace
+
 void Command::executeCommand() const {
     // This path is replayed on every peer. AI do* helpers bypass it, so these
     // leases distinguish actual player control from old forced AI movement.
@@ -148,7 +223,7 @@ void Command::executeCommand() const {
                 THROW(std::invalid_argument, "Command::executeCommand(): CMD_PLACE_STRUCTURE needs 3 Parameters!");
             }
             ConstructionYard* pConstYard = dynamic_cast<ConstructionYard*>(currentGame->getObjectManager().getObject(parameter[0]));
-            if(pConstYard == nullptr) {
+            if(!mayActOnObject(playerID, commandID, parameter[0], pConstYard)) {
                 return;
             }
             pConstYard->doPlaceStructure((int) parameter[1], (int) parameter[2]);
@@ -160,7 +235,10 @@ void Command::executeCommand() const {
                 THROW(std::invalid_argument, "Command::executeCommand(): CMD_UNIT_MOVE2POS needs 4 Parameters!");
             }
             UnitBase* unit = dynamic_cast<UnitBase*>(currentGame->getObjectManager().getObject(parameter[0]));
-            if(unit == nullptr) {
+            if(!mayActOnObject(playerID, commandID, parameter[0], unit)) {
+                return;
+            }
+            if(!CommandAuthorization::isValidBooleanParameter(parameter[3])) {
                 return;
             }
             unit->doMove2Pos((int) parameter[1], (int) parameter[2], (bool) parameter[3]);
@@ -171,7 +249,7 @@ void Command::executeCommand() const {
                 THROW(std::invalid_argument, "Command::executeCommand(): CMD_UNIT_MOVE2OBJECT needs 2 Parameters!");
             }
             UnitBase* unit = dynamic_cast<UnitBase*>(currentGame->getObjectManager().getObject(parameter[0]));
-            if(unit == nullptr) {
+            if(!mayActOnObject(playerID, commandID, parameter[0], unit)) {
                 return;
             }
             unit->doMove2Object((int) parameter[1]);
@@ -182,7 +260,10 @@ void Command::executeCommand() const {
                 THROW(std::invalid_argument, "Command::executeCommand(): CMD_UNIT_ATTACKPOS needs 4 Parameters!");
             }
             UnitBase* unit = dynamic_cast<UnitBase*>(currentGame->getObjectManager().getObject(parameter[0]));
-            if(unit == nullptr) {
+            if(!mayActOnObject(playerID, commandID, parameter[0], unit)) {
+                return;
+            }
+            if(!CommandAuthorization::isValidBooleanParameter(parameter[3])) {
                 return;
             }
             unit->doAttackPos((int) parameter[1], (int) parameter[2], (bool) parameter[3]);
@@ -193,7 +274,7 @@ void Command::executeCommand() const {
                 THROW(std::invalid_argument, "Command::executeCommand(): CMD_UNIT_ATTACKOBJECT needs 2 Parameters!");
             }
             UnitBase* pUnit = dynamic_cast<UnitBase*>(currentGame->getObjectManager().getObject(parameter[0]));
-            if(pUnit == nullptr) {
+            if(!mayActOnObject(playerID, commandID, parameter[0], pUnit)) {
                 return;
             }
             pUnit->doAttackObject((int) parameter[1], true);
@@ -204,8 +285,11 @@ void Command::executeCommand() const {
                 THROW(std::invalid_argument, "Command::executeCommand(): CMD_UNIT_HEAL needs 2 Parameters!");
             }
             UnitBase* pUnit = dynamic_cast<UnitBase*>(currentGame->getObjectManager().getObject(parameter[0]));
+            if(!mayActOnObject(playerID, commandID, parameter[0], pUnit)) {
+                return;
+            }
             ObjectBase* pTarget = currentGame->getObjectManager().getObject(parameter[1]);
-            if(pUnit == nullptr || pTarget == nullptr || !pUnit->canHeal() || !pTarget->isAUnit()
+            if(pTarget == nullptr || !pUnit->canHeal() || !pTarget->isAUnit()
                     || pTarget->getOwner()->getTeamID() != pUnit->getOwner()->getTeamID()
                     || pTarget->getHealth() >= pTarget->getMaxHealth()) {
                 return;
@@ -217,7 +301,7 @@ case CMD_INFANTRY_CAPTURE: {
                 THROW(std::invalid_argument, "Command::executeCommand(): CMD_INFANTRY_CAPTURE needs 2 Parameters!");
             }
             InfantryBase* pInfantry = dynamic_cast<InfantryBase*>(currentGame->getObjectManager().getObject(parameter[0]));
-            if(pInfantry == nullptr) {
+            if(!mayActOnObject(playerID, commandID, parameter[0], pInfantry)) {
                 return;
             }
             pInfantry->doCaptureStructure((int) parameter[1]);
@@ -228,7 +312,7 @@ case CMD_INFANTRY_CAPTURE: {
                 THROW(std::invalid_argument, "Command::executeCommand(): CMD_UNIT_REQUESTCARRYALLDROP needs 3 Parameters!");
             }
             GroundUnit* pGroundUnit = dynamic_cast<GroundUnit*>(currentGame->getObjectManager().getObject(parameter[0]));
-            if(pGroundUnit == nullptr) {
+            if(!mayActOnObject(playerID, commandID, parameter[0], pGroundUnit)) {
                 return;
             }
             pGroundUnit->doRequestCarryallDrop((int) parameter[1], (int) parameter[2]);
@@ -239,7 +323,7 @@ case CMD_INFANTRY_CAPTURE: {
                 THROW(std::invalid_argument, "Command::executeCommand(): CMD_UNIT_SENDTOREPAIR needs 1 Parameter!");
             }
             GroundUnit* pGroundUnit = dynamic_cast<GroundUnit*>(currentGame->getObjectManager().getObject(parameter[0]));
-            if(pGroundUnit == nullptr) {
+            if(!mayActOnObject(playerID, commandID, parameter[0], pGroundUnit)) {
                 return;
             }
             pGroundUnit->doRepair();
@@ -250,7 +334,10 @@ case CMD_INFANTRY_CAPTURE: {
                 THROW(std::invalid_argument, "Command::executeCommand(): CMD_UNIT_SETMODE needs 2 Parameter!");
             }
             UnitBase* pUnit = dynamic_cast<UnitBase*>(currentGame->getObjectManager().getObject(parameter[0]));
-            if(pUnit == nullptr) {
+            if(!mayActOnObject(playerID, commandID, parameter[0], pUnit)) {
+                return;
+            }
+            if(!CommandAuthorization::isValidAttackMode(parameter[1])) {
                 return;
             }
             pUnit->doSetAttackMode((ATTACKMODE) parameter[1]);
@@ -261,7 +348,7 @@ case CMD_INFANTRY_CAPTURE: {
                 THROW(std::invalid_argument, "Command::executeCommand(): CMD_DEVASTATOR_STARTDEVASTATE needs 1 Parameter!");
             }
             Devastator* pDevastator = dynamic_cast<Devastator*>(currentGame->getObjectManager().getObject(parameter[0]));
-            if(pDevastator == nullptr) {
+            if(!mayActOnObject(playerID, commandID, parameter[0], pDevastator)) {
                 return;
             }
             pDevastator->doStartDevastate();
@@ -272,7 +359,7 @@ case CMD_INFANTRY_CAPTURE: {
                 THROW(std::invalid_argument, "Command::executeCommand(): CMD_MCV_DEPLOY needs 1 Parameter!");
             }
             MCV* pMCV = dynamic_cast<MCV*>(currentGame->getObjectManager().getObject(parameter[0]));
-            if(pMCV == nullptr) {
+            if(!mayActOnObject(playerID, commandID, parameter[0], pMCV)) {
                 return;
             }
             pMCV->doDeploy();
@@ -283,7 +370,8 @@ case CMD_INFANTRY_CAPTURE: {
                 THROW(std::invalid_argument, "Command::executeCommand(): CMD_HARVESTER_RETURN needs 1 Parameter!");
             }
             ObjectBase* pHarvester = currentGame->getObjectManager().getObject(parameter[0]);
-            if(!isHarvesterLikeObject(pHarvester)) {
+            if(!isHarvesterLikeObject(pHarvester)
+               || !mayActOnObject(playerID, commandID, parameter[0], pHarvester)) {
                 return;
             }
             harvesterDoReturn(pHarvester);
@@ -294,7 +382,7 @@ case CMD_INFANTRY_CAPTURE: {
                 THROW(std::invalid_argument, "Command::executeCommand(): CMD_STRUCTURE_SETDEPLOYPOSITION needs 3 Parameters!");
             }
             StructureBase* pStructure = dynamic_cast<StructureBase*>(currentGame->getObjectManager().getObject(parameter[0]));
-            if(pStructure == nullptr) {
+            if(!mayActOnObject(playerID, commandID, parameter[0], pStructure)) {
                 return;
             }
             pStructure->doSetDeployPosition((int) parameter[1],(int) parameter[2]);
@@ -305,7 +393,7 @@ case CMD_INFANTRY_CAPTURE: {
                 THROW(std::invalid_argument, "Command::executeCommand(): CMD_STRUCTURE_REPAIR needs 1 Parameter!");
             }
             StructureBase* pStructure = dynamic_cast<StructureBase*>(currentGame->getObjectManager().getObject(parameter[0]));
-            if(pStructure == nullptr) {
+            if(!mayActOnObject(playerID, commandID, parameter[0], pStructure)) {
                 return;
             }
             pStructure->doRepair();
@@ -316,7 +404,7 @@ case CMD_INFANTRY_CAPTURE: {
                 THROW(std::invalid_argument, "Command::executeCommand(): CMD_BUILDER_UPGRADE needs 1 Parameter!");
             }
             BuilderBase* pBuilder = dynamic_cast<BuilderBase*>(currentGame->getObjectManager().getObject(parameter[0]));
-            if(pBuilder == nullptr) {
+            if(!mayActOnObject(playerID, commandID, parameter[0], pBuilder)) {
                 return;
             }
             pBuilder->doUpgrade();
@@ -327,7 +415,10 @@ case CMD_INFANTRY_CAPTURE: {
                 THROW(std::invalid_argument, "Command::executeCommand(): CMD_BUILDER_PRODUCEITEM needs 3 Parameter!");
             }
             BuilderBase* pBuilder = dynamic_cast<BuilderBase*>(currentGame->getObjectManager().getObject(parameter[0]));
-            if(pBuilder == nullptr) {
+            if(!mayActOnObject(playerID, commandID, parameter[0], pBuilder)) {
+                return;
+            }
+            if(!CommandAuthorization::isValidBooleanParameter(parameter[2])) {
                 return;
             }
             pBuilder->doProduceItem(parameter[1],(bool) parameter[2]);
@@ -338,7 +429,10 @@ case CMD_INFANTRY_CAPTURE: {
                 THROW(std::invalid_argument, "Command::executeCommand(): CMD_BUILDER_CANCELITEM needs 3 Parameter!");
             }
             BuilderBase* pBuilder = dynamic_cast<BuilderBase*>(currentGame->getObjectManager().getObject(parameter[0]));
-            if(pBuilder == nullptr) {
+            if(!mayActOnObject(playerID, commandID, parameter[0], pBuilder)) {
+                return;
+            }
+            if(!CommandAuthorization::isValidBooleanParameter(parameter[2])) {
                 return;
             }
             pBuilder->doCancelItem(parameter[1],(bool) parameter[2]);
@@ -349,7 +443,10 @@ case CMD_INFANTRY_CAPTURE: {
                 THROW(std::invalid_argument, "Command::executeCommand(): CMD_BUILDER_SETONHOLD needs 2 Parameters!");
             }
             BuilderBase* pBuilder = dynamic_cast<BuilderBase*>(currentGame->getObjectManager().getObject(parameter[0]));
-            if(pBuilder == nullptr) {
+            if(!mayActOnObject(playerID, commandID, parameter[0], pBuilder)) {
+                return;
+            }
+            if(!CommandAuthorization::isValidBooleanParameter(parameter[1])) {
                 return;
             }
             pBuilder->doSetOnHold((bool) parameter[1]);
@@ -360,7 +457,7 @@ case CMD_INFANTRY_CAPTURE: {
                 THROW(std::invalid_argument, "Command::executeCommand(): CMD_PALACE_SPECIALWEAPON needs 1 Parameter!");
             }
             Palace* palace = dynamic_cast<Palace*>(currentGame->getObjectManager().getObject(parameter[0]));
-            if(palace == nullptr) {
+            if(!mayActOnObject(playerID, commandID, parameter[0], palace)) {
                 return;
             }
             palace->doSpecialWeapon();
@@ -371,7 +468,7 @@ case CMD_INFANTRY_CAPTURE: {
                 THROW(std::invalid_argument, "Command::executeCommand(): CMD_PALACE_DEATHHAND needs 3 Parameter!");
             }
             Palace* palace = dynamic_cast<Palace*>(currentGame->getObjectManager().getObject(parameter[0]));
-            if(palace == nullptr) {
+            if(!mayActOnObject(playerID, commandID, parameter[0], palace)) {
                 return;
             }
             palace->doLaunchDeathhand((int) parameter[1], (int) parameter[2]);
@@ -382,7 +479,7 @@ case CMD_INFANTRY_CAPTURE: {
                 THROW(std::invalid_argument, "Command::executeCommand(): CMD_STARPORT_PLACEORDER needs 1 Parameter!");
             }
             StarPort* pStarport = dynamic_cast<StarPort*>(currentGame->getObjectManager().getObject(parameter[0]));
-            if(pStarport == nullptr) {
+            if(!mayActOnObject(playerID, commandID, parameter[0], pStarport)) {
                 return;
             }
             pStarport->doPlaceOrder();
@@ -393,7 +490,7 @@ case CMD_INFANTRY_CAPTURE: {
                 THROW(std::invalid_argument, "Command::executeCommand(): CMD_STARPORT_CANCELORDER needs 1 Parameter!");
             }
             StarPort* pStarport = dynamic_cast<StarPort*>(currentGame->getObjectManager().getObject(parameter[0]));
-            if(pStarport == nullptr) {
+            if(!mayActOnObject(playerID, commandID, parameter[0], pStarport)) {
                 return;
             }
             pStarport->doCancelOrder();
@@ -404,7 +501,7 @@ case CMD_INFANTRY_CAPTURE: {
                 THROW(std::invalid_argument, "Command::executeCommand(): CMD_TURRET_ATTACKOBJECT needs 2 Parameters!");
             }
             TurretBase* pTurret = dynamic_cast<TurretBase*>(currentGame->getObjectManager().getObject(parameter[0]));
-            if(pTurret == nullptr) {
+            if(!mayActOnObject(playerID, commandID, parameter[0], pTurret)) {
                 return;
             }
             pTurret->doAttackObject((int) parameter[1]);
@@ -415,7 +512,7 @@ case CMD_INFANTRY_CAPTURE: {
                 THROW(std::invalid_argument, "Command::executeCommand(): CMD_TECHCENTER_SPAWN needs 1 Parameter!");
             }
             TechCenter* pTechCenter = dynamic_cast<TechCenter*>(currentGame->getObjectManager().getObject(parameter[0]));
-            if(pTechCenter == nullptr) {
+            if(!mayActOnObject(playerID, commandID, parameter[0], pTechCenter)) {
                 return;
             }
             pTechCenter->doSpawnVehicles();
@@ -426,7 +523,7 @@ case CMD_INFANTRY_CAPTURE: {
                 THROW(std::invalid_argument, "Command::executeCommand(): CMD_SCOUTPOST_UPGRADE needs 1 Parameter!");
             }
             Scoutpost* pScoutpost = dynamic_cast<Scoutpost*>(currentGame->getObjectManager().getObject(parameter[0]));
-            if(pScoutpost == nullptr) {
+            if(!mayActOnObject(playerID, commandID, parameter[0], pScoutpost)) {
                 return;
             }
             pScoutpost->doUpgradeToFlamepost();
@@ -437,7 +534,7 @@ case CMD_INFANTRY_CAPTURE: {
                 THROW(std::invalid_argument, "Command::executeCommand(): CMD_SCOUTPOST_CHEMIPOST_UPGRADE needs 1 Parameter!");
             }
             Scoutpost* pScoutpost = dynamic_cast<Scoutpost*>(currentGame->getObjectManager().getObject(parameter[0]));
-            if(pScoutpost == nullptr) {
+            if(!mayActOnObject(playerID, commandID, parameter[0], pScoutpost)) {
                 return;
             }
             pScoutpost->doUpgradeToChemipost();
