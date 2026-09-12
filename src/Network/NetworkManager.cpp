@@ -330,7 +330,7 @@ void NetworkManager::connect(ENetAddress address, const std::string& playerName)
     pendingCoopMission.reset();
     this->playerName = playerName;
 
-    connectPeer->data = new PeerData(connectPeer, PeerData::PeerState::WaitingForConnect);
+    connectPeer->data = createPeerData(connectPeer, PeerData::PeerState::WaitingForConnect);
     awaitingConnectionList.push_back(connectPeer);
 }
 
@@ -568,7 +568,26 @@ void NetworkManager::update()
                     // Server
                     debugNetwork("NetworkManager: %s:%u connected.\n", Address2String(peer->address).c_str(), peer->address.port);
 
-                    PeerData* newPeerData = new PeerData(peer, PeerData::PeerState::WaitingForName);
+                    // Admission, before any state is allocated for this connection.
+                    if(bGameInProgress) {
+                        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                                    "NetworkManager: refusing connection from %s:%u - game already in progress",
+                                    Address2String(peer->address).c_str(), peer->address.port);
+                        enet_peer_disconnect(peer, NETWORKDISCONNECT_GAME_FULL);
+                        break;
+                    }
+
+                    const std::size_t knownPeers = peerList.size() + awaitingConnectionList.size();
+                    if(knownPeers >= MAX_MESH_PEERS
+                       || (maxPlayers > 0 && knownPeers >= static_cast<std::size_t>(maxPlayers))) {
+                        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                                    "NetworkManager: refusing connection from %s:%u - lobby is full (%zu peers)",
+                                    Address2String(peer->address).c_str(), peer->address.port, knownPeers);
+                        enet_peer_disconnect(peer, NETWORKDISCONNECT_GAME_FULL);
+                        break;
+                    }
+
+                    PeerData* newPeerData = createPeerData(peer, PeerData::PeerState::WaitingForName);
                     newPeerData->timeout = SDL_GetTicks() + AWAITING_CONNECTION_TIMEOUT;
                     peer->data = newPeerData;
 
@@ -584,6 +603,15 @@ void NetworkManager::update()
                 } else if(connectPeer != nullptr) {
                     // Client
                     PeerData* peerData = static_cast<PeerData*>(peer->data);
+
+                    if(bGameInProgress && peer != connectPeer && peerData == nullptr) {
+                        // No new mesh members once the match is running.
+                        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                                    "NetworkManager: refusing mesh connection from %s:%u during a match",
+                                    Address2String(peer->address).c_str(), peer->address.port);
+                        enet_peer_disconnect(peer, NETWORKDISCONNECT_GAME_FULL);
+                        break;
+                    }
 
                     if(peer == connectPeer) {
                         ENetPacketOStream packetStream(ENET_PACKET_FLAG_RELIABLE);
@@ -601,12 +629,24 @@ void NetworkManager::update()
 
                         if(pConnectPeerData->peerState == PeerData::PeerState::WaitingForOtherPeersToConnect) {
                             if(peerData == nullptr) {
-                                peerData = new PeerData(peer, PeerData::PeerState::Connected);
+                                if(peerList.size() + awaitingConnectionList.size() >= MAX_MESH_PEERS) {
+                                    enet_peer_disconnect(peer, NETWORKDISCONNECT_GAME_FULL);
+                                    break;
+                                }
+
+                                peerData = createPeerData(peer, PeerData::PeerState::Connected);
                                 peer->data = peerData;
 
                                 debugNetwork("Adding '%s' to awaiting connection list\n", peerData->name.c_str());
                                 awaitingConnectionList.push_back(peer);
                             }
+                        } else if(peerData == nullptr) {
+                            // We are fully connected and did not open this connection: nobody
+                            // instructed us to expect it, so it is not part of the mesh.
+                            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                                        "NetworkManager: refusing unsolicited connection from %s:%u",
+                                        Address2String(peer->address).c_str(), peer->address.port);
+                            enet_peer_disconnect(peer, NETWORKDISCONNECT_TIMEOUT);
                         } else {
                             ENetPacketOStream packetStream1(ENET_PACKET_FLAG_RELIABLE);
                             packetStream1.writeUint32(NETWORKPACKET_PEER_CONNECTED);
@@ -700,33 +740,167 @@ void NetworkManager::update()
     }
 }
 
+NetworkManager::PeerData* NetworkManager::createPeerData(ENetPeer* peer, PeerData::PeerState peerState) {
+    PeerData* peerData = new PeerData(peer, peerState);
+    peerData->clientId = nextClientId++;
+    if(nextClientId == 0) {
+        nextClientId = 1;   // never hand out 0, it doubles as "no client"
+    }
+    return peerData;
+}
+
+void NetworkManager::noteRejectedPacket(ENetPeer* peer, const char* reason) {
+    if(peer == nullptr) {
+        return;
+    }
+
+    PeerData* peerData = static_cast<PeerData*>(peer->data);
+    const Uint32 now = SDL_GetTicks();
+
+    if(peerData == nullptr) {
+        // No state to account against: drop the connection straight away, it has no business
+        // sending us anything.
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "NetworkManager: dropping packet from unidentified peer %s:%u (%s)",
+                    Address2String(peer->address).c_str(), peer->address.port, reason);
+        enet_peer_disconnect_later(peer, NETWORKDISCONNECT_TIMEOUT);
+        return;
+    }
+
+    peerData->rejectedPackets++;
+
+    if(peerData->rejectedPackets <= 3
+       || (now - peerData->lastRejectLogTime) >= REJECT_LOG_INTERVAL_MS) {
+        peerData->lastRejectLogTime = now;
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "NetworkManager: rejected packet from '%s' (%s:%u): %s (%u refused so far)",
+                    peerData->name.c_str(), Address2String(peer->address).c_str(),
+                    peer->address.port, reason, peerData->rejectedPackets);
+    }
+
+    if(peerData->rejectedPackets >= MAX_REJECTED_PACKETS_PER_PEER) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "NetworkManager: disconnecting '%s' after %u refused packets",
+                     peerData->name.c_str(), peerData->rejectedPackets);
+        enet_peer_disconnect_later(peer, NETWORKDISCONNECT_TIMEOUT);
+    }
+}
+
+bool NetworkManager::admitPacket(ENetPeer* peer, Uint32 packetType) {
+    if(peer == nullptr) {
+        return false;
+    }
+
+    PeerData* peerData = static_cast<PeerData*>(peer->data);
+
+    // Cheap flood guard: even well-formed packets are refused above a rate no legitimate
+    // peer reaches (a full mod transfer is ~160 packets, in-game traffic a few dozen/s).
+    if(peerData != nullptr) {
+        const Uint32 now = SDL_GetTicks();
+        if(now - peerData->packetWindowStart >= 1000) {
+            peerData->packetWindowStart = now;
+            peerData->packetsInWindow = 0;
+        }
+        peerData->packetsInWindow++;
+        if(peerData->packetsInWindow > MAX_PACKETS_PER_PEER_PER_SECOND) {
+            if(peerData->packetsInWindow == MAX_PACKETS_PER_PEER_PER_SECOND + 1) {
+                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                             "NetworkManager: peer '%s' exceeded the packet rate limit - disconnecting",
+                             peerData->name.c_str());
+                enet_peer_disconnect_later(peer, NETWORKDISCONNECT_TIMEOUT);
+            }
+            return false;
+        }
+    }
+
+    NetworkPacketPolicy::PacketContext context;
+    context.packetType = packetType;
+    context.localRole = bIsServer ? NetworkPacketPolicy::LocalRole::Host
+                                  : NetworkPacketPolicy::LocalRole::Client;
+    context.phase = bGameInProgress ? NetworkPacketPolicy::SessionPhase::InGame
+                                    : NetworkPacketPolicy::SessionPhase::Lobby;
+    context.isHostConnection = (!bIsServer) && (connectPeer != nullptr) && (peer == connectPeer);
+
+    if(peerData == nullptr) {
+        context.admission = NetworkPacketPolicy::PeerAdmission::Unidentified;
+    } else if(std::find(peerList.begin(), peerList.end(), peer) != peerList.end()) {
+        context.admission = NetworkPacketPolicy::PeerAdmission::Established;
+    } else {
+        context.admission = NetworkPacketPolicy::PeerAdmission::Handshaking;
+    }
+
+    const NetworkPacketPolicy::PacketVerdict verdict = NetworkPacketPolicy::classifyPacket(context);
+    if(verdict == NetworkPacketPolicy::PacketVerdict::Accept) {
+        return true;
+    }
+
+    noteRejectedPacket(peer, NetworkPacketPolicy::describeVerdict(verdict));
+    return false;
+}
+
+void NetworkManager::abortModTransfer(const char* reason) {
+    const bool wasInProgress = modTransferState.inProgress;
+
+    modTransferState.inProgress = false;
+    modTransferState.modData.clear();
+    modTransferState.modName.clear();
+    modTransferState.totalSize = 0;
+    modTransferState.receivedSize = 0;
+
+    if(wasInProgress && pOnModDownloadComplete) {
+        pOnModDownloadComplete(false, reason);
+    }
+}
+
 void NetworkManager::handlePacket(ENetPeer* peer, ENetPacketIStream& packetStream)
 {
     try {
         Uint32 packetType = packetStream.readUint32();
 
+        // Central admission: role, handshake state and session phase are checked before any
+        // payload of this packet is interpreted.
+        if(!admitPacket(peer, packetType)) {
+            return;
+        }
+
         switch(packetType) {
             case NETWORKPACKET_CONNECT: {
+                // Only reachable on a client, on the connection to the designated host
+                // (enforced by admitPacket); the mesh address it names still has to be sane.
+                const Uint32 rawHost = packetStream.readUint32();
+                const Uint16 rawPort = packetStream.readUint16();
+                const std::string peerName = packetStream.readString();
 
-                if(bIsServer == false) {
-                    ENetAddress address;
+                // rawHost is the dotted-quad as an integer (the sender wrote
+                // SDL_SwapBE32(address.host)), so the first octet is its most significant byte.
+                if(!NetworkPacketPolicy::isPlausibleMeshTarget(rawHost, rawPort)
+                   || !NetworkPacketPolicy::isAcceptablePlayerName(peerName)) {
+                    noteRejectedPacket(peer, "implausible mesh connect target");
+                    break;
+                }
 
-                    address.host = SDL_SwapBE32(packetStream.readUint32());
-                    address.port = packetStream.readUint16();
+                if(awaitingConnectionList.size() + peerList.size() >= MAX_MESH_PEERS) {
+                    noteRejectedPacket(peer, "mesh peer limit reached");
+                    break;
+                }
 
-                    debugNetwork("Connecting to %s:%d\n", Address2String(address).c_str(), address.port);
+                ENetAddress address;
+                address.host = SDL_SwapBE32(rawHost);
+                address.port = rawPort;
 
-                    ENetPeer *newPeer = enet_host_connect(host, &address, 2, 0);
-                    if(newPeer == nullptr) {
-                        debugNetwork("NetworkManager: No available peers for initiating a connection.");
-                    } else {
-                        PeerData* peerData = new PeerData(newPeer, PeerData::PeerState::WaitingForOtherPeersToConnect);
-                        peerData->name = packetStream.readString();
+                debugNetwork("Connecting to %s:%d\n", Address2String(address).c_str(), address.port);
 
-                        newPeer->data = peerData;
-                        debugNetwork("Adding '%s' to awaiting connection list\n", peerData->name.c_str());
-                        awaitingConnectionList.push_back(newPeer);
-                    }
+                ENetPeer *newPeer = enet_host_connect(host, &address, 2, 0);
+                if(newPeer == nullptr) {
+                    debugNetwork("NetworkManager: No available peers for initiating a connection.");
+                } else {
+                    PeerData* peerData = createPeerData(newPeer, PeerData::PeerState::WaitingForOtherPeersToConnect);
+                    peerData->name = peerName;
+                    peerData->bNameAssigned = true;
+
+                    newPeer->data = peerData;
+                    debugNetwork("Adding '%s' to awaiting connection list\n", peerData->name.c_str());
+                    awaitingConnectionList.push_back(newPeer);
                 }
             } break;
 
@@ -851,35 +1025,56 @@ void NetworkManager::handlePacket(ENetPeer* peer, ENetPacketIStream& packetStrea
                 ChangeEventList changeEventList(packetStream);
 
                 // Save the received map to the user's maps/multiplayer directory
-                if(gameInitSettings.getGameType() == GameType::CustomMultiplayer && 
+                if(gameInitSettings.getGameType() == GameType::CustomMultiplayer &&
                    !gameInitSettings.getFiledata().empty() &&
                    !gameInitSettings.getFilename().empty()) {
-                    
+
                     try {
-                        char tmp[FILENAME_MAX];
-                        if(fnkdat("maps/multiplayer/", tmp, FILENAME_MAX, FNKDAT_USER | FNKDAT_CREAT) >= 0) {
-                            std::string mapDirectory(tmp);
-                            std::string mapFilename = gameInitSettings.getFilename();
-                            
-                            // Ensure the filename has .ini extension
-                            if(mapFilename.length() < 4 || mapFilename.substr(mapFilename.length() - 4) != ".ini") {
-                                mapFilename += ".ini";
-                            }
-                            
-                            std::string fullPath = mapDirectory + mapFilename;
-                            
-                            // Only save if the file doesn't exist yet (avoid overwriting user-modified maps)
-                            if(!existsFile(fullPath)) {
-                                if(writeCompleteFile(fullPath, gameInitSettings.getFiledata())) {
-                                    SDL_Log("NetworkManager: Successfully saved received map to '%s'", fullPath.c_str());
+                        std::string mapFilename;
+                        if(!NetworkPacketPolicy::sanitizeReceivedMapFilename(
+                               gameInitSettings.getFilename(), mapFilename)) {
+                            // Traversal, absolute paths, control characters, reserved names:
+                            // the map is still played from memory, it is just not stored.
+                            noteRejectedPacket(peer, "unsafe received map filename");
+                        } else if(gameInitSettings.getFiledata().size()
+                                  > NetworkPacketPolicy::kMaxReceivedMapSize) {
+                            noteRejectedPacket(peer, "received map exceeds the size limit");
+                        } else {
+                            char tmp[FILENAME_MAX];
+                            if(fnkdat("maps/multiplayer/", tmp, FILENAME_MAX, FNKDAT_USER | FNKDAT_CREAT) >= 0) {
+                                const std::filesystem::path mapDirectory =
+                                    std::filesystem::path(std::string(tmp));
+                                const std::filesystem::path fullPathObject = mapDirectory / mapFilename;
+
+                                // Belt and braces: whatever the name did, the file has to land
+                                // directly inside the multiplayer maps directory.
+                                std::error_code pathError;
+                                const std::filesystem::path resolvedParent =
+                                    std::filesystem::weakly_canonical(fullPathObject.parent_path(), pathError);
+                                const std::filesystem::path resolvedDirectory =
+                                    std::filesystem::weakly_canonical(mapDirectory, pathError);
+
+                                if(pathError || resolvedParent != resolvedDirectory) {
+                                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                                                "NetworkManager: refusing to write a received map outside '%s'",
+                                                mapDirectory.string().c_str());
                                 } else {
-                                    SDL_Log("NetworkManager: Failed to save received map to '%s'", fullPath.c_str());
+                                    const std::string fullPath = fullPathObject.string();
+
+                                    // Only save if the file doesn't exist yet (avoid overwriting user-modified maps)
+                                    if(!existsFile(fullPath)) {
+                                        if(writeCompleteFile(fullPath, gameInitSettings.getFiledata())) {
+                                            SDL_Log("NetworkManager: Successfully saved received map to '%s'", fullPath.c_str());
+                                        } else {
+                                            SDL_Log("NetworkManager: Failed to save received map to '%s'", fullPath.c_str());
+                                        }
+                                    } else {
+                                        SDL_Log("NetworkManager: Map '%s' already exists locally, skipping save", fullPath.c_str());
+                                    }
                                 }
                             } else {
-                                SDL_Log("NetworkManager: Map '%s' already exists locally, skipping save", fullPath.c_str());
+                                SDL_Log("NetworkManager: Failed to get maps/multiplayer directory path");
                             }
-                        } else {
-                            SDL_Log("NetworkManager: Failed to get maps/multiplayer directory path");
                         }
                     } catch(std::exception& e) {
                         SDL_Log("NetworkManager: Error saving received map: %s", e.what());
@@ -898,6 +1093,20 @@ void NetworkManager::handlePacket(ENetPeer* peer, ENetPacketIStream& packetStrea
                 }
 
                 std::string newName = packetStream.readString();
+
+                if(!NetworkPacketPolicy::isAcceptablePlayerName(newName)) {
+                    noteRejectedPacket(peer, "unacceptable player name");
+                    break;
+                }
+
+                // Identity is bound exactly once per connection. CommandManager resolves a
+                // command list to a player by this name, so a later rename would let a peer
+                // take over another player's commands.
+                if(peerData->bNameAssigned) {
+                    noteRejectedPacket(peer, "peer tried to change its established name");
+                    break;
+                }
+
                 bool bFoundName = false;
 
                 //check if name already exists
@@ -935,6 +1144,7 @@ void NetworkManager::handlePacket(ENetPeer* peer, ENetPacketIStream& packetStrea
 
                 if(bFoundName == false) {
                     peerData->name = newName;
+                    peerData->bNameAssigned = true;
 
                     if(peerData->peerState == PeerData::PeerState::WaitingForName) {
                         peerData->peerState = PeerData::PeerState::ReadyForOtherPeersToConnect;
@@ -949,6 +1159,10 @@ void NetworkManager::handlePacket(ENetPeer* peer, ENetPacketIStream& packetStrea
                 }
 
                 std::string message = packetStream.readString();
+                if(message.size() > MAX_CHAT_MESSAGE_LENGTH) {
+                    noteRejectedPacket(peer, "chat message exceeds the length limit");
+                    break;
+                }
                 if(pOnReceiveChatMessage) {
                     pOnReceiveChatMessage(peerData->name, message);
                 }
@@ -1142,7 +1356,14 @@ void NetworkManager::handlePacket(ENetPeer* peer, ENetPacketIStream& packetStrea
             } break;
 
             case NETWORKPACKET_STARTGAME: {
+                // Only a client, only on the host connection, only in the lobby
+                // (enforced by admitPacket).
                 Uint32 timeLeft = packetStream.readUint32();
+
+                if(timeLeft > MAX_START_GAME_COUNTDOWN_MS) {
+                    noteRejectedPacket(peer, "start-game countdown out of range");
+                    break;
+                }
 
                 if(pOnStartGame) {
                     pOnStartGame(timeLeft);
@@ -1173,6 +1394,12 @@ void NetworkManager::handlePacket(ENetPeer* peer, ENetPacketIStream& packetStrea
                 int groupListIndex = packetStream.readSint32();
                 std::set<Uint32> selectedList = packetStream.readUint32Set();
 
+                // -1 means "current selection"; anything else indexes HumanPlayer::selectedLists.
+                if(groupListIndex < -1 || groupListIndex >= NUMSELECTEDLISTS) {
+                    noteRejectedPacket(peer, "selection group index out of range");
+                    break;
+                }
+
                 if(pOnReceiveSelectionList) {
                     pOnReceiveSelectionList(peerData->name, selectedList, groupListIndex);
                 }
@@ -1180,9 +1407,9 @@ void NetworkManager::handlePacket(ENetPeer* peer, ENetPacketIStream& packetStrea
 
             case NETWORKPACKET_CLIENTSTATS: {
                 if(packetStream.readUint32() != simulationSeed) break;
-                // Host receives client performance stats (including simulation timing)
-                if(!bIsServer) {
-                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "NetworkManager: Client received CLIENTSTATS packet (should only be sent to host)");
+                // Host only, established client, match running (enforced by admitPacket).
+                PeerData* peerData = static_cast<PeerData*>(peer->data);
+                if(!peerData) {
                     break;
                 }
 
@@ -1192,9 +1419,15 @@ void NetworkManager::handlePacket(ENetPeer* peer, ENetPacketIStream& packetStrea
                 Uint32 queueDepth = packetStream.readUint32();
                 Uint32 currentBudget = packetStream.readUint32();
 
-                // Extract client ID from peer data
-                // For now, we'll use the peer's address hash as a unique ID
-                Uint32 clientId = peer->address.host ^ peer->address.port;
+                if(!NetworkPacketPolicy::isUsableStatValue(avgFps)
+                   || !NetworkPacketPolicy::isUsableStatValue(simMsAvg)) {
+                    noteRejectedPacket(peer, "non-finite client stats");
+                    break;
+                }
+
+                // Identity is the connection, not an address hash: behind NAT (or later behind
+                // a relay) host^port collides across players and is trivially spoofable.
+                const Uint32 clientId = peerData->clientId;
 
                 if(pOnReceiveClientStats) {
                     pOnReceiveClientStats(clientId, gameCycle, avgFps, simMsAvg, queueDepth, currentBudget);
@@ -1203,14 +1436,14 @@ void NetworkManager::handlePacket(ENetPeer* peer, ENetPacketIStream& packetStrea
 
             case NETWORKPACKET_SETPATHBUDGET: {
                 if(packetStream.readUint32() != simulationSeed) break;
-                // Client receives budget change order from host
-                if(bIsServer) {
-                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "NetworkManager: Host received SETPATHBUDGET packet (should only be sent to clients)");
-                    break;
-                }
-
+                // Client only, host connection only, match running (enforced by admitPacket).
                 Uint32 newBudget = packetStream.readUint32();
                 Uint32 applyCycle = packetStream.readUint32();
+
+                if(newBudget > MAX_PATH_BUDGET_ORDER) {
+                    noteRejectedPacket(peer, "path budget order out of range");
+                    break;
+                }
 
                 if(pOnReceiveSetPathBudget) {
                     pOnReceiveSetPathBudget(newBudget, applyCycle);
@@ -1218,16 +1451,17 @@ void NetworkManager::handlePacket(ENetPeer* peer, ENetPacketIStream& packetStrea
             } break;
 
             case NETWORKPACKET_MOD_INFO: {
-                // Client receives mod info from host
-                if(bIsServer) {
-                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "NetworkManager: Host received MOD_INFO packet (should only be sent to clients)");
-                    break;
-                }
-
+                // Client only, from the host connection, lobby only (enforced by admitPacket).
                 std::string modName = packetStream.readString();
                 std::string modChecksum = packetStream.readString();
 
-                SDL_Log("NetworkManager: Received mod info from host - mod: '%s', checksum: %s", 
+                if(!ModTransferValidation::isValidModName(modName)
+                   || modChecksum.size() > MAX_MOD_CHECKSUM_LENGTH) {
+                    noteRejectedPacket(peer, "invalid mod info");
+                    break;
+                }
+
+                SDL_Log("NetworkManager: Received mod info from host - mod: '%s', checksum: %s",
                         modName.c_str(), modChecksum.c_str());
 
                 if(pOnReceiveModInfo) {
@@ -1236,46 +1470,46 @@ void NetworkManager::handlePacket(ENetPeer* peer, ENetPacketIStream& packetStrea
             } break;
 
             case NETWORKPACKET_MOD_REQUEST: {
-                // Host receives mod download request from client
-                if(!bIsServer) {
-                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "NetworkManager: Client received MOD_REQUEST packet (should only be sent to host)");
-                    break;
-                }
-
+                // Host only, from an established client, lobby only (enforced by admitPacket).
                 std::string requestedModName = packetStream.readString();
-                SDL_Log("NetworkManager: Client requested mod download for '%s'", requestedModName.c_str());
 
-                // Use the peer that sent this request directly (the 'peer' parameter from handlePacket)
-                if(peer == nullptr) {
-                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "NetworkManager: No peer context for mod request");
+                if(!ModTransferValidation::isValidModName(requestedModName)) {
+                    noteRejectedPacket(peer, "invalid mod name in mod request");
                     break;
                 }
+
+                SDL_Log("NetworkManager: Client requested mod download for '%s'", requestedModName.c_str());
 
                 // Package and send the mod files to the requesting peer
                 sendModFilesToPeer(peer, requestedModName);
             } break;
 
             case NETWORKPACKET_MOD_CHUNK: {
-                // Client receives mod file chunk from host
-                if(bIsServer) {
-                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "NetworkManager: Host received MOD_CHUNK packet (should only be sent to clients)");
-                    break;
-                }
-
+                // Client only, from the host connection, lobby only (enforced by admitPacket).
                 std::string modName = packetStream.readString();
                 Uint32 totalSize = packetStream.readUint32();
                 Uint32 chunkOffset = packetStream.readUint32();
                 std::string chunkData = packetStream.readString();
 
+                // Content is only accepted for a transfer this client actually asked for.
+                if(!modTransferState.requested || modName != modTransferState.requestedModName) {
+                    noteRejectedPacket(peer, "mod chunk for a transfer that was not requested");
+                    abortModTransfer("Unexpected mod transfer");
+                    break;
+                }
+
                 // Security: Validate totalSize against maximum allowed
                 if(totalSize > MAX_MOD_TRANSFER_SIZE) {
-                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, 
-                        "NetworkManager: Mod transfer size %u exceeds limit %d - aborting", 
+                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "NetworkManager: Mod transfer size %u exceeds limit %d - aborting",
                         totalSize, MAX_MOD_TRANSFER_SIZE);
-                    modTransferState.inProgress = false;
-                    if(pOnModDownloadComplete) {
-                        pOnModDownloadComplete(false, "Mod exceeds size limit");
-                    }
+                    abortModTransfer("Mod exceeds size limit");
+                    break;
+                }
+
+                if(chunkData.size() > MOD_CHUNK_SIZE) {
+                    noteRejectedPacket(peer, "mod chunk exceeds the chunk size limit");
+                    abortModTransfer("Invalid chunk size");
                     break;
                 }
 
@@ -1287,32 +1521,27 @@ void NetworkManager::handlePacket(ENetPeer* peer, ENetPacketIStream& packetStrea
                     modTransferState.totalSize = totalSize;
                     modTransferState.receivedSize = 0;
                     modTransferState.inProgress = true;
+                } else if(totalSize != modTransferState.totalSize) {
+                    noteRejectedPacket(peer, "mod transfer size changed mid-transfer");
+                    abortModTransfer("Invalid chunk size");
+                    break;
                 }
 
                 // Security: Validate chunk offset matches expected position (enforce in-order)
                 if(chunkOffset != modTransferState.receivedSize) {
-                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, 
-                        "NetworkManager: Chunk offset mismatch - expected %zu, got %u. Aborting transfer.", 
+                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "NetworkManager: Chunk offset mismatch - expected %zu, got %u. Aborting transfer.",
                         modTransferState.receivedSize, chunkOffset);
-                    modTransferState.inProgress = false;
-                    if(pOnModDownloadComplete) {
-                        pOnModDownloadComplete(false, "Out-of-order mod chunk");
-                    }
-                    modTransferState.modData.clear();
-                    modTransferState.modName.clear();
-                    modTransferState.totalSize = 0;
-                    modTransferState.receivedSize = 0;
+                    abortModTransfer("Out-of-order mod chunk");
                     break;
                 }
 
                 // Security: Check that adding this chunk won't exceed totalSize
-                if(modTransferState.receivedSize + chunkData.size() > totalSize) {
-                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, 
+                // (subtraction form: receivedSize is never greater than totalSize)
+                if(chunkData.size() > totalSize - modTransferState.receivedSize) {
+                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                         "NetworkManager: Chunk would exceed total size - aborting");
-                    modTransferState.inProgress = false;
-                    if(pOnModDownloadComplete) {
-                        pOnModDownloadComplete(false, "Invalid chunk size");
-                    }
+                    abortModTransfer("Invalid chunk size");
                     break;
                 }
 
@@ -1329,17 +1558,35 @@ void NetworkManager::handlePacket(ENetPeer* peer, ENetPacketIStream& packetStrea
             } break;
 
             case NETWORKPACKET_MOD_COMPLETE: {
-                // Client receives mod transfer complete notification
-                if(bIsServer) {
-                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "NetworkManager: Host received MOD_COMPLETE packet (should only be sent to clients)");
+                // Client only, from the host connection, lobby only (enforced by admitPacket).
+                bool success = packetStream.readBool();
+                std::string message = packetStream.readString();
+                if(message.size() > MAX_MOD_MESSAGE_LENGTH) {
+                    message.resize(MAX_MOD_MESSAGE_LENGTH);
+                }
+
+                SDL_Log("NetworkManager: Mod transfer complete - success: %s, message: %s",
+                        success ? "yes" : "no", message.c_str());
+
+                if(!modTransferState.requested) {
+                    noteRejectedPacket(peer, "mod completion for a transfer that was not requested");
+                    abortModTransfer("Unexpected mod transfer");
                     break;
                 }
 
-                bool success = packetStream.readBool();
-                std::string message = packetStream.readString();
+                // A "successful" transfer that did not deliver every announced byte must not be
+                // handed on as if it were a complete payload.
+                const bool payloadComplete = modTransferState.inProgress
+                    && modTransferState.totalSize > 0
+                    && modTransferState.receivedSize == modTransferState.totalSize;
 
-                SDL_Log("NetworkManager: Mod transfer complete - success: %s, message: %s", 
-                        success ? "yes" : "no", message.c_str());
+                if(success && !payloadComplete) {
+                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                                "NetworkManager: mod transfer reported success with %zu of %zu bytes - rejecting",
+                                modTransferState.receivedSize, modTransferState.totalSize);
+                    abortModTransfer("Incomplete mod transfer");
+                    break;
+                }
 
                 modTransferState.inProgress = false;
 
@@ -1357,35 +1604,31 @@ void NetworkManager::handlePacket(ENetPeer* peer, ENetPacketIStream& packetStrea
                 modTransferState.modName.clear();
                 modTransferState.totalSize = 0;
                 modTransferState.receivedSize = 0;
+                modTransferState.requested = false;
+                modTransferState.requestedModName.clear();
             } break;
 
             case NETWORKPACKET_MOD_ACK: {
-                // Host receives mod sync acknowledgment from client
-                if(!bIsServer) {
-                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "NetworkManager: Client received MOD_ACK packet (should only be sent to host)");
-                    break;
-                }
-
+                // Host only, from an established client, lobby only (enforced by admitPacket).
                 bool success = packetStream.readBool();
                 std::string modChecksum = packetStream.readString();
 
-                // Find player name for this peer
-                std::string playerName = "Unknown";
-                if (peer != nullptr) {
-                    if (auto* peerData = static_cast<PeerData*>(peer->data)) {
-                        playerName = peerData->name;
-                    } else {
-                        char nameBuf[64];
-                        snprintf(nameBuf, sizeof(nameBuf), "%u:%u", peer->address.host, peer->address.port);
-                        playerName = nameBuf;
-                    }
+                if(modChecksum.size() > MAX_MOD_CHECKSUM_LENGTH) {
+                    noteRejectedPacket(peer, "oversized mod checksum in mod ack");
+                    break;
                 }
 
+                PeerData* peerData = static_cast<PeerData*>(peer->data);
+                if(peerData == nullptr) {
+                    break;
+                }
+                const std::string ackPlayerName = peerData->name;
+
                 SDL_Log("NetworkManager: Received mod ACK from '%s' - success: %s, checksum: %s",
-                        playerName.c_str(), success ? "yes" : "no", modChecksum.c_str());
+                        ackPlayerName.c_str(), success ? "yes" : "no", modChecksum.c_str());
 
                 if(pOnReceiveModAck) {
-                    pOnReceiveModAck(playerName, success, modChecksum);
+                    pOnReceiveModAck(ackPlayerName, success, modChecksum);
                 }
             } break;
             
@@ -1396,15 +1639,16 @@ void NetworkManager::handlePacket(ENetPeer* peer, ENetPacketIStream& packetStrea
             } break;
 
             default: {
-                SDL_Log("NetworkManager: Unknown packet type %d", packetType);
+                // Unreachable: admitPacket() already refuses unknown packet types.
+                noteRejectedPacket(peer, "unknown packet type");
             };
         }
 
     } catch (InputStream::eof&) {
-        SDL_Log("NetworkManager: Received packet is too small");
+        noteRejectedPacket(peer, "packet truncated");
         return;
     } catch (std::exception& e) {
-        SDL_Log("NetworkManager: %s", e.what());
+        noteRejectedPacket(peer, e.what());
     }
 }
 
@@ -1527,7 +1771,11 @@ void NetworkManager::sendStartGame(unsigned int timeLeft) {
         ENetPacketOStream packetStream(ENET_PACKET_FLAG_RELIABLE);
         packetStream.writeUint32(NETWORKPACKET_STARTGAME);
 
-        packetStream.writeUint32(timeLeft - pCurrentPeer->roundTripTime/2);
+        // Clients start half a round trip earlier, but a large RTT must not wrap the
+        // subtraction into a countdown of billions of milliseconds.
+        const unsigned int halfRoundTrip = pCurrentPeer->roundTripTime / 2;
+        const unsigned int peerTimeLeft = (halfRoundTrip >= timeLeft) ? 0u : (timeLeft - halfRoundTrip);
+        packetStream.writeUint32(peerTimeLeft);
 
         sendPacketToPeer(pCurrentPeer, packetStream);
     }
@@ -1649,7 +1897,22 @@ void NetworkManager::requestModDownload(const std::string& modName) {
         return;
     }
 
+    if(!ModTransferValidation::isValidModName(modName)) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "NetworkManager: refusing to request mod with an unusable name");
+        return;
+    }
+
     SDL_Log("NetworkManager: Requesting mod '%s' from host", modName.c_str());
+
+    // Remember what we asked for: mod chunks that do not belong to this request are refused.
+    modTransferState.requested = true;
+    modTransferState.requestedModName = modName;
+    modTransferState.inProgress = false;
+    modTransferState.modData.clear();
+    modTransferState.modName.clear();
+    modTransferState.totalSize = 0;
+    modTransferState.receivedSize = 0;
 
     ENetPacketOStream packetStream(ENET_PACKET_FLAG_RELIABLE);
     packetStream.writeUint32(NETWORKPACKET_MOD_REQUEST);

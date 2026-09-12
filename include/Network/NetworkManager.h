@@ -22,6 +22,8 @@
 #include <Network/ENetPacketOStream.h>
 #include <Network/ChangeEventList.h>
 #include <Network/CommandList.h>
+#include <Network/NetworkPacketTypes.h>
+#include <Network/NetworkPacketPolicy.h>
 
 #include <Network/LANGameFinderAndAnnouncer.h>
 #include <Network/MetaServerClient.h>
@@ -36,41 +38,6 @@
 #include <vector>
 #include <functional>
 #include <stdarg.h>
-
-#define NETWORKDISCONNECT_QUIT              1
-#define NETWORKDISCONNECT_TIMEOUT           2
-#define NETWORKDISCONNECT_PLAYER_EXISTS     3
-#define NETWORKDISCONNECT_GAME_FULL         4
-#define NETWORKDISCONNECT_PROTOCOL_MISMATCH 5
-
-#define NETWORKPACKET_UNKNOWN               0
-#define NETWORKPACKET_CONNECT               1
-#define NETWORKPACKET_DISCONNECT            2
-#define NETWORKPACKET_PEER_CONNECTED        3
-#define NETWORKPACKET_SENDGAMEINFO          4
-#define NETWORKPACKET_SENDNAME              5
-#define NETWORKPACKET_CHATMESSAGE           6
-#define NETWORKPACKET_CHANGEEVENTLIST       7
-#define NETWORKPACKET_STARTGAME             8
-#define NETWORKPACKET_COMMANDLIST           9
-#define NETWORKPACKET_SELECTIONLIST         10
-#define NETWORKPACKET_CONFIG_HASH           11
-#define NETWORKPACKET_SETPATHBUDGET         12  // Phase 1.4: Budget negotiation
-#define NETWORKPACKET_CLIENTSTATS           13  // Multiplayer: Client performance stats
-#define NETWORKPACKET_MOD_INFO              14  // Host -> Client: mod name + checksums
-#define NETWORKPACKET_MOD_REQUEST           15  // Client -> Host: request mod files
-#define NETWORKPACKET_MOD_CHUNK             16  // Host -> Client: mod file chunk
-#define NETWORKPACKET_MOD_COMPLETE          17  // Host -> Client: transfer complete
-#define NETWORKPACKET_MOD_ACK               18  // Client -> Host: acknowledge mod sync complete
-#define NETWORKPACKET_KEEPALIVE             19  // Periodic ping to keep NAT mappings alive
-
-#define NETWORKPACKET_COOP_MISSION          20
-
-// Network protocol version - increment when packet formats change
-// Version 2: Added simMsAvg to NETWORKPACKET_CLIENTSTATS (5 fields instead of 4)
-// Version 3: Added mod transfer packets (MOD_INFO, MOD_REQUEST, MOD_CHUNK, MOD_COMPLETE)
-// Version 4: Fixed nine-house deterministic state and versioned visibility storage
-#define NETWORK_PROTOCOL_VERSION            5
 
 /**
  * Reject an incompatible config-hash handshake and dispatch its disconnect cause.
@@ -89,10 +56,6 @@ inline bool rejectIncompatibleGameVersion(const std::string& peer, const std::st
     disconnect(NETWORKDISCONNECT_PROTOCOL_MISMATCH);
     return true;
 }
-
-// Mod transfer limits
-#define MAX_MOD_TRANSFER_SIZE   (10 * 1024 * 1024)  // 10MB max mod size
-#define MOD_CHUNK_SIZE          (64 * 1024)          // 64KB per chunk
 
 #define AWAITING_CONNECTION_TIMEOUT     5000
 
@@ -129,7 +92,13 @@ public:
     void sendCoopMission(const GameInitSettings& settings);
     std::unique_ptr<GameInitSettings> takeCoopMission();
 
-    void beginSimulation(Uint32 seed) { simulationSeed = seed; }
+    /**
+        Called on every peer (host and clients) when the match starts. Besides the simulation
+        seed this freezes the session phase: lobby-only packets, including renames and mod
+        transfers, stop being accepted from this point on.
+        \param  seed    the shared simulation seed
+    */
+    void beginSimulation(Uint32 seed) { simulationSeed = seed; bGameInProgress = true; }
     void sendCommandList(const CommandList& commandList);
 
     void sendSelectedList(const std::set<Uint32>& selectedList, int groupListIndex = -1);
@@ -345,6 +314,24 @@ private:
 
     void handlePacket(ENetPeer* peer, ENetPacketIStream& packetStream);
 
+    class PeerData;
+
+    /**
+        Applies the central admission policy to one inbound packet.
+        \param  peer        the connection the packet arrived on
+        \param  packetType  the packet id that was just read
+        \return true if the packet may be interpreted
+    */
+    bool admitPacket(ENetPeer* peer, Uint32 packetType);
+
+    /**
+        Records a rejected or malformed packet for this peer, throttles the log line and
+        disconnects peers that keep sending garbage.
+        \param  peer    the offending connection
+        \param  reason  short description for the log
+    */
+    void noteRejectedPacket(ENetPeer* peer, const char* reason);
+
     class PeerData {
     public:
         enum class PeerState {
@@ -367,13 +354,50 @@ private:
         Uint32                  timeout;
 
         std::string             name;
+        bool                    bNameAssigned = false;  ///< identity is bound once and never re-bound
+        Uint32                  clientId = 0;           ///< stable per-connection id (not an address hash)
         std::string             gameVersion;
         std::string             quantBotConfigHash;
         std::string             objectDataHash;
         std::list<ENetPeer*>    notYetConnectedPeers;
+
+        // Abuse accounting: a legitimate peer never trips these.
+        Uint32                  rejectedPackets = 0;
+        Uint32                  lastRejectLogTime = 0;
+        Uint32                  packetWindowStart = 0;
+        Uint32                  packetsInWindow = 0;
     };
 
+    /**
+        Allocates peer state and gives the connection a stable local id.
+        \param  peer        the connection the state belongs to
+        \param  peerState   the initial handshake state
+        \return the new peer state (ownership stays with peer->data)
+    */
+    PeerData* createPeerData(ENetPeer* peer, PeerData::PeerState peerState);
+
+    /// Coarse bound on a path budget order; Game::handleSetPathBudget applies the exact range.
+    static constexpr Uint32 MAX_PATH_BUDGET_ORDER = 1000000;
+    /// Mod checksums are 16 hex characters; this leaves room without allowing junk.
+    static constexpr std::size_t MAX_MOD_CHECKSUM_LENGTH = 128;
+    /// Longest status message accepted with a mod transfer result.
+    static constexpr std::size_t MAX_MOD_MESSAGE_LENGTH = 256;
+    /// Longest start-game countdown accepted from the host (the lobby uses 3 s).
+    static constexpr Uint32 MAX_START_GAME_COUNTDOWN_MS = 30000;
+    /// Longest chat message accepted from a peer.
+    static constexpr std::size_t MAX_CHAT_MESSAGE_LENGTH = 512;
+    /// The ENet host is created with 32 peer slots; the mesh can never legitimately exceed it.
+    static constexpr std::size_t MAX_MESH_PEERS = 32;
+    /// A peer is dropped after this many refused packets.
+    static constexpr Uint32     MAX_REJECTED_PACKETS_PER_PEER = 64;
+    /// Rejection log lines per peer are throttled to one per this many milliseconds.
+    static constexpr Uint32     REJECT_LOG_INTERVAL_MS = 5000;
+    /// Packets per second a single peer may send before it is dropped. A full 10 MiB mod
+    /// transfer is ~160 packets and in-game traffic is a few dozen per second.
+    static constexpr Uint32     MAX_PACKETS_PER_PEER_PER_SECOND = 4096;
+
     std::unique_ptr<GameInitSettings> pendingCoopMission;
+    Uint32 nextClientId = 1;        ///< source of the stable per-connection client ids
     Uint32 simulationSeed = 0;
     ENetHost* host = nullptr;
     bool bIsServer = false;
@@ -414,8 +438,13 @@ private:
         size_t totalSize = 0;
         size_t receivedSize = 0;
         bool inProgress = false;
+        bool requested = false;         ///< true once this client asked the host for a mod
+        std::string requestedModName;   ///< the mod this client asked for; chunks must match it
     };
     ModTransferState modTransferState;
+
+    /// Clears a mod download, optionally reporting the failure to the lobby.
+    void abortModTransfer(const char* reason);
 
     std::unique_ptr<LANGameFinderAndAnnouncer>  pLANGameFinderAndAnnouncer = nullptr;
     std::unique_ptr<MetaServerClient>           pMetaServerClient = nullptr;
