@@ -21,7 +21,7 @@ npm ci
 npm test
 ```
 
-`npm test` runs four suites with Node's built-in test runner:
+`npm test` runs six suites with Node's built-in test runner:
 
 | Suite | Covers |
 | --- | --- |
@@ -30,6 +30,10 @@ npm test
 | `test/admission.test.js` | HTTP admission, field validation, body limits, Origin allowlist, rate limits, logging hygiene |
 | `test/e2e.test.js` | real `ws` clients: membership, routing, phases, co-op continuation, diagnostics, large payloads, shutdown |
 | `test/abuse.test.js` | grant replay/expiry, foreign origins, wrong roles, banned packet types, cross-room routing, full rooms, deadlines, floods, backpressure |
+| `test/analytics.test.js` | lifecycle DTO schema, configuration and startup failures, HMAC over exact bytes, idempotent retries, queue drops, timeouts, refused redirects, TLS verification, full relay lifecycle into a captured receiver |
+
+The TLS tests generate a throwaway certificate with the `openssl` binary and skip themselves if
+it is unavailable.
 
 ## Run it
 
@@ -64,14 +68,30 @@ npm start
 | `RELAY_GAME_PROTOCOL` | Pin `NETWORK_PROTOCOL_VERSION`; `0` accepts any. |
 | `RELAY_MAX_ROOMS`, `RELAY_MAX_CONNECTIONS` | Capacity caps. |
 
+## Optional lifecycle delivery to the metaserver
+
+Off unless an operator sets both variables, and off unless `RELAY_OBSERVED_TRANSPORT=wss`:
+
+```bash
+DUNE_RELAY_ANALYTICS_URL=https://metaserver.example/relay-events.php \
+DUNE_RELAY_ANALYTICS_KEY=<dedicated random secret, >=32 chars> \
+npm start
+```
+
+It POSTs one signed, fixed-schema lifecycle event per room creation, join, match start, leave
+and close. Invitation codes, grants, names, chat and payloads are not part of that schema and
+cannot reach it. Setting one variable without the other fails startup. The full contract,
+including the remaining variables, is [`docs/room-relay-analytics.md`](../../docs/room-relay-analytics.md).
+
 ## Deployment expectations
 
 - Dedicated unprivileged service account, no deploy or SSH keys, no outbound network access.
 - TLS terminates at the reverse proxy; the relay listens on loopback.
 - Keep its files outside any `rsync --delete` website deploy tree.
 - It never opens the production SQLite database. Lifecycle events go to stdout in the schema
-  described in [`docs/room-relay-logging.md`](../../docs/room-relay-logging.md); shipping them to
-  the metaserver is a separate, authenticated integration.
+  described in [`docs/room-relay-logging.md`](../../docs/room-relay-logging.md). Shipping a
+  separate, signed lifecycle summary to the metaserver is the optional integration above: one
+  operator-configured outbound HTTPS destination, no database credential, no SQLite access.
 
 ## Layout
 
@@ -82,6 +102,7 @@ src/limits.js      fixed-window counters and a bounded-cardinality rate table
 src/rooms.js       rooms, room codes, single-use grants, capacity and reaping
 src/admission.js   HTTPS admission endpoints and their strict parsers
 src/logging.js     bounded lifecycle events, no credentials or game content
+src/analytics.js   optional signed lifecycle delivery to the metaserver analytics API
 src/server.js      HTTP + WebSocket wiring, routing, authorisation, deadlines
 src/index.js       entry point and configuration from the environment
 ```

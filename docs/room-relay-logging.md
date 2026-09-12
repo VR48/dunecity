@@ -32,9 +32,9 @@ Every event carries `ts` (ISO 8601) and `event`.
 - Chat text, command streams, selection lists, map bytes or any game payload content.
 - Raw client addresses. `addressTag` is a per-process, salted SHA-256 prefix: it correlates
   repeated behaviour within one relay run and is meaningless afterwards and across runs.
-
-The room code *is* logged, because it is the only handle an operator has on a session and it
-stops working the moment the room closes.
+- The room code. It is an invitation credential. The `room` field is `Room.logId`, 16 random
+  bytes as base64url, generated per room and independent of the code and of every grant. It is
+  the handle operators and analytics correlate on.
 
 ## 3. Trust labels
 
@@ -50,7 +50,10 @@ participant. Do not overload it. A mixed desktop/browser match needs per-partici
 
 ## 4. Required metaserver integration
 
-Codex owns this work in the website repository. The requirements the relay side depends on:
+The delivery half of this now exists and has its own contract:
+[`room-relay-analytics.md`](room-relay-analytics.md). It is optional, off by default, signed,
+service-only, and carries a separate fresh DTO rather than the stdout records below. The
+requirements in this section are what the relay side depends on from the metaserver:
 
 1. **Additive schema.** Add tables/columns; do not change the meaning of existing rows. Existing
    `list`/`list2` responses must keep their current field counts and ordering, because the old
