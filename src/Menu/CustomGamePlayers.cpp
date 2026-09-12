@@ -48,6 +48,8 @@
 #include <sand.h>
 #include <globals.h>
 
+#include <algorithm>
+
 
 #define PLAYER_HUMAN        0
 #define PLAYER_OPEN         -1
@@ -569,7 +571,10 @@ CustomGamePlayers::CustomGamePlayers(const GameInitSettings& newGameInitSettings
         }
 
         pNetworkManager->setOnPeerDisconnected(std::bind(&CustomGamePlayers::onPeerDisconnected, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
-        pNetworkManager->setOnReceiveChangeEventList(std::bind(&CustomGamePlayers::onReceiveChangeEventList, this, std::placeholders::_1));
+        pNetworkManager->setOnReceiveChangeEventList(
+            [this](const std::string& senderName, const ChangeEventList& changeEventList) {
+                onReceiveChangeEventList(senderName, changeEventList);
+            });
         pNetworkManager->setOnReceiveChatMessage(std::bind(&CustomGamePlayers::onReceiveChatMessage, this, std::placeholders::_1, std::placeholders::_2));
         pNetworkManager->setOnConfigMismatch(std::bind(&CustomGamePlayers::onConfigMismatch, this, std::placeholders::_1));
         pNetworkManager->setOnReceiveModInfo(std::bind(&CustomGamePlayers::onReceiveModInfo, this, std::placeholders::_1, std::placeholders::_2));
@@ -610,7 +615,7 @@ CustomGamePlayers::~CustomGamePlayers()
 
         pNetworkManager->setOnPeerDisconnected(std::function<void (const std::string&, bool, int)>());
         pNetworkManager->setGetChangeEventListForNewPlayerCallback(std::function<ChangeEventList (const std::string&)>());
-        pNetworkManager->setOnReceiveChangeEventList(std::function<void (const ChangeEventList&)>());
+        pNetworkManager->setOnReceiveChangeEventList(std::function<void (const std::string&, const ChangeEventList&)>());
         pNetworkManager->setOnReceiveChatMessage(std::function<void (const std::string&, const std::string&)>());
         pNetworkManager->setOnStartGame(std::function<void (unsigned int)>());
         pNetworkManager->setOnReceiveModInfo(std::function<void (const std::string&, const std::string&)>());
@@ -641,7 +646,7 @@ void CustomGamePlayers::update() {
 
             pNetworkManager->setOnPeerDisconnected(std::function<void (const std::string&, bool, int)>());
             pNetworkManager->setGetChangeEventListForNewPlayerCallback(std::function<ChangeEventList (const std::string&)>());
-            pNetworkManager->setOnReceiveChangeEventList(std::function<void (const ChangeEventList&)>());
+            pNetworkManager->setOnReceiveChangeEventList(std::function<void (const std::string&, const ChangeEventList&)>());
             pNetworkManager->setOnReceiveChatMessage(std::function<void (const std::string&, const std::string&)>());
             pNetworkManager->setOnStartGame(std::function<void (unsigned int)>());
 
@@ -666,8 +671,57 @@ void CustomGamePlayers::update() {
     }
 }
 
-void CustomGamePlayers::onReceiveChangeEventList(const ChangeEventList& changeEventList)
+LobbyAuthorization::SeatSnapshot CustomGamePlayers::makeSeatSnapshot() const {
+    LobbyAuthorization::SeatSnapshot snapshot;
+    snapshot.numHouses = numHouses;
+    snapshot.multiplePlayersPerHouse = gameInitSettings.isMultiplePlayersPerHouse();
+
+    const int slotCount = std::min(numHouses * 2,
+                                   static_cast<int>(snapshot.slots.size()));
+    for(int slot = 0; slot < slotCount; slot++) {
+        const HouseInfo& curHouseInfo = houseInfo[slot / 2];
+        const DropDownBox& dropDownBox = (slot % 2 == 0) ? curHouseInfo.player1DropDown
+                                                         : curHouseInfo.player2DropDown;
+
+        LobbyAuthorization::SlotState& state = snapshot.slots[static_cast<std::size_t>(slot)];
+        const int entryData = dropDownBox.getSelectedEntryIntData();
+        if(entryData == PLAYER_HUMAN) {
+            state.kind = LobbyAuthorization::SlotKind::Human;
+            state.name = dropDownBox.getSelectedEntry();
+        } else if(entryData == PLAYER_OPEN) {
+            state.kind = LobbyAuthorization::SlotKind::Open;
+        } else if(entryData == PLAYER_CLOSED) {
+            state.kind = LobbyAuthorization::SlotKind::Closed;
+        } else {
+            state.kind = LobbyAuthorization::SlotKind::AI;
+        }
+    }
+
+    return snapshot;
+}
+
+void CustomGamePlayers::onReceiveChangeEventList(const std::string& senderName,
+                                                 const ChangeEventList& changeEventList)
 {
+    // On the host a non-empty sender is a remote client, and everything it asks for has to be
+    // something its own widgets could have produced: it may claim a seat for itself and change
+    // the house it occupies, nothing else. The whole transaction is judged first, so a list
+    // that mixes a legal and an illegal event changes nothing and is not rebroadcast.
+    if(bServer && !senderName.empty()) {
+        std::size_t refusedIndex = 0;
+        const LobbyAuthorization::Decision decision = LobbyAuthorization::authorizeClientTransaction(
+            makeSeatSnapshot(), senderName, changeEventList.changeEventList, refusedIndex);
+
+        if(decision != LobbyAuthorization::Decision::Allow) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "CustomGamePlayers: refusing lobby change %zu from '%s': %s",
+                        refusedIndex, senderName.c_str(),
+                        LobbyAuthorization::describeDecision(decision));
+            addInfoMessage("Ignored an unauthorized lobby change from " + senderName);
+            return;
+        }
+    }
+
     for(const ChangeEventList::ChangeEvent& changeEvent : changeEventList.changeEventList) {
 
         // houseInfo has MAX_CUSTOM_GAME_PLAYERS entries and the slot arrives over the network:

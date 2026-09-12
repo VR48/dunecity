@@ -144,10 +144,12 @@ public:
 
 
     /**
-        Sets the function that should be called when a change event is received.
-        \param  pOnReceiveChangeEventList   function to call on receive
+        Sets the function that should be called when a change event is received. The first
+        argument is the bound peer name of the connection it arrived on, so the lobby can
+        authorize the request against the seat that connection holds.
+        \param  pOnReceiveChangeEventList   function(senderName, changeEventList) to call
     */
-    inline void setOnReceiveChangeEventList(std::function<void (const ChangeEventList&)> pOnReceiveChangeEventList) {
+    inline void setOnReceiveChangeEventList(std::function<void (const std::string&, const ChangeEventList&)> pOnReceiveChangeEventList) {
         this->pOnReceiveChangeEventList = pOnReceiveChangeEventList;
     }
 
@@ -443,7 +445,7 @@ private:
 
     std::function<void (const std::string&, const std::string&)>            pOnReceiveChatMessage;
     std::function<void (const GameInitSettings&, const ChangeEventList&)>   pOnReceiveGameInfo;
-    std::function<void (const ChangeEventList&)>                            pOnReceiveChangeEventList;
+    std::function<void (const std::string&, const ChangeEventList&)>        pOnReceiveChangeEventList;
     std::function<void (const std::string&, bool, int)>                     pOnPeerDisconnected;
     std::function<ChangeEventList (const std::string&)>                     pGetChangeEventListForNewPlayerCallback;
     std::function<void (unsigned int)>                                      pOnStartGame;

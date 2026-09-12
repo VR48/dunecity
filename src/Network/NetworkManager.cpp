@@ -1297,7 +1297,7 @@ void NetworkManager::handlePacket(ENetPeer* peer, ENetPacketIStream& packetStrea
                 }
 
                 if(pOnReceiveChangeEventList) {
-                    pOnReceiveChangeEventList(changeEventList);
+                    pOnReceiveChangeEventList(peerData->name, changeEventList);
                 }
             } break;
 

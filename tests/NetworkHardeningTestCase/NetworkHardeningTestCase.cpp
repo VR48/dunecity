@@ -16,6 +16,7 @@
 #include <CommandAuthorization.h>
 #include <CommandValidation.h>
 #include <DataTypes.h>
+#include <Menu/LobbyAuthorization.h>
 #include <Network/ChangeEventList.h>
 #include <Network/ENetPacketIStream.h>
 #include <Network/ENetPacketOStream.h>
@@ -29,6 +30,7 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <list>
 #include <string>
 #include <vector>
 
@@ -1213,5 +1215,206 @@ TEST_CASE("Command authorization: enum and boolean parameters are validated exac
         REQUIRE(CommandAuthorization::isValidFundingPercent(100));
         REQUIRE_FALSE(CommandAuthorization::isValidFundingPercent(101));
         REQUIRE_FALSE(CommandAuthorization::isValidFundingPercent(0xFFFFFFFFu));
+    }
+}
+
+// =============================================================================
+// Lobby authorization: what a client may ask the host to change
+// =============================================================================
+
+namespace {
+
+using LobbyAuthorization::Decision;
+using LobbyAuthorization::SeatSnapshot;
+using LobbyAuthorization::SlotKind;
+
+/// A four-house lobby: host in house 0 seat 0, "stefan" in house 1 seat 0,
+/// "quix" sharing house 1 seat 1, house 2 seat 0 is a bot, house 3 seat 0 is closed.
+SeatSnapshot exampleLobby() {
+    SeatSnapshot snapshot;
+    snapshot.numHouses = 4;
+    snapshot.multiplePlayersPerHouse = true;
+
+    snapshot.slots[0].kind = SlotKind::Human;
+    snapshot.slots[0].name = "host";
+    snapshot.slots[1].kind = SlotKind::Open;
+
+    snapshot.slots[2].kind = SlotKind::Human;
+    snapshot.slots[2].name = "stefan";
+    snapshot.slots[3].kind = SlotKind::Human;
+    snapshot.slots[3].name = "quix";
+
+    snapshot.slots[4].kind = SlotKind::AI;
+    snapshot.slots[5].kind = SlotKind::Open;
+
+    snapshot.slots[6].kind = SlotKind::Closed;
+    snapshot.slots[7].kind = SlotKind::Closed;
+
+    return snapshot;
+}
+
+ChangeEventList::ChangeEvent seatClaim(Uint32 slot, const std::string& name) {
+    return ChangeEventList::ChangeEvent(slot, name);
+}
+
+ChangeEventList::ChangeEvent houseChange(ChangeEventList::ChangeEvent::EventType type,
+                                         Uint32 slot, Uint32 value) {
+    return ChangeEventList::ChangeEvent(type, slot, value);
+}
+
+Decision judge(const SeatSnapshot& snapshot, const std::string& sender,
+               const ChangeEventList::ChangeEvent& event) {
+    return LobbyAuthorization::authorizeClientEvent(snapshot, sender, event);
+}
+
+} // namespace
+
+TEST_CASE("Lobby authorization: a client may claim a seat only for itself",
+          "[lobby][security][authorization]") {
+    const SeatSnapshot lobby = exampleLobby();
+
+    SECTION("claiming a free seat is how a player moves") {
+        REQUIRE(judge(lobby, "stefan", seatClaim(1, "stefan")) == Decision::Allow);
+        REQUIRE(judge(lobby, "stefan", seatClaim(5, "stefan")) == Decision::Allow);
+    }
+
+    SECTION("taking over a bot seat is allowed, the UI offers it") {
+        REQUIRE(judge(lobby, "stefan", seatClaim(4, "stefan")) == Decision::Allow);
+    }
+
+    SECTION("seating somebody else is refused") {
+        REQUIRE(judge(lobby, "stefan", seatClaim(1, "quix")) == Decision::RejectForeignName);
+        REQUIRE(judge(lobby, "stefan", seatClaim(1, "host")) == Decision::RejectForeignName);
+        REQUIRE(judge(lobby, "stefan", seatClaim(1, "")) == Decision::RejectForeignName);
+    }
+
+    SECTION("a closed seat stays closed") {
+        REQUIRE(judge(lobby, "stefan", seatClaim(6, "stefan")) == Decision::RejectClosedSeat);
+    }
+
+    SECTION("slots outside the lobby are refused") {
+        REQUIRE(judge(lobby, "stefan", seatClaim(8, "stefan")) == Decision::RejectSlotOutOfRange);
+        REQUIRE(judge(lobby, "stefan", seatClaim(0xFFFFFFFFu, "stefan"))
+                == Decision::RejectSlotOutOfRange);
+    }
+
+    SECTION("second seats do not exist without multiple players per house") {
+        SeatSnapshot single = exampleLobby();
+        single.multiplePlayersPerHouse = false;
+        REQUIRE(judge(single, "stefan", seatClaim(1, "stefan")) == Decision::RejectSlotOutOfRange);
+        REQUIRE(judge(single, "stefan", seatClaim(2, "stefan")) == Decision::Allow);
+    }
+}
+
+TEST_CASE("Lobby authorization: house settings are restricted to the sender's own house",
+          "[lobby][security][authorization]") {
+    const SeatSnapshot lobby = exampleLobby();
+    using EventType = ChangeEventList::ChangeEvent::EventType;
+
+    SECTION("the house the sender occupies") {
+        REQUIRE(judge(lobby, "stefan", houseChange(EventType::ChangeHouse, 1, HOUSE_ORDOS))
+                == Decision::Allow);
+        REQUIRE(judge(lobby, "stefan", houseChange(EventType::ChangeTeam, 1, 2))
+                == Decision::Allow);
+        REQUIRE(judge(lobby, "stefan", houseChange(EventType::ChangeColor, 1, 3))
+                == Decision::Allow);
+        // The co-op partner in the same house has the same rights.
+        REQUIRE(judge(lobby, "quix", houseChange(EventType::ChangeHouse, 1, HOUSE_ORDOS))
+                == Decision::Allow);
+    }
+
+    SECTION("another player's house is refused") {
+        REQUIRE(judge(lobby, "stefan", houseChange(EventType::ChangeHouse, 0, HOUSE_ORDOS))
+                == Decision::RejectNotYourHouse);
+        REQUIRE(judge(lobby, "stefan", houseChange(EventType::ChangeTeam, 2, 1))
+                == Decision::RejectNotYourHouse);
+        REQUIRE(judge(lobby, "stefan", houseChange(EventType::ChangeColor, 3, 1))
+                == Decision::RejectNotYourHouse);
+    }
+
+    SECTION("changing the partner slot of the sender's own house is allowed") {
+        REQUIRE(judge(lobby, "stefan", houseChange(EventType::ChangePlayer, 3, 0))
+                == Decision::Allow);
+    }
+
+    SECTION("changing a slot in another house is refused") {
+        REQUIRE(judge(lobby, "stefan", houseChange(EventType::ChangePlayer, 0, 0))
+                == Decision::RejectNotYourHouse);
+        REQUIRE(judge(lobby, "stefan", houseChange(EventType::ChangePlayer, 4, 0))
+                == Decision::RejectNotYourHouse);
+    }
+
+    SECTION("a sender that holds no seat may not change anything but a seat claim") {
+        REQUIRE(judge(lobby, "intruder", houseChange(EventType::ChangeHouse, 1, HOUSE_ORDOS))
+                == Decision::RejectUnknownSender);
+        REQUIRE(judge(lobby, "intruder", houseChange(EventType::ChangePlayer, 1, 0))
+                == Decision::RejectUnknownSender);
+        REQUIRE(judge(lobby, "intruder", seatClaim(1, "intruder")) == Decision::Allow);
+    }
+
+    SECTION("house-level slots are bounded by the house count, not the slot count") {
+        REQUIRE(judge(lobby, "stefan", houseChange(EventType::ChangeHouse, 4, HOUSE_ORDOS))
+                == Decision::RejectSlotOutOfRange);
+        REQUIRE(judge(lobby, "stefan", houseChange(EventType::ChangeHouse, 0xFFFFFFFFu, 0))
+                == Decision::RejectSlotOutOfRange);
+    }
+}
+
+TEST_CASE("Lobby authorization: a transaction is judged as a whole",
+          "[lobby][security][authorization]") {
+    const SeatSnapshot lobby = exampleLobby();
+    using EventType = ChangeEventList::ChangeEvent::EventType;
+    std::size_t refused = 0;
+
+    SECTION("the pair the house drop-down sends is accepted") {
+        // CustomGamePlayers::onChangeHousesDropDownBoxes sends ChangeHouse plus ChangeColor.
+        std::list<ChangeEventList::ChangeEvent> events;
+        events.push_back(houseChange(EventType::ChangeHouse, 1, HOUSE_ORDOS));
+        events.push_back(houseChange(EventType::ChangeColor, 1, HOUSE_INVALID));
+        REQUIRE(LobbyAuthorization::authorizeClientTransaction(lobby, "stefan", events, refused)
+                == Decision::Allow);
+    }
+
+    SECTION("one illegal event refuses the whole transaction") {
+        std::list<ChangeEventList::ChangeEvent> events;
+        events.push_back(houseChange(EventType::ChangeHouse, 1, HOUSE_ORDOS));
+        events.push_back(houseChange(EventType::ChangeTeam, 0, 1));     // another house
+        REQUIRE(LobbyAuthorization::authorizeClientTransaction(lobby, "stefan", events, refused)
+                == Decision::RejectNotYourHouse);
+        REQUIRE(refused == 1);
+    }
+
+    SECTION("a client cannot occupy several seats in one transaction") {
+        std::list<ChangeEventList::ChangeEvent> events;
+        events.push_back(seatClaim(1, "stefan"));
+        events.push_back(seatClaim(5, "stefan"));
+        REQUIRE(LobbyAuthorization::authorizeClientTransaction(lobby, "stefan", events, refused)
+                == Decision::RejectTooManyClaims);
+    }
+
+    SECTION("the host's full lobby snapshot is not something a client may send") {
+        // This is what getChangeEventList() produces: every seat and house in one list.
+        std::list<ChangeEventList::ChangeEvent> events;
+        for(Uint32 house = 0; house < 4; house++) {
+            events.push_back(houseChange(EventType::ChangeHouse, house, HOUSE_ORDOS));
+            events.push_back(houseChange(EventType::ChangeTeam, house, 1));
+            events.push_back(houseChange(EventType::ChangeColor, house, 1));
+        }
+        REQUIRE(LobbyAuthorization::authorizeClientTransaction(lobby, "stefan", events, refused)
+                != Decision::Allow);
+    }
+
+    SECTION("an empty transaction changes nothing and is harmless") {
+        const std::list<ChangeEventList::ChangeEvent> events;
+        REQUIRE(LobbyAuthorization::authorizeClientTransaction(lobby, "stefan", events, refused)
+                == Decision::Allow);
+    }
+
+    SECTION("a lobby with no houses refuses everything") {
+        SeatSnapshot empty;
+        std::list<ChangeEventList::ChangeEvent> events;
+        events.push_back(seatClaim(0, "stefan"));
+        REQUIRE(LobbyAuthorization::authorizeClientTransaction(empty, "stefan", events, refused)
+                == Decision::RejectUnknownSender);
     }
 }
