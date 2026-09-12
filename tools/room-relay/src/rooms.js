@@ -80,6 +80,8 @@ class RoomStore {
    */
   constructor(options = {}) {
     this.now = options.now || (() => Date.now());
+    /** Called once per room, whichever path closed it, including the reaper. */
+    this.onRoomClosed = options.onRoomClosed || (() => {});
     this.maxRooms = options.maxRooms || LIMITS.MAX_ROOMS;
     this.grantTtlMs = options.grantTtlMs === undefined ? LIMITS.GRANT_TTL_MS : options.grantTtlMs;
     /** @type {Map<string, Room>} room code -> room */
@@ -209,11 +211,13 @@ class RoomStore {
     return { room, role: grant.role };
   }
 
+  /** @param {string} reason fixed code: 'host_left' | 'shutdown' | 'lifetime' | 'empty' */
   closeRoom(room, reason) {
     if (room.closed) return;
     room.closed = true;
     this.rooms.delete(room.code);
     room.closeReason = reason;
+    this.onRoomClosed(room, reason);
   }
 
   get roomCount() {

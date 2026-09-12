@@ -22,6 +22,10 @@ const FIELDS = {
   admission_denied: ['endpoint', 'code', 'addressTag'],
   connection_denied: ['code', 'addressTag'],
   message_refused: ['room', 'peerId', 'code'],
+  // Analytics delivery is reported in aggregate only: never a destination, a body, or a
+  // per-event failure. 'state' is one of the fixed disabled_*/enabled tokens.
+  analytics_status: ['state'],
+  analytics_delivery: ['accepted', 'delivered', 'failed', 'dropped', 'retried'],
 };
 const ALLOWED_EVENTS = new Set(Object.keys(FIELDS));
 

@@ -2,6 +2,7 @@
 
 const { createRelay } = require('./server');
 const { LifecycleLog } = require('./logging');
+const { createLifecycleSink } = require('./analytics');
 
 // Entry point. The relay never terminates TLS itself: in production it listens on loopback
 // behind a reverse proxy that holds the certificate, and `RELAY_OBSERVED_TRANSPORT=wss` records
@@ -61,6 +62,16 @@ async function main(argv) {
   const raw = configFromEnv(argv);
   const config = Object.fromEntries(Object.entries(raw).filter(([, v]) => v !== undefined));
   config.log = new LifecycleLog({});
+
+  // Optional and off by default. A present but wrong configuration throws here, before the
+  // socket is bound, and the message names the variable without quoting its value.
+  const analytics = createLifecycleSink({
+    env: process.env,
+    observedTransport: config.observedTransport,
+    log: config.log,
+  });
+  config.lifecycle = analytics.sink;
+  config.log.emit('analytics_status', { state: analytics.state });
 
   const relay = createRelay(config);
   await relay.start();

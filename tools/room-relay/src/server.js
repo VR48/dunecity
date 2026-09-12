@@ -18,6 +18,7 @@ const { ProtocolError } = protocol;
 const { RoomStore } = require('./rooms');
 const { WindowCounter, BoundedRateTable } = require('./limits');
 const { LifecycleLog } = require('./logging');
+const { NULL_LIFECYCLE } = require('./analytics');
 const { createAdmissionHandler, clientAddress } = require('./admission');
 
 const DEFAULT_CONFIG = {
@@ -40,6 +41,8 @@ const DEFAULT_CONFIG = {
   backpressureBytes: LIMITS.BACKPRESSURE_BYTES,
   maxSoftErrors: LIMITS.MAX_SOFT_ERRORS,
   log: undefined,
+  /** Optional analytics sink; NULL_LIFECYCLE when the operator has not configured one. */
+  lifecycle: undefined,
 };
 
 /** One WebSocket connection. Everything the relay trusts about a peer lives here. */
@@ -78,7 +81,16 @@ function createRelay(userConfig = {}) {
 
   const now = config.now || (() => Date.now());
   const log = config.log || new LifecycleLog({ enabled: config.logEnabled !== false });
-  const store = new RoomStore({ now, maxRooms: config.maxRooms, grantTtlMs: config.grantTtlMs });
+  // Lifecycle delivery is driven by explicit calls, not by the diagnostic log, so the log's
+  // rate limiting can never suppress an API event.
+  const lifecycle = config.lifecycle || NULL_LIFECYCLE;
+  const store = new RoomStore({
+    now,
+    maxRooms: config.maxRooms,
+    grantTtlMs: config.grantTtlMs,
+    // Fires once per room whether the host left, the relay stopped, or the reaper collected it.
+    onRoomClosed: (room, reason) => lifecycle.roomClosed({ roomLogId: room.logId, reason }),
+  });
 
   /** @type {Set<Connection>} */
   const connections = new Set();
@@ -94,6 +106,7 @@ function createRelay(userConfig = {}) {
   const ctx = {
     store,
     log,
+    lifecycle,
     config,
     now,
     addressLimiter,
@@ -200,7 +213,8 @@ function createRelay(userConfig = {}) {
   function closeRoom(room, code, message, reason) {
     if (room.closed) return;
     const members = [...room.peers.values()];
-    store.closeRoom(room, message);
+    // The store owns the single 'closed' lifecycle event, so the reaper path reports it too.
+    store.closeRoom(room, reason);
     log.emit('room_closed', { room: room.logId, code, reasonCode: reason, peers: members.length });
 
     for (const member of members) {
@@ -222,6 +236,13 @@ function createRelay(userConfig = {}) {
         reasonCode: reason,
         transport: config.observedTransport,
         runtimeMs: member.joinedAt ? now() - member.joinedAt : 0,
+      });
+      lifecycle.participantLeft({
+        roomLogId: room.logId,
+        participantId: member.peerId,
+        runtime: member.runtime,
+        appVersion: member.appVersion,
+        reason,
       });
     }
   }
@@ -249,6 +270,13 @@ function createRelay(userConfig = {}) {
       reasonCode: reason,
       transport: config.observedTransport,
       runtimeMs: conn.joinedAt ? now() - conn.joinedAt : 0,
+    });
+    lifecycle.participantLeft({
+      roomLogId: room.logId,
+      participantId: conn.peerId,
+      runtime: conn.runtime,
+      appVersion: conn.appVersion,
+      reason,
     });
 
     announceLeave(room, conn, reason);
@@ -333,6 +361,12 @@ function createRelay(userConfig = {}) {
       transport: config.observedTransport,
       addressTag: log.addressTag(conn.address),
     });
+    lifecycle.participantJoined({
+      roomLogId: room.logId,
+      participantId: conn.peerId,
+      runtime: conn.runtime,
+      appVersion: conn.appVersion,
+    });
   }
 
   function handleRelay(conn, msg) {
@@ -400,6 +434,8 @@ function createRelay(userConfig = {}) {
       if (other !== conn) deliver(other, frame);
     }
     log.emit('room_phase', { room: room.logId, phase: room.phase, byPeerId: conn.peerId });
+    // 'started' is the lobby -> match transition only; a return to the lobby is not an event.
+    if (room.phase === PHASE.MATCH) lifecycle.matchStarted({ roomLogId: room.logId });
   }
 
   function handleDiagnostic(conn, msg) {
@@ -618,6 +654,13 @@ function createRelay(userConfig = {}) {
     connections.clear();
     await new Promise((resolve) => wss.close(resolve));
     await new Promise((resolve) => httpServer.close(resolve));
+    // Last, so that the shutdown 'left'/'closed' events above get their bounded chance to
+    // leave. A publisher that cannot reach the receiver must not delay the exit.
+    if (typeof lifecycle.stop === 'function') {
+      try {
+        await lifecycle.stop();
+      } catch { /* delivery never blocks shutdown */ }
+    }
     log.emit('relay_stopped', {});
   }
 
@@ -625,6 +668,7 @@ function createRelay(userConfig = {}) {
     config,
     store,
     log,
+    lifecycle,
     httpServer,
     wss,
     connections,

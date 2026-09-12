@@ -2,6 +2,7 @@
 
 const { LIMITS, RELAY_PROTOCOL_VERSION, ROLE } = require('./constants');
 const { AdmissionError } = require('./rooms');
+const { NULL_LIFECYCLE } = require('./analytics');
 
 // HTTPS admission. This is deliberately a separate, bounded operation from the gameplay socket:
 // room policy, invitation checks and rate limits are applied here, and the credential never
@@ -181,6 +182,7 @@ function clientAddress(req, trustForwardedFor) {
  * @param {object} ctx relay context: {store, log, config, addressLimiter, globalLimiter, now}
  */
 function createAdmissionHandler(ctx) {
+  if (ctx.lifecycle === undefined) ctx.lifecycle = NULL_LIFECYCLE;
   return async function handleRequest(req, res) {
     const address = clientAddress(req, ctx.config.trustForwardedFor);
     const url = (req.url || '').split('?')[0];
@@ -245,6 +247,8 @@ function createAdmissionHandler(ctx) {
           transport: ctx.config.observedTransport,
           addressTag: ctx.log.addressTag(address),
         });
+        // Only the relay-generated log id leaves the process; the invitation code does not.
+        ctx.lifecycle.roomCreated({ roomLogId: result.room.logId });
       } else {
         const roomCode = requireField(form, 'room');
         result = ctx.store.joinRoom(roomCode, { gameProtocol, contentHash });
