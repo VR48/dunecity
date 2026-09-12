@@ -387,8 +387,14 @@ private:
     /// Drives the relay session and drains its event queue. Called from update().
     void updateRelaySession();
 
-    /// Applies one game payload received over the relay.
-    void handleRelayGamePayload(RoomRelayClient::Peer& peer, const std::uint8_t* payload,
+    /**
+        Applies one game payload received over the relay.
+
+        Takes the sender's id rather than a reference to its record: handling a payload runs the
+        game's own callbacks, and anything that reaches the session again can add or remove a
+        peer, which moves the vector a reference would point into.
+    */
+    void handleRelayGamePayload(std::uint32_t peerId, const std::uint8_t* payload,
                                 std::size_t length);
 
     /**

@@ -234,8 +234,6 @@ private:
     std::deque<Event>  events_;
     /// Aggregate cost of everything in events_, kept in step with it on both ends.
     std::size_t        eventBytes_ = 0;
-    /// True once the terminal event has been queued; it is delivered exactly once.
-    bool               closedEventQueued_ = false;
 
     bool   helloSent_          = false;
     Uint32 lastHeartbeatSent_  = 0;

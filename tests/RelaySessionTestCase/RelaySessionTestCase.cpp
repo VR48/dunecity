@@ -288,6 +288,41 @@ TEST_CASE("an orderly close still delivers what arrived before it", "[relay][ses
     REQUIRE(drained.lastCloseCode == RoomRelay::Close::HostLeft);
 }
 
+TEST_CASE("a closed session reports that nobody is left", "[relay][session]") {
+    JoinedSession session;
+    REQUIRE(session.client.peers().size() == 1);
+
+    // The host sends the next co-op mission and then the room closes, which is the shape of a
+    // campaign continuation. The mission still has to resolve its sender...
+    session.socket->deliver(relayFrame(NETWORKPACKET_COOP_MISSION, 24));
+    session.socket->deliver(roomClosedFrame(RoomRelay::Close::HostLeft, "The host left."));
+    session.client.update();
+
+    RoomRelayClient::Event event;
+    REQUIRE(session.client.pollEvent(event));
+    REQUIRE(event.type == RoomRelayClient::Event::Type::GamePayload);
+    REQUIRE(session.client.findPeer(kHostPeerId) != nullptr);
+
+    // ...and only once the close itself has been handed over does the room become empty. Callers
+    // ask "who is still here" to decide whether to keep waiting - for another player's commands,
+    // or for the next mission - and a dead session that still lists peers leaves them waiting
+    // forever for somebody who cannot answer.
+    REQUIRE(session.client.pollEvent(event));
+    REQUIRE(event.type == RoomRelayClient::Event::Type::Closed);
+    REQUIRE(session.client.peers().empty());
+    REQUIRE(session.client.findPeer(kHostPeerId) == nullptr);
+}
+
+TEST_CASE("leaving on purpose empties the room immediately", "[relay][session]") {
+    JoinedSession session;
+    REQUIRE(session.client.peers().size() == 1);
+
+    session.client.stop(1);
+
+    REQUIRE(session.client.status() == RoomRelayClient::Status::Closed);
+    REQUIRE(session.client.peers().empty());
+}
+
 TEST_CASE("the terminal event is delivered exactly once", "[relay][session]") {
     JoinedSession session;
 

@@ -1113,16 +1113,16 @@ void NetworkManager::updateRelaySession() {
             } break;
 
             case RoomRelayClient::Event::Type::GamePayload: {
-                RoomRelayClient::Peer* peer = pRelayClient->findPeer(event.peerId);
-                if(peer != nullptr) {
-                    handleRelayGamePayload(*peer, event.payload.data(), event.payload.size());
-                }
+                handleRelayGamePayload(event.peerId, event.payload.data(), event.payload.size());
             } break;
 
             case RoomRelayClient::Event::Type::Diagnostic: {
                 const RoomRelayClient::Peer* peer = pRelayClient->findPeer(event.peerId);
                 if(peer != nullptr && pOnReceiveRelayDiagnostic) {
-                    pOnReceiveRelayDiagnostic(peer->name, event.diagnosticKind,
+                    // By value: the callback runs game code, and the peer list is not the
+                    // callback's to keep alive.
+                    const std::string senderName = peer->name;
+                    pOnReceiveRelayDiagnostic(senderName, event.diagnosticKind,
                                               event.payload.data(), event.payload.size());
                 }
             } break;
@@ -1166,11 +1166,28 @@ void NetworkManager::updateRelaySession() {
     }
 }
 
-void NetworkManager::handleRelayGamePayload(RoomRelayClient::Peer& peer,
+void NetworkManager::handleRelayGamePayload(std::uint32_t peerId,
                                             const std::uint8_t* payload, std::size_t length) {
-    if(payload == nullptr || length < 4) {
+    if(payload == nullptr || length < 4 || !pRelayClient) {
         return;
     }
+
+    const RoomRelayClient::Peer* sender = pRelayClient->findPeer(peerId);
+    if(sender == nullptr) {
+        return;     // announced to us once, gone by the time the game loop got here
+    }
+
+    // Copies, not references into the peer list. Handling a payload runs the game's own
+    // callbacks, and anything that reaches the session again can add or remove a peer - which
+    // moves the vector any reference would be pointing into. The peer is looked up again by id
+    // afterwards to store what was learned.
+    std::string peerName               = sender->name;
+    std::string peerGameVersion        = sender->gameVersion;
+    std::string peerQuantBotConfigHash = sender->quantBotConfigHash;
+    std::string peerObjectDataHash     = sender->objectDataHash;
+    const bool  peerIsHost             = sender->isHost();
+    const std::size_t peerCount        = pRelayClient->peers().size();
+    sender = nullptr;
 
     // The payload is the same serialized packet the mesh transport carries, so it is read with
     // the same hardened reader rather than a second, parallel parser.
@@ -1193,14 +1210,14 @@ void NetworkManager::handleRelayGamePayload(RoomRelayClient::Peer& peer,
         context.phase            = bGameInProgress ? NetworkPacketPolicy::SessionPhase::InGame
                                                    : NetworkPacketPolicy::SessionPhase::Lobby;
         context.admission        = NetworkPacketPolicy::PeerAdmission::Established;
-        context.isHostConnection = peer.isHost();
+        context.isHostConnection = peerIsHost;
 
         const NetworkPacketPolicy::PacketVerdict verdict =
             NetworkPacketPolicy::classifyPacket(context);
         if(verdict != NetworkPacketPolicy::PacketVerdict::Accept) {
             SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                         "NetworkManager: refused relay packet %u from '%s': %s",
-                        static_cast<unsigned>(packetType), peer.name.c_str(),
+                        static_cast<unsigned>(packetType), peerName.c_str(),
                         NetworkPacketPolicy::describeVerdict(verdict));
             return;
         }
@@ -1215,33 +1232,42 @@ void NetworkManager::handleRelayGamePayload(RoomRelayClient::Peer& peer,
         }
 
         PayloadPeerAdapter::Fields fields;
-        fields.clientId           = peer.id;
-        fields.name               = &peer.name;
-        fields.isHost             = peer.isHost();
-        fields.gameVersion        = &peer.gameVersion;
-        fields.quantBotConfigHash = &peer.quantBotConfigHash;
-        fields.objectDataHash     = &peer.objectDataHash;
+        fields.clientId           = peerId;
+        fields.name               = &peerName;
+        fields.isHost             = peerIsHost;
+        fields.gameVersion        = &peerGameVersion;
+        fields.quantBotConfigHash = &peerQuantBotConfigHash;
+        fields.objectDataHash     = &peerObjectDataHash;
 
         fields.nameAssigned = &relayPeerNamesAreBound;
 
         PayloadPeerAdapter adapter(
             fields,
-            [this, &peer](const char* reason) {
-                const Uint32 now = SDL_GetTicks();
-                if(peer.lastRefuseTime != 0 && (now - peer.lastRefuseTime) > REJECT_DECAY_MS) {
-                    peer.refusedMessages = 0;
+            [this, peerId, &peerName](const char* reason) {
+                // Found again by id rather than captured by reference: the accounting lives on
+                // the peer, and the peer may have moved or gone while this payload was handled.
+                RoomRelayClient::Peer* offender =
+                    pRelayClient ? pRelayClient->findPeer(peerId) : nullptr;
+                if(offender == nullptr) {
+                    return;
                 }
-                peer.lastRefuseTime = now;
-                peer.refusedMessages++;
-                if(peer.refusedMessages <= 3
-                   || (now - peer.lastRefuseLog) >= REJECT_LOG_INTERVAL_MS) {
-                    peer.lastRefuseLog = now;
+
+                const Uint32 now = SDL_GetTicks();
+                if(offender->lastRefuseTime != 0
+                   && (now - offender->lastRefuseTime) > REJECT_DECAY_MS) {
+                    offender->refusedMessages = 0;
+                }
+                offender->lastRefuseTime = now;
+                offender->refusedMessages++;
+                if(offender->refusedMessages <= 3
+                   || (now - offender->lastRefuseLog) >= REJECT_LOG_INTERVAL_MS) {
+                    offender->lastRefuseLog = now;
                     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                                 "NetworkManager: refused relay payload from '%s': %s (%u so far)",
-                                peer.name.c_str(), reason,
-                                static_cast<unsigned>(peer.refusedMessages));
+                                peerName.c_str(), reason,
+                                static_cast<unsigned>(offender->refusedMessages));
                 }
-                if(peer.refusedMessages >= MAX_REJECTED_PACKETS_PER_PEER && pRelayClient) {
+                if(offender->refusedMessages >= MAX_REJECTED_PACKETS_PER_PEER && pRelayClient) {
                     pRelayClient->stop(3 /* ended because of an error */);
                 }
             },
@@ -1274,18 +1300,26 @@ void NetworkManager::handleRelayGamePayload(RoomRelayClient::Peer& peer,
         // Nothing on this transport can transfer content, so a difference is final and the
         // lobby has to be told rather than only the log.
         payloadContext.contentMustMatch = true;
-        payloadContext.coopPartnerIsSolePeer =
-            (pRelayClient->peers().size() == 1) && peer.isHost();
+        payloadContext.coopPartnerIsSolePeer = (peerCount == 1) && peerIsHost;
 
         GamePayloadRouter::handle(packetType, packetStream, adapter, payloadContext,
                                   sessionCallbacks());
     } catch(InputStream::eof&) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                    "NetworkManager: truncated relay payload from '%s'", peer.name.c_str());
+                    "NetworkManager: truncated relay payload from '%s'", peerName.c_str());
     } catch(std::exception& e) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                     "NetworkManager: unusable relay payload from '%s': %s",
-                    peer.name.c_str(), e.what());
+                    peerName.c_str(), e.what());
+    }
+
+    // Store what the payload taught us about the peer, if it is still in the room.
+    if(pRelayClient) {
+        if(RoomRelayClient::Peer* current = pRelayClient->findPeer(peerId)) {
+            current->gameVersion        = peerGameVersion;
+            current->quantBotConfigHash = peerQuantBotConfigHash;
+            current->objectDataHash     = peerObjectDataHash;
+        }
     }
 }
 

@@ -515,5 +515,9 @@ void CrossplayMenu::onPeerDisconnected(const std::string& playerName, bool isHos
                                          : (playerName + _(" left the game."));
             break;
     }
-    pendingDisconnectReason = std::move(message);
+    // A host leaving arrives twice: once as that peer departing, once as the room closing. The
+    // first carries the name and is the more useful sentence, so it is the one that is kept.
+    if(pendingDisconnectReason.empty()) {
+        pendingDisconnectReason = std::move(message);
+    }
 }

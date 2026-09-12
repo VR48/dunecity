@@ -39,7 +39,6 @@ bool RoomRelayClient::start(const Config& config, std::string& error) {
     peers_.clear();
     events_.clear();
     eventBytes_ = 0;
-    closedEventQueued_ = false;
     helloSent_ = false;
     localPeerId_ = 0;
     localRole_ = RoomRelay::Role::Unknown;
@@ -104,6 +103,9 @@ void RoomRelayClient::stop(std::uint8_t reason) {
     socket_->close(RoomRelay::Close::Normal, "leaving");
     socket_.reset();
     status_ = Status::Closed;
+    // Leaving is the caller's own decision, so there is no terminal event to wait for and the
+    // peer list can go now. See pollEvent() for why the other path waits.
+    peers_.clear();
 }
 
 bool RoomRelayClient::sendFrame(const std::vector<std::uint8_t>& frame) {
@@ -158,7 +160,6 @@ void RoomRelayClient::finish(std::uint16_t code, const std::string& message,
         return;
     }
     status_ = Status::Closed;
-    closedEventQueued_ = true;
     closeCode_ = (code != 0) ? code : closeCode_;
     statusMessage_ = message;
 
@@ -259,6 +260,16 @@ bool RoomRelayClient::pollEvent(Event& event) {
     eventBytes_ -= (cost < eventBytes_) ? cost : eventBytes_;
     event = std::move(events_.front());
     events_.pop_front();
+
+    if(event.type == Event::Type::Closed) {
+        // A closed session has no peers. Emptying the list here rather than in finish() is
+        // deliberate: anything queued ahead of the close still has to resolve its sender, and a
+        // campaign continuation arrives immediately before the host disconnects. Callers ask
+        // "who is still here" to decide whether to keep waiting - for another player's commands,
+        // or for the next co-op mission - and a dead session must answer "nobody" rather than
+        // leave them waiting for someone who cannot answer.
+        peers_.clear();
+    }
     return true;
 }
 
