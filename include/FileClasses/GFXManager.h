@@ -633,6 +633,15 @@ public:
         Count
     };
 
+    enum class DuneCityZoneActivity {
+        Idle,
+        Active,
+        Growing,
+        Damaged,
+        Repair,
+        Count
+    };
+
     struct EnhancedUnitEditorInfo {
         std::string sourceUnit;
         int itemID = -1;
@@ -664,6 +673,10 @@ public:
                                            Uint32 elapsedMs, int anchorX, int anchorY);
     Uint32           getEnhancedBuildingAnimationDuration(int itemID, int house,
                                                            EnhancedBuildingState state);
+    bool             drawDuneCityZone(int itemID, int house, unsigned int z,
+                                      int density, int valueTier,
+                                      DuneCityZoneActivity activity,
+                                      Uint32 elapsedMs, int anchorX, int anchorY);
     Uint8            getDune2RVisualBlend();
     bool             isDune2RVisualsEnabled();
     void             setDune2RVisualsEnabled(bool enabled);
@@ -725,6 +738,7 @@ private:
     bool                loadHDObjPicOverride(unsigned int id);
     void                loadEnhancedUnitManifests();
     void                loadEnhancedWorldManifests();
+    void                loadDuneCityZoneManifests();
     void                invalidateEnhancedUnitMountsIfChanged(bool force = false);
     void                loadEnhancedRenderModes();
     void                loadDune2RVisualPreference();
@@ -835,6 +849,21 @@ private:
         std::map<int, EnhancedBuildingAnimation> animations;
     };
 
+    struct DuneCityZoneDefinition {
+        DuneCityZoneDefinition() = default;
+        DuneCityZoneDefinition(const DuneCityZoneDefinition&) = delete;
+        DuneCityZoneDefinition& operator=(const DuneCityZoneDefinition&) = delete;
+        DuneCityZoneDefinition(DuneCityZoneDefinition&&) noexcept = default;
+        DuneCityZoneDefinition& operator=(DuneCityZoneDefinition&&) noexcept = default;
+
+        int itemID = -1;
+        int houseID = -1;
+        int footprintWidth = 2;
+        int footprintHeight = 2;
+        std::string sourceUnit;
+        std::map<int, EnhancedBuildingAnimation> animations;
+    };
+
     struct EnhancedTerrainVariant {
         EnhancedTerrainVariant() = default;
         EnhancedTerrainVariant(const EnhancedTerrainVariant&) = delete;
@@ -878,10 +907,14 @@ private:
     std::array<HDObjPicOverride, NUM_OBJPICS> hdObjPicOverrides;
     std::vector<EnhancedUnitDefinition> enhancedUnitDefinitions;
     std::vector<EnhancedBuildingDefinition> enhancedBuildingDefinitions;
+    std::vector<DuneCityZoneDefinition> duneCityZoneDefinitions;
     std::unique_ptr<EnhancedAtlasCache> enhancedBuildingAtlasCache;
     std::vector<EnhancedTerrainDefinition> enhancedTerrainDefinitions;
     bool enhancedUnitManifestsLoaded = false;
     bool enhancedWorldManifestsLoaded = false;
+    bool duneCityZoneManifestsLoaded = false;
+    bool duneCitySkinPreferenceLoaded = false;
+    bool duneCityDune2SkinEnabled = false;
     std::string enhancedUnitMountRevision;
     Uint32 enhancedUnitMountLastCheck = 0;
     std::map<int, EnhancedRenderMode> enhancedUnitRenderModes;

@@ -18,6 +18,36 @@ spec.loader.exec_module(packager)
 
 
 class AtlasTests(unittest.TestCase):
+    def test_single_full_tile_master_is_aliased_across_all_topologies(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            sprite = root / "sand.png"
+            compact = root / "sand-compact.png"
+            Image.new("RGBA", (48, 48), "gold").save(sprite)
+            Image.new("RGBA", (16, 16), "gold").save(compact)
+            assets = {
+                "sprite": {"file": sprite.name},
+                "processed": {"file": compact.name},
+            }
+            metadata = {
+                "slug": "sand",
+                "categories": {"tile_base": {"states": {"full": {"assets": assets}}}},
+            }
+            output = root / "pack"
+            args = SimpleNamespace(frame_size=32, item_id=1, source_unit=root)
+
+            self.assertEqual(packager.package_tile(metadata, root, output, args), 16)
+            manifest = configparser.ConfigParser()
+            manifest.read(output / "tile.ini")
+            self.assertEqual(manifest["Tile"]["TerrainType"], "1")
+            for index, variant in enumerate(packager.TILE_VARIANTS):
+                section = manifest[f"Variant.{index}"]
+                self.assertEqual(section["Name"], variant)
+                with Image.open(output / section["Image"]) as tile:
+                    self.assertEqual(tile.size, (32, 32))
+                    self.assertEqual(tile.getpixel((0, 0)), (255, 215, 0, 255))
+                self.assertTrue((output / section["Compact"]).is_file())
+
     def test_rectangular_and_square_frames_roundtrip_without_clipping(self):
         for size in [(57, 61), (57, 53), (32, 32)]:
             with self.subTest(size=size), tempfile.TemporaryDirectory() as directory:
@@ -80,6 +110,38 @@ class AtlasTests(unittest.TestCase):
                 self.assertEqual(still.getpixel((0, 0)), (255, 0, 0, 255))
             with Image.open(output / manifest["State.Idle"]["Atlas.0"]) as atlas:
                 self.assertEqual(atlas.getpixel((0, 0)), (0, 0, 255, 255))
+
+    def test_dunecity_zone_packages_only_exact_static_growth_cells(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            Image.new("RGBA", (128, 128), "red").save(root / "master.png")
+            (root / "active").mkdir()
+            Image.new("RGBA", (128, 128), "yellow").save(root / "active/frame_0000.png")
+            Image.new("RGBA", (128, 128), "orange").save(root / "active/frame_0001.png")
+            metadata = {
+                "slug": "dunecity_harkonnen_residential_zone",
+                "target_game": "dunecity",
+                "dunecity": {"zone_atlas": {"density_columns": 4, "value_tier_rows": 4}},
+                "render_profile": {"logical_footprint_tiles": [2, 2]},
+                "categories": {
+                    "building_idle": {"states": {
+                        "default": {"assets": {"sprite": {"file": "master.png"}}},
+                        "d3_v3": {"assets": {
+                        "animation": {"frames_dir": "active", "frame_duration_ms": 40}}}}},
+                },
+            }
+            output = root / "pack"
+            args = SimpleNamespace(item_id=20, house_id=0, source_unit=root)
+            self.assertEqual(packager.package_dunecity_zone(metadata, root, output, args), 1)
+            manifest = configparser.ConfigParser()
+            manifest.read(output / "zone.ini")
+            self.assertEqual(manifest["Zone"]["DensityColumns"], "4")
+            self.assertNotIn("Cell.0.0.Idle", manifest)
+            self.assertNotIn("Cell.1.0.Idle", manifest)
+            self.assertEqual(manifest["Cell.3.3.Idle"]["Frames"], "1")
+            self.assertEqual(manifest["Cell.3.3.Idle"]["Fallback"], "exact")
+            with Image.open(output / manifest["Cell.3.3.Idle"]["Atlas.0"]) as atlas:
+                self.assertEqual(atlas.height, 32)
 
 
 if __name__ == "__main__":

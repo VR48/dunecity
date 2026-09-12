@@ -35,6 +35,8 @@ public:
 
     void save(OutputStream& stream) const override;
 
+    void blitToScreen() override;
+
     void setLocation(int xPos, int yPos) override;
 
     /// Enables placement on sand tiles
@@ -72,6 +74,8 @@ private:
     uint8_t residentialPopulation_ = 0;
     int registeredZonePower_ = 0;  // Power last reported into the House pool.
     CivicOverlay civicOverlay_ = CivicOverlay::None;
+    int skinDensity_ = 0;
+    int skinValueTier_ = 0;
 };
 
 /// A residential zone structure
