@@ -13,6 +13,7 @@ if not sys.platform.startswith('linux'):
     print('SKIP: release launch fixture requires Linux readlink/flock')
     raise SystemExit(0)
 sys.dont_write_bytecode = True
+os.umask(0o077)
 here = Path(__file__).resolve().parent
 with tempfile.TemporaryDirectory(prefix='dune-pin-') as tmp:
     base = Path(tmp)
