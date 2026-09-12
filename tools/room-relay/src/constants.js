@@ -93,6 +93,9 @@ const LIMITS = Object.freeze({
 
   HTTP_MAX_BODY_BYTES: 4096,
   HTTP_PER_ADDRESS_PER_MINUTE: 10,
+  // A socket needs a grant, and grants are already rate limited per address at issuance. This
+  // is the second line: it bounds the cost of opening sockets at all, valid grant or not.
+  SOCKET_PER_ADDRESS_PER_MINUTE: 30,
   HTTP_GLOBAL_PER_MINUTE: 120,
   HTTP_ADDRESS_TABLE_ENTRIES: 4096,
   HTTP_ADDRESS_TABLE_TTL_MS: 10 * 60 * 1000,

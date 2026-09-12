@@ -551,6 +551,26 @@ test('an unknown socket path is not upgraded', async (t) => {
   );
 });
 
+test('opening sockets from one address is rate limited', async (t) => {
+  const relay = await startRelay({ socketsPerAddressPerMinute: 3 });
+  t.after(() => relay.stop());
+
+  const opened = [];
+  t.after(() => { for (const client of opened) client.close(); });
+
+  for (let i = 0; i < 3; i += 1) {
+    opened.push(await TestClient.connect(relay.socketUrl));
+  }
+  await assert.rejects(
+    () => TestClient.connect(relay.socketUrl),
+    (err) => err.statusCode === 429,
+  );
+
+  const denied = relay.log.events('connection_denied');
+  assert.equal(denied.length, 1);
+  assert.equal(denied[0].reason, 'address_socket_rate');
+});
+
 test('the connection cap refuses new sockets', async (t) => {
   const relay = await startRelay({ maxConnections: 2 });
   t.after(() => relay.stop());

@@ -476,16 +476,14 @@ private:
     */
     PeerData* createPeerData(ENetPeer* peer, PeerData::PeerState peerState);
 
-    /// Coarse bound on a path budget order; Game::handleSetPathBudget applies the exact range.
-    static constexpr Uint32 MAX_PATH_BUDGET_ORDER = 1000000;
+    // The path budget, start-game countdown and chat length bounds moved to
+    // src/Network/GamePayloadRouter.cpp with the payload handling they belong to. Two copies of
+    // one limit is how limits drift apart.
+
     /// Mod checksums are 16 hex characters; this leaves room without allowing junk.
     static constexpr std::size_t MAX_MOD_CHECKSUM_LENGTH = 128;
     /// Longest status message accepted with a mod transfer result.
     static constexpr std::size_t MAX_MOD_MESSAGE_LENGTH = 256;
-    /// Longest start-game countdown accepted from the host (the lobby uses 3 s).
-    static constexpr Uint32 MAX_START_GAME_COUNTDOWN_MS = 30000;
-    /// Longest chat message accepted from a peer.
-    static constexpr std::size_t MAX_CHAT_MESSAGE_LENGTH = 512;
     /// The ENet host is created with 32 peer slots; the mesh can never legitimately exceed it.
     static constexpr std::size_t MAX_MESH_PEERS = 32;
     /// Traffic budgets and abuse thresholds live in NetworkPacketPolicy so they stay

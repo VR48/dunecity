@@ -485,6 +485,8 @@ client applies independently.
 - Per address (HTTP): 10 admission requests per minute, sliding, with bounded cardinality — the
   table holds at most 4096 addresses and entries expire after 10 minutes, so the table itself
   cannot be used to exhaust memory.
+- Per address (WebSocket upgrade): 30 per minute, same bounded table. A socket needs a grant and
+  grants are already limited at issuance; this bounds the cost of opening sockets at all.
 - Globally (HTTP): 120 admission requests per minute.
 - Recipient backpressure: before routing, the relay checks the recipient socket's
   `bufferedAmount`. Above 1 MiB the *recipient* is closed with `4431`. The relay never silently

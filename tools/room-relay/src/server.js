@@ -36,6 +36,7 @@ const DEFAULT_CONFIG = {
   grantTtlMs: LIMITS.GRANT_TTL_MS,
   handshakeTimeoutMs: LIMITS.HANDSHAKE_TIMEOUT_MS,
   livenessTimeoutMs: LIMITS.LIVENESS_TIMEOUT_MS,
+  socketsPerAddressPerMinute: LIMITS.SOCKET_PER_ADDRESS_PER_MINUTE,
   messagesPerSecond: LIMITS.MESSAGES_PER_SECOND,
   bytesPerSecond: LIMITS.BYTES_PER_SECOND,
   backpressureBytes: LIMITS.BACKPRESSURE_BYTES,
@@ -118,6 +119,12 @@ function createRelay(userConfig = {}) {
     ttlMs: LIMITS.HTTP_ADDRESS_TABLE_TTL_MS,
   });
   const globalLimiter = new WindowCounter(LIMITS.HTTP_GLOBAL_PER_MINUTE, 60000);
+  const socketLimiter = new BoundedRateTable({
+    limit: config.socketsPerAddressPerMinute,
+    windowMs: 60000,
+    maxEntries: LIMITS.HTTP_ADDRESS_TABLE_ENTRIES,
+    ttlMs: LIMITS.HTTP_ADDRESS_TABLE_TTL_MS,
+  });
 
   const ctx = {
     store,
@@ -593,6 +600,16 @@ function createRelay(userConfig = {}) {
         addressTag: log.addressTag(address),
       });
       rejectUpgrade(socket, 403, 'Forbidden');
+      return;
+    }
+
+    if (!socketLimiter.allow(address, now())) {
+      log.emit('connection_denied', {
+        code: CLOSE.RATE_LIMITED,
+        reason: 'address_socket_rate',
+        addressTag: log.addressTag(address),
+      });
+      rejectUpgrade(socket, 429, 'Too Many Requests');
       return;
     }
 

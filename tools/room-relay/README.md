@@ -30,7 +30,7 @@ npm test
 | `test/rooms.test.js` | room codes, grant single use and expiry, seat accounting, reaping, caps |
 | `test/admission.test.js` | HTTP admission, field validation, body limits, Origin allowlist, rate limits, logging hygiene |
 | `test/e2e.test.js` | real `ws` clients: membership, routing, phases, co-op continuation, diagnostics, large payloads, shutdown |
-| `test/abuse.test.js` | grant replay/expiry, foreign origins, wrong roles, banned packet types, cross-room routing, full rooms, deadlines, floods, backpressure |
+| `test/abuse.test.js` | grant replay/expiry, foreign origins, wrong roles, banned packet types, cross-room routing, duplicate names, full rooms, deadlines, floods, rate limits, backpressure |
 | `test/analytics.test.js` | lifecycle DTO schema, configuration and startup failures, HMAC over exact bytes, idempotent retries, queue drops, absolute deadlines, refused redirects, TLS verification, full relay lifecycle into a captured receiver |
 | `test/phase.test.js` | admission and grant redemption once a match has started, co-op intermission, lobby leave/rejoin |
 | `test/ingress.test.js` | slow bodies, unfinished headers, the admission socket ceiling, and that game sockets are not charged to it |
