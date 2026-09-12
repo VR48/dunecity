@@ -40,6 +40,16 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
+#include <array>
+
+struct PublicRelayGame {
+    std::string roomCode;
+    std::string hostName;
+    std::string mode;
+    unsigned players = 0;
+    unsigned maxPeers = 0;
+};
 
 /// What the relay answered, after validation.
 struct AdmissionResponse {
@@ -50,6 +60,8 @@ struct AdmissionResponse {
     std::string   socketUrl;
     std::uint32_t grantExpiresMs = 0;
     std::uint8_t  maxPeers       = 0;
+    std::vector<PublicRelayGame> games;
+    unsigned nextPage = 0;
 
     // Only when ok == false.
     std::string   errorCode;
@@ -63,6 +75,44 @@ constexpr std::size_t kMaxResponseLines  = 16;
 constexpr std::size_t kMaxLineBytes      = 512;
 constexpr std::size_t kMaxKeyBytes       = 32;
 constexpr std::size_t kMaxValueBytes     = 480;
+
+inline bool parsePublicGame(const std::string& value, PublicRelayGame& game) {
+    std::array<std::string, 5> fields;
+    std::size_t start = 0;
+    for(unsigned i = 0; i < 4; ++i) {
+        const auto end = value.find('|', start);
+        if(end == std::string::npos) return false;
+        fields[i] = value.substr(start, end - start);
+        start = end + 1;
+    }
+    fields[4] = value.substr(start);
+    if(!RoomRelay::isAcceptableRoomCode(fields[0])
+       || (fields[3] != "custom" && fields[3] != "coop")) return false;
+    const auto count = [](const std::string& text, unsigned& result) {
+        if(text.empty() || text.size() > 2) return false;
+        result = 0;
+        for(char c : text) {
+            if(c < '0' || c > '9') return false;
+            result = result * 10 + (c - '0');
+        }
+        return true;
+    };
+    if(!count(fields[1], game.players) || !count(fields[2], game.maxPeers)
+       || game.maxPeers < 2 || game.maxPeers > RoomRelay::Limits::kMaxPeersPerRoom
+       || game.players < 1 || game.players >= game.maxPeers) return false;
+    const auto& hex = fields[4];
+    if(hex.empty() || hex.size() > RoomRelay::Limits::kMaxNameChars * 2
+       || hex.size() % 2 != 0 || !RoomRelay::isLowercaseHex(hex)) return false;
+    const auto nibble = [](char c) { return c <= '9' ? c - '0' : c - 'a' + 10; };
+    game.hostName.clear();
+    for(std::size_t i = 0; i < hex.size(); i += 2) {
+        game.hostName.push_back(static_cast<char>(nibble(hex[i]) * 16 + nibble(hex[i + 1])));
+    }
+    if(!RoomRelay::isAcceptableDisplayName(game.hostName)) return false;
+    game.roomCode = fields[0];
+    game.mode = fields[3];
+    return true;
+}
 
 /**
     Parses the admission response.
@@ -78,7 +128,7 @@ constexpr std::size_t kMaxValueBytes     = 480;
     \return true if the response could be understood (including a well-formed error response)
 */
 inline bool parseAdmissionResponse(const std::string& body, AdmissionResponse& out,
-                                   std::string& error) {
+                                   std::string& error, bool directory = false) {
     out = AdmissionResponse();
 
     if(body.empty() || body.size() > kMaxResponseBytes) {
@@ -87,6 +137,8 @@ inline bool parseAdmissionResponse(const std::string& body, AdmissionResponse& o
     }
 
     bool sawStatus = false;
+    bool sawProtocol = false;
+    bool sawNext = false;
     std::size_t lineCount = 0;
     std::size_t cursor = 0;
 
@@ -140,6 +192,7 @@ inline bool parseAdmissionResponse(const std::string& body, AdmissionResponse& o
             }
 
             if(key == "status") {
+                if(directory && sawStatus) { error = "The game list is malformed."; return false; }
                 sawStatus = true;
                 out.ok = (value == "ok");
                 if(!out.ok && value != "error") {
@@ -147,6 +200,8 @@ inline bool parseAdmissionResponse(const std::string& body, AdmissionResponse& o
                     return false;
                 }
             } else if(key == "protocol") {
+                if(directory && sawProtocol) { error = "The game list is malformed."; return false; }
+                sawProtocol = true;
                 unsigned long parsed = 0;
                 if(value.empty() || value.size() > 5) {
                     error = "The game service sent an unusable answer.";
@@ -164,6 +219,26 @@ inline bool parseAdmissionResponse(const std::string& body, AdmissionResponse& o
                     return false;
                 }
                 out.protocol = static_cast<std::uint16_t>(parsed);
+            } else if(directory && key == "next") {
+                if(sawNext || value.empty() || value.size() > 5) {
+                    error = "The game list is malformed."; return false;
+                }
+                sawNext = true;
+                for(char c : value) {
+                    if(c < '0' || c > '9') { error = "The game list is malformed."; return false; }
+                    out.nextPage = out.nextPage * 10 + (c - '0');
+                }
+            } else if(directory && key == "game") {
+                PublicRelayGame game;
+                if(out.games.size() >= 12 || !parsePublicGame(value, game)) {
+                    error = "The game list is malformed."; return false;
+                }
+                for(const auto& existing : out.games) {
+                    if(existing.roomCode == game.roomCode) {
+                        error = "The game list is malformed."; return false;
+                    }
+                }
+                out.games.push_back(std::move(game));
             } else if(key == "room") {
                 out.roomCode = value;
             } else if(key == "grant") {
@@ -224,6 +299,10 @@ inline bool parseAdmissionResponse(const std::string& body, AdmissionResponse& o
         error = "This version of the game cannot use that game service.";
         return false;
     }
+    if(directory) {
+        if(!sawNext) { error = "The game list is malformed."; return false; }
+        return true;
+    }
     if(!RoomRelay::isAcceptableRoomCode(out.roomCode)) {
         error = "The game service sent an unusable room code.";
         return false;
@@ -280,6 +359,9 @@ struct AdmissionRequest {
     std::string runtime;        ///< "native" or "browser"; a claim, and logged as one
 
     bool        hosting  = true;
+    bool        listing = false;
+    unsigned    listOffset = 0;
+    bool        publicRoom = false;
     std::uint8_t maxPeers = 2;
     std::string mode;           ///< "coop" or "custom"
     std::string roomCode;       ///< joining only
@@ -318,6 +400,7 @@ private:
     Status                status_ = Status::Idle;
     AdmissionResponse     response_;
     std::string           errorMessage_;
+    bool                  listing_ = false;
 };
 
 #endif // ROOMADMISSIONCLIENT_H

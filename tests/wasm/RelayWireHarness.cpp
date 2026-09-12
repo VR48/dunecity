@@ -477,6 +477,38 @@ void testAdmissionParsing() {
     AdmissionResponse response;
     std::string error;
 
+    const std::string listHeader = "status=ok\nprotocol=1\nnext=0\n";
+    const std::string listedGame = "game=H4PQ-7T2M-9XKB|1|4|custom|416c696365\n";
+    check(RoomAdmission::parseAdmissionResponse(listHeader, response, error, true)
+          && response.games.empty(), "an empty public directory is valid");
+    check(RoomAdmission::parseAdmissionResponse(listHeader + listedGame, response, error, true)
+          && response.games.size() == 1 && response.games[0].hostName == "Alice"
+          && response.games[0].players == 1 && response.games[0].maxPeers == 4,
+          "public directory decodes host, room and seat counts");
+    check(!RoomAdmission::parseAdmissionResponse(listHeader + listedGame + listedGame,
+          response, error, true), "duplicate listed rooms are rejected");
+    check(!RoomAdmission::parseAdmissionResponse(listHeader + "next=1\n", response, error, true),
+          "duplicate pagination fields are rejected");
+    check(!RoomAdmission::parseAdmissionResponse(listHeader + "status=ok\n", response, error, true),
+          "duplicate directory status is rejected");
+    check(!RoomAdmission::parseAdmissionResponse(listHeader + "protocol=1\n", response, error, true),
+          "duplicate directory protocol is rejected");
+    check(!RoomAdmission::parseAdmissionResponse("status=ok\nprotocol=1\n", response, error, true),
+          "directory requires a pagination boundary");
+    for(const std::string& invalid : {
+        "game=H4PQ-7T2M-9XKB|1|4|custom|0a\n",
+        "game=H4PQ-7T2M-9XKB|1|4|custom|zz\n",
+        "game=H4PQ-7T2M-9XKB|4|4|custom|416c696365\n",
+        "game=H4PQ-7T2M-9XKB|0|4|custom|416c696365\n",
+        "game=H4PQ-7T2M-9XKB|1|99|custom|416c696365\n",
+        "game=H4PQ-7T2M-9XKB|1|4|unknown|416c696365\n",
+        "game=not-a-room|1|4|custom|416c696365\n"}) {
+        check(!RoomAdmission::parseAdmissionResponse(listHeader + invalid, response, error, true),
+              "malformed public game is rejected");
+    }
+    check(!RoomAdmission::parseAdmissionResponse(listHeader + listedGame, response, error),
+          "a directory response cannot substitute for an admission grant");
+
     const std::string ok =
         "status=ok\n"
         "protocol=1\n"

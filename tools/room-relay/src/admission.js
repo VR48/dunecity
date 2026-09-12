@@ -81,6 +81,7 @@ const FIELD_RULES = {
   contentHash: { max: 64, pattern: /^[0-9a-f]{0,64}$/ },
   runtime: { max: 16, pattern: /^(native|browser)$/ },
   mode: { max: 16, pattern: /^(coop|custom)$/ },
+  visibility: { max: 7, pattern: /^(public|private)$/ },
   room: { max: 16, pattern: /^[0-9A-Za-z-]{1,16}$/ },
 };
 
@@ -268,7 +269,8 @@ function createAdmissionHandler(ctx) {
     const address = clientAddress(req, ctx.config.trustForwardedFor);
     const url = (req.url || '').split('?')[0];
     const cors = corsHeaders(req.headers, ctx.config.allowedOrigins);
-    const isAdmissionPath = url === '/v1/admission/host' || url === '/v1/admission/join';
+    const isAdmissionPath = url === '/v1/admission/host' || url === '/v1/admission/join'
+      || url === '/v1/admission/list';
 
     try {
       if (req.method === 'GET' && url === '/v1/health') {
@@ -339,12 +341,25 @@ function createAdmissionHandler(ctx) {
 
       let result;
       let role;
+      if (url === '/v1/admission/list') {
+        const offset = form.offset === undefined ? 0 : requireInteger(form, 'offset', 0, LIMITS.MAX_ROOMS);
+        const page = ctx.store.listPublicRooms({ gameProtocol, contentHash }, offset);
+        // Hex names cannot inject delimiters or lines; private invitations and grants never
+        // appear in discovery. Same CORS, rate, request/response bounds as admission.
+        sendText(res, 200, [
+          ['status', 'ok'], ['protocol', String(RELAY_PROTOCOL_VERSION)], ['next', String(page.next)],
+          ...page.games.map(game => ['game', [game.code, game.players, game.maxPeers,
+            game.mode, Buffer.from(game.hostName, 'utf8').toString('hex')].join('|')]),
+        ], false, cors);
+        return;
+      }
       if (url === '/v1/admission/host') {
         const mode = optionalField(form, 'mode', 'custom');
         const maxPeersRequested = requireInteger(form, 'maxPeers', 2, LIMITS.MAX_PEERS_PER_ROOM);
         const maxPeers = mode === 'coop' ? 2 : maxPeersRequested;
         result = ctx.store.createRoom({
           maxPeers, mode, gameProtocol, contentHash, appVersion, runtime,
+          visibility: optionalField(form, 'visibility', 'private'),
         });
         role = ROLE.HOST;
         ctx.log.emit('room_created', {

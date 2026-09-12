@@ -50,6 +50,8 @@ class Room {
     this.gameProtocol = spec.gameProtocol;
     this.contentHash = spec.contentHash;
     this.appVersion = spec.appVersion;
+    // Older clients remain private unless they explicitly opt into discovery.
+    this.visibility = spec.visibility === 'public' ? 'public' : 'private';
     this.phase = PHASE.LOBBY;
     /**
      * Bumped on every phase change. A grant is only redeemable in the phase it was issued in,
@@ -139,6 +141,23 @@ class RoomStore {
     // Peer ids are u32 and 0 means "broadcast", so wrap to 1 rather than to 0.
     this.nextPeerId = this.nextPeerId >= 0xffffffff ? 1 : this.nextPeerId + 1;
     return id;
+  }
+
+  listPublicRooms(spec, offset = 0) {
+    this.sweep();
+    const eligible = [...this.rooms.values()].filter(room =>
+      room.visibility === 'public' && !room.closed && room.host
+      && room.phase === PHASE.LOBBY && !room.everStarted
+      && room.reservedSeats < room.maxPeers
+      && room.gameProtocol === spec.gameProtocol && room.contentHash === spec.contentHash);
+    const page = eligible.slice(offset, offset + 12);
+    return {
+      games: page.map(room => ({
+        code: room.code, players: room.peers.size, maxPeers: room.maxPeers,
+        mode: room.mode, hostName: room.host.displayName,
+      })),
+      next: offset + page.length < eligible.length ? offset + page.length : 0,
+    };
   }
 
   /**

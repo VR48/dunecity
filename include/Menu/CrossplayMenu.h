@@ -30,6 +30,7 @@
 #include <GUI/DropDownBox.h>
 #include <GUI/HBox.h>
 #include <GUI/Label.h>
+#include <GUI/ListBox.h>
 #include <GUI/StaticContainer.h>
 #include <GUI/TextBox.h>
 #include <GUI/TextButton.h>
@@ -67,6 +68,8 @@ private:
     void onHostCampaignCoop();
     void onJoin();
     void onBack();
+    void refreshPublicGames(unsigned offset = 0);
+    void joinPublicGame();
 
     void beginAdmission(bool hosting);
     void openRelaySession();
@@ -95,6 +98,11 @@ private:
     std::string pendingDisconnectReason;
 
     RoomAdmissionClient admission;
+    RoomAdmissionClient directory;
+    bool directoryPending = false;
+    unsigned nextDirectoryPage = 0;
+    Uint32 nextDirectoryRefresh = 0;
+    std::vector<PublicRelayGame> publicGames;
     AdmissionResponse   grantedRoom;
 
     StaticContainer windowWidget;
@@ -104,6 +112,15 @@ private:
     HBox            playerNameHBox;
     Label           playerNameLabel;
     TextBox         playerNameTextBox;
+    HBox            visibilityHBox;
+    Label           visibilityLabel;
+    DropDownBox     visibilityChoice;
+    HBox            directoryHBox;
+    Label           directoryLabel;
+    TextButton      refreshGamesButton;
+    TextButton      moreGamesButton;
+    TextButton      joinPublicButton;
+    ListBox         publicGameList;
 
     Label           statusLabel;
     Label           roomCodeLabel;

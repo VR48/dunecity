@@ -66,9 +66,12 @@ std::string buildFormBody(const AdmissionRequest& request) {
     body += "&gameProtocol=" + std::to_string(static_cast<unsigned>(request.gameProtocol));
     body += "&contentHash=" + RoomAdmission::encodeFormValue(request.contentHash);
     body += "&runtime=" + RoomAdmission::encodeFormValue(request.runtime);
-    if(request.hosting) {
+    if(request.listing) {
+        body += "&offset=" + std::to_string(request.listOffset);
+    } else if(request.hosting) {
         body += "&maxPeers=" + std::to_string(static_cast<unsigned>(request.maxPeers));
         body += "&mode=" + RoomAdmission::encodeFormValue(request.mode);
+        body += request.publicRoom ? "&visibility=public" : "&visibility=private";
     } else {
         body += "&room=" + RoomAdmission::encodeFormValue(request.roomCode);
     }
@@ -80,7 +83,8 @@ std::string buildEndpointUrl(const AdmissionRequest& request) {
     while(!base.empty() && base.back() == '/') {
         base.pop_back();
     }
-    return base + (request.hosting ? "/v1/admission/host" : "/v1/admission/join");
+    return base + (request.listing ? "/v1/admission/list"
+        : request.hosting ? "/v1/admission/host" : "/v1/admission/join");
 }
 
 #ifndef __EMSCRIPTEN__
@@ -255,7 +259,7 @@ void RoomAdmissionClient::finishWithBody(long httpStatus, const std::string& bod
 
     AdmissionResponse parsed;
     std::string error;
-    if(!RoomAdmission::parseAdmissionResponse(body, parsed, error)) {
+    if(!RoomAdmission::parseAdmissionResponse(body, parsed, error, listing_)) {
         finishWithError(error);
         return;
     }
@@ -280,6 +284,7 @@ void RoomAdmissionClient::begin(const AdmissionRequest& request) {
     cancel();
     response_ = AdmissionResponse();
     errorMessage_.clear();
+    listing_ = request.listing;
 
     std::string error;
     if(!isAcceptableAdmissionBaseUrl(request.baseUrl, request.allowLoopbackPlaintext, error)) {
@@ -290,21 +295,21 @@ void RoomAdmissionClient::begin(const AdmissionRequest& request) {
         finishWithError("The game could not describe itself to the game service.");
         return;
     }
-    if(!request.hosting) {
+    if(!request.hosting && !request.listing) {
         std::string normalized;
         if(!RoomRelay::normalizeRoomCode(request.roomCode, normalized)) {
             finishWithError("That game code is not valid. Codes look like ABCD-EFGH-JKMN.");
             return;
         }
     }
-    if(request.hosting
+    if(request.hosting && !request.listing
        && (request.maxPeers < 2 || request.maxPeers > RoomRelay::Limits::kMaxPeersPerRoom)) {
         finishWithError("That number of players is not supported online.");
         return;
     }
 
     AdmissionRequest normalizedRequest = request;
-    if(!request.hosting) {
+    if(!request.hosting && !request.listing) {
         RoomRelay::normalizeRoomCode(request.roomCode, normalizedRequest.roomCode);
     }
 
