@@ -23,6 +23,7 @@
 #include <GUI/ObjectInterfaces/DefaultObjectInterface.h>
 
 #include <ObjectBase.h>
+#include <ScreenBorder.h>
 
 ZoneStructure::ZoneStructure(House* newOwner, DuneCity::ZoneType zoneType)
  : StructureBase(newOwner), zoneType_(zoneType) {
@@ -67,6 +68,7 @@ void ZoneStructure::updateStructureSpecificStuff() {
     if (!pTile) return;
 
     const int density = pTile->getCityZoneDensity();
+    skinDensity_ = density;
 
     // Civic overlay: hospital/church sprites replace the normal zone art.
     // These are single-cell (1×1) atlases loaded as ObjPic_Hospital/Church.
@@ -102,11 +104,26 @@ void ZoneStructure::updateStructureSpecificStuff() {
         const int landValue = lvMap.get(pos.x / bs, pos.y / bs);
         valueT = DuneCity::getZoneValueTier(landValue, zoneType_ == DuneCity::ZoneType::Industrial ? 2 : 4);
     }
+    skinValueTier_ = valueT;
 
     const int frame = DuneCity::CitySprites::zoneFrame(
         zoneType_, density, valueT, pos.x, pos.y,
         currentGame->getGameCycleCount(), owner->hasPower(), getResidentialPopulation());
     firstAnimFrame = lastAnimFrame = curAnimFrame = frame;
+}
+
+void ZoneStructure::blitToScreen() {
+    StructureBase::blitToScreen();
+    if(fogged || civicOverlay_ != CivicOverlay::None || owner == nullptr || currentGame == nullptr) {
+        return;
+    }
+    const int anchorX = screenborder->world2screenX(
+        lround(realX) + structureSize.x * TILESIZE / 2);
+    const int anchorY = screenborder->world2screenY(
+        lround(realY) + structureSize.y * TILESIZE);
+    pGFXManager->drawDuneCityZone(
+        itemID, owner->getHouseID(), currentZoomlevel,
+        skinDensity_, skinValueTier_, GFXManager::DuneCityZoneActivity::Idle, 0, anchorX, anchorY);
 }
 
 void ZoneStructure::refreshZonePowerDraw() {

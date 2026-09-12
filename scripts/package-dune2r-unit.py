@@ -59,6 +59,8 @@ BUILDING_STATES = {
     "building_destroyed": ("Destroyed", False),
 }
 
+DUNECITY_ZONE_STATES = {"building_idle": ("Idle", False)}
+
 MAX_ATLAS_SIZE = 2048
 
 
@@ -242,11 +244,23 @@ def package_tile(metadata: dict[str, object], asset_root: Path, output: Path,
     manifest["Render"] = {"PixelsPerTile": str(args.frame_size)}
 
     states = metadata.get("categories", {}).get("tile_base", {}).get("states", {})
+    full_assets = states.get("full", {}).get("assets", {})
+    full_sprite_value = full_assets.get("sprite", {}).get("file", "")
+    full_sprite_path = asset_root / full_sprite_value
+    available_variants = sum(
+        1 for variant in TILE_VARIANTS
+        if (asset_root / states.get(variant, {}).get("assets", {})
+            .get("sprite", {}).get("file", "")).is_file()
+    )
+    alias_full_master = available_variants == 1 and full_sprite_path.is_file()
     packaged = 0
     for index, variant in enumerate(TILE_VARIANTS):
         assets = states.get(variant, {}).get("assets", {})
         sprite_value = assets.get("sprite", {}).get("file", "")
         sprite_path = asset_root / sprite_value
+        if alias_full_master:
+            assets = full_assets
+            sprite_path = full_sprite_path
         if not sprite_path.is_file():
             print(f"skip tile_base/{variant}: no enhanced sprite")
             continue
@@ -267,6 +281,9 @@ def package_tile(metadata: dict[str, object], asset_root: Path, output: Path,
             shutil.copy2(compact_path, output / relative_compact)
             manifest[section]["Compact"] = relative_compact.as_posix()
         packaged += 1
+
+    if alias_full_master:
+        print("base terrain has one seamless full master; aliased it across all topology slots")
 
     if packaged != len(TILE_VARIANTS):
         raise SystemExit(f"Tile package needs all {len(TILE_VARIANTS)} topology sprites; found {packaged}")
@@ -352,6 +369,77 @@ def package_building(metadata: dict[str, object], asset_root: Path, output: Path
     return packaged
 
 
+def package_dunecity_zone(metadata: dict[str, object], asset_root: Path, output: Path,
+                          args: argparse.Namespace) -> int:
+    """Package one faction's R/C/I art without entering Dune2R's unit namespace."""
+    city = metadata.get("dunecity", {})
+    atlas = city.get("zone_atlas", {}) if isinstance(city, dict) else {}
+    density_columns = max(1, min(4, int(atlas.get("density_columns", 1))))
+    value_rows = max(1, min(4, int(atlas.get("value_tier_rows", 1))))
+    profile = metadata.get("render_profile", {})
+    footprint = profile.get("logical_footprint_tiles", [2, 2])
+    target_width = max(1, int(footprint[0])) * 16
+
+    manifest = configparser.ConfigParser()
+    manifest.optionxform = str
+    manifest["Zone"] = {
+        "ItemID": str(args.item_id),
+        "HouseID": str(args.house_id),
+        "SourceUnit": str(metadata.get("slug", args.source_unit.name)),
+        "DensityColumns": str(density_columns),
+        "ValueTierRows": str(value_rows),
+        "FootprintWidth": str(max(1, int(footprint[0]))),
+        "FootprintHeight": str(max(1, int(footprint[1]))),
+    }
+    manifest["Render"] = {"PixelsPerTile": "16"}
+
+    packaged = 0
+    for category_name, (activity, loops) in DUNECITY_ZONE_STATES.items():
+        states = metadata.get("categories", {}).get(category_name, {}).get("states", {})
+        for value in range(value_rows):
+            for density in range(density_columns):
+                slot = f"d{density}_v{value}"
+                exact_assets = states.get(slot, {}).get("assets", {})
+                # Never smear the visual MASTER across simulation cells. Each
+                # density/value cell is opt-in; absent cells retain native art.
+                assets = exact_assets
+                frames, frame_ms = load_source_frames(asset_root, assets)
+                if not frames:
+                    continue
+                # Zone progression selects cells; it does not play animation.
+                frames = frames[:1]
+                frames = fit_frames_to_width(frames, target_width)
+                relative_dir = Path("atlases") / activity.lower() / slot
+                chunks = write_chunked_atlases(frames, output, relative_dir)
+                section = f"Cell.{density}.{value}.{activity}"
+                manifest[section] = {
+                    "Frames": str(len(frames)),
+                    "FrameMs": str(frame_ms),
+                    "FrameWidth": str(frames[0].width),
+                    "FrameHeight": str(frames[0].height),
+                    "AnchorX": str(frames[0].width // 2),
+                    "AnchorY": str(frames[0].height),
+                    "Loop": "true" if loops else "false",
+                    "AtlasCount": str(len(chunks)),
+                    "Fallback": "exact",
+                }
+                for index, chunk in enumerate(chunks):
+                    manifest[section][f"Atlas.{index}"] = str(chunk["path"])
+                    manifest[section][f"FirstFrame.{index}"] = str(chunk["first"])
+                    manifest[section][f"ChunkFrames.{index}"] = str(chunk["frames"])
+                    manifest[section][f"Columns.{index}"] = str(chunk["columns"])
+                    manifest[section][f"Rows.{index}"] = str(chunk["rows"])
+                packaged += 1
+
+    if packaged == 0:
+        raise SystemExit("No exact DuneCity density/value sprites were eligible for packaging")
+    text = io.StringIO()
+    manifest.write(text, space_around_delimiters=False)
+    (output / "zone.ini").write_text(text.getvalue().rstrip() + "\n", encoding="ascii", newline="\n")
+    print(f"wrote {output / 'zone.ini'} with {packaged} density/value/activity cell(s)")
+    return packaged
+
+
 def package_unit(args: argparse.Namespace) -> int:
     source_unit = args.source_unit.resolve()
     metadata_path = source_unit / "unit.json"
@@ -361,6 +449,9 @@ def package_unit(args: argparse.Namespace) -> int:
     output.mkdir(parents=True, exist_ok=True)
 
     unit_type = str(metadata.get("unit_type", "ground")).lower()
+    if str(metadata.get("target_game", "")).lower() == "dunecity" and unit_type == "building":
+        package_dunecity_zone(metadata, asset_root, output, args)
+        return 0
     if unit_type == "tile":
         package_tile(metadata, asset_root, output, args)
         return 0

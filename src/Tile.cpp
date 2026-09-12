@@ -446,6 +446,10 @@ void Tile::blitGround(int xPos, int yPos) {
             const int topology = static_cast<int>(getTerrainTile())
                                  - static_cast<int>(TerrainTile_Rock);
             pGFXManager->drawEnhancedTerrain(type, topology, drawLocation);
+        } else if(type == Terrain_Sand) {
+            // Base terrain has one authored seamless master. Its manifest aliases
+            // that image into all slots; use the full slot for every sand tile.
+            pGFXManager->drawEnhancedTerrain(type, 15, drawLocation);
         }
     }
 

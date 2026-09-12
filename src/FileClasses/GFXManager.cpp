@@ -46,6 +46,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -74,6 +75,16 @@ const std::array<const char*, static_cast<size_t>(GFXManager::EnhancedBuildingSt
 kEnhancedBuildingStateNames = {
     "Placement", "Construction", "Idle", "Working", "Damaged", "Repair", "Destroyed"
 };
+
+const std::array<const char*, static_cast<size_t>(GFXManager::DuneCityZoneActivity::Count)>
+kDuneCityZoneActivityNames = {"Idle", "Active", "Growing", "Damaged", "Repair"};
+
+int duneCityZoneAnimationKey(int density, int valueTier,
+                             GFXManager::DuneCityZoneActivity activity) {
+    return ((std::clamp(valueTier, 0, 3) * 4 + std::clamp(density, 0, 3))
+            * static_cast<int>(GFXManager::DuneCityZoneActivity::Count))
+           + static_cast<int>(activity);
+}
 
 constexpr Uint32 kDune2RVisualFadeMs = 350;
 
@@ -6686,6 +6697,126 @@ void GFXManager::loadEnhancedWorldManifests() {
     }
 }
 
+void GFXManager::loadDuneCityZoneManifests() {
+    if(duneCityZoneManifestsLoaded) {
+        return;
+    }
+    duneCityZoneManifestsLoaded = true;
+    duneCityZoneDefinitions.clear();
+
+    if(!ModManager::instance().isInitialized()
+       || !ModManager::instance().isCityModeActive()) {
+        return;
+    }
+    if(!duneCitySkinPreferenceLoaded) {
+        duneCitySkinPreferenceLoaded = true;
+        try {
+            INIFile config(getConfigFilepath());
+            std::string skin = config.getStringValue("DuneCity", "Skin", "SimCity");
+            std::transform(skin.begin(), skin.end(), skin.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            duneCityDune2SkinEnabled = skin == "dune2";
+        } catch(const std::exception& e) {
+            SDL_Log("GFXManager: Could not load DuneCity skin preference: %s", e.what());
+        }
+    }
+    if(!duneCityDune2SkinEnabled) {
+        return;
+    }
+
+    const std::filesystem::path zonesRoot =
+        std::filesystem::path(ModManager::instance().getModPath("dunecity"))
+        / "graphics_skins" / "Dune2" / "zones";
+    if(!std::filesystem::is_directory(zonesRoot)) {
+        return;
+    }
+    for(const auto& entry : std::filesystem::directory_iterator(zonesRoot)) {
+        const auto manifestPath = entry.path() / "zone.ini";
+        if(!entry.is_directory() || !std::filesystem::is_regular_file(manifestPath)) {
+            continue;
+        }
+        try {
+            INIFile manifest(manifestPath.string());
+            DuneCityZoneDefinition definition;
+            definition.itemID = manifest.getIntValue("Zone", "ItemID", -1);
+            definition.houseID = manifest.getIntValue("Zone", "HouseID", -1);
+            definition.sourceUnit = manifest.getStringValue(
+                "Zone", "SourceUnit", entry.path().filename().string());
+            definition.footprintWidth = manifest.getIntValue("Zone", "FootprintWidth", 2);
+            definition.footprintHeight = manifest.getIntValue("Zone", "FootprintHeight", 2);
+            const int densityColumns = std::clamp(
+                manifest.getIntValue("Zone", "DensityColumns", 4), 1, 4);
+            const int valueRows = std::clamp(
+                manifest.getIntValue("Zone", "ValueTierRows", 4), 1, 4);
+            if(definition.itemID < 0 || definition.houseID < -1
+               || definition.houseID >= static_cast<int>(NUM_HOUSES)) {
+                continue;
+            }
+            for(int value = 0; value < valueRows; ++value) {
+                for(int density = 0; density < densityColumns; ++density) {
+                    for(int activityIndex = 0;
+                        activityIndex < static_cast<int>(DuneCityZoneActivity::Count);
+                        ++activityIndex) {
+                        const std::string section = "Cell." + std::to_string(density) + "."
+                            + std::to_string(value) + "." + kDuneCityZoneActivityNames[activityIndex];
+                        const int frameCount = manifest.getIntValue(section, "Frames", 0);
+                        const int atlasCount = manifest.getIntValue(section, "AtlasCount", 0);
+                        if(frameCount <= 0 || atlasCount <= 0 || atlasCount > 64) {
+                            continue;
+                        }
+                        EnhancedBuildingAnimation animation;
+                        animation.frameCount = frameCount;
+                        animation.frameMs = std::max(1, manifest.getIntValue(section, "FrameMs", 100));
+                        animation.frameWidth = manifest.getIntValue(section, "FrameWidth", 0);
+                        animation.frameHeight = manifest.getIntValue(section, "FrameHeight", 0);
+                        animation.anchorX = manifest.getIntValue(section, "AnchorX", animation.frameWidth / 2);
+                        animation.anchorY = manifest.getIntValue(section, "AnchorY", animation.frameHeight);
+                        animation.loop = manifest.getBoolValue(section, "Loop", true);
+                        bool valid = animation.frameWidth > 0 && animation.frameHeight > 0;
+                        int coveredFrames = 0;
+                        for(int chunkIndex = 0; valid && chunkIndex < atlasCount; ++chunkIndex) {
+                            EnhancedAtlasChunk chunk;
+                            const std::string suffix = std::to_string(chunkIndex);
+                            const std::string atlasName = manifest.getStringValue(
+                                section, "Atlas." + suffix, "");
+                            const auto atlasPath = std::filesystem::weakly_canonical(entry.path() / atlasName);
+                            chunk.firstFrame = manifest.getIntValue(section, "FirstFrame." + suffix, -1);
+                            chunk.frameCount = manifest.getIntValue(section, "ChunkFrames." + suffix, 0);
+                            chunk.columns = manifest.getIntValue(section, "Columns." + suffix, 0);
+                            chunk.rows = manifest.getIntValue(section, "Rows." + suffix, 0);
+                            if(atlasName.empty() || !isPathInside(atlasPath, zonesRoot)
+                               || !std::filesystem::is_regular_file(atlasPath)
+                               || chunk.firstFrame != coveredFrames || chunk.frameCount <= 0
+                               || chunk.columns <= 0 || chunk.rows <= 0
+                               || chunk.frameCount > chunk.columns * chunk.rows) {
+                                valid = false;
+                                break;
+                            }
+                            chunk.atlasPath = atlasPath.string();
+                            coveredFrames += chunk.frameCount;
+                            animation.chunks.push_back(std::move(chunk));
+                        }
+                        if(valid && coveredFrames == frameCount) {
+                            definition.animations.emplace(
+                                duneCityZoneAnimationKey(density, value,
+                                    static_cast<DuneCityZoneActivity>(activityIndex)),
+                                std::move(animation));
+                        }
+                    }
+                }
+            }
+            if(!definition.animations.empty()) {
+                SDL_Log("GFXManager: Registered DuneCity Dune2 zone ItemID=%d HouseID=%d from %s",
+                        definition.itemID, definition.houseID, manifestPath.string().c_str());
+                duneCityZoneDefinitions.push_back(std::move(definition));
+            }
+        } catch(const std::exception& e) {
+            SDL_Log("GFXManager: Failed to read DuneCity zone manifest %s: %s",
+                    manifestPath.string().c_str(), e.what());
+        }
+    }
+}
+
 void GFXManager::loadEnhancedRenderModes() {
     if(enhancedRenderModesLoaded) {
         return;
@@ -7067,6 +7198,102 @@ bool GFXManager::drawEnhancedBuilding(int itemID, int house, unsigned int z,
                     next.rows * selectedAnimation->frameHeight);
                 break;
             }
+        }
+    }
+    return true;
+}
+
+bool GFXManager::drawDuneCityZone(int itemID, int house, unsigned int z,
+                                  int density, int valueTier,
+                                  DuneCityZoneActivity activity,
+                                  Uint32 elapsedMs, int anchorX, int anchorY) {
+    if(z >= NUM_ZOOMLEVEL) {
+        return false;
+    }
+    loadDuneCityZoneManifests();
+    if(!duneCityDune2SkinEnabled) {
+        return false;
+    }
+
+    DuneCityZoneDefinition* selectedDefinition = nullptr;
+    EnhancedBuildingAnimation* selectedAnimation = nullptr;
+    const std::array<DuneCityZoneActivity, 2> fallbacks = {
+        activity, DuneCityZoneActivity::Idle
+    };
+    for(const int requestedHouse : {house, -1}) {
+        for(auto& definition : duneCityZoneDefinitions) {
+            if(definition.itemID != itemID || definition.houseID != requestedHouse) {
+                continue;
+            }
+            for(const auto candidate : fallbacks) {
+                const auto found = definition.animations.find(
+                    duneCityZoneAnimationKey(density, valueTier, candidate));
+                if(found != definition.animations.end()) {
+                    selectedDefinition = &definition;
+                    selectedAnimation = &found->second;
+                    break;
+                }
+            }
+            if(selectedAnimation) break;
+        }
+        if(selectedAnimation) break;
+    }
+    if(!selectedDefinition || !selectedAnimation) {
+        return false;
+    }
+
+    Uint32 frame = elapsedMs / static_cast<Uint32>(selectedAnimation->frameMs);
+    if(selectedAnimation->loop) {
+        frame %= static_cast<Uint32>(selectedAnimation->frameCount);
+    } else {
+        frame = std::min(frame, static_cast<Uint32>(selectedAnimation->frameCount - 1));
+    }
+    EnhancedAtlasChunk* selectedChunk = nullptr;
+    for(auto& chunk : selectedAnimation->chunks) {
+        if(static_cast<int>(frame) >= chunk.firstFrame
+           && static_cast<int>(frame) < chunk.firstFrame + chunk.frameCount) {
+            selectedChunk = &chunk;
+            break;
+        }
+    }
+    if(!selectedChunk) {
+        return false;
+    }
+    if(!enhancedBuildingAtlasCache) {
+        enhancedBuildingAtlasCache = std::make_unique<EnhancedAtlasCache>(renderer);
+    }
+    SDL_Texture* texture = enhancedBuildingAtlasCache->request(
+        selectedChunk->atlasPath,
+        selectedChunk->columns * selectedAnimation->frameWidth,
+        selectedChunk->rows * selectedAnimation->frameHeight);
+    if(!texture) {
+        return false;
+    }
+    const int localFrame = static_cast<int>(frame) - selectedChunk->firstFrame;
+    const SDL_Rect source{
+        (localFrame % selectedChunk->columns) * selectedAnimation->frameWidth,
+        (localFrame / selectedChunk->columns) * selectedAnimation->frameHeight,
+        selectedAnimation->frameWidth,
+        selectedAnimation->frameHeight
+    };
+    const SDL_Rect destination = calcEnhancedBuildingDrawingRect(
+        selectedDefinition->footprintWidth, z,
+        {selectedAnimation->frameWidth, selectedAnimation->frameHeight},
+        {selectedAnimation->anchorX, selectedAnimation->anchorY},
+        {anchorX, anchorY});
+    SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+    SDL_RenderCopy(renderer, texture, &source, &destination);
+
+    const auto nextFrame = selectedChunk->firstFrame + selectedChunk->frameCount;
+    for(auto& next : selectedAnimation->chunks) {
+        if(next.firstFrame == nextFrame
+           || (selectedAnimation->loop && nextFrame == selectedAnimation->frameCount
+               && next.firstFrame == 0)) {
+            enhancedBuildingAtlasCache->request(
+                next.atlasPath,
+                next.columns * selectedAnimation->frameWidth,
+                next.rows * selectedAnimation->frameHeight);
+            break;
         }
     }
     return true;
