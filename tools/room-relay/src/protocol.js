@@ -18,6 +18,8 @@ const {
   CLOSE,
   LIMITS,
   DIAGNOSTIC_KIND,
+  RELAY_FLAGS,
+  MAX_CHANNEL,
 } = require('./constants');
 
 class ProtocolError extends Error {
@@ -234,8 +236,13 @@ function decodeClientMessage(frame) {
       }
       const payload = reader.bytes(payloadLen);
       reader.expectEnd();
-      if (channel > 1) {
+      if (channel > MAX_CHANNEL) {
         throw protocolError(`channel ${channel} does not exist`);
+      }
+      // An undefined flag bit means the sender and the relay disagree about what this frame is.
+      // Forwarding it would hand the receiver a meaning nobody has agreed on.
+      if ((flags & ~RELAY_FLAGS.DEFINED_MASK) !== 0) {
+        throw protocolError(`flags 0x${flags.toString(16)} set an undefined bit`);
       }
       // The payload declares its own type in a little-endian uint32 header. Requiring the two
       // to agree removes any gap between what the relay authorises and what the receiver acts on.

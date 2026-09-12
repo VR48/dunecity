@@ -34,6 +34,7 @@ npm test
 | `test/analytics.test.js` | lifecycle DTO schema, configuration and startup failures, HMAC over exact bytes, idempotent retries, queue drops, absolute deadlines, refused redirects, TLS verification, full relay lifecycle into a captured receiver |
 | `test/phase.test.js` | admission and grant redemption once a match has started, co-op intermission, lobby leave/rejoin |
 | `test/cors.test.js` | CORS for allowlisted origins on success and error, foreign/null refusal, preflight, origin allowlist validation |
+| `test/routing.test.js` | the game-message matrix against the C++ table, host-destined messages, channels and flag bits |
 | `test/ingress.test.js` | slow bodies, unfinished headers, the admission socket ceiling, and that game sockets are not charged to it |
 
 The TLS tests generate a throwaway certificate with the `openssl` binary and skip themselves if

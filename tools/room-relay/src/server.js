@@ -470,6 +470,14 @@ function createRelay(userConfig = {}) {
       softError(conn, CLOSE.FORBIDDEN, 'That message belongs to a running match.');
       return;
     }
+    // Some messages are only ever acted on by the host, so carrying one to another client
+    // would produce traffic that every recipient has to refuse. The host itself is free to
+    // broadcast: that is how a lobby update reaches everybody.
+    if (policy.destination === 'host' && !conn.isHost
+        && (room.hostPeerId === 0 || msg.recipient !== room.hostPeerId)) {
+      softError(conn, CLOSE.FORBIDDEN, 'That message may only be addressed to the host.');
+      return;
+    }
 
     const frame = protocol.encodeRelay(conn.peerId, msg);
 

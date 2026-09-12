@@ -138,25 +138,45 @@ const GAME = Object.freeze({
 });
 
 // Relay authorisation matrix, keyed by game packet id.
-//   sender: 'any' | 'host' | 'client'
-//   phase:  'any' | 'lobby' | 'match'
+//   sender:      'any' | 'host' | 'client'
+//   phase:       'any' | 'lobby' | 'match'
+//   destination: 'any' | 'host'   - where a *client* may address it; a host is unrestricted
 // A type that is absent from this table is refused.
+//
+// sender and phase mirror gameMessageRule() in include/Network/RoomRelayProtocol.h exactly.
+// destination comes from the receiving end of the same policy,
+// NetworkPacketPolicy::classifyPacket(): a client refuses CHANGEEVENTLIST that did not come
+// from the host, and only a host accepts CLIENTSTATS. Carrying those to anybody else would
+// produce traffic that every recipient is obliged to refuse. NetworkManager already sends both
+// to the host alone, so this refuses nothing the game does.
 const GAME_POLICY = new Map([
-  [GAME.SENDGAMEINFO, { sender: 'host', phase: 'lobby' }],
-  [GAME.SENDNAME, { sender: 'any', phase: 'lobby' }],
-  [GAME.CHATMESSAGE, { sender: 'any', phase: 'any' }],
-  [GAME.CHANGEEVENTLIST, { sender: 'any', phase: 'lobby' }],
-  [GAME.STARTGAME, { sender: 'host', phase: 'lobby' }],
-  [GAME.COMMANDLIST, { sender: 'any', phase: 'match' }],
-  [GAME.SELECTIONLIST, { sender: 'any', phase: 'match' }],
-  [GAME.CONFIG_HASH, { sender: 'any', phase: 'lobby' }],
-  [GAME.SETPATHBUDGET, { sender: 'host', phase: 'match' }],
-  [GAME.CLIENTSTATS, { sender: 'client', phase: 'match' }],
-  [GAME.KEEPALIVE, { sender: 'any', phase: 'any' }],
+  [GAME.SENDGAMEINFO, { sender: 'host', phase: 'lobby', destination: 'any' }],
+  [GAME.SENDNAME, { sender: 'any', phase: 'lobby', destination: 'any' }],
+  [GAME.CHATMESSAGE, { sender: 'any', phase: 'any', destination: 'any' }],
+  [GAME.CHANGEEVENTLIST, { sender: 'any', phase: 'lobby', destination: 'host' }],
+  [GAME.STARTGAME, { sender: 'host', phase: 'lobby', destination: 'any' }],
+  [GAME.COMMANDLIST, { sender: 'any', phase: 'match', destination: 'any' }],
+  [GAME.SELECTIONLIST, { sender: 'any', phase: 'match', destination: 'any' }],
+  // Both directions are ordinary here: the host broadcasts its hashes and a client sends its
+  // own, and classifyPacket accepts a config hash from any peer while the room is a lobby.
+  [GAME.CONFIG_HASH, { sender: 'any', phase: 'lobby', destination: 'any' }],
+  [GAME.SETPATHBUDGET, { sender: 'host', phase: 'match', destination: 'any' }],
+  [GAME.CLIENTSTATS, { sender: 'client', phase: 'match', destination: 'host' }],
+  [GAME.KEEPALIVE, { sender: 'any', phase: 'any', destination: 'any' }],
   // Campaign continuation, including the empty settings that mean "exit", arrives after the
   // previous match while the session is still in-game, so it is allowed in both phases.
-  [GAME.COOP_MISSION, { sender: 'host', phase: 'any' }],
+  [GAME.COOP_MISSION, { sender: 'host', phase: 'any', destination: 'any' }],
 ]);
+
+// RELAY envelope flags. Bit 0 records that the sender asked for reliable delivery; the
+// WebSocket transport is always reliable and ordered, so it is informational. Every other bit
+// is undefined, and a frame that sets one is refused rather than forwarded with a meaning the
+// relay and the receiver might read differently.
+const RELAY_FLAGS = Object.freeze({
+  RELIABLE: 0x01,
+  DEFINED_MASK: 0x01,
+});
+const MAX_CHANNEL = 1;
 
 // Room codes: Crockford base32 without I, L, O and U.
 const ROOM_CODE_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
@@ -178,6 +198,8 @@ module.exports = {
   LIMITS,
   GAME,
   GAME_POLICY,
+  RELAY_FLAGS,
+  MAX_CHANNEL,
   ROOM_CODE_ALPHABET,
   ROOM_CODE_LENGTH,
   DIAGNOSTIC_KIND,

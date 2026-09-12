@@ -270,6 +270,7 @@ Carries one game payload.
 u32  recipient      ; 0 = every other peer in the room, else a peer id in this room
 u8   channel        ; 0 or 1 (mirrors the two ENet channels)
 u8   flags          ; bit0 = sender asked for reliable delivery (informational; WS is always reliable+ordered)
+                    ; every other bit is undefined and must be zero
 u16  gameMessageType; the payload's own packet id, declared for relay-side authorisation
 u32  payloadLen     ; 4 .. 262128
 ...  payload        ; the serialized DuneCity packet, unchanged
@@ -278,6 +279,11 @@ u32  payloadLen     ; 4 .. 262128
 The relay checks `payloadLen >= 4` and that the payload's own little-endian `uint32` header
 equals `gameMessageType`. A mismatch is a protocol error (`4400`). The relay does not otherwise
 parse the payload.
+
+A `channel` above 1 and any undefined `flags` bit are also protocol errors (`4400`), and the
+frame is not forwarded to anybody. Neither is a field the relay can interpret on the sender's
+behalf: a receiver that reads a bit the relay ignored would be acting on a meaning the two ends
+never agreed. `RoomRelayProtocol.h` refuses both on the way in as well.
 
 Authorisation is applied to `gameMessageType` before routing — see §5.
 
@@ -466,13 +472,13 @@ what phase the host declared).
 | `SENDGAMEINFO` | 4 | host only, lobby |
 | `SENDNAME` | 5 | any, lobby |
 | `CHATMESSAGE` | 6 | any, any phase |
-| `CHANGEEVENTLIST` | 7 | any, lobby |
+| `CHANGEEVENTLIST` | 7 | any, lobby; a client may only address it **to the host** |
 | `STARTGAME` | 8 | **host only**, lobby |
 | `COMMANDLIST` | 9 | any, match |
 | `SELECTIONLIST` | 10 | any, match |
 | `CONFIG_HASH` | 11 | any, lobby |
 | `SETPATHBUDGET` | 12 | **host only**, match |
-| `CLIENTSTATS` | 13 | client only, match |
+| `CLIENTSTATS` | 13 | client only, match; **to the host** only |
 | `MOD_INFO` … `MOD_ACK` | 14–18 | **refused** — no custom content transfer on the relay in v1 |
 | `KEEPALIVE` | 19 | any, any phase |
 | `COOP_MISSION` | 20 | **host only**, any phase (campaign continuation arrives after a match) |
@@ -480,6 +486,21 @@ what phase the host declared).
 The address-bearing packets are refused at the relay *and* have no code path on the client side
 in relay mode. Their removal is the point of the relay: a relay peer can never be told to open a
 socket to an address of somebody else's choosing.
+
+### 5.1.1 Destination
+
+`sender` and `phase` above mirror `gameMessageRule()` in `RoomRelayProtocol.h`. The destination
+rule comes from the other end of the same policy, `NetworkPacketPolicy::classifyPacket()`: a
+client only acts on a `CHANGEEVENTLIST` that came from the host, and only a host acts on
+`CLIENTSTATS`. Carrying either to anybody else would be traffic the recipient is obliged to
+refuse, so a client that addresses one of them to a broadcast or to another client gets a
+`4403` refusal on that message. A host is unrestricted: broadcasting the authoritative lobby
+list is how the other half of that exchange works, and `NetworkManager` already sends both
+messages exactly this way.
+
+`CONFIG_HASH` is deliberately *not* restricted: `classifyPacket` accepts a config hash from any
+peer while the room is a lobby, so both the host's broadcast and a client's own hashes are
+ordinary traffic.
 
 ### 5.2 Phase notes
 
