@@ -568,7 +568,7 @@ test('opening sockets from one address is rate limited', async (t) => {
 
   const denied = relay.log.events('connection_denied');
   assert.equal(denied.length, 1);
-  assert.equal(denied[0].reason, 'address_socket_rate');
+  assert.equal(denied[0].code, CLOSE.RATE_LIMITED);
 });
 
 test('the connection cap refuses new sockets', async (t) => {
