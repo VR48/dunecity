@@ -19,6 +19,7 @@
 #define COMMANDMANAGER_H
 
 #include <Command.h>
+#include <CommandEmissionSchedule.h>
 
 #include <misc/InputStream.h>
 #include <misc/OutputStream.h>
@@ -82,7 +83,13 @@ public:
     Uint32 getNetworkCycleBuffer() const { return networkCycleBuffer; }
 
 
-    void setNetworkCycleBuffer(Uint32 newNetworkCycleBuffer) { networkCycleBuffer = newNetworkCycleBuffer; };
+    void setNetworkCycleBuffer(Uint32 newNetworkCycleBuffer) {
+        networkCycleBuffer = newNetworkCycleBuffer;
+        // This is the start of a networked match. The emission frontier of the previous one
+        // refers to cycles that no longer exist, and its timestamp to a clock reading from
+        // before the lobby.
+        emissionSchedule.reset();
+    };
 
     /**
         Updates the command manager and sends commands to other peers
@@ -120,6 +127,7 @@ private:
     std::unique_ptr<OutputStream> pStream;          ///< a stream all added commands will be written to. May be nullptr
     bool bReadOnly;                                 ///< true = addCommand() is a NO-OP, false = addCommand() has normal behaviour
     Uint32 networkCycleBuffer;                      ///< the number of frames a command is given in advance
+    CommandEmissionSchedule emissionSchedule;       ///< paces the emissions of a relay session (see CommandEmissionSchedule.h)
 };
 
 #endif // COMMANDMANAGER_H

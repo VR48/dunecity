@@ -117,24 +117,47 @@ void CommandManager::load(InputStream& stream) {
 }
 
 void CommandManager::update() {
-    if(pNetworkManager != nullptr) {
-        CommandList commandList;
-        for(Uint32 i = std::max((int) currentGame->getGameCycleCount() - MILLI2CYCLES(2500), 0); i < currentGame->getGameCycleCount() + networkCycleBuffer; i++) {
-            std::vector<Command> commands;
+    if(pNetworkManager == nullptr) {
+        return;
+    }
 
-            if(i < timeslot.size()) {
-                for(Command& command : timeslot[i]) {
-                    if(command.getPlayerID() == pLocalPlayer->getPlayerID()) {
-                        commands.push_back(command);
-                    }
+    const Uint32 currentCycle = currentGame->getGameCycleCount();
+    const Uint32 windowEnd = currentCycle + networkCycleBuffer;
+
+    // A relay session pays for every emission with a frame in the relay's per-peer send queue,
+    // and that queue is drained 64 frames per HTTP round trip. Emitting once per simulation loop
+    // iteration makes the number of frames a function of this machine's frame rate, which is how
+    // a 60 fps peer produces 62.5 frames a second against a drain of ~58 and walks the queue into
+    // the relay's 1 MiB slow-consumer guard. Pace it by wall time instead; the emitted window,
+    // and therefore everything CommandValidation.h checks about it, is unchanged.
+    //
+    // Direct ENet sessions keep emitting once per iteration: their command buffer is as small as
+    // five cycles (80 ms), which is shorter than the emission interval, and there is no batching
+    // queue between the peers that the extra packets could congest.
+    if(pNetworkManager->isRelaySession()) {
+        const Uint32 nowMs = SDL_GetTicks();
+        if(!emissionSchedule.shouldEmit(nowMs, currentCycle)) {
+            return;
+        }
+        emissionSchedule.noteEmission(nowMs, windowEnd);
+    }
+
+    CommandList commandList;
+    for(Uint32 i = CommandEmissionSchedule::historyStartCycle(currentCycle); i < windowEnd; i++) {
+        std::vector<Command> commands;
+
+        if(i < timeslot.size()) {
+            for(Command& command : timeslot[i]) {
+                if(command.getPlayerID() == pLocalPlayer->getPlayerID()) {
+                    commands.push_back(command);
                 }
             }
-
-            commandList.commandList.emplace_back(i, commands);
         }
 
-        pNetworkManager->sendCommandList(commandList);
+        commandList.commandList.emplace_back(i, commands);
     }
+
+    pNetworkManager->sendCommandList(commandList);
 }
 
 void CommandManager::addCommandList(const std::string& playername, const CommandList& commandList) {

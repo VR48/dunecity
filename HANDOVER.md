@@ -1,3 +1,44 @@
+## Public HTTPS polling acceptance — 13 September 2026
+
+**Release is currently held:** actual public 1.0.659 browser/native and browser/browser
+matches ended with polling close code 4431 (slow consumer). The browser/native match
+ran about 197 seconds and reached at least cycle 8624 without a logged digest mismatch;
+this is not a successful acceptance test. Browser packet instrumentation captured
+repeated 64-frame responses before the browser/browser failure. Command history is
+currently retransmitted every simulation/wait iteration, exceeding sustained polling
+capacity. Actual Claude Opus implemented a 100 ms relay emission cadence with a contiguous-history
+retention guard, plus removal of two redundant browser wait timers. This is candidate
+1.0.660; native CTest 6/6 and dependency audits pass. Actual Hermes found no blocker in
+its focused review, while noting model-test limitations. Codex added an explicit
+post-watermark input regression and made final model emission obey the real schedule.
+Public 1.0.660 gameplay acceptance is still required. Do not publish the existing
+1.0.659 packages as a verified crossplay release.
+Evidence: `../outputs/network-hardening/public-659-failure-evidence.json`.
+
+The existing server now runs the restricted-account Apache/PHP HTTPS gateway at
+`https://dunelegacy.com/relay`, with Node bound only to loopback. Deployment revision
+10cd89f has v2 artifact manifests, release pinning and a single supervised child with
+cron recovery and kernel parent-death protection. Actual Hermes rechecked and cleared
+the two deployment findings (release-switch execution race and missing root-directory
+permission checks). 38 manifest checks, 42 supervisor checks and the release-pinning
+fixture pass on the server. Actual hung-child recovery took 80 seconds; killing the
+supervisor recovered through cron in 70 seconds. No administrator access was used.
+
+Actual public transport harnesses exchanged 17 matching digests each with no mismatch;
+this proves transport only, and the later actual-game failure above supersedes any
+readiness inference. SQLite schema-2 migration preserved the backed-up legacy rows;
+signed relay lifecycle records arrived over local HTTPS. External event submissions
+return 403. Bounded concurrent gateway requests and a short-body timeout test passed.
+The limited test was not a capacity or DDoS certification.
+
+Candidate CI 34701395863 built all six desktop artifacts for 1.0.659 successfully.
+Native CTest 6/6, dependency audits and the browser build also passed. Main remains
+8879732, no stable tag was advanced, and the normal `/play/` page remains the previous
+release. Website companion branch `fix/relay-analytics` tracks the gateway and receiver
+so its deploy does not erase them. Its rsync deployment removes untracked preview
+paths (`play-test-658/659`); finish tests before publishing it. The dated entries below
+are historical and their administrator-access blockers have been superseded.
+
 ## Crossplay candidate — 12 September 2026
 
 Final candidate CI `34694065319` is successful on Windows, macOS and Linux, with

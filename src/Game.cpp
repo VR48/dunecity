@@ -2945,8 +2945,13 @@ void Game::runMainLoop() {
                     frameTime = 0;
                 }
                 // Break out of loop to avoid spinning - we'll try again next frame
-                // Also add a small delay to avoid burning CPU
+                // Also add a small delay to avoid burning CPU. Not in the browser: see
+                // handleNetworkUpdates(). This loop has just given up on the cycle, the frame
+                // ends in WebRuntime::yieldToBrowser(), and an ASYNCIFY sleep here would only
+                // add a second stack unwind to the same wait.
+#ifndef __EMSCRIPTEN__
                 SDL_Delay(1);
+#endif
                 break;
             }
         }
@@ -5955,7 +5960,12 @@ bool Game::handleNetworkUpdates() {
                 quitGame();
             }
         }
+#ifndef __EMSCRIPTEN__
         SDL_Delay(1);  // Reduced from 10ms to 1ms to improve host performance
+#endif
+        // Browser SDL_Delay suspends the Asyncify stack and resumes through a timer.
+        // The frame-end yield already gives the browser an event-loop turn; additional
+        // timers here and in the wait branch add overhead during every lockstep stall.
     } else {
         startWaitingForOtherPlayersTime = 0;
         if(pWaitingForOtherPlayers != nullptr) {

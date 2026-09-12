@@ -119,17 +119,22 @@ WASM and data URL carries the same version/content token; unversioned artifacts
 must revalidate. Verify the live `play/build.json` and download/hash every listed
 artifact after deployment. Browser-test fresh defaults, Display aspect changes,
 Options resolution changes, reload persistence, viewport resize and fullscreen.
-The 1.0.657 crossplay candidate uses `https://dunelegacy.com/relay`. Desktop ENet
-multiplayer remains available; browser/native crossplay uses the separate WebSocket
-transport, public directory, optional private invitations and confirmed-name lobby chat.
+Crossplay uses `https://dunelegacy.com/relay`. Desktop ENet multiplayer remains
+available; browser/native crossplay supports WebSocket and HTTPS polling transports,
+the public directory, optional private invitations and confirmed-name lobby chat.
 Package production clients with `--relay-origin https://dunelegacy.com` so their CSP
 permits the exact HTTPS/WSS origin. Local development packages explicitly opt into
 loopback and must never be copied to production.
 
-Before publishing a crossplay client, provision and verify the relay and signed PHP
-analytics receiver. See `tools/room-relay/deploy/README.md` for the administrator-only
-bootstrap and rollback contract. The restricted website deploy account is deliberately
-insufficient for service/Apache installation. A `release-*` branch builds candidate
-packages without publishing a stable release or replacing the browser site; keep the
-stable tag/main deployment on hold until public TLS/WSS, proxy headers, browser/native
-connectivity and SQLite delivery have been checked on the actual host.
+Before publishing a crossplay client, verify the relay and signed PHP analytics
+receiver. See `tools/room-relay/deploy/README.md` for both deployment paths and the
+rollback contract. The administrator path installs a service and WebSocket proxy.
+The restricted-account path uses existing Apache/PHP with a fixed-route HTTPS
+polling gateway and a supervised, sandboxed loopback relay. It needs neither a new
+server nor administrator access; it does not install Apache proxy modules.
+
+A `release-*` branch builds candidate packages without publishing a stable release
+or replacing the browser site. Hold stable publication until actual public
+browser/browser and browser/native gameplay, bounded gateway behavior, signed
+SQLite delivery, artifact checks and watchdog recovery have passed. Successful
+localhost tests or desktop CI alone do not establish public gameplay readiness.
