@@ -1,7 +1,8 @@
 /*
- *  Browser stub for HTTP helpers used by desktop builds (MetaServer,
- *  VersionChecker, Dune2R asset delivery). The Emscripten target excludes
- *  the curl-backed ENetHttp.cpp implementation.
+ *  Browser stub for the curl-backed ENetHttp.cpp, which cannot build under
+ *  Emscripten (libcurl has no port). Provides exactly the ENetHttp symbols
+ *  referenced by MetaServerClient/VersionChecker (loadFromHttp) and
+ *  Dune2RAssetManager (downloadHttpFile).
  */
 
 #include <Network/ENetHttp.h>
@@ -16,35 +17,9 @@ namespace {
 
 } // namespace
 
-std::string getDomainFromURL(const std::string& url) {
-    (void) url;
-    return {};
-}
-
-std::string getFilePathFromURL(const std::string& url) {
-    (void) url;
-    return {};
-}
-
-int getPortFromURL(const std::string& url) {
-    (void) url;
-    return PORT_HTTP;
-}
-
-std::string percentEncode(const std::string& s) {
-    return s;
-}
-
 std::string loadFromHttp(const std::string& url, const std::map<std::string, std::string>& parameters) {
     (void) url;
     (void) parameters;
-    throwWebHttpUnsupported();
-}
-
-std::string loadFromHttp(const std::string& domain, const std::string& filepath, unsigned short port) {
-    (void) domain;
-    (void) filepath;
-    (void) port;
     throwWebHttpUnsupported();
 }
 

@@ -215,7 +215,13 @@ target_sources(dunecity
         Menu/HowToPlayMenu.cpp
 
         # Network
+        Network/LANGameFinderAndAnnouncer.cpp
         Network/NetworkManager.cpp
+        Network/ENetHttp.cpp
+        Network/MetaServerClient.cpp
+        Network/VersionChecker.cpp
+        Network/UPnPManager.cpp
+        Network/StunClient.cpp
 
         # Players
         players/Player.cpp
@@ -362,25 +368,20 @@ target_sources(dunecity
         misc/TouchInput.cpp
 )
 
-# Desktop-only network backends: ENet LAN discovery, metaserver client, UPnP,
-# STUN. The browser build replaces them with the ENetHttpStub.
-if(NOT EMSCRIPTEN)
-    target_sources(dunecity
-        PRIVATE
-            Network/LANGameFinderAndAnnouncer.cpp
-            Network/ENetHttp.cpp
-            Network/MetaServerClient.cpp
-            Network/VersionChecker.cpp
-            Network/UPnPManager.cpp
-            Network/StunClient.cpp
-    )
-else()
-    target_sources(dunecity PRIVATE Network/ENetHttpStub.cpp)
-endif()
-
 # C source files
 target_sources(dunecity
     PRIVATE
+        # enet
+        enet/callbacks.c
+        enet/compress.c
+        enet/host.c
+        enet/list.c
+        enet/packet.c
+        enet/peer.c
+        enet/protocol.c
+        enet/unix.c
+        enet/win32.c
+
         # fixmath
         fixmath/fix16.c
         fixmath/fix16_exp.c
@@ -394,20 +395,14 @@ target_sources(dunecity
         fixmath/fix32_trig.c
 )
 
-if(NOT EMSCRIPTEN)
-    target_sources(dunecity
-        PRIVATE
-            # enet (desktop/native multiplayer transport)
-            enet/callbacks.c
-            enet/compress.c
-            enet/host.c
-            enet/list.c
-            enet/packet.c
-            enet/peer.c
-            enet/protocol.c
-            enet/unix.c
-            enet/win32.c
-    )
+if(EMSCRIPTEN)
+    # ENetHttp.cpp requires libcurl, which has no Emscripten port, so the
+    # browser build skips it and provides the symbols referenced by
+    # MetaServerClient/VersionChecker/Dune2RAssetManager via ENetHttpStub.cpp.
+    # All other Network sources and enet itself build unchanged from the
+    # shared list above.
+    set_source_files_properties(Network/ENetHttp.cpp PROPERTIES HEADER_FILE_ONLY TRUE)
+    target_sources(dunecity PRIVATE Network/ENetHttpStub.cpp)
 endif()
 
 # Platform-specific source files

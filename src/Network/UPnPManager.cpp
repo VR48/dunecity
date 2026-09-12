@@ -18,6 +18,49 @@
 #include <Network/UPnPManager.h>
 #include <SDL2/SDL_log.h>
 
+#ifdef __EMSCRIPTEN__
+
+// Browser build: miniupnpc does native UDP multicast discovery and has no
+// Emscripten port. NetworkManager still constructs a UPnPManager, so provide
+// a no-op implementation with the same symbols; discover() reports
+// unavailable and callers fall back to manual port forwarding.
+
+UPnPManager::UPnPManager() = default;
+
+UPnPManager::~UPnPManager() = default;
+
+bool UPnPManager::discover(int timeoutMs) {
+    (void) timeoutMs;
+    status = Status::Unavailable;
+    lastError = "UPnP is not available in the browser build";
+    SDL_Log("UPnP: %s", lastError.c_str());
+    return false;
+}
+
+bool UPnPManager::addPortMapping(uint16_t internalPort, uint16_t externalPort,
+                                  const std::string& protocol,
+                                  const std::string& description,
+                                  int leaseDuration) {
+    (void) internalPort;
+    (void) externalPort;
+    (void) protocol;
+    (void) description;
+    (void) leaseDuration;
+    return false;
+}
+
+bool UPnPManager::removePortMapping(uint16_t externalPort, const std::string& protocol) {
+    (void) externalPort;
+    (void) protocol;
+    return false;
+}
+
+std::string UPnPManager::getExternalIPAddress() {
+    return "";
+}
+
+#else
+
 #include <miniupnpc/miniupnpc.h>
 #include <miniupnpc/upnpcommands.h>
 #include <miniupnpc/upnperrors.h>
@@ -192,6 +235,8 @@ std::string UPnPManager::getExternalIPAddress() {
     }
     return "";
 }
+
+#endif // __EMSCRIPTEN__
 
 std::string UPnPManager::getStatusString() const {
     switch (status) {
