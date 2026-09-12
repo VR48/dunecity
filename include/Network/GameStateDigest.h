@@ -43,21 +43,22 @@
     host's endianness, on struct padding, or on the order a container happens to iterate in.
 */
 
-#include <misc/SDL2pp.h>
-
+// No SDL, no ENet, no game headers: the standalone relay harness compiles this unchanged where
+// size_t is 32 bits.
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <string>
 
 namespace GameStateDigest {
 
 /// One peer's view of the simulation at one game cycle.
 struct Digest {
-    Uint32 gameCycle   = 0;
-    Uint32 randomSeed  = 0;
-    Uint32 objectCount = 0;
-    Uint64 objectHash  = 0;
-    Uint64 houseHash   = 0;
+    std::uint32_t gameCycle   = 0;
+    std::uint32_t randomSeed  = 0;
+    std::uint32_t objectCount = 0;
+    std::uint64_t objectHash  = 0;
+    std::uint64_t houseHash   = 0;
 
     bool operator==(const Digest& other) const {
         return gameCycle == other.gameCycle && randomSeed == other.randomSeed
@@ -75,47 +76,47 @@ struct Digest {
 /// FNV-1a, fed only explicitly sized values in an explicit order.
 class Hasher {
 public:
-    void mixUint8(Uint8 value) {
-        state_ ^= static_cast<Uint64>(value);
+    void mixUint8(std::uint8_t value) {
+        state_ ^= static_cast<std::uint64_t>(value);
         state_ *= 1099511628211ULL;
     }
 
-    void mixUint32(Uint32 value) {
+    void mixUint32(std::uint32_t value) {
         for(int shift = 0; shift < 32; shift += 8) {
-            mixUint8(static_cast<Uint8>((value >> shift) & 0xFF));
+            mixUint8(static_cast<std::uint8_t>((value >> shift) & 0xFF));
         }
     }
 
-    void mixUint64(Uint64 value) {
+    void mixUint64(std::uint64_t value) {
         for(int shift = 0; shift < 64; shift += 8) {
-            mixUint8(static_cast<Uint8>((value >> shift) & 0xFF));
+            mixUint8(static_cast<std::uint8_t>((value >> shift) & 0xFF));
         }
     }
 
     /// Signed values are mixed through their two's complement bit pattern, not through a cast
     /// that would be implementation defined for negative numbers.
-    void mixInt32(std::int32_t value) { mixUint32(static_cast<Uint32>(value)); }
-    void mixInt64(std::int64_t value) { mixUint64(static_cast<Uint64>(value)); }
+    void mixInt32(std::int32_t value) { mixUint32(static_cast<std::uint32_t>(value)); }
+    void mixInt64(std::int64_t value) { mixUint64(static_cast<std::uint64_t>(value)); }
 
-    Uint64 value() const { return state_; }
+    std::uint64_t value() const { return state_; }
 
 private:
-    Uint64 state_ = 14695981039346656037ULL;
+    std::uint64_t state_ = 14695981039346656037ULL;
 };
 
 /// Bytes on the wire. Carried in the relay diagnostic envelope, never as a game packet.
 constexpr std::size_t kEncodedSize = 4 + 4 + 4 + 8 + 8;
 
-inline void encode(const Digest& digest, Uint8* out) {
+inline void encode(const Digest& digest, std::uint8_t* out) {
     std::size_t position = 0;
-    const auto writeUint32 = [&](Uint32 value) {
+    const auto writeUint32 = [&](std::uint32_t value) {
         for(int shift = 0; shift < 32; shift += 8) {
-            out[position++] = static_cast<Uint8>((value >> shift) & 0xFF);
+            out[position++] = static_cast<std::uint8_t>((value >> shift) & 0xFF);
         }
     };
-    const auto writeUint64 = [&](Uint64 value) {
+    const auto writeUint64 = [&](std::uint64_t value) {
         for(int shift = 0; shift < 64; shift += 8) {
-            out[position++] = static_cast<Uint8>((value >> shift) & 0xFF);
+            out[position++] = static_cast<std::uint8_t>((value >> shift) & 0xFF);
         }
     };
 
@@ -126,23 +127,23 @@ inline void encode(const Digest& digest, Uint8* out) {
     writeUint64(digest.houseHash);
 }
 
-inline bool decode(const Uint8* data, std::size_t length, Digest& digest) {
+inline bool decode(const std::uint8_t* data, std::size_t length, Digest& digest) {
     if(data == nullptr || length != kEncodedSize) {
         return false;
     }
 
     std::size_t position = 0;
     const auto readUint32 = [&]() {
-        Uint32 value = 0;
+        std::uint32_t value = 0;
         for(int shift = 0; shift < 32; shift += 8) {
-            value |= static_cast<Uint32>(data[position++]) << shift;
+            value |= static_cast<std::uint32_t>(data[position++]) << shift;
         }
         return value;
     };
     const auto readUint64 = [&]() {
-        Uint64 value = 0;
+        std::uint64_t value = 0;
         for(int shift = 0; shift < 64; shift += 8) {
-            value |= static_cast<Uint64>(data[position++]) << shift;
+            value |= static_cast<std::uint64_t>(data[position++]) << shift;
         }
         return value;
     };
@@ -158,7 +159,7 @@ inline bool decode(const Uint8* data, std::size_t length, Digest& digest) {
 /// Short, stable text for a log line or a save-to-file comparison.
 inline std::string describe(const Digest& digest) {
     char buffer[96];
-    SDL_snprintf(buffer, sizeof(buffer), "cycle %u seed %08x objects %u %016llx/%016llx",
+    std::snprintf(buffer, sizeof(buffer), "cycle %u seed %08x objects %u %016llx/%016llx",
                  static_cast<unsigned>(digest.gameCycle),
                  static_cast<unsigned>(digest.randomSeed),
                  static_cast<unsigned>(digest.objectCount),
@@ -168,7 +169,7 @@ inline std::string describe(const Digest& digest) {
 }
 
 /// How often a digest is produced during a match, in game cycles.
-constexpr Uint32 kDigestIntervalCycles = 200;
+constexpr std::uint32_t kDigestIntervalCycles = 200;
 
 /// How many of our own recent digests are kept so a peer's can be matched to one.
 constexpr std::size_t kDigestHistory = 16;

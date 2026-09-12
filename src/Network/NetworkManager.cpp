@@ -127,6 +127,11 @@ private:
     std::function<void (int)>                disconnect_;
 };
 
+/// A relay peer's name was bound by the relay when it admitted the connection, and there is no
+/// rename message on that transport. Nothing ever writes this; it exists so the adapter can
+/// point at a "yes" for peers whose identity is not the client's to change.
+bool relayPeerNamesAreBound = true;
+
 } // namespace
 
 void NetworkManager::installSessionBridges() {
@@ -1168,10 +1173,7 @@ void NetworkManager::handleRelayGamePayload(RoomRelayClient::Peer& peer,
         fields.quantBotConfigHash = &peer.quantBotConfigHash;
         fields.objectDataHash     = &peer.objectDataHash;
 
-        // The relay bound this peer's name when it admitted it, and a peer cannot change it
-        // afterwards: there is no rename message on this transport.
-        static bool alwaysAssigned = true;
-        fields.nameAssigned = &alwaysAssigned;
+        fields.nameAssigned = &relayPeerNamesAreBound;
 
         PayloadPeerAdapter adapter(
             fields,

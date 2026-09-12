@@ -165,26 +165,6 @@ void handleConfigHash(InputStream& stream, GamePayloadPeer& peer,
 
 } // namespace
 
-bool GamePayloadRouter::handles(Uint32 packetType) {
-    switch(packetType) {
-        case NETWORKPACKET_SENDGAMEINFO:
-        case NETWORKPACKET_SENDNAME:
-        case NETWORKPACKET_CHATMESSAGE:
-        case NETWORKPACKET_CHANGEEVENTLIST:
-        case NETWORKPACKET_CONFIG_HASH:
-        case NETWORKPACKET_COOP_MISSION:
-        case NETWORKPACKET_STARTGAME:
-        case NETWORKPACKET_COMMANDLIST:
-        case NETWORKPACKET_SELECTIONLIST:
-        case NETWORKPACKET_CLIENTSTATS:
-        case NETWORKPACKET_SETPATHBUDGET:
-        case NETWORKPACKET_KEEPALIVE:
-            return true;
-        default:
-            return false;
-    }
-}
-
 bool GamePayloadRouter::handle(Uint32 packetType, InputStream& stream, GamePayloadPeer& peer,
                                const GamePayloadContext& context,
                                const NetworkSessionCallbacks& callbacks) {

@@ -1,0 +1,634 @@
+/*
+ *  RelayWireHarness.cpp - standalone regression harness for the room relay wire boundary
+ *
+ *  Same idea as NetworkWireHarness.cpp, for the crossplay transport: the relay envelope, the
+ *  endpoint validation, the admission response parser and the deterministic state digest are all
+ *  parsed or produced from untrusted input, and their length checks behave differently when
+ *  size_t is 32 bits. The browser client is wasm32, so that case has to be exercised for real.
+ *
+ *  It has no SDL, no ENet, no Catch2 and no game data: it compiles the production headers
+ *  unchanged and drives them with crafted images.
+ *
+ *  Build and run: see tests/wasm/run-relay-wire-harness.sh
+ *
+ *  Exit code 0 means every check passed; any failure prints the failing check and exits 1.
+ */
+
+#include <Network/GameStateDigest.h>
+#include <Network/NetworkPacketTypes.h>
+#include <Network/RelayWebSocket.h>
+#include <Network/RoomAdmissionClient.h>
+#include <Network/RoomRelayProtocol.h>
+
+#include <cstdio>
+#include <cstdint>
+#include <string>
+#include <vector>
+
+namespace {
+
+int failures = 0;
+int checks = 0;
+
+void check(bool condition, const char* what) {
+    checks++;
+    if(!condition) {
+        failures++;
+        std::printf("FAIL: %s\n", what);
+    }
+}
+
+/// Builds a relay -> client frame the way the Node relay does: big-endian envelope fields.
+class FrameBuilder {
+public:
+    explicit FrameBuilder(RoomRelay::ServerMessage type) {
+        bytes.push_back(static_cast<std::uint8_t>(type));
+    }
+
+    FrameBuilder& u8(std::uint8_t value) {
+        bytes.push_back(value);
+        return *this;
+    }
+
+    FrameBuilder& u16(std::uint16_t value) {
+        bytes.push_back(static_cast<std::uint8_t>((value >> 8) & 0xFF));
+        bytes.push_back(static_cast<std::uint8_t>(value & 0xFF));
+        return *this;
+    }
+
+    FrameBuilder& u32(std::uint32_t value) {
+        for(int shift = 24; shift >= 0; shift -= 8) {
+            bytes.push_back(static_cast<std::uint8_t>((value >> shift) & 0xFF));
+        }
+        return *this;
+    }
+
+    FrameBuilder& shortString(const std::string& text) {
+        bytes.push_back(static_cast<std::uint8_t>(text.size()));
+        bytes.insert(bytes.end(), text.begin(), text.end());
+        return *this;
+    }
+
+    FrameBuilder& raw(const std::vector<std::uint8_t>& data) {
+        bytes.insert(bytes.end(), data.begin(), data.end());
+        return *this;
+    }
+
+    std::vector<std::uint8_t> bytes;
+};
+
+/// The game payload as ENetPacketOStream writes it: a little-endian uint32 packet id first.
+std::vector<std::uint8_t> gamePayload(std::uint32_t packetType, std::size_t extraBytes = 0) {
+    std::vector<std::uint8_t> payload(4 + extraBytes, 0x5A);
+    for(int shift = 0; shift < 32; shift += 8) {
+        payload[shift / 8] = static_cast<std::uint8_t>((packetType >> shift) & 0xFF);
+    }
+    return payload;
+}
+
+bool decodes(const std::vector<std::uint8_t>& frame, RoomRelay::ServerFrame& out) {
+    std::string error;
+    return RoomRelay::decodeServerFrame(frame.data(), frame.size(), out, error);
+}
+
+std::vector<std::uint8_t> welcomeFrame(const std::string& roomCode = "H4PQ-7T2M-9XKB",
+                                       std::uint32_t peerId = 7, std::uint8_t role = 1,
+                                       std::uint8_t phase = 1, std::uint8_t maxPeers = 2) {
+    return FrameBuilder(RoomRelay::ServerMessage::Welcome)
+        .u16(RoomRelay::kProtocolVersion)
+        .u16(5)
+        .u32(peerId)
+        .u8(role)
+        .shortString(roomCode)
+        .u8(maxPeers)
+        .u8(phase)
+        .u32(static_cast<std::uint32_t>(RoomRelay::Limits::kMaxGamePayloadBytes))
+        .u16(5000)
+        .u16(20000)
+        .bytes;
+}
+
+/// `declaredLength` below zero means "declare the real payload length"; anything else is sent
+/// verbatim, which is how a lying length gets tested.
+std::vector<std::uint8_t> relayFrame(std::uint32_t sender, std::uint16_t declaredType,
+                                     const std::vector<std::uint8_t>& payload,
+                                     std::uint8_t channel = 0,
+                                     long long declaredLength = -1) {
+    const std::uint32_t length = (declaredLength < 0)
+        ? static_cast<std::uint32_t>(payload.size())
+        : static_cast<std::uint32_t>(static_cast<unsigned long long>(declaredLength));
+    return FrameBuilder(RoomRelay::ServerMessage::Relay)
+        .u32(sender)
+        .u8(channel)
+        .u8(1)
+        .u16(declaredType)
+        .u32(length)
+        .raw(payload)
+        .bytes;
+}
+
+// --- envelope ---------------------------------------------------------------------------
+
+void testWelcome() {
+    RoomRelay::ServerFrame frame;
+
+    check(decodes(welcomeFrame(), frame), "a well-formed WELCOME is accepted");
+    check(frame.type == RoomRelay::ServerMessage::Welcome, "WELCOME is identified");
+    check(frame.peerId == 7, "WELCOME carries the assigned peer id");
+    check(frame.role == RoomRelay::Role::Host, "WELCOME carries the assigned role");
+    check(frame.roomCode == "H4PQ-7T2M-9XKB", "WELCOME carries the room code");
+    check(frame.maxPeers == 2, "WELCOME carries the room size");
+
+    check(!decodes(welcomeFrame("H4PQ-7T2M-9XKB", 0), frame),
+          "WELCOME may not assign the broadcast id");
+    check(!decodes(welcomeFrame("H4PQ-7T2M-9XKB", 7, 9), frame),
+          "WELCOME may not name an unknown role");
+    check(!decodes(welcomeFrame("H4PQ-7T2M-9XKB", 7, 1, 7), frame),
+          "WELCOME may not name an unknown phase");
+    check(!decodes(welcomeFrame("H4PQ-7T2M-9XKB", 7, 1, 1, 0), frame),
+          "WELCOME may not name an empty room");
+    check(!decodes(welcomeFrame("H4PQ-7T2M-9XKB", 7, 1, 1, 99), frame),
+          "WELCOME may not name an oversized room");
+    check(!decodes(welcomeFrame("not-a-room-code"), frame),
+          "WELCOME may not name an unusable room code");
+    check(!decodes(welcomeFrame("IIII-IIII-IIII"), frame),
+          "WELCOME room codes exclude the ambiguous letters");
+
+    std::vector<std::uint8_t> padded = welcomeFrame();
+    padded.push_back(0);
+    check(!decodes(padded, frame), "trailing bytes after WELCOME are refused");
+
+    const std::vector<std::uint8_t> good = welcomeFrame();
+    bool everyTruncationRefused = true;
+    for(std::size_t cut = 1; cut < good.size(); cut++) {
+        const std::vector<std::uint8_t> truncated(good.begin(),
+                                                  good.begin() + static_cast<long>(cut));
+        if(decodes(truncated, frame)) {
+            everyTruncationRefused = false;
+            break;
+        }
+    }
+    check(everyTruncationRefused, "every truncation of WELCOME is refused");
+}
+
+void testPeerMembership() {
+    RoomRelay::ServerFrame frame;
+
+    const std::vector<std::uint8_t> joined = FrameBuilder(RoomRelay::ServerMessage::PeerJoined)
+        .u32(11).u8(2).shortString("guest").shortString("browser").bytes;
+    check(decodes(joined, frame), "a well-formed PEER_JOINED is accepted");
+    check(frame.peerId == 11 && frame.role == RoomRelay::Role::Client,
+          "PEER_JOINED carries the peer id and role");
+    check(frame.displayName == "guest" && frame.runtime == "browser",
+          "PEER_JOINED carries the name and the reported runtime");
+
+    const std::vector<std::uint8_t> badRuntime = FrameBuilder(RoomRelay::ServerMessage::PeerJoined)
+        .u32(11).u8(2).shortString("guest").shortString("server").bytes;
+    check(!decodes(badRuntime, frame), "PEER_JOINED may not name an unknown runtime");
+
+    std::string controlName = "gu";
+    controlName.push_back(static_cast<char>(7));
+    controlName += "est";
+    const std::vector<std::uint8_t> badName = FrameBuilder(RoomRelay::ServerMessage::PeerJoined)
+        .u32(11).u8(2).shortString(controlName).shortString("native").bytes;
+    check(!decodes(badName, frame), "PEER_JOINED may not carry a control character in a name");
+
+    const std::vector<std::uint8_t> zeroPeer = FrameBuilder(RoomRelay::ServerMessage::PeerJoined)
+        .u32(0).u8(2).shortString("guest").shortString("native").bytes;
+    check(!decodes(zeroPeer, frame), "PEER_JOINED may not name the broadcast id");
+
+    const std::vector<std::uint8_t> left = FrameBuilder(RoomRelay::ServerMessage::PeerLeft)
+        .u32(11).u8(1).bytes;
+    check(decodes(left, frame) && frame.peerId == 11, "PEER_LEFT is accepted");
+
+    const std::vector<std::uint8_t> zeroLeft = FrameBuilder(RoomRelay::ServerMessage::PeerLeft)
+        .u32(0).u8(1).bytes;
+    check(!decodes(zeroLeft, frame), "PEER_LEFT may not name the broadcast id");
+}
+
+void testRelayPayload() {
+    RoomRelay::ServerFrame frame;
+
+    const std::vector<std::uint8_t> payload = gamePayload(NETWORKPACKET_COMMANDLIST, 12);
+    check(decodes(relayFrame(3, NETWORKPACKET_COMMANDLIST, payload), frame),
+          "a well-formed RELAY is accepted");
+    check(frame.payload == payload, "the game payload survives unchanged");
+    check(frame.senderPeerId == 3, "the sender comes from the relay, not from the payload");
+
+    check(!decodes(relayFrame(3, NETWORKPACKET_STARTGAME, payload), frame),
+          "a declared type that disagrees with the payload is refused");
+    check(!decodes(relayFrame(0, NETWORKPACKET_COMMANDLIST, payload), frame),
+          "a RELAY without a sender is refused");
+    check(!decodes(relayFrame(3, NETWORKPACKET_COMMANDLIST, payload, 9), frame),
+          "a RELAY on a channel that does not exist is refused");
+
+    const std::vector<std::uint8_t> tooShort(3, 0);
+    check(!decodes(relayFrame(3, NETWORKPACKET_COMMANDLIST, tooShort, 0, 3), frame),
+          "a payload shorter than its own header is refused");
+
+    // On wasm32 this length wraps an additive bounds check and would otherwise be believed.
+    check(!decodes(relayFrame(3, NETWORKPACKET_COMMANDLIST, payload, 0, 0xFFFFFFFFu), frame),
+          "a payload length of 0xffffffff is refused without allocating");
+    check(!decodes(relayFrame(3, NETWORKPACKET_COMMANDLIST, payload, 0, 0x80000000u), frame),
+          "a payload length above the limit is refused without allocating");
+
+    std::vector<std::uint8_t> padded = relayFrame(3, NETWORKPACKET_COMMANDLIST, payload);
+    padded.push_back(0);
+    check(!decodes(padded, frame), "trailing bytes after RELAY are refused");
+
+    std::vector<std::uint8_t> oversized(RoomRelay::Limits::kMaxFrameBytes + 1, 0);
+    oversized[0] = static_cast<std::uint8_t>(RoomRelay::ServerMessage::Relay);
+    check(!decodes(oversized, frame), "a frame above the transport limit is refused");
+}
+
+void testDiagnosticAndStatus() {
+    RoomRelay::ServerFrame frame;
+
+    const std::vector<std::uint8_t> digestBytes(GameStateDigest::kEncodedSize, 0x11);
+    const std::vector<std::uint8_t> diagnostic = FrameBuilder(RoomRelay::ServerMessage::Diagnostic)
+        .u32(4)
+        .u8(static_cast<std::uint8_t>(RoomRelay::DiagnosticKind::StateDigest))
+        .u32(static_cast<std::uint32_t>(digestBytes.size()))
+        .raw(digestBytes).bytes;
+    check(decodes(diagnostic, frame), "a diagnostic is accepted");
+    check(frame.payload.size() == GameStateDigest::kEncodedSize, "the diagnostic body survives");
+
+    const std::vector<std::uint8_t> hugeDiagnostic = FrameBuilder(RoomRelay::ServerMessage::Diagnostic)
+        .u32(4).u8(1).u32(0xFFFFFFFFu).raw(digestBytes).bytes;
+    check(!decodes(hugeDiagnostic, frame), "an oversized diagnostic length is refused");
+
+    std::string message = "refused";
+    message.push_back(static_cast<char>(27));
+    message += "[31m";
+    std::vector<std::uint8_t> error;
+    error.push_back(static_cast<std::uint8_t>(RoomRelay::ServerMessage::Error));
+    error.push_back(0x11);
+    error.push_back(0x3B);     // 4411 is not a defined code, but the frame is still well formed
+    error.push_back(static_cast<std::uint8_t>((message.size() >> 8) & 0xFF));
+    error.push_back(static_cast<std::uint8_t>(message.size() & 0xFF));
+    error.insert(error.end(), message.begin(), message.end());
+    check(decodes(error, frame), "a status message is accepted");
+    bool printable = true;
+    for(const char c : frame.message) {
+        const unsigned char value = static_cast<unsigned char>(c);
+        if(value < 32 || value > 126) {
+            printable = false;
+        }
+    }
+    check(printable, "a status message is reduced to printable characters");
+}
+
+void testUnknownMessages() {
+    RoomRelay::ServerFrame frame;
+    std::string error;
+
+    const std::uint8_t nothing[1] = {0};
+    check(!RoomRelay::decodeServerFrame(nothing, 0, frame, error), "an empty frame is refused");
+    const std::uint8_t clientMessage[] = {0x01, 0x00, 0x00};
+    check(!RoomRelay::decodeServerFrame(clientMessage, sizeof(clientMessage), frame, error),
+          "a client message id arriving from the relay is refused");
+
+    const std::uint8_t unknown[] = {0xFE, 0x00};
+    check(!RoomRelay::decodeServerFrame(unknown, sizeof(unknown), frame, error),
+          "an unknown message id is refused");
+}
+
+// --- outgoing encoding ------------------------------------------------------------------
+
+void testEncoders() {
+    RoomRelay::HelloFields fields;
+    fields.gameProtocolVersion = NETWORK_PROTOCOL_VERSION;
+    fields.grant       = std::string(64, 'a');
+    fields.runtime     = "native";
+    fields.appVersion  = "1.0.655";
+    fields.contentHash = std::string(32, 'b');
+    fields.displayName = "stefan";
+
+    std::vector<std::uint8_t> hello;
+    check(RoomRelay::encodeHello(fields, hello), "a valid handshake is produced");
+    check(!hello.empty() && hello[0] == 0x01, "the handshake has the right message id");
+
+    RoomRelay::HelloFields bad = fields;
+    bad.grant = "not hex";
+    check(!RoomRelay::encodeHello(bad, hello), "a non-hex grant is not sent");
+    bad = fields;
+    bad.runtime = "server";
+    check(!RoomRelay::encodeHello(bad, hello), "an unknown runtime is not sent");
+    bad = fields;
+    bad.displayName = std::string(200, 'x');
+    check(!RoomRelay::encodeHello(bad, hello), "an oversized name is not sent");
+    bad = fields;
+    bad.grant = std::string(200, 'a');
+    check(!RoomRelay::encodeHello(bad, hello), "an oversized grant is not sent");
+
+    const std::vector<std::uint8_t> payload = gamePayload(NETWORKPACKET_CHATMESSAGE, 8);
+    std::vector<std::uint8_t> out;
+    check(RoomRelay::encodeRelay(0, 0, true, payload.data(), payload.size(), out),
+          "a valid game payload is wrapped");
+    check(!RoomRelay::encodeRelay(0, 2, true, payload.data(), payload.size(), out),
+          "a channel that does not exist is not sent");
+    check(!RoomRelay::encodeRelay(0, 0, true, payload.data(), 3, out),
+          "a payload shorter than its own header is not sent");
+    check(!RoomRelay::encodeRelay(0, 0, true, payload.data(),
+                                  RoomRelay::Limits::kMaxGamePayloadBytes + 1, out),
+          "a payload above the limit is not sent");
+
+    std::vector<std::uint8_t> diagnostic;
+    check(RoomRelay::encodeDiagnostic(RoomRelay::DiagnosticKind::StateDigest, payload.data(),
+                                      payload.size(), diagnostic),
+          "a diagnostic is wrapped");
+    check(!RoomRelay::encodeDiagnostic(RoomRelay::DiagnosticKind::StateDigest, payload.data(),
+                                       RoomRelay::Limits::kMaxDiagnosticBytes + 1, diagnostic),
+          "an oversized diagnostic is not sent");
+}
+
+// --- authorisation matrix ----------------------------------------------------------------
+
+void testAuthorisationMatrix() {
+    using RoomRelay::Phase;
+    using RoomRelay::isRelayableGameMessage;
+
+    // Address-bearing and content-transfer packets have no relay path at all.
+    const std::uint16_t never[] = {
+        NETWORKPACKET_CONNECT, NETWORKPACKET_DISCONNECT, NETWORKPACKET_PEER_CONNECTED,
+        NETWORKPACKET_MOD_INFO, NETWORKPACKET_MOD_REQUEST, NETWORKPACKET_MOD_CHUNK,
+        NETWORKPACKET_MOD_COMPLETE, NETWORKPACKET_MOD_ACK
+    };
+    bool allRefused = true;
+    for(const std::uint16_t type : never) {
+        for(const bool isHost : {false, true}) {
+            for(const Phase phase : {Phase::Lobby, Phase::Match}) {
+                if(isRelayableGameMessage(type, isHost, phase)) {
+                    allRefused = false;
+                }
+            }
+        }
+    }
+    check(allRefused, "address-bearing and content packets are never relayable");
+
+    check(isRelayableGameMessage(NETWORKPACKET_STARTGAME, true, Phase::Lobby),
+          "the host may start the game");
+    check(!isRelayableGameMessage(NETWORKPACKET_STARTGAME, false, Phase::Lobby),
+          "a client may not start the game");
+    check(!isRelayableGameMessage(NETWORKPACKET_STARTGAME, true, Phase::Match),
+          "the game cannot be started twice");
+
+    check(isRelayableGameMessage(NETWORKPACKET_SETPATHBUDGET, true, Phase::Match),
+          "the host may set the path budget");
+    check(!isRelayableGameMessage(NETWORKPACKET_SETPATHBUDGET, false, Phase::Match),
+          "a client may not set the path budget");
+
+    check(isRelayableGameMessage(NETWORKPACKET_CLIENTSTATS, false, Phase::Match),
+          "a client may report its own stats");
+    check(!isRelayableGameMessage(NETWORKPACKET_CLIENTSTATS, true, Phase::Match),
+          "the host does not report client stats");
+
+    check(isRelayableGameMessage(NETWORKPACKET_COMMANDLIST, false, Phase::Match),
+          "commands flow during a match");
+    check(!isRelayableGameMessage(NETWORKPACKET_COMMANDLIST, false, Phase::Lobby),
+          "commands do not flow in the lobby");
+
+    check(isRelayableGameMessage(NETWORKPACKET_SENDNAME, false, Phase::Lobby),
+          "names are exchanged in the lobby");
+    check(!isRelayableGameMessage(NETWORKPACKET_SENDNAME, false, Phase::Match),
+          "identity is frozen once the match runs");
+
+    // Campaign continuation arrives after the previous match, while the session is in-game.
+    check(isRelayableGameMessage(NETWORKPACKET_COOP_MISSION, true, Phase::Match),
+          "the host may send the next co-op mission during a match");
+    check(isRelayableGameMessage(NETWORKPACKET_COOP_MISSION, true, Phase::Lobby),
+          "the host may send the next co-op mission in the lobby");
+    check(!isRelayableGameMessage(NETWORKPACKET_COOP_MISSION, false, Phase::Match),
+          "a client may not choose the next co-op mission");
+
+    check(isRelayableGameMessage(NETWORKPACKET_CHATMESSAGE, false, Phase::Lobby)
+          && isRelayableGameMessage(NETWORKPACKET_CHATMESSAGE, false, Phase::Match),
+          "chat works in both phases");
+
+    check(!isRelayableGameMessage(4242, true, Phase::Match),
+          "an unknown packet id is not relayable");
+}
+
+// --- endpoints ----------------------------------------------------------------------------
+
+void testEndpointValidation() {
+    std::string error;
+
+    check(isAcceptableRelayUrl("wss://relay.example.net/v1/socket", false, error),
+          "a secure endpoint is accepted");
+    check(isAcceptableRelayUrl("wss://relay.example.net:8443/v1/socket", false, error),
+          "a secure endpoint with a port is accepted");
+
+    check(!isAcceptableRelayUrl("ws://relay.example.net/v1/socket", true, error),
+          "a plain endpoint to a remote host is refused even in development");
+    check(!isAcceptableRelayUrl("ws://127.0.0.1:8787/v1/socket", false, error),
+          "a plain loopback endpoint needs the development opt-in");
+    check(isAcceptableRelayUrl("ws://127.0.0.1:8787/v1/socket", true, error),
+          "a plain loopback endpoint is accepted with the development opt-in");
+    check(isAcceptableRelayUrl("ws://localhost:8787/v1/socket", true, error),
+          "localhost counts as loopback");
+
+    check(!isAcceptableRelayUrl("http://relay.example.net/", false, error),
+          "a non-WebSocket scheme is refused");
+    check(!isAcceptableRelayUrl("file:///etc/passwd", false, error),
+          "a file URL is refused");
+    check(!isAcceptableRelayUrl("wss://user:password@relay.example.net/", false, error),
+          "credentials in the URL are refused");
+    check(!isAcceptableRelayUrl("wss://relay.example.net:0/", false, error),
+          "port zero is refused");
+    check(!isAcceptableRelayUrl("wss://relay.example.net:99999/", false, error),
+          "an out-of-range port is refused");
+    check(!isAcceptableRelayUrl("wss://relay.example.net:80a/", false, error),
+          "a non-numeric port is refused");
+    check(!isAcceptableRelayUrl("wss:///v1/socket", false, error),
+          "an endpoint without a host is refused");
+    check(!isAcceptableRelayUrl("", false, error), "an empty endpoint is refused");
+    check(!isAcceptableRelayUrl(std::string("wss://relay.example.net/") + std::string(600, 'a'),
+                                false, error),
+          "an absurdly long endpoint is refused");
+
+    std::string withControl = "wss://relay.example.net/";
+    withControl.push_back(static_cast<char>(10));
+    withControl += "Host: evil";
+    check(!isAcceptableRelayUrl(withControl, false, error),
+          "control characters in an endpoint are refused");
+}
+
+void testRoomCodes() {
+    std::string normalized;
+
+    check(RoomRelay::normalizeRoomCode("H4PQ-7T2M-9XKB", normalized)
+          && normalized == "H4PQ-7T2M-9XKB", "a canonical room code is kept");
+    check(RoomRelay::normalizeRoomCode("h4pq7t2m9xkb", normalized)
+          && normalized == "H4PQ-7T2M-9XKB", "a code is accepted without dashes or case");
+    check(RoomRelay::normalizeRoomCode(" h4pq 7t2m 9xkb ", normalized)
+          && normalized == "H4PQ-7T2M-9XKB", "spaces around a code are ignored");
+
+    check(!RoomRelay::normalizeRoomCode("", normalized), "an empty code is refused");
+    check(!RoomRelay::normalizeRoomCode("H4PQ-7T2M-9XK", normalized), "a short code is refused");
+    check(!RoomRelay::normalizeRoomCode("H4PQ-7T2M-9XKBB", normalized), "a long code is refused");
+    check(!RoomRelay::normalizeRoomCode("IIII-IIII-IIII", normalized),
+          "the ambiguous letters are not in the alphabet");
+    check(!RoomRelay::normalizeRoomCode("../../etc/passw", normalized),
+          "a path is not a room code");
+}
+
+void testAdmissionParsing() {
+    AdmissionResponse response;
+    std::string error;
+
+    const std::string ok =
+        "status=ok\n"
+        "protocol=1\n"
+        "room=H4PQ-7T2M-9XKB\n"
+        "grant=" + std::string(64, 'a') + "\n"
+        "grantExpiresMs=30000\n"
+        "maxPeers=2\n"
+        "url=wss://relay.example.net/v1/socket\n";
+    check(RoomAdmission::parseAdmissionResponse(ok, response, error), "a success response parses");
+    check(response.ok && response.roomCode == "H4PQ-7T2M-9XKB" && response.maxPeers == 2,
+          "a success response carries the room");
+
+    const std::string failure =
+        "status=error\ncode=room_not_found\nmessage=That room code is not open.\n";
+    check(RoomAdmission::parseAdmissionResponse(failure, response, error),
+          "an error response parses");
+    check(!response.ok && response.errorCode == "room_not_found",
+          "an error response carries the code");
+
+    check(!RoomAdmission::parseAdmissionResponse("", response, error),
+          "an empty response is refused");
+    check(!RoomAdmission::parseAdmissionResponse("room=H4PQ-7T2M-9XKB\n", response, error),
+          "a response without a status is refused");
+    check(!RoomAdmission::parseAdmissionResponse("status=maybe\n", response, error),
+          "an unknown status is refused");
+    check(!RoomAdmission::parseAdmissionResponse(
+              "status=ok\nprotocol=99\nroom=H4PQ-7T2M-9XKB\ngrant=" + std::string(64, 'a')
+              + "\nmaxPeers=2\nurl=wss://relay.example.net/\n", response, error),
+          "another relay protocol version is refused");
+    check(!RoomAdmission::parseAdmissionResponse(
+              "status=ok\nprotocol=1\nroom=nope\ngrant=" + std::string(64, 'a')
+              + "\nmaxPeers=2\nurl=wss://relay.example.net/\n", response, error),
+          "an unusable room code is refused");
+    check(!RoomAdmission::parseAdmissionResponse(
+              "status=ok\nprotocol=1\nroom=H4PQ-7T2M-9XKB\ngrant=../../etc\n"
+              "maxPeers=2\nurl=wss://relay.example.net/\n", response, error),
+          "an unusable grant is refused");
+    check(!RoomAdmission::parseAdmissionResponse(
+              "status=ok\nprotocol=1\nroom=H4PQ-7T2M-9XKB\ngrant=" + std::string(64, 'a')
+              + "\nmaxPeers=99\nurl=wss://relay.example.net/\n", response, error),
+          "an unusable room size is refused");
+
+    check(!RoomAdmission::parseAdmissionResponse(std::string(RoomAdmission::kMaxResponseBytes + 1,
+                                                            'x'), response, error),
+          "an oversized response is refused");
+
+    std::string tooManyLines = "status=ok\n";
+    for(std::size_t i = 0; i < RoomAdmission::kMaxResponseLines + 4; i++) {
+        tooManyLines += "pad=1\n";
+    }
+    check(!RoomAdmission::parseAdmissionResponse(tooManyLines, response, error),
+          "a response with too many lines is refused");
+
+    const std::string longLine = "status=ok\nmessage="
+        + std::string(RoomAdmission::kMaxLineBytes + 10, 'x') + "\n";
+    check(!RoomAdmission::parseAdmissionResponse(longLine, response, error),
+          "an over-long line is refused");
+
+    std::string withControl = "status=error\nmessage=bad";
+    withControl.push_back(static_cast<char>(0));
+    withControl += "\n";
+    check(!RoomAdmission::parseAdmissionResponse(withControl, response, error),
+          "a control character in a response is refused");
+
+    check(!RoomAdmission::parseAdmissionResponse("status=ok\n1nvalid=x\n", response, error),
+          "a non-alphabetic key is refused");
+
+    // Unknown keys are skipped so the relay can add fields later.
+    const std::string withExtra = ok + "futureField=something\n";
+    check(RoomAdmission::parseAdmissionResponse(withExtra, response, error) && response.ok,
+          "an unknown key does not break a valid response");
+
+    check(RoomAdmission::encodeFormValue("a b&c=d") == "a%20b%26c%3Dd",
+          "form values are percent encoded");
+    check(RoomAdmission::encodeFormValue("A-Z.a_z~0") == "A-Z.a_z~0",
+          "unreserved characters survive form encoding");
+}
+
+// --- deterministic state digest ------------------------------------------------------------
+
+void testStateDigest() {
+    GameStateDigest::Digest digest;
+    digest.gameCycle   = 400;
+    digest.randomSeed  = 0xDEADBEEF;
+    digest.objectCount = 37;
+    digest.objectHash  = 0x0123456789ABCDEFULL;
+    digest.houseHash   = 0xFEDCBA9876543210ULL;
+
+    std::uint8_t encoded[GameStateDigest::kEncodedSize];
+    GameStateDigest::encode(digest, encoded);
+
+    GameStateDigest::Digest decoded;
+    check(GameStateDigest::decode(encoded, sizeof(encoded), decoded), "a digest round trips");
+    check(decoded == digest, "a digest survives the round trip unchanged");
+    check(!GameStateDigest::decode(encoded, sizeof(encoded) - 1, decoded),
+          "a short digest is refused");
+    check(!GameStateDigest::decode(encoded, sizeof(encoded) + 1, decoded),
+          "a long digest is refused");
+    check(!GameStateDigest::decode(nullptr, sizeof(encoded), decoded),
+          "a missing digest is refused");
+
+    GameStateDigest::Digest other = digest;
+    check(!digest.divergesFrom(other), "identical digests do not diverge");
+    other.objectHash ^= 1;
+    check(digest.divergesFrom(other), "a different object hash is a divergence");
+    other = digest;
+    other.gameCycle = 600;
+    check(!digest.divergesFrom(other),
+          "digests for different cycles are not compared against each other");
+
+    // The hash has to depend on order and on width, or it would miss real divergences.
+    GameStateDigest::Hasher a;
+    a.mixUint32(1);
+    a.mixUint32(2);
+    GameStateDigest::Hasher b;
+    b.mixUint32(2);
+    b.mixUint32(1);
+    check(a.value() != b.value(), "the digest hash depends on field order");
+
+    GameStateDigest::Hasher c;
+    c.mixUint32(1);
+    GameStateDigest::Hasher d;
+    d.mixUint64(1);
+    check(c.value() != d.value(), "the digest hash depends on field width");
+
+    GameStateDigest::Hasher negative;
+    negative.mixInt32(-1);
+    GameStateDigest::Hasher positive;
+    positive.mixUint32(0xFFFFFFFFu);
+    check(negative.value() == positive.value(),
+          "a negative value is mixed through its two's complement pattern");
+
+    check(GameStateDigest::describe(digest).find("cycle 400") != std::string::npos,
+          "a digest describes itself for the log");
+}
+
+} // namespace
+
+int main() {
+    testWelcome();
+    testPeerMembership();
+    testRelayPayload();
+    testDiagnosticAndStatus();
+    testUnknownMessages();
+    testEncoders();
+    testAuthorisationMatrix();
+    testEndpointValidation();
+    testRoomCodes();
+    testAdmissionParsing();
+    testStateDigest();
+
+    std::printf("relay wire harness: %d checks, %d failures (size_t is %zu bytes)\n",
+                checks, failures, sizeof(std::size_t));
+    return failures == 0 ? 0 : 1;
+}

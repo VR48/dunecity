@@ -31,6 +31,7 @@
 
 #include <Network/ChangeEventList.h>
 #include <Network/CommandList.h>
+#include <Network/NetworkPacketTypes.h>
 
 #include <misc/InputStream.h>
 #include <misc/SDL2pp.h>
@@ -143,8 +144,31 @@ namespace GamePayloadRouter {
 bool handle(Uint32 packetType, InputStream& stream, GamePayloadPeer& peer,
             const GamePayloadContext& context, const NetworkSessionCallbacks& callbacks);
 
-/// True if handle() would claim this packet id. Used by the relay to reject anything else.
-bool handles(Uint32 packetType);
+/**
+    True if handle() would claim this packet id.
+
+    Inline on purpose: it is a table, and both transports and the tests need it without dragging
+    in the game headers that handle() itself needs.
+*/
+inline bool handles(Uint32 packetType) {
+    switch(packetType) {
+        case NETWORKPACKET_SENDGAMEINFO:
+        case NETWORKPACKET_SENDNAME:
+        case NETWORKPACKET_CHATMESSAGE:
+        case NETWORKPACKET_CHANGEEVENTLIST:
+        case NETWORKPACKET_CONFIG_HASH:
+        case NETWORKPACKET_COOP_MISSION:
+        case NETWORKPACKET_STARTGAME:
+        case NETWORKPACKET_COMMANDLIST:
+        case NETWORKPACKET_SELECTIONLIST:
+        case NETWORKPACKET_CLIENTSTATS:
+        case NETWORKPACKET_SETPATHBUDGET:
+        case NETWORKPACKET_KEEPALIVE:
+            return true;
+        default:
+            return false;
+    }
+}
 
 } // namespace GamePayloadRouter
 

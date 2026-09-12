@@ -26,6 +26,7 @@ target_sources(dunelegacy_tests
         PathBudgetTestCase/PathBudgetTestCase.cpp
         NetworkManagerTestCase/NetworkManagerTestCase.cpp
         NetworkHardeningTestCase/NetworkHardeningTestCase.cpp
+        RelayProtocolTestCase/RelayProtocolTestCase.cpp
         GenericNinthHouseRegressionTestCase/GenericNinthHouseRegressionTestCase.cpp
         ZoneStructureTestCase/ZoneStructureTestCase.cpp
         RoadPlacementTestCase/RoadPlacementTestCase.cpp
@@ -177,6 +178,71 @@ if(WIN32)
 endif()
 
 add_test(NAME network_wire_harness COMMAND network_wire_harness)
+
+# Standalone relay wire harness.
+#
+# The crossplay equivalent of the above, and the reason it is separate: the relay protocol, the
+# endpoint validation, the admission parser and the state digest have no SDL, ENet or game
+# dependencies at all, so this target is a single translation unit. tests/wasm/
+# run-relay-wire-harness.sh builds the same file under Emscripten, which is the run that matters
+# because the browser client is wasm32.
+add_executable(relay_wire_harness wasm/RelayWireHarness.cpp)
+
+target_include_directories(relay_wire_harness
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_BINARY_DIR}/include
+)
+
+add_test(NAME relay_wire_harness COMMAND relay_wire_harness)
+
+# Relay transport harness.
+#
+# Not a ctest: it needs a running relay, so it is driven by hand or by
+# tests/relay/run-relay-transport-harness.sh. It opens a real connection through the real
+# transport, which is the only way to show that the native side actually works.
+if(NOT EMSCRIPTEN)
+    add_executable(relay_transport_harness
+        relay/RelayTransportHarness.cpp
+        ${CMAKE_SOURCE_DIR}/src/Network/RoomRelayClient.cpp
+        ${CMAKE_SOURCE_DIR}/src/Network/RoomAdmissionClient.cpp
+        ${CMAKE_SOURCE_DIR}/src/Network/RelayWebSocketCurl.cpp
+        ${CMAKE_SOURCE_DIR}/src/misc/FileSystem.cpp
+        ${CMAKE_SOURCE_DIR}/src/misc/fnkdat.cpp
+        ${CMAKE_SOURCE_DIR}/src/misc/format.cpp
+    )
+
+    target_include_directories(relay_transport_harness
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_BINARY_DIR}/include
+            ${CMAKE_SOURCE_DIR}/src
+    )
+
+    target_link_libraries(relay_transport_harness
+        PRIVATE
+            SDL2::SDL2
+            $<IF:$<TARGET_EXISTS:SDL2_mixer::SDL2_mixer>,SDL2_mixer::SDL2_mixer,SDL2_mixer::SDL2_mixer-static>
+            CURL::libcurl
+    )
+
+    if(APPLE)
+        target_sources(relay_transport_harness
+            PRIVATE ${CMAKE_SOURCE_DIR}/IDE/xCode/MacFunctions.m)
+        set_source_files_properties(${CMAKE_SOURCE_DIR}/IDE/xCode/MacFunctions.m
+            PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+        target_link_libraries(relay_transport_harness
+            PRIVATE
+                "-framework Cocoa"
+                "-framework Foundation"
+                "-framework CoreFoundation"
+        )
+    endif()
+
+    if(WIN32)
+        target_link_libraries(relay_transport_harness PRIVATE ws2_32 winmm version)
+    endif()
+endif()
 
 # Set test properties
 set_tests_properties(dunelegacy_tests PROPERTIES
