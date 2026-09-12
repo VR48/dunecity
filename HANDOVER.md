@@ -1,3 +1,15 @@
+# Public co-op release preparation — 1.0.653
+
+Release version bump only over the user-tested 1.0.652 gameplay. Includes all
+unreleased fixes since 1.0.642 plus campaign/skirmish shared-house co-op.
+Release notes are releases/desktop/1.0.653.md. Local Release build and before/after
+Ninja dependency audits passed; CTest reports 588 passed and 3 expected skips.
+Installed /Applications/dunecity.app, SHA256
+9647fa6549b42527dfb7dc42251d5c94683cbb4134d484d4903adb14cd2344e9.
+Backup: /Applications/.dunecity-653-fvc2i619/dunecity-previous.app.
+Remote packages, website release copy and SourceForge publication remain to be
+verified. Original user profile remains untouched; reports/ stays unstaged.
+
 # Internet-listed co-op smoke test — 2026-09-12
 
 Tested installed 1.0.652 using two independent local app bundles, profiles and
