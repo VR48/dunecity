@@ -22,7 +22,17 @@ abandoned outcome (649/2602-byte summaries), captured at
 /tmp/dunecity-analytics-events.jsonl. Shell tests cover ordered POST/retry/offline
 behaviour. The packager now handles Emscripten's unquoted minified HTML attributes;
 a regression test verifies all three asset references receive the build token.
-Publication and live browser verification are recorded below when complete.
+Published website commit d2aebcd; deployment 34673987445 and browser security
+check 34673987519 succeeded. Live manifest and all six SHA256s match game source
+7124425. Production Chrome loaded 1280x720 with all five asset URLs sharing
+?v=1.0.655-2c0245d2a43c. An actual live skirmish generated HTTP 200 OK for start/end
+of m1-65b41f2ce0dc0-73d992ca-65b41f2ce0dc0; production SQLite confirms browser,
+1.0.655, skirmish, abandoned, timestamps and both JSON records. All 1220 historic
+match rows match the pre-migration snapshot byte-for-value on original columns.
+The brief abandoned smoke-test row remains identifiable by that match ID.
+Installed desktop remains 1.0.653; no new desktop release tag was published.
+The desktop CI jobs triggered by the main push are separate from the verified
+local native build and published browser package.
 
 # Play Online display fixes — 1.0.654
 
