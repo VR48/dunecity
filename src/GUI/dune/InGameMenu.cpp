@@ -25,6 +25,7 @@
 #include <Game.h>
 #include <main.h>
 #include <GameInitSettings.h>
+#include <Network/NetworkManager.h>
 
 #include <GUI/MsgBox.h>
 #include <GUI/QstBox.h>
@@ -47,9 +48,17 @@ InGameMenu::InGameMenu(bool bMultiplayer, int color)
     mainHBox.addWidget(HSpacer::create(22));
 
 
-    mainVBox.addWidget(VSpacer::create(34));
+    const bool onlineContinues = pNetworkManager && pNetworkManager->isRelaySession();
+    if(onlineContinues) {
+        onlineNotice.setText(_("Online game continues"));
+        onlineNotice.setTextColor(color);
+        onlineNotice.setTextFontSize(12);
+        mainVBox.addWidget(&onlineNotice, 34);
+    } else {
+        mainVBox.addWidget(VSpacer::create(34));
+    }
 
-    resumeButton.setText(_("Resume Game"));
+    resumeButton.setText(onlineContinues ? _("Back to Game") : _("Resume Game"));
     resumeButton.setTextColor(color);
     resumeButton.setOnClick(std::bind(&InGameMenu::onResume, this));
     mainVBox.addWidget(&resumeButton);

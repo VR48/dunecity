@@ -148,7 +148,8 @@ void setVideoMode(int displayIndex);
 void realign_buttons();
 
 static void printUsage() {
-    fprintf(stderr, "Usage:\n\tdunecity [--showlog] [--fullscreen|--window] [--PlayerName=X] [--ServerPort=X]\n");
+    fprintf(stderr, "Usage:\n\tdunecity [--showlog] [--fullscreen|--window] [--PlayerName=X] [--ServerPort=X]\n"
+                    "\t         [--RelayEndpoint=HTTPS_URL] [--RelayDevEndpoint=LOOPBACK_URL] [--RelayDev]\n");
 }
 
 int getLogicalToPhysicalResolutionFactor(int physicalWidth, int physicalHeight) {
@@ -962,7 +963,10 @@ int main(int argc, char *argv[]) {
             if(parameter == "--showlog") {
                 // special parameter which does not overwrite settings
                 bShowDebugLog = true;
-            } else if((parameter == "-f") || (parameter == "--fullscreen") || (parameter == "-w") || (parameter == "--window") || (parameter.compare(0, 13, "--PlayerName=") == 0) || (parameter.compare(0, 13, "--ServerPort=") == 0)) {
+            } else if((parameter == "-f") || (parameter == "--fullscreen") || (parameter == "-w") || (parameter == "--window") || (parameter.compare(0, 13, "--PlayerName=") == 0) || (parameter.compare(0, 13, "--ServerPort=") == 0)
+                      || parameter.compare(0, 16, "--RelayEndpoint=") == 0
+                      || parameter.compare(0, 19, "--RelayDevEndpoint=") == 0
+                      || parameter == "--RelayDev") {
                 // normal parameter for overwriting settings
                 // handle later
             } else {

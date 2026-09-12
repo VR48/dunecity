@@ -23,6 +23,7 @@
 #include <GUI/VBox.h>
 #include <GUI/TextButton.h>
 #include <GUI/Spacer.h>
+#include <GUI/Label.h>
 
 class InGameMenu : public Window
 {
@@ -57,6 +58,7 @@ private:
 
     HBox    mainHBox;
     VBox    mainVBox;
+    Label   onlineNotice;
 
     TextButton  resumeButton;
     TextButton  gameSettingsButton;

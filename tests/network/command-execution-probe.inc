@@ -6,6 +6,7 @@
 #include <units/UnitBase.h>
 #include <players/HumanPlayer.h>
 #include <Menu/MenuBase.h>
+#include <Network/NetworkManager.h>
 #include <memory>
 #include <stdexcept>
 #include <fstream>
@@ -78,6 +79,20 @@ int runOwnershipProbe() {
     batches.addCommandList("Host", complete);
     if(static_cast<HumanPlayer*>(hostPlayer)->nextExpectedCommandsCycle != 3) throw std::runtime_error("duplicate changed watermark");
     SDL_Log("COMMAND_BATCH_PROBE_PASS: mixed batch atomic, gap held, contiguous retransmission recovered, duplicate ignored");
+    // Exercise the real Game entry points used by Options and Mentat, not a duplicate policy.
+    game->pauseGame();
+    if(!game->isGamePaused()) throw std::runtime_error("local game no longer pauses");
+    game->resumeGame();
+    if(game->isGamePaused()) throw std::runtime_error("local game no longer resumes");
+    pNetworkManager = std::make_unique<NetworkManager>(NetworkManager::Transport::RoomRelay);
+    game->pauseGame();
+    if(game->isGamePaused() || !game->pausedPlayers.empty())
+        throw std::runtime_error("relay menu stopped lockstep or queued pause state");
+    game->resumeGame();
+    if(game->isGamePaused() || !game->pausedPlayers.empty())
+        throw std::runtime_error("closing relay menu changed pause state");
+    SDL_Log("RELAY_PAUSE_PROBE_PASS: real Game preserves local pause and keeps relay simulation running");
     game.reset(); currentGame=nullptr; pLocalPlayer=nullptr;
+    pNetworkManager.reset();
     return MENU_QUIT_DEFAULT;
 }
