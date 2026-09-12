@@ -16,6 +16,7 @@
 #include <CommandAuthorization.h>
 #include <CommandValidation.h>
 #include <DataTypes.h>
+#include <Definitions.h>
 #include <GameInitSettings.h>
 #include <Menu/LobbyAuthorization.h>
 #include <Network/ChangeEventList.h>
@@ -1551,4 +1552,41 @@ TEST_CASE("Command batches: aggregate bounds are far below the product of the pe
     REQUIRE(CommandValidation::isAcceptableCommandTotal(200));
     REQUIRE(CommandValidation::isAcceptableCommandCountPerEntry(300));
     REQUIRE(CommandValidation::isAcceptableCommandListEntryCount(200));
+}
+
+TEST_CASE("Replay bounds: a crafted file cannot drive an unbounded allocation",
+          "[command][security][replay]") {
+    // CommandManager::load() resizes its per-cycle vector to the cycle it reads, so the cycle
+    // bound is what stops a four-billion-entry allocation from a local file.
+    REQUIRE(CommandValidation::kMaxReplayCycle < std::numeric_limits<Uint32>::max());
+    REQUIRE(CommandValidation::kMaxReplayCommands > 0);
+
+    // Still generous for real play: at the default game speed this is many hours.
+    const Uint32 cyclesPerHour = static_cast<Uint32>(3600000 / GAMESPEED_DEFAULT);
+    REQUIRE(CommandValidation::kMaxReplayCycle > cyclesPerHour * 8);
+
+    // The same well-formedness rule the network path uses is applied to replay records, so a
+    // crafted file cannot smuggle in a command that throws inside the simulation loop.
+    REQUIRE(CommandValidation::isWellFormedCommand(CMD_UNIT_MOVE2POS, 4));
+    REQUIRE_FALSE(CommandValidation::isWellFormedCommand(CMD_UNIT_MOVE2POS, 2));
+    REQUIRE_FALSE(CommandValidation::isWellFormedCommand(CMD_MAX, 1));
+}
+
+TEST_CASE("Mesh introductions: privileged and non-unicast destinations are refused",
+          "[network][security][mesh]") {
+    const Uint32 privateLan = 0xC0A80105;   // 192.168.1.5
+
+    // The game's own default port and ephemeral ports stay usable.
+    REQUIRE(NetworkPacketPolicy::isPlausibleMeshTarget(privateLan, DEFAULT_PORT));
+    REQUIRE(NetworkPacketPolicy::isPlausibleMeshTarget(privateLan,
+                                                       NetworkPacketPolicy::kMinMeshTargetPort));
+    REQUIRE(NetworkPacketPolicy::isPlausibleMeshTarget(privateLan, 65535));
+
+    // A host cannot point a client at a well-known service port.
+    REQUIRE_FALSE(NetworkPacketPolicy::isPlausibleMeshTarget(privateLan, 22));
+    REQUIRE_FALSE(NetworkPacketPolicy::isPlausibleMeshTarget(privateLan, 53));
+    REQUIRE_FALSE(NetworkPacketPolicy::isPlausibleMeshTarget(privateLan, 443));
+    REQUIRE_FALSE(NetworkPacketPolicy::isPlausibleMeshTarget(0x7F000001, 631));
+    REQUIRE_FALSE(NetworkPacketPolicy::isPlausibleMeshTarget(privateLan,
+                                                             NetworkPacketPolicy::kMinMeshTargetPort - 1));
 }

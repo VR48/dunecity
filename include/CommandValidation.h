@@ -163,6 +163,13 @@ inline bool isAcceptableCommandTotal(std::size_t totalCommands) {
     return totalCommands <= static_cast<std::size_t>(kMaxCommandsPerPacket);
 }
 
+/// Bounds for replay and savegame command streams. These are local files rather than network
+/// input, so they are deliberately generous: at the default game speed 4 million cycles is
+/// about eighteen hours of play. What they stop is a crafted file making CommandManager resize
+/// its per-cycle vector to four billion entries or accumulate commands without end.
+constexpr Uint32 kMaxReplayCycle = 4u * 1000u * 1000u;
+constexpr std::size_t kMaxReplayCommands = 4u * 1000u * 1000u;
+
 /// Extra cycles of slack accepted beyond the receiver's own command buffer, covering the
 /// sender running ahead by up to one buffer plus lockstep jitter.
 constexpr Uint32 kCycleWindowSlack = 64;

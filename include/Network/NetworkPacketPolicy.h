@@ -262,6 +262,9 @@ inline bool isAcceptablePlayerName(const std::string& name) {
     return true;
 }
 
+/// Lowest UDP port a mesh introduction may name.
+constexpr Uint16 kMinMeshTargetPort = 1024;
+
 /**
     A mesh CONNECT tells this client to open a UDP connection to an address of the host's
     choosing. That is a useful primitive for an attacker, so obviously non-peer destinations
@@ -272,7 +275,9 @@ inline bool isAcceptablePlayerName(const std::string& name) {
     \return true if a mesh connection to this address is plausible
 */
 inline bool isPlausibleMeshTarget(Uint32 hostOrderAddress, Uint16 port) {
-    if(port == 0) {
+    if(port < kMinMeshTargetPort) {
+        // Game ports are ephemeral or the default 28747; the well-known range below 1024 only
+        // makes this useful as a way to poke at local or private services.
         return false;
     }
 

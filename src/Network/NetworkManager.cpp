@@ -1226,37 +1226,47 @@ void NetworkManager::handlePacket(ENetPeer* peer, ENetPacketIStream& packetStrea
                     break;
                 }
 
+                // A name has to be unique on *every* peer, not just on the host. Command lists
+                // are resolved to a player by this name, so a mesh peer that binds a name
+                // another connection already holds would have its commands attributed to that
+                // player on this machine. The host already refused duplicates; a client that
+                // did not check was the remaining way in (an unsolicited peer reaching a
+                // joining client during its mesh window).
                 bool bFoundName = false;
 
-                //check if name already exists
-                if(bIsServer) {
-                    if(playerName == newName) {
-                        enet_peer_disconnect_later(peer, NETWORKDISCONNECT_PLAYER_EXISTS);
-                        bFoundName = true;
-                    }
+                if(playerName == newName) {
+                    enet_peer_disconnect_later(peer, NETWORKDISCONNECT_PLAYER_EXISTS);
+                    bFoundName = true;
+                }
 
-                    if(bFoundName == false) {
-                        for(ENetPeer* pCurrentPeer : peerList) {
-                            PeerData* pCurrentPeerData = static_cast<PeerData*>(pCurrentPeer->data);
-                            if(!pCurrentPeerData) {
-                                continue;
-                            }
-                            if(pCurrentPeerData->name == newName) {
-                                enet_peer_disconnect_later(peer, NETWORKDISCONNECT_PLAYER_EXISTS);
-                                bFoundName = true;
-                                break;
-                            }
+                if(bFoundName == false) {
+                    for(ENetPeer* pCurrentPeer : peerList) {
+                        if(pCurrentPeer == peer) {
+                            continue;
+                        }
+                        PeerData* pCurrentPeerData = static_cast<PeerData*>(pCurrentPeer->data);
+                        if(!pCurrentPeerData) {
+                            continue;
+                        }
+                        if(pCurrentPeerData->bNameAssigned && pCurrentPeerData->name == newName) {
+                            enet_peer_disconnect_later(peer, NETWORKDISCONNECT_PLAYER_EXISTS);
+                            bFoundName = true;
+                            break;
                         }
                     }
+                }
 
-                    if(bFoundName == false) {
-                        for(ENetPeer* pAwaitingConnectionPeer : awaitingConnectionList) {
-                            PeerData* pAwaitingConnectionPeerData = static_cast<PeerData*>(pAwaitingConnectionPeer->data);
-                            if(pAwaitingConnectionPeerData && (pAwaitingConnectionPeerData->name == newName)) {
-                                enet_peer_disconnect_later(peer, NETWORKDISCONNECT_PLAYER_EXISTS);
-                                bFoundName = true;
-                                break;
-                            }
+                if(bFoundName == false) {
+                    for(ENetPeer* pAwaitingConnectionPeer : awaitingConnectionList) {
+                        if(pAwaitingConnectionPeer == peer) {
+                            continue;
+                        }
+                        PeerData* pAwaitingConnectionPeerData = static_cast<PeerData*>(pAwaitingConnectionPeer->data);
+                        if(pAwaitingConnectionPeerData && pAwaitingConnectionPeerData->bNameAssigned
+                           && (pAwaitingConnectionPeerData->name == newName)) {
+                            enet_peer_disconnect_later(peer, NETWORKDISCONNECT_PLAYER_EXISTS);
+                            bFoundName = true;
+                            break;
                         }
                     }
                 }

@@ -56,13 +56,63 @@ void CommandManager::save(OutputStream& stream) const {
 }
 
 void CommandManager::load(InputStream& stream) {
+    // A replay or savegame is a local file, but it is still untrusted input: it may have been
+    // downloaded, and auto.rpl is routinely truncated by a crash. The record format has no
+    // header or terminator, so this keeps the historical "read until end of file" behaviour
+    // while bounding what a file can make this allocate and refusing records that would throw
+    // later, inside the simulation loop. A malformed tail stops the load with a warning
+    // instead of being silently accepted as a clean end.
+    std::size_t loadedCommands = 0;
+    bool bCleanEnd = false;
+
     try {
-        while(1) {
-            Uint32 cycle = stream.readUint32();
-            addCommand(Command(stream), cycle);
+        while(true) {
+            Uint32 cycle = 0;
+            try {
+                cycle = stream.readUint32();
+            } catch (InputStream::exception&) {
+                // End of file exactly at a record boundary: this is the normal termination.
+                bCleanEnd = true;
+                break;
+            }
+
+            if(cycle > CommandValidation::kMaxReplayCycle) {
+                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                            "CommandManager: replay refers to cycle %u, beyond the supported range",
+                            cycle);
+                break;
+            }
+
+            if(loadedCommands >= CommandValidation::kMaxReplayCommands) {
+                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                            "CommandManager: replay contains more than %zu commands, stopping",
+                            static_cast<std::size_t>(CommandValidation::kMaxReplayCommands));
+                break;
+            }
+
+            Command command(stream);
+            if(!CommandValidation::isWellFormedCommand(static_cast<Uint32>(command.getCommandID()),
+                                                       command.getParameter().size())) {
+                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                            "CommandManager: replay contains a malformed command %u at cycle %u",
+                            static_cast<unsigned int>(command.getCommandID()), cycle);
+                break;
+            }
+
+            addCommand(command, cycle);
+            loadedCommands++;
         }
     } catch (InputStream::exception&) {
-        ;
+        // The stream ended in the middle of a record: the file is truncated or corrupt.
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "CommandManager: replay ended inside a command record after %zu commands",
+                    loadedCommands);
+    }
+
+    if(!bCleanEnd) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "CommandManager: replay was not read to a clean end; %zu commands loaded",
+                    loadedCommands);
     }
 }
 
