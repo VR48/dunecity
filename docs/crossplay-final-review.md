@@ -1,11 +1,47 @@
 # Crossplay final review — 12 September 2026
 
-Codex completed its review and reconciled the actual Hermes review against the source. No
-blocking code defect remains identified by those reviews. Claude's requested final review did
-not run: its CLI returned HTTP 429 before reading any input, with a session reset at 11:50 UTC
-(21:50 Sydney) on 12 September. This record is not public deployment or release approval.
+## 1.0.657 candidate checkpoint
 
-## Reviewed source and scope
+The earlier review below is historical. Actual Claude Opus subsequently completed
+reviews in sessions `ef3ab597-7d61-46c6-b462-59e2c024381c` and
+`c1aecb58-80b0-4eeb-b8a7-2361c34861e2`. The second checked snapshot `4940aef` and ran
+185 Node tests successfully. The release candidate incorporates current main `8879732`.
+
+Resolved findings include rotating public room codes when making a room private,
+invalidating unused old admissions, recovering visibility requests by host control token,
+counting the response newline in its byte budget, requiring explicit production origins
+and proxy trust, enabling curl WebSockets in vcpkg, and checking packaged binaries for
+secure relay support. Follow-up changes wait explicitly for the Windows GUI executable,
+reject duplicate response room codes and explain an unconfirmed visibility change.
+The directory name encoding concern was checked: binary HELLO strings are preserved as
+Latin-1 byte containers, so converting those strings back to Latin-1 bytes for the
+hex directory response preserves the original UTF-8 bytes; changing that boundary alone
+would double-encode names. Token-first visibility authorization deliberately supports
+retries with old invitation codes; the control token is the authority.
+
+Local checks: all five CTest targets pass, Node 185/185, wasm32 wire parser 173/173,
+web packager 3/3, shell 5/5. The test-only curl wrapper exercises the unchanged production
+send queue with short writes and injected `CURLE_AGAIN`; eight 200,000-byte messages
+arrive intact and in order. This is deliberate API backpressure, not a claim that an
+OS socket naturally saturated. Native dependency audits pass and the local desktop
+binary reports secure relay support.
+
+Stefan completed an earlier two-browser match (about 20 minutes) on `3c9ff56`.
+Sampled logs showed no digest mismatch or premature disconnect; digests at cycles
+18,200 and 18,400 agreed. Average FPS fell from roughly 145–150 to 104.9, with later
+rolling samples near 92; the cause remains unproven and is a follow-up, not a fixed issue.
+A subsequent 1.0.657 browser-host/native-client match joined through the public list
+without an invitation code. Actual digests agree at cycles 8,400, 8,600 and 8,800.
+That live test remains in progress; later lobby-only fixes are not loaded into it.
+
+Actual Hermes reviewed the production bootstrap and identified activation/retry,
+artifact identity and rollback gaps. That installer is being revised and has not been
+executed. The restricted metaserver account cannot administer services; administrator
+access remains unknown. No production relay, main merge or stable tag is claimed.
+Candidate package CI: https://github.com/VR48/dunecity/actions/runs/34693670790
+(the `4940aef` candidate, before the follow-up lobby presentation changes).
+
+## Earlier reviewed source and scope
 
 - Game: snapshot `ac122ec2bf0f6bbca605f40a1ad0c08cb27a4f72`, followed by review fixes
   `0dda5c4` and `f5b496b` on `fix/network-hardening`.
@@ -64,10 +100,8 @@ Local review reports, test output and the failed Claude attempt are preserved un
 
 ## Remaining release gates
 
-- Obtain Claude's final review when its existing account limit resets.
-- Play an actual native-to-browser match, including commands, menus, disconnects and digests.
-- Exercise native libcurl partial socket writes deliberately. The successful bulk fixture did
-  not force that path; a queue backlog alone would not prove partial writes either.
+- Complete native/browser commands, menus and disconnect checks and verify the revised lobby layout.
+- Complete review and verification of the revised administrator bootstrap.
 - Verify public WSS certificates, reverse-proxy settings, Origin/address forwarding and
   browser connectivity across real networks, latency and loss.
 

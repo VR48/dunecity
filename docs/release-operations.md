@@ -119,4 +119,17 @@ WASM and data URL carries the same version/content token; unversioned artifacts
 must revalidate. Verify the live `play/build.json` and download/hash every listed
 artifact after deployment. Browser-test fresh defaults, Display aspect changes,
 Options resolution changes, reload persistence, viewport resize and fullscreen.
-Browser play remains single-player; desktop co-op is not WebAssembly networking.
+The 1.0.657 crossplay candidate uses `https://dunelegacy.com/relay`. Desktop ENet
+multiplayer remains available; browser/native crossplay uses the separate WebSocket
+transport, public directory, optional private invitations and confirmed-name lobby chat.
+Package production clients with `--relay-origin https://dunelegacy.com` so their CSP
+permits the exact HTTPS/WSS origin. Local development packages explicitly opt into
+loopback and must never be copied to production.
+
+Before publishing a crossplay client, provision and verify the relay and signed PHP
+analytics receiver. See `tools/room-relay/deploy/README.md` for the administrator-only
+bootstrap and rollback contract. The restricted website deploy account is deliberately
+insufficient for service/Apache installation. A `release-*` branch builds candidate
+packages without publishing a stable release or replacing the browser site; keep the
+stable tag/main deployment on hold until public TLS/WSS, proxy headers, browser/native
+connectivity and SQLite delivery have been checked on the actual host.

@@ -815,6 +815,12 @@ void testLobbyChatParsing() {
     check(!parse(header + "cursor=12\ngap=2\n", AdmissionOperation::ChatPoll), "chat rejects invalid gap marker");
     check(!parse(header + "cursor=1\nchat=1|41|42\n", AdmissionOperation::ChatSay), "send cannot masquerade as poll");
     check(parse(header + "visibility=private\n", AdmissionOperation::Visibility) && response.visibility == "private", "host control acknowledges private visibility");
+    check(parse(header + "visibility=private\nroom=ABCD-EFGH-JKMN\n", AdmissionOperation::Visibility)
+          && response.roomCode == "ABCD-EFGH-JKMN", "host control returns rotated invitation code");
+    check(!parse(header + "visibility=private\nroom=ABCD-EFGH-JKMN\nroom=PQRS-TVWX-YZ01\n", AdmissionOperation::Visibility),
+          "host control refuses duplicate room codes");
+    check(!parse(header + "visibility=private\nroom=invalid\n", AdmissionOperation::Visibility),
+          "host control refuses malformed rotated invitation code");
     check(!parse(header, AdmissionOperation::Visibility), "host control requires visibility acknowledgement");
     check(!parse(header + "visibility=public\nvisibility=private\n", AdmissionOperation::Visibility), "host control refuses ambiguous acknowledgement");
     check(!parse(header + "visibility=private\n", AdmissionOperation::Room), "control response cannot replace admission grant");

@@ -183,6 +183,7 @@ inline bool parseAdmissionResponse(const std::string& body, AdmissionResponse& o
     bool sawStatus = false;
     bool sawProtocol = false;
     bool sawNext = false;
+    bool sawRoom = false;
     bool sawVisibility = false, sawControl = false, sawSession = false, sawCursor = false, sawGap = false;
     std::size_t lineCount = 0;
     std::size_t cursor = 0;
@@ -322,6 +323,8 @@ inline bool parseAdmissionResponse(const std::string& body, AdmissionResponse& o
                 }
                 out.messages.push_back(std::move(message));
             } else if(key == "room") {
+                if(sawRoom) { error = "The game service repeated its room code."; return false; }
+                sawRoom = true;
                 out.roomCode = value;
             } else if(key == "grant") {
                 out.grant = value;

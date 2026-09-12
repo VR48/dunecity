@@ -103,8 +103,8 @@ jobs:
         run: |
           $game = Get-ChildItem build -Recurse -Filter dunecity.exe | Select-Object -First 1
           if (-not $game) { throw "Game binary missing" }
-          & $game.FullName --check-relay-support
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $probe = Start-Process -FilePath $game.FullName -ArgumentList '--check-relay-support' -Wait -PassThru -NoNewWindow
+          if ($probe.ExitCode -ne 0) { exit $probe.ExitCode }
 
       - name: Create Installer Package
         run: |

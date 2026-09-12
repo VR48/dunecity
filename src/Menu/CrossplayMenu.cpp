@@ -107,7 +107,7 @@ CrossplayMenu::CrossplayMenu() : MenuBase() {
     statusLabel.setAlignment(Alignment_HCenter);
     mainVBox.addWidget(&statusLabel, 36);
 
-    directoryLabel.setText(_("Public games"));
+    directoryLabel.setText(_("Public games - no code needed"));
     directoryHBox.addWidget(&directoryLabel, 1.0);
     refreshGamesButton.setText(_("Refresh"));
     refreshGamesButton.setOnClick([this]() { refreshPublicGames(); });
@@ -115,12 +115,12 @@ CrossplayMenu::CrossplayMenu() : MenuBase() {
     moreGamesButton.setText(_("More"));
     moreGamesButton.setOnClick([this]() { refreshPublicGames(nextDirectoryPage); });
     directoryHBox.addWidget(&moreGamesButton, 80);
-    joinPublicButton.setText(_("Join selected"));
+    joinPublicButton.setText(_("Join public game"));
     joinPublicButton.setOnClick([this]() { joinPublicGame(); });
-    directoryHBox.addWidget(&joinPublicButton, 150);
     mainVBox.addWidget(&directoryHBox, 28);
     publicGameList.setOnSelectionChange([this](bool) { refreshControls(); });
     mainVBox.addWidget(&publicGameList, 0.5);
+    mainVBox.addWidget(&joinPublicButton, 36);
     chatLabel.setText(_("Public lobby chat - confirm your name above to chat"));
     mainVBox.addWidget(&chatLabel, 24);
     mainVBox.addWidget(&chatHistory, 0.5);
@@ -143,12 +143,12 @@ CrossplayMenu::CrossplayMenu() : MenuBase() {
     });
     visibilityHBox.addWidget(&visibilityChoice, 300);
     visibilityHBox.addWidget(Spacer::create());
-    privateInviteButton.setText(_("Join private game"));
+    privateInviteButton.setText(_("Join with invite code"));
     privateInviteButton.setOnClick([this]() {
         showPrivateJoin = !showPrivateJoin;
         refreshControls();
     });
-    visibilityHBox.addWidget(&privateInviteButton, 180);
+    visibilityHBox.addWidget(&privateInviteButton, 220);
     mainVBox.addWidget(&visibilityHBox, 28);
 
     roomCodeLabel.setAlignment(Alignment_HCenter);
@@ -246,7 +246,7 @@ void CrossplayMenu::refreshControls() {
     joinButton.setVisible(invite);
     joinCodeTextBox.setVisible(invite);
     privateInviteButton.setVisible(idle);
-    privateInviteButton.setText(showPrivateJoin ? _("Hide private invite") : _("Join private game"));
+    privateInviteButton.setText(showPrivateJoin ? _("Hide private invite") : _("Join with invite code"));
     joinButton.setEnabled(invite);
     joinCodeTextBox.setEnabled(invite);
     playerNameTextBox.setEnabled(idle && chatSession.empty() && !chatPending);
@@ -261,6 +261,7 @@ void CrossplayMenu::refreshControls() {
     refreshGamesButton.setEnabled(idle && !directoryPending);
     moreGamesButton.setEnabled(idle && !directoryPending && nextDirectoryPage > 0);
     const int selected = publicGameList.getSelectedIndex();
+    joinPublicButton.setText(selected >= 0 ? _("Join public game") : _("Select a public game above to join"));
     joinPublicButton.setEnabled(idle && !directoryPending && selected >= 0
         && static_cast<std::size_t>(selected) < publicGames.size());
 
@@ -647,7 +648,7 @@ void CrossplayMenu::update() {
             setStatus(publicRoom ? _("Your public game is listed. Players can join from the lobby.")
                                  : _("Your private game is unlisted. Share its invitation code."));
         } else {
-            setStatus(visibilityUpdate.errorMessage());
+            setStatus(_("Visibility could not be confirmed. Choose it again to confirm your game and invitation code."));
         }
         visibilityChoice.setSelectedItem(publicRoom ? 0 : 1);
         visibilityUpdate.cancel();
@@ -673,7 +674,7 @@ void CrossplayMenu::update() {
                     + " - " + std::to_string(game.players) + "/" + std::to_string(game.maxPeers));
                 if(game.roomCode == selectedRoom) publicGameList.setSelectedItem(static_cast<int>(i));
             }
-            directoryLabel.setText(publicGames.empty() ? _("No open public games") : _("Public games"));
+            directoryLabel.setText(publicGames.empty() ? _("No open public games") : _("Public games - no code needed"));
         } else {
             directoryLabel.setText(_("Public list unavailable"));
             setStatus(directory.errorMessage());
