@@ -22,6 +22,23 @@ Evidence snapshots: /tmp/internet-test-dunecity-internet-host.log and
 /tmp/internet-test-dunecity-internet-guest-local.log. Live profiles are
 /tmp/dunecity-internet-host and /tmp/dunecity-internet-guest-local; test apps
 DuneInternetHost.app and DuneInternetGuestLocal.app remain open for Stefan.
+Stefan subsequently confirmed testing two campaign missions and save/reload.
+Final logs show both clients load SCENO002 after the shared save, and shut down
+normally. After save/reload, 230 comparable CitySim valve/day records match;
+after mission transition, 101 comparable records match. The first mission's
+379 pre-load records also match. DESYNC DEBUG entries are routine diagnostics,
+not reported desynchronizations. Final evidence snapshots use the prefix
+/tmp/internet-test-final-dunecity-internet-*.log. Both test apps are now closed.
+
+Published website guide https://dunelegacy.com/coop.html with a Multiplayer
+Co-op navigation tab and home/DuneCity announcements (website commit 964ac35,
+Deploy to Droplet run 34671938595 successful; six live files byte-verified).
+Home link reads "Play campaign co-op with your friends online!" per Stefan.
+Guide covers hosting, joining, QuantBot partners, skirmish and solo/shared saves.
+Public desktop download remains 1.0.642: guide accurately requires 1.0.652 and
+states that public co-op release is pending. When publishing the game release,
+update this availability paragraph as well as the normal download links.
+
 The Mac mini guest was stopped after switching to the requested local test.
 Its portable bundle needed SDL3 explicitly included beside SDL2: Homebrew's
 sdl2-compat loads SDL3 dynamically, so otool dependency traversal alone misses
