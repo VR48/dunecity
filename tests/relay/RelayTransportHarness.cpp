@@ -470,8 +470,12 @@ int main(int argc, char** argv) {
                 // Stay well inside both the client's own outgoing bound and the relay's
                 // per-recipient backpressure limit while still keeping the socket saturated.
                 constexpr std::size_t kBacklogTarget = 512 * 1024;
+                // Production permits 1.5 MiB/s. Pace the stress fixture below that limit;
+                // otherwise it only tests rate-limit disconnects after the seventh message.
+                static Uint32 nextBulkSend = 0;
 
                 while(bulkSent < options.bulkMessages
+                      && SDL_TICKS_PASSED(SDL_GetTicks(), nextBulkSend)
                       && relay.outgoingBacklogBytes() < kBacklogTarget) {
                     const std::vector<std::uint8_t> payload =
                         bulkPayload(bulkSent, options.bulkBytes);
@@ -480,6 +484,8 @@ int main(int argc, char** argv) {
                         break;
                     }
                     bulkSent++;
+                    nextBulkSend = SDL_GetTicks() + static_cast<Uint32>(
+                        (static_cast<std::size_t>(options.bulkBytes) + 17) * 1000 / (1024 * 1024) + 1);
                     sentPayloads++;
                     peakBacklogBytes = std::max(peakBacklogBytes, relay.outgoingBacklogBytes());
                     if((bulkSent % 8) == 0 || bulkSent == options.bulkMessages) {
