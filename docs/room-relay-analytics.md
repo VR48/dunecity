@@ -88,16 +88,27 @@ log record.
   body is not re-sent anywhere.
 - HTTPS verifies the certificate chain and hostname (`rejectUnauthorized`, TLS 1.2 minimum). A
   verification failure is permanent and is not retried.
+- Each attempt is bounded by **one absolute deadline** started before the socket, so it covers
+  DNS, connect, TLS, the request write and the response headers together. A receiver that
+  dribbles bytes cannot hold an attempt open by staying barely active, which a socket-inactivity
+  timeout would allow.
+- The status line is the whole answer: no response body is read, and the response and request
+  are destroyed and the socket is confirmed closed before the outcome resolves. A header-only or
+  endless response cannot outlive its attempt, so at most one upstream socket exists at a time.
 - Retries reuse the immutable `event_id` and the byte-identical body, with a fresh timestamp and
   a fresh signature. Retry on timeout, connection failure, 408, 429 and 5xx; never on other 4xx
   or on a redirect.
 - Backoff doubles from 250 ms, capped at 4 s, bounded by the attempt count.
+- SNI is sent for DNS destinations only; Node refuses an IP literal in SNI. Certificate hostname
+  verification still applies to IPv4 and IPv6 destinations.
 
 ## 4. Behaviour under load and failure
 
 - The queue is bounded in **both** events and bytes. When it is full the newest event is dropped
   and counted; a dropped event is never sent later.
-- Exactly one request is in flight. Nothing in the relay's message path awaits delivery.
+- Exactly one request is in flight, and exactly one upstream socket: the next attempt does not
+  start until the previous socket has closed. Nothing in the relay's message path awaits
+  delivery.
 - A failing, hanging, refusing or redirecting receiver cannot stall, disconnect or close a game.
   A test drives a full lobby exchange while every attempt fails.
 - Shutdown gives the in-flight drain a bounded window (2 s by default), then hard-stops: the

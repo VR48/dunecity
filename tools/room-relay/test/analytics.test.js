@@ -5,6 +5,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const http = require('node:http');
 const https = require('node:https');
+const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
@@ -21,6 +22,7 @@ const {
   parseDestination,
   serializeEvent,
   signBody,
+  socketTarget,
 } = require('../src/analytics');
 const { LifecycleLog } = require('../src/logging');
 const protocol = require('../src/protocol');
@@ -49,7 +51,16 @@ function okResponder(req, res) {
 async function startReceiver(options = {}) {
   const requests = [];
   const sockets = new Set();
+  const seen = { maxConcurrent: 0, total: 0 };
   let responder = options.responder || okResponder;
+
+  const track = (socket) => {
+    sockets.add(socket);
+    seen.total += 1;
+    seen.maxConcurrent = Math.max(seen.maxConcurrent, sockets.size);
+    socket.on('error', () => {});
+    socket.on('close', () => sockets.delete(socket));
+  };
 
   const handler = (req, res) => {
     const chunks = [];
@@ -70,14 +81,8 @@ async function startReceiver(options = {}) {
   const server = options.tls
     ? https.createServer(options.tls, handler)
     : http.createServer(handler);
-  server.on('connection', (socket) => {
-    sockets.add(socket);
-    socket.on('close', () => sockets.delete(socket));
-  });
-  server.on('secureConnection', (socket) => {
-    sockets.add(socket);
-    socket.on('close', () => sockets.delete(socket));
-  });
+  server.on('connection', track);
+  server.on('secureConnection', track);
 
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const port = server.address().port;
@@ -85,11 +90,55 @@ async function startReceiver(options = {}) {
   return {
     requests,
     port,
+    seen,
+    liveSockets: () => sockets.size,
     scheme: options.tls ? 'https' : 'http',
     url: `${options.tls ? 'https' : 'http'}://127.0.0.1:${port}/relay-events.php`,
     setResponder(fn) { responder = fn; },
     bodies() { return requests.map((r) => r.body.toString('utf8')); },
     events() { return requests.map((r) => JSON.parse(r.body.toString('utf8'))); },
+    async close() {
+      for (const socket of sockets) socket.destroy();
+      await new Promise((resolve) => server.close(resolve));
+    },
+  };
+}
+
+/**
+ * A receiver that stays busy without ever finishing: it answers a request one byte at a time on
+ * an interval shorter than the publisher's deadline. An inactivity timeout never fires against
+ * this; only an absolute deadline does.
+ */
+async function startDripServer(options = {}) {
+  const sockets = new Set();
+  const seen = { maxConcurrent: 0, total: 0 };
+  const script = options.script || 'HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n\r\n{}';
+  const intervalMs = options.intervalMs === undefined ? 15 : options.intervalMs;
+
+  const server = net.createServer((socket) => {
+    sockets.add(socket);
+    seen.total += 1;
+    seen.maxConcurrent = Math.max(seen.maxConcurrent, sockets.size);
+    socket.on('error', () => {});
+    socket.on('close', () => sockets.delete(socket));
+
+    let index = 0;
+    const timer = setInterval(() => {
+      if (socket.destroyed || index >= script.length) {
+        clearInterval(timer);
+        return;
+      }
+      socket.write(script[index]);
+      index += 1;
+    }, intervalMs);
+    socket.on('close', () => clearInterval(timer));
+  });
+
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  return {
+    seen,
+    liveSockets: () => sockets.size,
+    url: `http://127.0.0.1:${server.address().port}/relay-events.php`,
     async close() {
       for (const socket of sockets) socket.destroy();
       await new Promise((resolve) => server.close(resolve));
@@ -263,6 +312,22 @@ describe('analytics configuration', () => {
       { allowLoopbackHttp: true }), AnalyticsConfigError);
     assert.throws(() => parseDestination('not-a-url', { allowLoopbackHttp: true }),
       AnalyticsConfigError);
+  });
+
+  it('sends SNI for DNS destinations only, and unwraps IPv6 literals', () => {
+    assert.deepEqual(socketTarget(new URL('https://metaserver.example/x'), true), {
+      hostname: 'metaserver.example', port: 443, servername: 'metaserver.example',
+    });
+    // Node 26 refuses an IP in SNI; certificate hostname verification still covers these.
+    assert.deepEqual(socketTarget(new URL('https://127.0.0.1:8443/x'), true), {
+      hostname: '127.0.0.1', port: 8443,
+    });
+    assert.deepEqual(socketTarget(new URL('https://[::1]:8443/x'), true), {
+      hostname: '::1', port: 8443,
+    });
+    assert.deepEqual(socketTarget(new URL('http://127.0.0.1/x'), false), {
+      hostname: '127.0.0.1', port: 80,
+    });
   });
 
   it('takes the destination from the operator environment only', () => {
@@ -530,6 +595,125 @@ describe('lifecycle delivery', () => {
       assert.equal(publisher.queue.length, 0, 'a stopped publisher accepts nothing');
     } finally {
       await receiver.close();
+    }
+  });
+
+  it('bounds an attempt by an absolute deadline, not by socket activity', async () => {
+    // One byte every 15 ms: never idle, never finished. An inactivity timeout would never fire.
+    const drip = await startDripServer({ intervalMs: 15 });
+    const publisher = makePublisher(drip.url, { timeoutMs: 150, maxAttempts: 1 });
+    try {
+      const started = Date.now();
+      publisher.roomCreated({ roomLogId: 'N'.repeat(22) });
+      await waitFor(() => publisher.stats.failed === 1, 3000);
+      const elapsed = Date.now() - started;
+      assert.equal(publisher.stats.timeouts, 1);
+      assert.ok(elapsed < 1200, `the deadline must bound a dripping receiver, took ${elapsed}ms`);
+      await waitFor(() => drip.liveSockets() === 0, 2000);
+      assert.equal(publisher.liveRequests, 0);
+    } finally {
+      await publisher.stop();
+      await drip.close();
+    }
+  });
+
+  it('covers connect and TLS with the same deadline', async () => {
+    // A listener with a full accept backlog: the connection never completes.
+    const blackhole = net.createServer(() => {});
+    await new Promise((resolve) => blackhole.listen(0, '127.0.0.1', resolve));
+    const port = blackhole.address().port;
+    blackhole.close();
+    // Nothing is listening on this port now, so connect fails fast; the deadline still applies.
+    const publisher = makePublisher(`http://127.0.0.1:${port}/relay-events.php`, {
+      timeoutMs: 200, maxAttempts: 1,
+    });
+    try {
+      const started = Date.now();
+      publisher.roomCreated({ roomLogId: 'O'.repeat(22) });
+      await waitFor(() => publisher.stats.failed === 1, 3000);
+      assert.ok(Date.now() - started < 1200);
+      assert.equal(publisher.liveRequests, 0);
+    } finally {
+      await publisher.stop();
+    }
+  });
+
+  it('destroys a header-only response instead of leaving it draining', async () => {
+    const receiver = await startReceiver();
+    // Status line and headers, then a body that never ends.
+    receiver.setResponder((req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.write('{"status":');
+    });
+    const publisher = makePublisher(receiver.url, { timeoutMs: 2000 });
+    try {
+      for (let i = 0; i < 4; i += 1) publisher.roomCreated({ roomLogId: 'P'.repeat(22) });
+      const started = Date.now();
+      await waitFor(() => publisher.stats.delivered === 4, 4000);
+      assert.ok(Date.now() - started < 1500, 'the status line is the whole answer');
+      assert.equal(receiver.seen.total, 4);
+      assert.equal(publisher.maxOpenSockets, 1,
+        'no previous response may still be open when the next request starts');
+      // The receiver can accept the next connection before its own close event for the previous
+      // socket lands, so its own view is one connection wider than the client-side bound.
+      assert.ok(receiver.seen.maxConcurrent <= 2, `receiver saw ${receiver.seen.maxConcurrent}`);
+      await waitFor(() => receiver.liveSockets() === 0, 2000);
+      assert.equal(publisher.openSockets, 0);
+      assert.equal(publisher.liveRequests, 0);
+    } finally {
+      await publisher.stop();
+      await receiver.close();
+    }
+  });
+
+  it('holds one upstream connection open at a time across mixed outcomes', async () => {
+    const receiver = await startReceiver();
+    receiver.setResponder((req, res, record, count) => {
+      if (count === 1) return;                                  // no response at all
+      if (count === 2) { res.writeHead(500); res.write('x'); return; } // header only, retryable
+      if (count === 3) { res.writeHead(302, { location: '/elsewhere' }); res.write('x'); return; }
+      okResponder(req, res);
+    });
+    const publisher = makePublisher(receiver.url, { timeoutMs: 200, maxAttempts: 1 });
+    try {
+      for (let i = 0; i < 4; i += 1) publisher.roomCreated({ roomLogId: 'Q'.repeat(22) });
+      await waitFor(() => publisher.stats.delivered + publisher.stats.failed === 4, 5000);
+      assert.equal(publisher.stats.failed, 3);
+      assert.equal(publisher.stats.delivered, 1);
+      assert.equal(publisher.stats.redirects, 1);
+      assert.equal(publisher.maxOpenSockets, 1, 'one upstream socket at a time, whatever happens');
+      await waitFor(() => receiver.liveSockets() === 0, 2000);
+      assert.equal(publisher.openSockets, 0);
+      assert.equal(publisher.liveRequests, 0);
+      assert.equal(publisher.queue.length, 0);
+    } finally {
+      await publisher.stop();
+      await receiver.close();
+    }
+  });
+
+  it('recovers the queue and shuts down after a dripping receiver', async () => {
+    const drip = await startDripServer({ intervalMs: 15 });
+    const good = await startReceiver();
+    const publisher = makePublisher(drip.url, { timeoutMs: 120, maxAttempts: 1 });
+    try {
+      publisher.roomCreated({ roomLogId: 'R'.repeat(22) });
+      publisher.matchStarted({ roomLogId: 'R'.repeat(22) });
+      await waitFor(() => publisher.stats.failed === 2, 4000);
+      assert.equal(publisher.queue.length, 0, 'the queue drains rather than wedging');
+
+      // The same publisher pointed at a healthy receiver keeps working.
+      publisher.destination = new URL(good.url);
+      publisher.roomClosed({ roomLogId: 'R'.repeat(22), reason: 'shutdown' });
+      await waitFor(() => publisher.stats.delivered === 1, 3000);
+
+      const started = Date.now();
+      await publisher.stop();
+      assert.ok(Date.now() - started < 1500, 'shutdown stays bounded');
+      assert.equal(publisher.liveRequests, 0);
+    } finally {
+      await drip.close();
+      await good.close();
     }
   });
 

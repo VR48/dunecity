@@ -30,6 +30,8 @@ const MAX_BODY_BYTES = 4096;
 const MAX_OCCURRED_AT = 4102444800;
 const MIN_KEY_CHARS = 32;
 const MAX_KEY_CHARS = 512;
+/** How long an attempt waits for its own destroyed socket to finish closing. */
+const SOCKET_CLOSE_GRACE_MS = 250;
 
 const KINDS = new Set(['created', 'joined', 'started', 'left', 'closed']);
 const PARTICIPANT_KINDS = new Set(['joined', 'left']);
@@ -302,6 +304,24 @@ function analyticsConfigFromEnv(env = process.env) {
   };
 }
 
+/**
+ * Socket target for a destination URL.
+ *
+ * WHATWG `hostname` keeps the brackets around an IPv6 literal, which neither the socket layer
+ * nor certificate verification wants, and SNI must not carry an IP literal at all: Node 26
+ * refuses it with ERR_INVALID_ARG_VALUE. Only the SNI extension is omitted for IP destinations;
+ * certificate hostname verification still applies to them, IPv6 included.
+ */
+function socketTarget(url, secure) {
+  const hostname = url.hostname.replace(/^\[|\]$/g, '');
+  const target = {
+    hostname,
+    port: url.port === '' ? (secure ? 443 : 80) : Number(url.port),
+  };
+  if (secure && !isIP(hostname)) target.servername = hostname;
+  return target;
+}
+
 function isPermanentTransportError(err) {
   const code = err && err.code;
   if (typeof code !== 'string') return false;
@@ -341,6 +361,11 @@ class LifecyclePublisher {
     this.running = false;
     this.stopped = false;
     this.request = null;
+    /** Attempts that have a socket, or are about to. Never more than one; asserted by tests. */
+    this.liveRequests = 0;
+    /** Upstream sockets this publisher currently holds, and the high-water mark. Bound: 1. */
+    this.openSockets = 0;
+    this.maxOpenSockets = 0;
     this.sleepTimer = null;
     this.wakeSleep = null;
     this.idleWaiters = [];
@@ -500,8 +525,15 @@ class LifecyclePublisher {
   }
 
   /**
-   * One HTTP request. Redirects are never followed, TLS is always verified, the response body
-   * is discarded unread, and the socket is not reused.
+   * One HTTP request, bounded by a single absolute deadline that starts before the socket does
+   * and therefore covers DNS, connect, TLS, the request write and the response headers. A
+   * receiver that dribbles bytes cannot hold the attempt open by staying just barely active.
+   *
+   * The status line is the whole answer: no response body is read, and the response and the
+   * request are destroyed before the outcome resolves. The next event therefore cannot start
+   * while a previous socket is still draining, however the receiver behaves.
+   *
+   * Redirects are never followed and TLS is always verified.
    */
   send(body, timestamp, signature) {
     return new Promise((resolve) => {
@@ -509,8 +541,7 @@ class LifecyclePublisher {
       const secure = url.protocol === 'https:';
       const requestOptions = {
         protocol: url.protocol,
-        hostname: url.hostname.replace(/^\[|\]$/g, ''),
-        port: url.port === '' ? (secure ? 443 : 80) : Number(url.port),
+        ...socketTarget(url, secure),
         path: `${url.pathname}${url.search}`,
         method: 'POST',
         headers: {
@@ -522,25 +553,65 @@ class LifecyclePublisher {
           connection: 'close',
         },
         agent: false,
-        timeout: this.timeoutMs,
       };
       if (secure) {
         requestOptions.rejectUnauthorized = true;
         requestOptions.minVersion = 'TLSv1.2';
-        // SNI carries DNS names only; IP certificates are still verified against hostname.
-        if (!isIP(requestOptions.hostname)) requestOptions.servername = requestOptions.hostname;
         if (this.ca !== undefined) requestOptions.ca = this.ca;
       }
 
+      let req = null;
       let settled = false;
+      let deadline = null;
+      // 'close' on the socket is the only reliable signal that it is really gone: both
+      // `destroyed` and `closed` are already true while the handle is still being torn down.
+      let socketClosed = true;
+      const socketClosedWaiters = [];
+
+      /**
+       * Resolves once, and only after this attempt's socket has actually closed, so the next
+       * event cannot open a second connection while this one is still being torn down.
+       */
       const finish = (outcome) => {
         if (settled) return;
         settled = true;
-        this.request = null;
-        resolve(outcome);
+        if (deadline !== null) {
+          clearTimeout(deadline);
+          deadline = null;
+        }
+
+        let released = false;
+        const done = () => {
+          if (released) return;
+          released = true;
+          this.request = null;
+          this.liveRequests -= 1;
+          resolve(outcome);
+        };
+
+        if (req !== null) {
+          req.removeAllListeners('response');
+          try { req.destroy(); } catch { /* already gone */ }
+        }
+        if (socketClosed) {
+          done();
+          return;
+        }
+        // Belt and braces: the socket was just destroyed, so this is a tick, not a wait.
+        const guard = setTimeout(done, SOCKET_CLOSE_GRACE_MS);
+        if (guard.unref) guard.unref();
+        socketClosedWaiters.push(() => {
+          clearTimeout(guard);
+          done();
+        });
       };
 
-      let req;
+      this.liveRequests += 1;
+      deadline = setTimeout(() => {
+        finish({ ok: false, retryable: true, code: 'timeout' });
+      }, this.timeoutMs);
+      if (deadline.unref) deadline.unref();
+
       try {
         req = (secure ? https : http).request(requestOptions);
       } catch {
@@ -549,9 +620,15 @@ class LifecyclePublisher {
       }
       this.request = req;
 
-      req.on('timeout', () => {
-        req.destroy();
-        finish({ ok: false, retryable: true, code: 'timeout' });
+      req.on('socket', (socket) => {
+        socketClosed = false;
+        this.openSockets += 1;
+        this.maxOpenSockets = Math.max(this.maxOpenSockets, this.openSockets);
+        socket.once('close', () => {
+          socketClosed = true;
+          this.openSockets -= 1;
+          while (socketClosedWaiters.length > 0) socketClosedWaiters.shift()();
+        });
       });
       req.on('error', (err) => {
         finish({
@@ -562,14 +639,16 @@ class LifecyclePublisher {
       });
       req.on('response', (res) => {
         const status = res.statusCode || 0;
-        res.resume();
+        // The body is never needed and is never read. Tear the response down first so that a
+        // header-only or endless response cannot outlive this attempt.
         res.on('error', () => {});
+        try { res.destroy(); } catch { /* already gone */ }
+
         if (status >= 200 && status < 300) {
           finish({ ok: true, code: 'ok' });
         } else if (status >= 300 && status < 400) {
           // A redirect from an analytics receiver is a misconfiguration or an interception
           // attempt. The signed body is not replayed anywhere else.
-          req.destroy();
           finish({ ok: false, retryable: false, code: 'redirect' });
         } else if (status === 408 || status === 429 || status >= 500) {
           finish({ ok: false, retryable: true, code: 'server' });
@@ -667,4 +746,5 @@ module.exports = {
   reasonCode,
   serializeEvent,
   signBody,
+  socketTarget,
 };
