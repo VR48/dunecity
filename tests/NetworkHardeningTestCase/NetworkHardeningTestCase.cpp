@@ -642,7 +642,8 @@ TEST_CASE("Commands: parameter counts must match the command table",
 
 TEST_CASE("Commands: the whole command table is covered", "[network][security][command]") {
     // Every executable command must have an entry, otherwise legitimate play would be dropped.
-    for(Uint32 commandID = CMD_NONE + 1; commandID < CMD_MAX; commandID++) {
+    for(Uint32 commandID = static_cast<Uint32>(CMD_NONE) + 1;
+        commandID < static_cast<Uint32>(CMD_MAX); commandID++) {
         INFO("command id " << commandID);
         const int arity = CommandValidation::exactParameterCount(static_cast<CMDTYPE>(commandID));
         REQUIRE(arity != -2);
