@@ -96,6 +96,17 @@ const LIMITS = Object.freeze({
   HTTP_GLOBAL_PER_MINUTE: 120,
   HTTP_ADDRESS_TABLE_ENTRIES: 4096,
   HTTP_ADDRESS_TABLE_TTL_MS: 10 * 60 * 1000,
+
+  // Ingress bounds. A body cap alone bounds neither how long a client may take to send that
+  // body nor how many clients may be part-way through one at the same time.
+  HTTP_MAX_SOCKETS: 128,
+  HTTP_MAX_HEADER_BYTES: 8192,
+  HTTP_MAX_HEADER_COUNT: 64,
+  HTTP_BODY_TIMEOUT_MS: 3000,
+  HTTP_HEADERS_TIMEOUT_MS: 5000,
+  HTTP_REQUEST_TIMEOUT_MS: 10000,
+  HTTP_KEEPALIVE_TIMEOUT_MS: 5000,
+  HTTP_IDLE_SOCKET_TIMEOUT_MS: 15000,
 });
 
 // Game packet ids from include/Network/NetworkPacketTypes.h. Listed here so the relay can

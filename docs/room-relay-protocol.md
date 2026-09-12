@@ -137,6 +137,27 @@ length- and charset-checking it (§3.4).
 
 Values that exceed a limit are a `bad_request`; they are never truncated and used.
 
+### 3.4.1 Ingress deadlines and connection ceiling
+
+A size cap bounds what a request may say, not how long it may take to say it. The relay also
+applies, with defaults in `LIMITS`:
+
+| Bound | Default | Effect |
+| --- | --- | --- |
+| body read deadline | 3 s | `408 timeout`, then the socket is dropped mid-upload |
+| headers deadline | 5 s | Node answers `408` and closes |
+| whole-request deadline | 10 s | request aborted |
+| keep-alive idle | 5 s | connection closed |
+| idle socket | 15 s | socket destroyed |
+| header bytes / count | 8192 / 64 | request refused |
+| concurrent admission sockets | 128 | further connections are dropped without a response |
+
+The socket ceiling covers sockets that have **not** upgraded. A WebSocket leaves that budget at
+upgrade, has its idle timeout cleared, and is governed by `maxConnections` and the liveness
+deadline instead. These bounds are defence in depth behind the reverse proxy, not a replacement
+for it: the proxy remains responsible for TLS, its own body and connection limits, and for being
+the only thing that can reach the relay's loopback port.
+
 ### 3.5 Origin
 
 If an `Origin` header is present it must match the configured exact allowlist. `null` and any

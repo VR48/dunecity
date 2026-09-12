@@ -40,6 +40,12 @@ const DEFAULT_CONFIG = {
   bytesPerSecond: LIMITS.BYTES_PER_SECOND,
   backpressureBytes: LIMITS.BACKPRESSURE_BYTES,
   maxSoftErrors: LIMITS.MAX_SOFT_ERRORS,
+  maxHttpSockets: LIMITS.HTTP_MAX_SOCKETS,
+  httpBodyTimeoutMs: LIMITS.HTTP_BODY_TIMEOUT_MS,
+  httpHeadersTimeoutMs: LIMITS.HTTP_HEADERS_TIMEOUT_MS,
+  httpRequestTimeoutMs: LIMITS.HTTP_REQUEST_TIMEOUT_MS,
+  httpKeepAliveTimeoutMs: LIMITS.HTTP_KEEPALIVE_TIMEOUT_MS,
+  httpIdleSocketTimeoutMs: LIMITS.HTTP_IDLE_SOCKET_TIMEOUT_MS,
   log: undefined,
   /** Optional analytics sink; NULL_LIFECYCLE when the operator has not configured one. */
   lifecycle: undefined,
@@ -123,7 +129,41 @@ function createRelay(userConfig = {}) {
     connectionCount: () => connections.size,
   };
 
-  const httpServer = http.createServer(createAdmissionHandler(ctx));
+  // Ingress deadlines. Node only enforces headersTimeout/requestTimeout when its connection
+  // check ticks, so the interval has to be short enough for the deadlines to mean anything.
+  const headersTimeout = Math.min(config.httpHeadersTimeoutMs, config.httpRequestTimeoutMs);
+  const httpServer = http.createServer({
+    headersTimeout,
+    requestTimeout: config.httpRequestTimeoutMs,
+    keepAliveTimeout: config.httpKeepAliveTimeoutMs,
+    connectionsCheckingInterval: Math.max(50, Math.floor(headersTimeout / 2)),
+    maxHeaderSize: LIMITS.HTTP_MAX_HEADER_BYTES,
+  }, createAdmissionHandler(ctx));
+  httpServer.maxHeadersCount = LIMITS.HTTP_MAX_HEADER_COUNT;
+  httpServer.setTimeout(config.httpIdleSocketTimeoutMs);
+  httpServer.on('timeout', (socket) => socket.destroy());
+
+  /**
+   * Sockets that have not become WebSocket connections. Admission requests are short, so a
+   * client occupying one of these for long is either broken or trying to hold the door open;
+   * either way there is a hard ceiling on how many can do it at once. Upgraded sockets leave
+   * this set and are governed by maxConnections instead.
+   */
+  const httpSockets = new Set();
+  httpServer.on('connection', (socket) => {
+    if (httpSockets.size >= config.maxHttpSockets) {
+      log.emit('connection_denied', {
+        code: CLOSE.RATE_LIMITED,
+        reason: 'http_socket_cap',
+        addressTag: log.addressTag(socket.remoteAddress),
+      });
+      socket.destroy();
+      return;
+    }
+    httpSockets.add(socket);
+    socket.on('close', () => httpSockets.delete(socket));
+  });
+
   const wss = new WebSocketServer({
     noServer: true,
     maxPayload: LIMITS.MAX_FRAME_BYTES,
@@ -533,6 +573,11 @@ function createRelay(userConfig = {}) {
     const url = (req.url || '').split('?')[0];
     const address = clientAddress(req, config.trustForwardedFor);
 
+    // A game socket is long-lived and idle between heartbeats: it belongs to the WebSocket
+    // budget from here on, not to the admission one.
+    httpSockets.delete(socket);
+    socket.setTimeout(0);
+
     if (url !== config.socketPath) {
       rejectUpgrade(socket, 404, 'Not Found');
       return;
@@ -662,6 +707,12 @@ function createRelay(userConfig = {}) {
       } catch { /* already gone */ }
     }
     connections.clear();
+    // Admission sockets have no protocol-level goodbye, and an idle one would otherwise keep
+    // httpServer.close() waiting for as long as the client felt like holding it.
+    for (const socket of httpSockets) {
+      try { socket.destroy(); } catch { /* already gone */ }
+    }
+    httpSockets.clear();
     await new Promise((resolve) => wss.close(resolve));
     await new Promise((resolve) => httpServer.close(resolve));
     // Last, so that the shutdown 'left'/'closed' events above get their bounded chance to
@@ -684,6 +735,9 @@ function createRelay(userConfig = {}) {
     connections,
     start,
     stop,
+    get httpSocketCount() {
+      return httpSockets.size;
+    },
     get port() {
       const bound = httpServer.address();
       return bound && bound.port ? bound.port : config.port;

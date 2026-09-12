@@ -21,7 +21,7 @@ npm ci
 npm test
 ```
 
-`npm test` runs seven suites with Node's built-in test runner:
+`npm test` runs eight suites with Node's built-in test runner:
 
 | Suite | Covers |
 | --- | --- |
@@ -32,6 +32,7 @@ npm test
 | `test/abuse.test.js` | grant replay/expiry, foreign origins, wrong roles, banned packet types, cross-room routing, full rooms, deadlines, floods, backpressure |
 | `test/analytics.test.js` | lifecycle DTO schema, configuration and startup failures, HMAC over exact bytes, idempotent retries, queue drops, absolute deadlines, refused redirects, TLS verification, full relay lifecycle into a captured receiver |
 | `test/phase.test.js` | admission and grant redemption once a match has started, co-op intermission, lobby leave/rejoin |
+| `test/ingress.test.js` | slow bodies, unfinished headers, the admission socket ceiling, and that game sockets are not charged to it |
 
 The TLS tests generate a throwaway certificate with the `openssl` binary and skip themselves if
 it is unavailable.
@@ -68,6 +69,11 @@ npm start
 | `RELAY_TRUST_FORWARDED_FOR` | Only enable when exactly one trusted proxy sits in front; the last `X-Forwarded-For` hop is then used for rate limiting. |
 | `RELAY_GAME_PROTOCOL` | Pin `NETWORK_PROTOCOL_VERSION`; `0` accepts any. |
 | `RELAY_MAX_ROOMS`, `RELAY_MAX_CONNECTIONS` | Capacity caps. |
+
+Admission ingress also has fixed deadlines and a ceiling on concurrent non-upgraded sockets;
+see [§3.4.1 of the protocol](../../docs/room-relay-protocol.md). They are defence in depth
+behind the reverse proxy, which stays responsible for TLS and for being the only route to the
+relay's loopback port.
 
 ## Optional lifecycle delivery to the metaserver
 

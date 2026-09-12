@@ -18,23 +18,34 @@ const FIELD_RULES = {
 };
 
 /**
- * Reads at most HTTP_MAX_BODY_BYTES of a request body. A larger body is refused instead of
- * being truncated, so a half-parsed form can never be acted on.
+ * Reads at most HTTP_MAX_BODY_BYTES of a request body, within at most `timeoutMs`. A larger
+ * body is refused instead of being truncated, so a half-parsed form can never be acted on, and
+ * a body that arrives slowly - or a byte at a time, forever - is refused rather than held open.
  */
-function readBoundedBody(req, maxBytes) {
+function readBoundedBody(req, maxBytes, timeoutMs = LIMITS.HTTP_BODY_TIMEOUT_MS) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let total = 0;
     let settled = false;
 
+    let deadline = null;
     const finish = (fn, value) => {
       if (settled) return;
       settled = true;
+      if (deadline !== null) clearTimeout(deadline);
       req.removeAllListeners('data');
       req.removeAllListeners('end');
       req.removeAllListeners('error');
       fn(value);
     };
+
+    if (timeoutMs > 0) {
+      deadline = setTimeout(() => {
+        req.pause();
+        finish(reject, new AdmissionError(408, 'timeout', 'The request body arrived too slowly.'));
+      }, timeoutMs);
+      if (deadline.unref) deadline.unref();
+    }
 
     req.on('data', (chunk) => {
       total += chunk.length;
@@ -212,7 +223,8 @@ function createAdmissionHandler(ctx) {
         throw new AdmissionError(429, 'rate_limited', 'Too many attempts. Try again in a minute.');
       }
 
-      const body = await readBoundedBody(req, LIMITS.HTTP_MAX_BODY_BYTES);
+      const body = await readBoundedBody(req, LIMITS.HTTP_MAX_BODY_BYTES,
+        ctx.config.httpBodyTimeoutMs);
       const form = parseForm(body);
 
       const app = requireField(form, 'app');
@@ -277,6 +289,16 @@ function createAdmissionHandler(ctx) {
           endpoint: url,
           code: 'internal',
           addressTag: ctx.log.addressTag(address),
+        });
+      }
+      // A client that ran out of time part-way through a body is still sending it. Answer
+      // first, then take the socket away rather than reading the rest of it.
+      if (err instanceof AdmissionError && err.code === 'timeout') {
+        const socket = res.socket;
+        res.on('finish', () => {
+          if (socket) {
+            try { socket.destroy(); } catch { /* already gone */ }
+          }
         });
       }
       sendError(res, err);
