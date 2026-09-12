@@ -514,7 +514,20 @@ not the authority.
 Custom asset transfer and mod synchronisation are refused outright (§5.1). Large downloads must
 not share the gameplay socket.
 
-## 9. Logging contract
+## 9. Keeping the two implementations honest
+
+Both sides agreeing with this document is not the same as both sides agreeing with each other: a
+field written in the wrong order, or a length prefix of the wrong width, reads back perfectly to
+whichever side wrote it. So the same byte-for-byte fixtures appear in both test suites:
+
+- `tools/room-relay/test/interop.test.js`
+- `tests/wasm/RelayWireHarness.cpp` (`testWireFixtures`)
+
+They cover `HELLO`, `WELCOME`, `PEER_JOINED`, a routed game payload in both directions, and a
+diagnostic. If one of them has to change, this document, that test and that harness change in the
+same commit, and `RELAY_PROTOCOL_VERSION` changes with them.
+
+## 10. Logging contract
 
 See [docs/room-relay-logging.md](room-relay-logging.md) for the lifecycle event schema the relay
 emits and the integration requirements for the website metaserver repository.

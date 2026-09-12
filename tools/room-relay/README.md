@@ -21,11 +21,12 @@ npm ci
 npm test
 ```
 
-`npm test` runs eight suites with Node's built-in test runner:
+`npm test` runs these suites with Node's built-in test runner:
 
 | Suite | Covers |
 | --- | --- |
 | `test/protocol.test.js` | envelope encode/decode, truncation, trailing bytes, oversized and wrapping lengths, charset limits |
+| `test/interop.test.js` | byte-for-byte fixtures shared with the C++ client in `tests/wasm/RelayWireHarness.cpp` |
 | `test/rooms.test.js` | room codes, grant single use and expiry, seat accounting, reaping, caps |
 | `test/admission.test.js` | HTTP admission, field validation, body limits, Origin allowlist, rate limits, logging hygiene |
 | `test/e2e.test.js` | real `ws` clients: membership, routing, phases, co-op continuation, diagnostics, large payloads, shutdown |

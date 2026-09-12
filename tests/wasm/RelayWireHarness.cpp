@@ -555,6 +555,154 @@ void testAdmissionParsing() {
           "unreserved characters survive form encoding");
 }
 
+// --- cross-implementation fixtures ---------------------------------------------------------
+
+/**
+    The same hex frames as tools/room-relay/test/interop.test.js.
+
+    Two implementations agreeing with a prose specification is not the same as agreeing with each
+    other: a field written in the wrong order, or a length prefix of the wrong width, reads back
+    perfectly to whichever side wrote it. These byte sequences are the actual contract. If one
+    has to change, docs/room-relay-protocol.md, the Node test and this harness change together,
+    and the protocol version changes with them.
+*/
+std::vector<std::uint8_t> fromHex(const std::string& hex) {
+    std::vector<std::uint8_t> out;
+    out.reserve(hex.size() / 2);
+    const auto nibble = [](char c) -> int {
+        if(c >= '0' && c <= '9') return c - '0';
+        if(c >= 'a' && c <= 'f') return c - 'a' + 10;
+        if(c >= 'A' && c <= 'F') return c - 'A' + 10;
+        return -1;
+    };
+    for(std::size_t index = 0; index + 1 < hex.size(); index += 2) {
+        const int high = nibble(hex[index]);
+        const int low = nibble(hex[index + 1]);
+        if(high < 0 || low < 0) {
+            return std::vector<std::uint8_t>();
+        }
+        out.push_back(static_cast<std::uint8_t>((high << 4) | low));
+    }
+    return out;
+}
+
+std::string toHex(const std::vector<std::uint8_t>& bytes) {
+    static const char* digits = "0123456789abcdef";
+    std::string out;
+    out.reserve(bytes.size() * 2);
+    for(const std::uint8_t value : bytes) {
+        out.push_back(digits[(value >> 4) & 0x0F]);
+        out.push_back(digits[value & 0x0F]);
+    }
+    return out;
+}
+
+const char* const kHelloFixture =
+    "01"
+    "0001"
+    "0005"
+    "10" "30313233343536373839616263646566"
+    "06" "6e6174697665"
+    "07" "312e302e363535"
+    "08" "6465616462656566"
+    "06" "73746566616e";
+
+const char* const kWelcomeFixture =
+    "81"
+    "0001"
+    "0005"
+    "00000007"
+    "01"
+    "0e" "483450512d3754324d2d39584b42"
+    "02"
+    "01"
+    "0003fff0"
+    "1388"
+    "4e20";
+
+const char* const kPeerJoinedFixture =
+    "82"
+    "0000000b"
+    "02"
+    "05" "6775657374"
+    "07" "62726f77736572";
+
+const char* const kServerRelayFixture =
+    "85"
+    "00000003"
+    "01"
+    "01"
+    "0009"
+    "00000006"
+    "09000000aabb";
+
+const char* const kClientRelayFixture =
+    "02"
+    "00000000"
+    "01"
+    "01"
+    "0009"
+    "00000006"
+    "09000000aabb";
+
+const char* const kClientDiagnosticFixture =
+    "06"
+    "01"
+    "00000004"
+    "01020304";
+
+void testWireFixtures() {
+    // What this client sends has to be byte-identical to what the relay's own tests accept.
+    RoomRelay::HelloFields fields;
+    fields.gameProtocolVersion = 5;
+    fields.grant       = "0123456789abcdef";
+    fields.runtime     = "native";
+    fields.appVersion  = "1.0.655";
+    fields.contentHash = "deadbeef";
+    fields.displayName = "stefan";
+
+    std::vector<std::uint8_t> hello;
+    check(RoomRelay::encodeHello(fields, hello), "the fixture handshake is produced");
+    check(toHex(hello) == kHelloFixture, "the handshake matches the shared byte fixture");
+
+    const std::vector<std::uint8_t> payload = {0x09, 0x00, 0x00, 0x00, 0xAA, 0xBB};
+    std::vector<std::uint8_t> clientRelay;
+    check(RoomRelay::encodeRelay(0, 1, true, payload.data(), payload.size(), clientRelay),
+          "the fixture game payload is wrapped");
+    check(toHex(clientRelay) == kClientRelayFixture,
+          "a routed game payload matches the shared byte fixture");
+
+    const std::vector<std::uint8_t> diagnosticBody = {0x01, 0x02, 0x03, 0x04};
+    std::vector<std::uint8_t> diagnostic;
+    check(RoomRelay::encodeDiagnostic(RoomRelay::DiagnosticKind::StateDigest,
+                                      diagnosticBody.data(), diagnosticBody.size(), diagnostic),
+          "the fixture diagnostic is wrapped");
+    check(toHex(diagnostic) == kClientDiagnosticFixture,
+          "a diagnostic matches the shared byte fixture");
+
+    // And what the relay sends has to be understood exactly as the relay meant it.
+    RoomRelay::ServerFrame frame;
+    check(decodes(fromHex(kWelcomeFixture), frame), "the fixture WELCOME decodes");
+    check(frame.peerId == 7 && frame.role == RoomRelay::Role::Host
+          && frame.roomCode == "H4PQ-7T2M-9XKB" && frame.maxPeers == 2
+          && frame.phase == RoomRelay::Phase::Lobby,
+          "the fixture WELCOME is understood field for field");
+    check(frame.maxPayloadBytes == 262128 && frame.heartbeatIntervalMs == 5000
+          && frame.livenessTimeoutMs == 20000,
+          "the fixture WELCOME carries the relay's own limits");
+
+    check(decodes(fromHex(kPeerJoinedFixture), frame), "the fixture PEER_JOINED decodes");
+    check(frame.peerId == 11 && frame.role == RoomRelay::Role::Client
+          && frame.displayName == "guest" && frame.runtime == "browser",
+          "the fixture PEER_JOINED is understood field for field");
+
+    check(decodes(fromHex(kServerRelayFixture), frame), "the fixture RELAY decodes");
+    check(frame.senderPeerId == 3 && frame.channel == 1
+          && frame.gameMessageType == NETWORKPACKET_COMMANDLIST,
+          "the fixture RELAY is understood field for field");
+    check(frame.payload == payload, "the game payload survives the relay byte for byte");
+}
+
 // --- deterministic state digest ------------------------------------------------------------
 
 void testStateDigest() {
@@ -626,6 +774,7 @@ int main() {
     testEndpointValidation();
     testRoomCodes();
     testAdmissionParsing();
+    testWireFixtures();
     testStateDigest();
 
     std::printf("relay wire harness: %d checks, %d failures (size_t is %zu bytes)\n",
