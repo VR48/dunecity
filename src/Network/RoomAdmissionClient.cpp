@@ -166,14 +166,9 @@ public:
     }
 
     static void onFailed(emscripten_fetch_t* fetch) {
-        auto* state = static_cast<SharedState*>(fetch->userData);
-        if(state != nullptr) {
-            SharedState& shared = *state;
-            if(!shared.cancelled) {
-                shared.httpStatus = fetch->status;
-                shared.finished = true;
-            }
-        }
+        // HTTP refusals (expired invitation, full room, incompatible content) use
+        // this callback too. Preserve their bounded body so the UI can explain them.
+        onSucceeded(fetch);
     }
 
     std::string url;
