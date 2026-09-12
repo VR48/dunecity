@@ -28,6 +28,7 @@ jobs:
         run: |
           python3 tools/room-relay/deploy/test-artifact-manifest.py
           python3 tools/room-relay/deploy/test-relay-supervisor.py
+          python3 tools/room-relay/deploy/test-release-pinning.py
   # Gate: on v* tag builds, verify that the source-controlled version metadata
   # (CMakeLists.txt, include/config.h, vcpkg.json) already matches the tag.
   # This catches missing bump commits BEFORE any build/release/upload runs.

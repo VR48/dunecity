@@ -55,6 +55,9 @@ KEY_FILE = pathlib.Path(os.environ.get('RELAY_GATEWAY_KEY_FILE', str(PRIVATE / '
 HEALTH_URL = os.environ.get('RELAY_HEALTH_URL', 'http://127.0.0.1:18787/v1/health')
 STATE = pathlib.Path(os.environ.get('RELAY_STATE_DIR', str(BASE / 'state')))
 KEY_PATTERN = re.compile(r'^[0-9a-f]{64}$')
+# Pin the release for this supervisor's lifetime. A rollout stops this supervisor
+# and starts the wrapper from the new release; current is never followed again.
+PINNED_RELEASE = pathlib.Path(os.path.realpath(BASE / 'current'))
 
 
 def number(name, default, low, high):
@@ -86,7 +89,7 @@ def log(event, **fields):
 
 
 def release_path():
-    return pathlib.Path(os.path.realpath(BASE / 'current'))
+    return PINNED_RELEASE
 
 
 def manifest_pairs():
@@ -106,7 +109,7 @@ def child_command():
     raw = os.environ.get('RELAY_SUPERVISOR_CHILD')
     if raw:
         return shlex.split(raw)
-    return ['/bin/bash', str(release_path() / 'deploy' / 'run-user-relay.sh'), '--exec-child']
+    return ['/bin/bash', str(release_path() / 'deploy' / 'run-user-relay.sh'), '--exec-child', str(release_path())]
 
 
 def verify_artifacts():

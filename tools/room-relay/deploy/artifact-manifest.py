@@ -30,7 +30,7 @@ import sys
 import tempfile
 import urllib.parse
 
-FORMAT = 'dune-artifact-manifest v1'
+FORMAT = 'dune-artifact-manifest v2'
 # Paths and symlink targets are percent-encoded, so a name containing a space or
 # a newline cannot forge extra fields or extra lines.
 SAFE = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/._-+@'
@@ -118,11 +118,16 @@ def resolve_root(root):
         raise Refused('Cannot read the covered root: ' + str(error)) from None
     if not stat.S_ISDIR(info.st_mode):
         raise Refused('The covered root is not a directory: ' + str(real))
+    if info.st_uid != os.getuid():
+        raise Refused('Covered root is owned by another account: ' + str(real))
+    if stat.S_IMODE(info.st_mode) & 0o022:
+        raise Refused('Covered root is group/other writable: ' + str(real))
     return real
 
 
 def render(root, uid, entries):
-    lines = [FORMAT, 'root ' + quote(str(root)), 'uid ' + str(uid), 'count ' + str(len(entries))]
+    lines = [FORMAT, 'root ' + quote(str(root)), 'uid ' + str(uid), 'count ' + str(len(entries)),
+             'root_mode %04o' % stat.S_IMODE(root.stat().st_mode)]
     for rel in sorted(entries, key=lambda name: name.encode()):
         kind, mode, size, extra, _ = entries[rel]
         lines.append('%s %s %s %s %s' % (
@@ -144,7 +149,7 @@ def require_hygiene(entries, uid):
 
 def parse(text):
     lines = text.splitlines()
-    if len(lines) < 5 or lines[0] != FORMAT:
+    if len(lines) < 6 or lines[0] != FORMAT:
         raise Refused('Not a ' + FORMAT + ' manifest')
     if not lines[-1].startswith('digest '):
         raise Refused('Manifest has no trailing digest')
@@ -153,14 +158,14 @@ def parse(text):
     if hashlib.sha256(body.encode()).hexdigest() != want:
         raise Refused('Manifest digest does not cover its own contents')
     header = {}
-    for line in lines[1:4]:
+    for line in lines[1:5]:
         key, _, value = line.partition(' ')
         header[key] = value
-    for key in ('root', 'uid', 'count'):
+    for key in ('root', 'uid', 'count', 'root_mode'):
         if key not in header:
             raise Refused('Manifest header is missing ' + key)
     entries = {}
-    for line in lines[4:-1]:
+    for line in lines[5:-1]:
         fields = line.split(' ')
         if len(fields) != 5:
             raise Refused('Malformed manifest line: ' + line)
@@ -174,7 +179,7 @@ def parse(text):
                         int(size) if kind == 'f' else 0, extra, int(header['uid']))
     if len(entries) != int(header['count']):
         raise Refused('Manifest lists %d entries but declares %s' % (len(entries), header['count']))
-    return pathlib.Path(unquote(header['root'])), int(header['uid']), entries
+    return pathlib.Path(unquote(header['root'])), int(header['uid']), int(header['root_mode'], 8), entries
 
 
 def describe(kind, mode, size, extra):
@@ -228,7 +233,7 @@ def verify_manifest(root, manifest):
     except OSError as error:
         raise Refused('Cannot read the manifest: ' + str(error)) from None
     with os.fdopen(fd, 'r') as handle:
-        recorded_root, recorded_uid, recorded = parse(handle.read())
+        recorded_root, recorded_uid, recorded_mode, recorded = parse(handle.read())
     real = resolve_root(root)
     if recorded_root != real:
         raise Refused('Manifest covers %s but %s was presented (re-pointed release?)'
@@ -236,6 +241,8 @@ def verify_manifest(root, manifest):
     if recorded_uid != os.getuid():
         raise Refused('Manifest was recorded by uid %d but verified as uid %d'
                       % (recorded_uid, os.getuid()))
+    if stat.S_IMODE(real.stat().st_mode) != recorded_mode:
+        raise Refused('Covered root mode changed: ' + str(real))
     observed = scan(real)
     require_hygiene(observed, recorded_uid)
     problems = compare(recorded, observed)

@@ -22,7 +22,11 @@ private="/var/www/data/dunecity-relay"
 state="$base/state"
 
 if [[ ${1:-} == --exec-child ]]; then
-  release=$(readlink -f "$base/current")
+  # The supervisor passes the same absolute release it verified. Never follow
+  # current here: it may have changed during an operator's rollout.
+  release=${2:-}
+  own_release=$(dirname "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")")
+  [[ "$release" == /* && "$release" == "$own_release" && $# == 2 ]] || exit 2
   cd "$release"
   ulimit -c 0
   ulimit -n 256
@@ -45,7 +49,7 @@ if [[ ${1:-} == --exec-child ]]; then
     --allow-fs-read="$private/analytics.key" --allow-fs-read=/etc/ssl/certs \
     --max-old-space-size=192 --disable-proto=throw src/index.js
 fi
-[[ -z ${1:-} ]] || { echo "usage: run-user-relay.sh [--exec-child]" >&2; exit 2; }
+[[ -z ${1:-} ]] || { echo "usage: run-user-relay.sh [--exec-child VERIFIED_RELEASE]" >&2; exit 2; }
 
 # Trimming happens here, before the lock: the supervisor holds the lock for its
 # whole life, so this minute-by-minute run is the only thing that bounds the log.

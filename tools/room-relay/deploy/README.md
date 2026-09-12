@@ -69,7 +69,7 @@ are not distinguished from ordinary files (content is hashed either way).
   `$base/service.log`, verifies the two manifests and `exec`s the supervisor,
   which inherits the held descriptor. Trimming happens before the lock because
   the supervisor holds that lock for its whole life.
-* with `--exec-child` it is the launcher the supervisor spawns: no lock at all
+* with `--exec-child VERIFIED_RELEASE` it is the launcher the supervisor spawns: no lock at all
   (so there is no nested lock to deadlock on), and the unchanged clean-env
   `sandbox.py` Landlock chain. Every step is an `exec`, so the PID the
   supervisor holds is the Node process itself.
@@ -261,3 +261,13 @@ rollback during failed activation.
 exercises the destination, atomic-install, inventory, manifest-coverage, health-body
 and vhost-map helpers against fixtures in a private temporary directory. It needs no
 privileges and touches nothing under `/etc`, `/root`, `/opt` or any service.
+
+The covered root directory's owner and exact mode are checked as well as all
+children (manifest format v2). Ancestors must remain inside the deployment
+account's private home; same-account changes remain outside the tamper guarantee.
+The supervisor pins one release for its lifetime and passes that exact path to
+the child launcher. The launcher checks that it is its own script directory;
+the sandbox also uses its own release rather than following `current`. Stop the
+old supervisor before activating a new release and regenerating manifests.
+`test-release-pinning.py` switches `current` after verification and verifies that
+the old, verified release executes while a mismatched launch path is refused.

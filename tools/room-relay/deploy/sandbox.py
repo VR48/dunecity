@@ -62,7 +62,8 @@ def main():
     executable = pathlib.Path(sys.argv[1]).resolve(strict=True)
     base = pathlib.Path('/home/dunelegacy-deploy/dunecity-relay')
     private = pathlib.Path('/var/www/data/dunecity-relay')
-    required = [base / 'current', private / 'gateway.key', private / 'analytics.key',
+    # Match the exact script/release selected and verified by the supervisor.
+    required = [pathlib.Path(__file__).resolve().parent.parent, private / 'gateway.key', private / 'analytics.key',
                 '/usr/lib/x86_64-linux-gnu', '/etc/ssl/certs', '/etc/ssl/openssl.cnf', '/etc/ld.so.cache',
                 '/etc/nsswitch.conf', '/etc/resolv.conf', '/etc/hosts',
                 '/lib64/ld-linux-x86-64.so.2', '/dev/urandom', '/dev/null']

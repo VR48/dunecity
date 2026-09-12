@@ -144,6 +144,28 @@ with tempfile.TemporaryDirectory(prefix='dune-manifest-tests-') as tmp:
     build_tree(tree)
     accepts('verify accepts the tree once more after every refusal', tree, manifest)
 
+    # Root metadata is part of the artifact, not only its descendants.
+    root_mode = tree.stat().st_mode & 0o7777
+    os.chmod(tree, 0o777)
+    refuses('refuses a writable artifact root', tree, manifest, 'root is group/other writable')
+    os.chmod(tree, 0o700 if root_mode != 0o700 else 0o755)
+    refuses('refuses safe but changed root permissions', tree, manifest, 'root mode changed')
+    os.chmod(tree, root_mode)
+    accepts('restored root permissions verify', tree, manifest)
+    import importlib.util
+    from unittest import mock
+    sys.dont_write_bytecode = True
+    spec = importlib.util.spec_from_file_location('manifest_under_test', TOOL)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    with mock.patch.object(module.os, 'getuid', return_value=os.getuid()+1):
+        try:
+            module.resolve_root(tree)
+            wrong_owner_refused = False
+        except module.Refused as error:
+            wrong_owner_refused = 'owned by another account' in str(error)
+    report(wrong_owner_refused, 'refuses root ownership belonging to another account')
+
     # --- the covered root is pinned by absolute path --------------------
     moved = home / 'releases' / 'def'
     build_tree(moved)
