@@ -165,7 +165,7 @@ private:
         while(!outgoing_.empty()) {
             std::vector<std::uint8_t>& frame = outgoing_.front();
             const EMSCRIPTEN_RESULT result = emscripten_websocket_send_binary(
-                socket_, frame.data(), static_cast<uint32_t>(frame.size()));
+                socket_, frame.data(), static_cast<std::uint32_t>(frame.size()));
             if(result != EMSCRIPTEN_RESULT_SUCCESS) {
                 fail("The connection to the game was lost.");
                 return;

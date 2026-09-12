@@ -62,6 +62,8 @@
 
 namespace {
 
+#ifdef DUNECITY_HAVE_CURL_WEBSOCKET
+
 /// Longest we wait for the TCP/TLS/upgrade handshake before giving up.
 constexpr Uint32 kConnectTimeoutMs = 15000;
 /// One read buffer. curl hands back at most this much per curl_ws_recv() call.
@@ -115,8 +117,6 @@ void configureRelayCertificates(CURL* curl) {
         curl_easy_setopt(curl, CURLOPT_CAINFO, certificateBundle.c_str());
     }
 }
-
-#ifdef DUNECITY_HAVE_CURL_WEBSOCKET
 
 class CurlRelayWebSocket final : public RelayWebSocket {
 public:

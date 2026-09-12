@@ -14,6 +14,14 @@ Read in this order:
 6. `analysis/simcity-architecture.md` — Micropolis architecture details.
 7. `scripts/SPRITE-IMPORT.md` — sprite import/adaptation notes, if working on art/rendering.
 
+For multiplayer work:
+
+- `docs/network-hardening.md` — the legacy ENet trust boundary.
+- `docs/crossplay.md` — the desktop/browser room relay: how it fits together, how to build and
+  run it, and what it deliberately does not do.
+- `docs/room-relay-protocol.md` — the wire contract the relay and both clients implement.
+- `docs/room-relay-logging.md` — relay lifecycle events and metaserver integration requirements.
+
 ## Project shape
 
 DuneCity is a Dune Legacy C++17/SDL2 RTS fork with Micropolis-style city-building concepts being integrated.
@@ -46,6 +54,13 @@ The VSCode workspace includes both folders so agents can inspect Micropolis as r
    - City actions should route through `CommandManager` where they affect game state.
    - Avoid floating point in saved simulation state.
    - Preserve save/load compatibility gates.
+
+6. Two multiplayer transports, one receive path.
+   - Legacy desktop games keep the ENet mesh, LAN discovery, the metaserver and UPnP unchanged.
+   - Crossplay (browser and updated desktop) uses the room relay: one outbound WebSocket, no
+     address anywhere in the path, bundled content only.
+   - Payload validation and handling live once, in `GamePayloadRouter`, so a fix lands on both.
+   - Do not add a second parser or a second authorisation table for either transport.
 
 ## Important code areas
 
