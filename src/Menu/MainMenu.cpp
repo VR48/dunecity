@@ -28,6 +28,8 @@
 #include <Menu/SinglePlayerMenu.h>
 #include <Menu/MultiPlayerMenu.h>
 #include <Menu/OptionsMenu.h>
+#include <Menu/DisplayMenu.h>
+#include <misc/MenuLayout.h>
 #include <Menu/ModMenu.h>
 #include <Menu/Dune2REditorMenu.h>
 #include <Menu/AboutMenu.h>
@@ -41,7 +43,9 @@
 #include <config.h>
 
 #include <cstdio>
+#include <cctype>
 #include <fstream>
+#include <vector>
 
 namespace {
 // Marker file under the user config dir. Once written, the first-launch
@@ -70,6 +74,84 @@ void writeFirstLaunchMarker() {
     std::ofstream out(p);
     out << "Dune City " << VERSION << "\n";
 }
+
+class ModesMenu final : public MenuBase {
+public:
+    ModesMenu() {
+        SDL_Texture* background = pGFXManager->getUIGraphic(UI_MenuBackground);
+        setBackground(background);
+        resize(getTextureSize(background));
+        setWindowWidget(&windowWidget);
+
+        singlePlayerButton.setText(_("SINGLE PLAYER"));
+        singlePlayerButton.setOnClick([this]() { SinglePlayerMenu().showMenu(); });
+        singlePlayerButton.setActive();
+        multiPlayerButton.setText(_("MULTIPLAYER"));
+        multiPlayerButton.setOnClick([this]() { MultiPlayerMenu().showMenu(); });
+        mapEditorButton.setText(_("MAP EDITOR"));
+        mapEditorButton.setOnClick([this]() { MapEditor().RunEditor(); });
+        modsButton.setText(_("MODS"));
+        modsButton.setOnClick([this]() { ModMenu().showMenu(); });
+        backButton.setText(_("BACK"));
+        backButton.setOnClick([this]() { quit(); });
+
+        SDL_Texture* planet = pGFXManager->getUIGraphic(UI_PlanetBackground);
+        SDL_Texture* logo = pGFXManager->getUIGraphic(UI_DuneLegacy);
+        planetPicture.setTexture(planet);
+        logoPicture.setTexture(logo);
+
+        TextButton* buttons[] = {&singlePlayerButton, &multiPlayerButton, &mapEditorButton,
+                                 &modsButton, &backButton};
+        if(validatedStartMenuMode(settings.video.startMenuMode) == 1) {
+            const StartMenuLayout layout{getSize().x, getSize().y, 5};
+            planetPicture.setFitToSize(true);
+            windowWidget.addWidget(&planetPicture, layout.planetBounds());
+            logoPicture.setFitToSize(true);
+            windowWidget.addWidget(&logoPicture, layout.logoBounds());
+
+            SDL_Texture* border = pGFXManager->getUIGraphic(UI_MenuButtonBorder);
+            buttonBorder.setTexture(border);
+            buttonBorder.setStretchToSize(true);
+            windowWidget.addWidget(&buttonBorder, layout.borderBounds());
+            for(int i = 0; i < 5; ++i) windowWidget.addWidget(buttons[i], layout.button(i));
+        } else {
+            SDL_Rect planetBounds = calcAlignedDrawingRect(planet);
+            planetBounds.y = planetBounds.y - getHeight(planet) / 2 + 10;
+            windowWidget.addWidget(&planetPicture, planetBounds);
+
+            SDL_Rect logoBounds = calcAlignedDrawingRect(logo);
+            logoBounds.y = logoBounds.y + getHeight(logo) / 2 + 28;
+            windowWidget.addWidget(&logoPicture, logoBounds);
+
+            SDL_Texture* border = pGFXManager->getUIGraphic(UI_MenuButtonBorder);
+            buttonBorder.setTexture(border);
+            SDL_Rect borderBounds = calcAlignedDrawingRect(border);
+            borderBounds.y = borderBounds.y + getHeight(border) / 2 + 59;
+            windowWidget.addWidget(&buttonBorder, borderBounds);
+
+            constexpr int listHeight = 111;
+            constexpr int gap = 3;
+            constexpr int buttonHeight = (listHeight - 4 * gap) / 5;
+            const int x = (getSize().x - 160) / 2;
+            const int y = getSize().y / 2 + 64;
+            for(int i = 0; i < 5; ++i) {
+                windowWidget.addWidget(buttons[i], Point(x, y + i * (buttonHeight + gap)),
+                                       Point(160, buttonHeight));
+            }
+        }
+    }
+
+private:
+    StaticContainer windowWidget;
+    PictureLabel planetPicture;
+    PictureLabel logoPicture;
+    PictureLabel buttonBorder;
+    TextButton singlePlayerButton;
+    TextButton multiPlayerButton;
+    TextButton mapEditorButton;
+    TextButton modsButton;
+    TextButton backButton;
+};
 } // namespace
 
 MainMenu::MainMenu()
@@ -83,118 +165,78 @@ MainMenu::MainMenu()
     resize(getTextureSize(pBackground));
 
     setWindowWidget(&windowWidget);
+    enlargedStartMenus = validatedStartMenuMode(settings.video.startMenuMode) == 1;
 
-    // set up pictures in the background
-    // set up pictures in the background
-    SDL_Texture* pPlanetBackground = pGFXManager->getUIGraphic(UI_PlanetBackground);
-    planetPicture.setTexture(pPlanetBackground);
-    SDL_Rect dest1 = calcAlignedDrawingRect(pPlanetBackground);
-    dest1.y = dest1.y - getHeight(pPlanetBackground)/2 + 10;
-    windowWidget.addWidget(&planetPicture, dest1);
-
-    SDL_Texture* pDuneLegacy = pGFXManager->getUIGraphic(UI_DuneLegacy);
-    duneLegacy.setTexture(pDuneLegacy);
-    SDL_Rect dest2 = calcAlignedDrawingRect(pDuneLegacy);
-    dest2.y = dest2.y + getHeight(pDuneLegacy)/2 + 28;
-    windowWidget.addWidget(&duneLegacy, dest2);
-
-    SDL_Texture* pMenuButtonBorder = pGFXManager->getUIGraphic(UI_MenuButtonBorder);
-    buttonBorder.setTexture(pMenuButtonBorder);
-    SDL_Rect dest3 = calcAlignedDrawingRect(pMenuButtonBorder);
-    dest3.y = dest3.y + getHeight(pMenuButtonBorder)/2 + 59;
-    windowWidget.addWidget(&buttonBorder, dest3);
-
-    // set up menu buttons
-    windowWidget.addWidget(&MenuButtons,Point((getRendererWidth() - 160)/2,getRendererHeight()/2 + 64),Point(160,128));
-
-    singlePlayerButton.setText(_("SINGLE PLAYER"));
-    singlePlayerButton.setOnClick(std::bind(&MainMenu::onSinglePlayer, this));
-    MenuButtons.addWidget(&singlePlayerButton);
-    singlePlayerButton.setActive();
-
-    MenuButtons.addWidget(VSpacer::create(3));
-
-    multiPlayerButton.setText(_("MULTIPLAYER"));
-    multiPlayerButton.setOnClick(std::bind(&MainMenu::onMultiPlayer, this));
-    MenuButtons.addWidget(&multiPlayerButton);
-
-    MenuButtons.addWidget(VSpacer::create(3));
-
-//    MenuButtons.addWidget(VSpacer::create(16));
-    mapEditorButton.setText(_("MAP EDITOR"));
-    mapEditorButton.setOnClick(std::bind(&MainMenu::onMapEditor, this));
-    MenuButtons.addWidget(&mapEditorButton);
-
-    MenuButtons.addWidget(VSpacer::create(3));
-
-    modsButton.setText(_("MODS"));
-    modsButton.setOnClick(std::bind(&MainMenu::onMods, this));
-    MenuButtons.addWidget(&modsButton);
-
-    dune2rEditorButton.setText("Dune2R EditoR");
+    modesButton.setText(_("MODES"));
+    modesButton.setOnClick(std::bind(&MainMenu::onModes, this));
+    modesButton.setActive();
+    dune2rEditorButton.setText("DUNE2R ASSETS");
     dune2rEditorButton.setOnClick(std::bind(&MainMenu::onDune2REditor, this));
-    windowWidget.addWidget(&dune2rEditorButton,
-                           Point((getRendererWidth() + 160) / 2 + 16,
-                                 getRendererHeight()/2 + 113),
-                           Point(150, 26));
-    refreshDune2REditorButton();
-
-    MenuButtons.addWidget(VSpacer::create(3));
-
     optionsButton.setText(_("OPTIONS"));
     optionsButton.setOnClick(std::bind(&MainMenu::onOptions, this));
-    MenuButtons.addWidget(&optionsButton);
-
-    MenuButtons.addWidget(VSpacer::create(3));
-
+    displayButton.setText(_("DISPLAY"));
+    displayButton.setOnClick(std::bind(&MainMenu::onDisplay, this));
     howToPlayButton.setText(_("HOW TO PLAY"));
     howToPlayButton.setOnClick(std::bind(&MainMenu::onHowToPlay, this));
-    MenuButtons.addWidget(&howToPlayButton);
-
-    MenuButtons.addWidget(VSpacer::create(3));
-
     aboutButton.setText(_("ABOUT"));
     aboutButton.setOnClick(std::bind(&MainMenu::onAbout, this));
-    MenuButtons.addWidget(&aboutButton);
-
-    MenuButtons.addWidget(VSpacer::create(3));
-
     quitButton.setText(_("QUIT"));
     quitButton.setOnClick(std::bind(&MainMenu::onQuit, this));
-    MenuButtons.addWidget(&quitButton);
+    SDL_Texture* pPlanet = pGFXManager->getUIGraphic(UI_PlanetBackground);
+    SDL_Texture* pLogo = pGFXManager->getUIGraphic(UI_DuneLegacy);
+    planetPicture.setTexture(pPlanet);
+    logoPicture.setTexture(pLogo);
 
-    // Bottom-left watermark: <active mod display name> stacked over v<VERSION>.
-    {
-        modVersionLabel.setTextFontSize(16);
-        modVersionLabel.setTextColor(COLOR_WHITE, COLOR_BLACK);
-        modVersionLabel.setAlignment(static_cast<Alignment_Enum>(Alignment_Left | Alignment_VCenter));
-        refreshModVersionLabel();
+    if(enlargedStartMenus) {
+        const StartMenuLayout layout{getSize().x, getSize().y, 6};
+        planetPicture.setFitToSize(true);
+        windowWidget.addWidget(&planetPicture, layout.planetBounds());
+        logoPicture.setFitToSize(true);
+        windowWidget.addWidget(&logoPicture, layout.logoBounds());
 
-        const int labelWidth  = 220;
-        const int labelHeight = 50;
-        const int marginX     = 12;
-        const int marginY     = 8;
-        windowWidget.addWidget(&modVersionLabel,
-                               Point(marginX,
-                                     getRendererHeight() - labelHeight - marginY),
-                               Point(labelWidth, labelHeight));
+        SDL_Texture* pBorder = pGFXManager->getUIGraphic(UI_MenuButtonBorder);
+        buttonBorder.setTexture(pBorder);
+        buttonBorder.setStretchToSize(true);
+        windowWidget.addWidget(&buttonBorder, layout.borderBounds());
+    } else {
+        SDL_Rect planetBounds = calcAlignedDrawingRect(pPlanet);
+        planetBounds.y = planetBounds.y - getHeight(pPlanet) / 2 + 10;
+        windowWidget.addWidget(&planetPicture, planetBounds);
+
+        SDL_Rect logoBounds = calcAlignedDrawingRect(pLogo);
+        logoBounds.y = logoBounds.y + getHeight(pLogo) / 2 + 28;
+        windowWidget.addWidget(&logoPicture, logoBounds);
+
+        SDL_Texture* pBorder = pGFXManager->getUIGraphic(UI_MenuButtonBorder);
+        buttonBorder.setTexture(pBorder);
+        SDL_Rect borderBounds = calcAlignedDrawingRect(pBorder);
+        borderBounds.y = borderBounds.y + getHeight(pBorder) / 2 + 59;
+        windowWidget.addWidget(&buttonBorder, borderBounds);
+
     }
-
-    // Left-side info text: tell players about the DuneCity mod.
-    {
-        cityInfoLabel.setTextFontSize(14);
-        cityInfoLabel.setTextColor(COLOR_YELLOW, COLOR_BLACK);
-        cityInfoLabel.setAlignment(static_cast<Alignment_Enum>(Alignment_Left | Alignment_Top));
-        cityInfoLabel.setText(_("DUNE CITY\nCity-building RTS mod\n\nActivate via MODS menu\nEnable 'dunecity' then\nstart a Custom game"));
-
-        const int infoWidth  = 180;
-        const int infoHeight = 110;
-        const int marginX    = 16;
-        // Align vertically with the menu buttons
-        const int menuY = getRendererHeight()/2 + 64;
-        windowWidget.addWidget(&cityInfoLabel,
-                               Point(marginX, menuY),
-                               Point(infoWidth, infoHeight));
+    TextButton* allButtons[] = {&modesButton, &optionsButton, &displayButton, &howToPlayButton,
+                                &dune2rEditorButton, &aboutButton, &quitButton};
+    for(TextButton* button : allButtons) {
+        windowWidget.addWidget(button, Point(0, 0), Point(1, 1));
+    }
+    // The generic product logo must not imply DuneCity rules when Vanilla is active.
+    logoPicture.setVisible(false);
+    activeModLabel.setTextFontSize(24);
+    // Same-colour shadow supplies an extra pixel of weight to the lettering.
+    activeModLabel.setTextColor(COLOR_WHITE, COLOR_WHITE, COLOR_BLACK);
+    activeModLabel.setAlignment(static_cast<Alignment_Enum>(Alignment_HCenter | Alignment_VCenter));
+    windowWidget.addWidget(&activeModLabel, Point(0, 0), Point(1, 1));
+    refreshContextButtons();
+    modVersionLabel.setTextFontSize(14);
+    modVersionLabel.setTextColor(COLOR_WHITE, COLOR_BLACK);
+    modVersionLabel.setAlignment(enlargedStartMenus
+        ? Alignment_HCenter
+        : static_cast<Alignment_Enum>(Alignment_Left | Alignment_VCenter));
+    refreshModVersionLabel();
+    if(enlargedStartMenus) {
+        windowWidget.addWidget(&modVersionLabel, Point(24, getSize().y - 30), Point(getSize().x - 48, 24));
+    } else {
+        windowWidget.addWidget(&modVersionLabel, Point(12, getSize().y - 58), Point(220, 50));
     }
 }
 
@@ -226,12 +268,21 @@ void MainMenu::refreshModVersionLabel()
         }
     }
 
-    if (activeModName == lastShownModName) {
+    if (activeModName == lastShownModName && !modVersionLabel.getText().empty()) {
         return;
     }
     lastShownModName = activeModName;
     try {
-        modVersionLabel.setText(modDisplayName + "\nv" + std::string(VERSION));
+        std::transform(modDisplayName.begin(), modDisplayName.end(), modDisplayName.begin(),
+            [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+        const std::string bannerText = "MOD: " + modDisplayName;
+        int bannerFontSize = 24;
+        const int bannerWidth = std::min(getSize().x - 48, 420);
+        while (bannerFontSize > 12 && GUIStyle::getInstance().getMinimumLabelSize(bannerText, bannerFontSize).x > bannerWidth)
+            --bannerFontSize;
+        activeModLabel.setTextFontSize(bannerFontSize);
+        activeModLabel.setText(bannerText);
+        modVersionLabel.setText("v" + std::string(VERSION));
     } catch (const std::exception& e) {
         SDL_Log("MainMenu: setText failed: %s", e.what());
     }
@@ -277,7 +328,7 @@ void MainMenu::update()
     // CustomGamePlayers); refresh the watermark on every tick so it
     // tracks the live ModManager state when control returns here.
     refreshModVersionLabel();
-    refreshDune2REditorButton();
+    refreshContextButtons();
 
     // Process version check results
 #ifndef __EMSCRIPTEN__
@@ -337,28 +388,9 @@ void MainMenu::onChildWindowClose(Window* pChildWindow)
     }
 }
 
-void MainMenu::onSinglePlayer() const
+void MainMenu::onModes() const
 {
-    SinglePlayerMenu singlePlayerMenu;
-    singlePlayerMenu.showMenu();
-}
-
-void MainMenu::onMultiPlayer() const
-{
-    MultiPlayerMenu multiPlayerMenu;
-    multiPlayerMenu.showMenu();
-}
-
-void MainMenu::onMapEditor() const
-{
-    MapEditor mapEditor;
-    mapEditor.RunEditor();
-}
-
-void MainMenu::onMods() const
-{
-    ModMenu modMenu;
-    modMenu.showMenu();
+    ModesMenu().showMenu();
 }
 
 void MainMenu::onDune2REditor() const
@@ -370,12 +402,56 @@ void MainMenu::onDune2REditor() const
     }
 }
 
-void MainMenu::refreshDune2REditorButton()
+void MainMenu::refreshContextButtons()
 {
-    const bool available = ModManager::instance().isInitialized()
-                           && ModManager::instance().getActiveModName() == "Dune2R";
-    dune2rEditorButton.setVisible(available);
-    dune2rEditorButton.setEnabled(available);
+    ModManager& modManager = ModManager::instance();
+    const std::string activeMod = modManager.isInitialized() ? modManager.getActiveModName() : std::string();
+    const bool showDune2R = activeMod == "Dune2R";
+    const bool showHowToPlay = activeMod == "dunecity";
+    dune2rEditorButton.setVisible(showDune2R);
+    dune2rEditorButton.setEnabled(showDune2R);
+    howToPlayButton.setVisible(showHowToPlay);
+    howToPlayButton.setEnabled(showHowToPlay);
+
+    std::vector<TextButton*> buttons{&modesButton, &optionsButton, &displayButton};
+    if(showHowToPlay) buttons.push_back(&howToPlayButton);
+    if(showDune2R) buttons.push_back(&dune2rEditorButton);
+    buttons.push_back(&aboutButton);
+    buttons.push_back(&quitButton);
+
+    if(enlargedStartMenus) {
+        const StartMenuLayout layout{getSize().x, getSize().y, static_cast<int>(buttons.size())};
+        const auto planetBounds = layout.planetBounds();
+        const auto logoBounds = layout.logoBounds();
+        const auto borderBounds = layout.borderBounds();
+        windowWidget.setWidgetGeometry(&planetPicture, Point(planetBounds.x, planetBounds.y),
+                                       Point(planetBounds.w, planetBounds.h));
+        windowWidget.setWidgetGeometry(&logoPicture, Point(logoBounds.x, logoBounds.y),
+                                       Point(logoBounds.w, logoBounds.h));
+        const int bannerWidth = std::min(getSize().x - 48, 420);
+        windowWidget.setWidgetGeometry(&activeModLabel,
+            Point((getSize().x - bannerWidth) / 2, logoBounds.y - 8), Point(bannerWidth, 38));
+        windowWidget.setWidgetGeometry(&buttonBorder, Point(borderBounds.x, borderBounds.y),
+                                       Point(borderBounds.w, borderBounds.h));
+        for(size_t i = 0; i < buttons.size(); ++i) {
+            const auto bounds = layout.button(static_cast<int>(i));
+            windowWidget.setWidgetGeometry(buttons[i], Point(bounds.x, bounds.y), Point(bounds.w, bounds.h));
+        }
+    } else {
+        const int bannerWidth = std::min(getSize().x - 48, 420);
+        windowWidget.setWidgetGeometry(&activeModLabel,
+            Point((getSize().x - bannerWidth) / 2, getSize().y / 2 + 20), Point(bannerWidth, 38));
+        constexpr int listHeight = 128;
+        constexpr int gap = 3;
+        const int buttonHeight = (listHeight - (static_cast<int>(buttons.size()) - 1) * gap)
+                                 / static_cast<int>(buttons.size());
+        const int x = (getSize().x - 160) / 2;
+        const int y = getSize().y / 2 + 64;
+        for(size_t i = 0; i < buttons.size(); ++i) {
+            windowWidget.setWidgetGeometry(buttons[i], Point(x, y + static_cast<int>(i) * (buttonHeight + gap)),
+                                           Point(160, buttonHeight));
+        }
+    }
 }
 
 void MainMenu::onOptions() {
@@ -385,6 +461,10 @@ void MainMenu::onOptions() {
     if(ret == MENU_QUIT_REINITIALIZE) {
         quit(MENU_QUIT_REINITIALIZE);
     }
+}
+
+void MainMenu::onDisplay() {
+    if(DisplayMenu().showMenu() == MENU_QUIT_REINITIALIZE) quit(MENU_QUIT_REINITIALIZE);
 }
 
 void MainMenu::onAbout() const
@@ -434,11 +514,12 @@ void MainMenu::showFirstLaunchCityPromptIfNeeded()
 
     std::string message = _("Welcome to Dune City!");
     message += "\n\n";
-    message += _("Dune City adds a Micropolis-style city simulation on top of Dune II: zone Residential / Commercial / Industrial districts, build roads, manage power and police, and grow a colony on Arrakis.");
+    message += _("Build a city on Arrakis with districts, roads,\npower and public services.");
     message += "\n\n";
-    message += _("Enable the city-sim mod now? You can change this any time in Mods.");
+    message += _("Enable Dune City now?\nYou can change this later in MODS.");
 
-    openWindow(QstBox::create(message, _("Enable now"), _("Later"), QSTBOX_BUTTON1));
+    auto* prompt = QstBox::create(message, _("Enable now"), _("Later"), QSTBOX_BUTTON1);
+    openWindow(prompt);
 }
 
 

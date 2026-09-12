@@ -173,7 +173,7 @@ static void signalHandler(int sig) {
     }
 #else
     writeCrashLog("Stack Trace:\n");
-    writeCrashLog("  (Unavailable on Android NDK build)\n");
+    writeCrashLog("  (Unavailable on this platform)\n");
 #endif
     
     writeCrashLog("\n");
@@ -220,8 +220,8 @@ static void signalHandler(int sig) {
  */
 void installCrashHandlers(const char* logPath) {
 #ifdef __EMSCRIPTEN__
-    (void) logPath;
-    // Browser builds rely on the devtools console; POSIX signal handlers are not supported.
+    (void)logPath;
+    SDL_Log("Native crash signal handlers are unavailable in a web browser");
     return;
 #else
     if(!logPath) {
@@ -253,7 +253,7 @@ void installCrashHandlers(const char* logPath) {
 #endif
     
     SDL_Log("Crash handlers installed (log: %s)", logPath);
-#endif // __EMSCRIPTEN__
+#endif
 }
 
 /**

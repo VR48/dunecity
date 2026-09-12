@@ -2,6 +2,7 @@
 #include <Menu/MultiPlayerMenu.h>
 #include <Menu/CustomGameMenu.h>
 #include <Menu/CustomGamePlayers.h>
+#include <Menu/SinglePlayerSkirmishMenu.h>
 
 #include <FileClasses/GFXManager.h>
 #include <FileClasses/TextManager.h>
@@ -63,7 +64,7 @@ MultiPlayerMenu::MultiPlayerMenu() : MenuBase() {
     mainVBox.addWidget(Spacer::create(), 0.05);
     mainVBox.addWidget(&mainHBox, 0.85);
 
-    mainHBox.addWidget(&leftVBox, 180);
+    mainHBox.addWidget(&leftVBox, 230);
 
     createLANGameButton.setText(_("Create LAN Game"));
     createLANGameButton.setOnClick(std::bind(&MultiPlayerMenu::onCreateLANGame, this));
@@ -71,11 +72,15 @@ MultiPlayerMenu::MultiPlayerMenu() : MenuBase() {
 
     leftVBox.addWidget(VSpacer::create(8));
 
-    createInternetGameButton.setText(_("Create Internet Game"));
+    createInternetGameButton.setText(_("Host Internet Custom Game"));
     createInternetGameButton.setOnClick(std::bind(&MultiPlayerMenu::onCreateInternetGame, this));
     leftVBox.addWidget(&createInternetGameButton, 0.1);
 
-    leftVBox.addWidget(Spacer::create(), 0.8);
+    leftVBox.addWidget(VSpacer::create(8));
+    hostCampaignCoopButton.setText(_("Host Campaign Co-op"));
+    hostCampaignCoopButton.setOnClick(std::bind(&MultiPlayerMenu::onHostCampaignCoop, this));
+    leftVBox.addWidget(&hostCampaignCoopButton, 0.1);
+    leftVBox.addWidget(Spacer::create(), 0.7);
 
     rightVBox.addWidget(&gameTypeButtonsHBox, 24);
 
@@ -217,6 +222,10 @@ void MultiPlayerMenu::onCreateInternetGame() {
     CustomGameMenu(true, false).showMenu();
 }
 
+
+void MultiPlayerMenu::onHostCampaignCoop() {
+    if(validateAndSavePlayerName()) SinglePlayerSkirmishMenu(true).showMenu();
+}
 
 void MultiPlayerMenu::onConnect() {
     if (!validateAndSavePlayerName()) {

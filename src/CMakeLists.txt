@@ -3,7 +3,9 @@
 # GFXManager's imported_sprites paths). Windows and macOS leave it unset so
 # getDuneLegacyDataDir() falls through to SDL_GetBasePath() at runtime,
 # making the install relocatable.
-if(NOT WIN32 AND NOT APPLE)
+if(EMSCRIPTEN)
+    set(DUNELEGACY_DATADIR "/")
+elseif(NOT WIN32 AND NOT APPLE)
     set(DUNELEGACY_DATADIR "${CMAKE_INSTALL_FULL_DATADIR}/${PROJECT_NAME}/")
 endif()
 
@@ -143,6 +145,7 @@ target_sources(dunecity
         FileClasses/FileManager.cpp
         FileClasses/FontManager.cpp
         FileClasses/GFXManager.cpp
+        FileClasses/EnhancedAtlasCache.cpp
         FileClasses/Icnfile.cpp
         FileClasses/IndexedTextFile.cpp
         FileClasses/INIFile.cpp
@@ -193,6 +196,7 @@ target_sources(dunecity
         # Menu
         Menu/MenuBase.cpp
         Menu/MainMenu.cpp
+        Menu/DisplayMenu.cpp
         Menu/SinglePlayerMenu.cpp
         Menu/SinglePlayerSkirmishMenu.cpp
         Menu/CustomGameMenu.cpp
@@ -229,6 +233,7 @@ target_sources(dunecity
         players/PlayerFactory.cpp
         players/AIPlayer.cpp
         players/CampaignAIPlayer.cpp
+        players/AIDecisionLog.cpp
         players/QuantBot.cpp
         players/Mentat.cpp
         players/MentatBuildOrderMentat.cpp
@@ -366,6 +371,7 @@ target_sources(dunecity
         misc/string_util.cpp
         misc/Scaler.cpp
         misc/TouchInput.cpp
+        misc/WebRuntime.cpp
 )
 
 # C source files
@@ -435,7 +441,8 @@ if(APPLE)
     )
 endif()
 
-# Find miniupnpc for UPnP support (desktop/native builds only)
+# Find native-only integrations. Browser builds use Fetch and cannot configure
+# a viewer's router through UPnP.
 if(NOT EMSCRIPTEN)
     find_package(miniupnpc CONFIG QUIET)
     if(NOT miniupnpc_FOUND)
@@ -446,13 +453,9 @@ if(NOT EMSCRIPTEN)
             set_target_properties(miniupnpc::miniupnpc PROPERTIES
                 IMPORTED_LOCATION "${MINIUPNPC_LIBRARY}"
                 INTERFACE_INCLUDE_DIRECTORIES "${MINIUPNPC_INCLUDE_DIR}")
-
         endif()
     endif()
-endif()
 
-# Find discord-rpc for Discord Rich Presence (optional, desktop/native only)
-if(NOT EMSCRIPTEN)
     find_library(DISCORD_RPC_LIBRARY discord-rpc PATHS ${CMAKE_PREFIX_PATH}/lib)
     if(DISCORD_RPC_LIBRARY)
         target_sources(dunecity PRIVATE misc/DiscordManager.cpp)
@@ -462,56 +465,38 @@ endif()
 
 # Link libraries
 if(EMSCRIPTEN)
-    set(DUNECITY_EM_PORT_FLAGS
-        -sUSE_SDL=2
-        -sUSE_SDL_MIXER=2
-        -sUSE_SDL_TTF=2
+    set_target_properties(dunecity PROPERTIES SUFFIX ".html")
+    set_property(TARGET dunecity APPEND PROPERTY LINK_DEPENDS
+        "${CMAKE_SOURCE_DIR}/web/shell.html")
+    target_compile_options(dunecity PRIVATE
+        "SHELL:-sUSE_SDL=2"
+        "SHELL:-sUSE_SDL_MIXER=2"
+        "SHELL:-sUSE_SDL_TTF=2"
+        "SHELL:-fexceptions"
+        "SHELL:-sDISABLE_EXCEPTION_CATCHING=0"
     )
-
-    # Existing startup paths use C++ try/catch (e.g. GFXManager init in main.cpp).
-    # Emscripten disables exception catching by default; enable it for browser builds only.
-    set(DUNECITY_EM_EXCEPTION_FLAGS
-        -fexceptions
-        -sDISABLE_EXCEPTION_CATCHING=0
-    )
-
-    target_compile_options(dunecity PRIVATE ${DUNECITY_EM_PORT_FLAGS} ${DUNECITY_EM_EXCEPTION_FLAGS})
-
-    set(DUNECITY_EM_PRELOADS
-        "${CMAKE_SOURCE_DIR}/data@/data"
-        "${CMAKE_SOURCE_DIR}/config@/config"
-    )
-    if(EXISTS "${CMAKE_SOURCE_DIR}/imported_sprites")
-        list(APPEND DUNECITY_EM_PRELOADS "${CMAKE_SOURCE_DIR}/imported_sprites@/imported_sprites")
-    endif()
-    if(EXISTS "${CMAKE_SOURCE_DIR}/mods")
-        list(APPEND DUNECITY_EM_PRELOADS "${CMAKE_SOURCE_DIR}/mods@/mods")
-    endif()
-
-    set(DUNECITY_EM_LINK_FLAGS
-        ${DUNECITY_EM_PORT_FLAGS}
-        ${DUNECITY_EM_EXCEPTION_FLAGS}
-        -sASYNCIFY=1
-        -sALLOW_MEMORY_GROWTH=1
-        -sMAXIMUM_MEMORY=2147483648
-        -sFORCE_FILESYSTEM=1
-        -sENVIRONMENT=web
-        -sMODULARIZE=0
-        -sEXPORTED_FUNCTIONS=['_main']
-        -sEXPORTED_RUNTIME_METHODS=cwrap,ccall
-        -sASSERTIONS=1
-    )
-    foreach(preload IN LISTS DUNECITY_EM_PRELOADS)
-        list(APPEND DUNECITY_EM_LINK_FLAGS "SHELL:--preload-file ${preload}")
-    endforeach()
-
-    target_link_options(dunecity PRIVATE ${DUNECITY_EM_LINK_FLAGS})
-    set_target_properties(dunecity PROPERTIES
-        OUTPUT_NAME "dunecity"
-        SUFFIX ".html"
+    target_link_options(dunecity PRIVATE
+        "SHELL:-sUSE_SDL=2"
+        "SHELL:-sUSE_SDL_MIXER=2"
+        "SHELL:-sUSE_SDL_TTF=2"
+        "SHELL:-fexceptions"
+        "SHELL:-sDISABLE_EXCEPTION_CATCHING=0"
+        "SHELL:-sASYNCIFY=1"
+        "SHELL:-sALLOW_MEMORY_GROWTH=1"
+        "SHELL:-sINITIAL_MEMORY=268435456"
+        "SHELL:-sMAXIMUM_MEMORY=2147483648"
+        "SHELL:-sSTACK_SIZE=5242880"
+        "SHELL:-sFORCE_FILESYSTEM=1"
+        "SHELL:-sEXIT_RUNTIME=0"
+        "SHELL:-sEXPORTED_RUNTIME_METHODS=['FS']"
+        "SHELL:-lidbfs.js"
+        "SHELL:--shell-file ${CMAKE_SOURCE_DIR}/web/shell.html"
+        "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/data@/"
+        "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/config@/config"
+        "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/imported_sprites@/imported_sprites"
     )
 else()
-    # vcpkg provides modern CMake targets for SDL2
+    # vcpkg provides modern CMake targets for SDL2.
     target_link_libraries(dunecity
         PRIVATE
             $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main>
@@ -627,10 +612,7 @@ if(APPLE)
         COMMAND codesign --force --deep --sign - "$<TARGET_BUNDLE_DIR:dunecity>"
         COMMENT "Code signing app bundle with ad-hoc signature"
     )
-else()
-    if(EMSCRIPTEN)
-        # Browser build embeds runtime assets with --preload-file (see link flags above).
-    else()
+elseif(NOT EMSCRIPTEN)
     if(WIN32)
         set(BUILD_RUNTIME_DIR "$<TARGET_FILE_DIR:dunecity>")
     else()
@@ -681,6 +663,7 @@ endif()
 
 # Install data directory
 # For macOS bundles, data files are already inside the .app via POST_BUILD commands
+if(NOT EMSCRIPTEN)
 if(WIN32)
     # Windows: install PAK files and data to share/DuneLegacy where game expects them
     # Use data directory which has all PAK files
@@ -811,17 +794,28 @@ elseif(APPLE)
         BUNDLE DESTINATION .
     )
 
-    # Re-codesign the installed bundle. The POST_BUILD codesign on the
-    # in-tree build is invalidated by `cmake --install` rewriting the
-    # binary's rpath, so verification fails ("code or signature have
-    # been modified") and macOS shows "dunecity.app is damaged and
-    # can't be opened." Signing the bundle at install time, after all
-    # rpath fixup is done, restores a valid ad-hoc signature. The
-    # signature is still ad-hoc (no Apple Developer ID), so first-run
-    # downloads still hit Gatekeeper, but with a valid signature the
-    # warning becomes "cannot verify developer" with an Open Anyway
-    # path instead of the unrecoverable "damaged" message.
+    # Make release bundles independent of Homebrew and vcpkg paths. CPack
+    # invokes the install rules in a staging tree, so BundleUtilities copies
+    # every non-system dylib into Contents/Frameworks and rewrites its load
+    # commands before the final signature is applied.
+    set(DUNECITY_MACOS_DEPENDENCY_DIRS "")
+    if(DEFINED VCPKG_INSTALLED_DIR AND DEFINED VCPKG_TARGET_TRIPLET)
+        list(APPEND DUNECITY_MACOS_DEPENDENCY_DIRS
+            "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/lib")
+    endif()
+
+    # Re-sign last because dependency fixup changes the executable and copied
+    # libraries. The signature is ad-hoc until Developer ID credentials are
+    # added to the runner, but it is internally valid and supports Open Anyway.
     install(CODE "
+        include(BundleUtilities)
+        set(BU_CHMOD_BUNDLE_ITEMS ON)
+        message(STATUS \"Bundling macOS runtime dependencies...\")
+        fixup_bundle(
+            \"\${CMAKE_INSTALL_PREFIX}/dunecity.app\"
+            \"\"
+            \"${DUNECITY_MACOS_DEPENDENCY_DIRS}\"
+        )
         message(STATUS \"Re-codesigning installed dunecity.app...\")
         execute_process(
             COMMAND codesign --force --deep --sign - \"\${CMAKE_INSTALL_PREFIX}/dunecity.app\"
@@ -870,3 +864,4 @@ endif()
 
 # DUNELEGACY_DATADIR is set at the top of this file (before configure_file)
 # only for Linux. Windows and macOS use SDL_GetBasePath() at runtime.
+endif()

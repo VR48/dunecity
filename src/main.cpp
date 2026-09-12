@@ -17,6 +17,8 @@
 
 #include <main.h>
 
+#include <algorithm>
+#include <cmath>
 #include <globals.h>
 
 #include <config.h>
@@ -44,11 +46,13 @@
 #include <misc/fnkdat.h>
 #include <misc/FileSystem.h>
 #include <misc/Scaler.h>
+#include <misc/MenuLayout.h>
 #include <misc/string_util.h>
 #include <misc/exceptions.h>
 #include <misc/format.h>
 #include <misc/SDL2pp.h>
 #include <misc/md5.h>
+#include <misc/WebRuntime.h>
 
 #include <players/QuantBotConfig.h>
 #include <mod/ModManager.h>
@@ -129,46 +133,121 @@ int getLogicalToPhysicalResolutionFactor(int physicalWidth, int physicalHeight) 
     }
 }
 
+// Keeps a windowed size inside the usable desktop area (the display minus menu
+// bar, dock or task bar) so the whole window is visible. Units are the screen
+// coordinates SDL_CreateWindow takes.
+static void clampWindowedSizeToDisplay(int displayIndex, int& width, int& height) {
+    SDL_Rect usableBounds = {0, 0, 0, 0};
+    if(SDL_GetDisplayUsableBounds(displayIndex, &usableBounds) != 0 || usableBounds.w <= 0 || usableBounds.h <= 0) {
+        return;
+    }
+    width = std::min(width, usableBounds.w);
+    height = std::min(height, usableBounds.h);
+}
+
+// Logical width that gives a `height`-tall interface the same shape as a
+// presentedWidth x presentedHeight surface, so it fills the window without
+// black bars. Even, and never below the minimum width.
+static int interfaceWidthForShape(int height, int presentedWidth, int presentedHeight) {
+    if(presentedWidth <= 0 || presentedHeight <= 0) {
+        return interfaceWidthForHeight(height, false);
+    }
+    const int width = static_cast<int>(std::lround(static_cast<double>(height) * presentedWidth / presentedHeight));
+    return std::max(SCREEN_MIN_WIDTH, width & ~1);
+}
+
 void setVideoMode(int displayIndex)
 {
     int videoFlags = 0;
+    const int requestedInterfaceHeight = validatedInterfaceHeight(
+        settings.video.interfaceHeight,
+#ifdef __ANDROID__
+        true
+#else
+        false
+#endif
+    );
+    [[maybe_unused]] const int requestedInterfaceWidth = requestedInterfaceHeight > 0
+        ? validatedInterfaceWidth(settings.video.width, requestedInterfaceHeight)
+        : settings.video.width;
 
+    // Size of what ends up on screen, in screen coordinates: the window, or
+    // the desktop for a fullscreen-desktop window.
+    int presentedWidth = 0;
+    int presentedHeight = 0;
+
+#ifdef __EMSCRIPTEN__
+    // The selected resolution is the backing surface; the browser shell fits
+    // that surface into the available stage without changing its aspect ratio.
+    // SDL_WINDOW_RESIZABLE would replace the requested backing resolution
+    // with the CSS size at creation and on viewport resize.
+    videoFlags = 0;
+    settings.video.fullscreen = false;
+    settings.video.physicalWidth = std::max(settings.video.physicalWidth, SCREEN_MIN_WIDTH);
+    settings.video.physicalHeight = std::max(settings.video.physicalHeight, SCREEN_MIN_HEIGHT);
+    presentedWidth = settings.video.physicalWidth;
+    presentedHeight = settings.video.physicalHeight;
+    const int factor = getLogicalToPhysicalResolutionFactor(presentedWidth, presentedHeight);
+    settings.video.width = std::max(presentedWidth / factor, SCREEN_MIN_WIDTH);
+    settings.video.height = std::max(presentedHeight / factor, SCREEN_MIN_HEIGHT);
+#else
     if(settings.video.fullscreen) {
         videoFlags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
     }
+#ifdef __ANDROID__
+    videoFlags |= SDL_WINDOW_RESIZABLE;
+#else
+    // Render at the display's native pixel density. On a Retina Mac a
+    // 1440x900 window then has a 2880x1800 pixel surface, so a 960x600
+    // interface is drawn at an exact 3x instead of an uneven 1.5x. Window
+    // sizes stay in screen coordinates and SDL converts mouse events to the
+    // logical size, so nothing else changes.
+    videoFlags |= SDL_WINDOW_ALLOW_HIGHDPI;
+#endif
 
-    SDL_DisplayMode targetDisplayMode = { 0, settings.video.physicalWidth, settings.video.physicalHeight, 0, nullptr};
-    SDL_DisplayMode closestDisplayMode;
-
-    if(SDL_GetClosestDisplayMode(displayIndex, &targetDisplayMode, &closestDisplayMode) == nullptr) {
-        SDL_Log("Warning: Falling back to a display resolution of 640x480!");
-        settings.video.physicalWidth = 640;
-        settings.video.physicalHeight = 480;
-        int factor = getLogicalToPhysicalResolutionFactor(settings.video.physicalWidth, settings.video.physicalHeight);
-        // Prevent division by zero and ensure minimum dimensions
-        if(factor <= 0) {
-            factor = 1;
-        }
-        settings.video.width = settings.video.physicalWidth / factor;
-        settings.video.height = settings.video.physicalHeight / factor;
-        // Ensure minimum dimensions
-        if(settings.video.width < 640) settings.video.width = 640;
-        if(settings.video.height < 480) settings.video.height = 480;
-    } else {
-        settings.video.physicalWidth = closestDisplayMode.w;
-        settings.video.physicalHeight = closestDisplayMode.h;
-        int factor = getLogicalToPhysicalResolutionFactor(settings.video.physicalWidth, settings.video.physicalHeight);
-        // Prevent division by zero and ensure minimum dimensions
-        if(factor <= 0) {
-            factor = 1;
-        }
-        settings.video.width = settings.video.physicalWidth / factor;
-        settings.video.height = settings.video.physicalHeight / factor;
-        
-        // Ensure minimum dimensions
-        if(settings.video.width < 640) settings.video.width = 640;
-        if(settings.video.height < 480) settings.video.height = 480;
+    // The game never switches the display mode: fullscreen means
+    // SDL_WINDOW_FULLSCREEN_DESKTOP, which covers the desktop at whatever
+    // resolution it currently has, and a window may have any size. So the
+    // requested physical size is used as-is; the only adjustment is keeping a
+    // window inside the usable desktop area. Older versions snapped the request
+    // to SDL's "closest display mode" here, which on Retina Macs turned
+    // 1280x800 into 1920x1200 (SDL only considers low-density modes as
+    // candidates), so changing the windowed resolution never took effect.
+    settings.video.physicalWidth = std::max(settings.video.physicalWidth, SCREEN_MIN_WIDTH);
+    settings.video.physicalHeight = std::max(settings.video.physicalHeight, SCREEN_MIN_HEIGHT);
+    if(!settings.video.fullscreen) {
+        clampWindowedSizeToDisplay(displayIndex, settings.video.physicalWidth, settings.video.physicalHeight);
     }
+
+    {
+        // Derive the logical (interface) size from what actually ends up on
+        // screen: for a fullscreen-desktop window that is the desktop, not the
+        // saved windowed size.
+        presentedWidth = settings.video.physicalWidth;
+        presentedHeight = settings.video.physicalHeight;
+        SDL_DisplayMode desktopDisplayMode;
+        if(settings.video.fullscreen
+           && SDL_GetDesktopDisplayMode(displayIndex, &desktopDisplayMode) == 0
+           && desktopDisplayMode.w > 0 && desktopDisplayMode.h > 0) {
+            presentedWidth = desktopDisplayMode.w;
+            presentedHeight = desktopDisplayMode.h;
+        }
+        int factor = getLogicalToPhysicalResolutionFactor(presentedWidth, presentedHeight);
+        if(factor <= 0) {
+            factor = 1;
+        }
+        settings.video.width = std::max(presentedWidth / factor, SCREEN_MIN_WIDTH);
+        settings.video.height = std::max(presentedHeight / factor, SCREEN_MIN_HEIGHT);
+    }
+
+#ifdef __ANDROID__
+    // Keep the game UI stable while Android replaces the physical surface
+    // during fold, unfold, rotation, DeX, and multi-window transitions.
+    settings.video.interfaceHeight = requestedInterfaceHeight;
+    settings.video.width = requestedInterfaceWidth;
+    settings.video.height = requestedInterfaceHeight;
+#endif
+#endif
 
     // Prefer Direct3D on Windows, let SDL choose best renderer on other platforms
 #ifdef _WIN32
@@ -196,7 +275,41 @@ void setVideoMode(int displayIndex)
         fprintf(stderr, "SDL_CreateRenderer failed: %s\n", SDL_GetError());
         exit(EXIT_FAILURE);
     }
+
+    {
+        int windowWidth = 0;
+        int windowHeight = 0;
+        int pixelWidth = 0;
+        int pixelHeight = 0;
+        SDL_GetWindowSize(window, &windowWidth, &windowHeight);
+        SDL_GetRendererOutputSize(renderer, &pixelWidth, &pixelHeight);
+        SDL_Log("Window: %dx%d requested, %dx%d created (%s), %dx%d pixels",
+                settings.video.physicalWidth, settings.video.physicalHeight,
+                windowWidth, windowHeight,
+                settings.video.fullscreen ? "fullscreen desktop" : "windowed",
+                pixelWidth, pixelHeight);
+    }
+
+#ifdef __ANDROID__
+    // The Android display mode can describe the complete panel while the SDL
+    // surface is a foldable, split-screen, or desktop-mode window. The renderer
+    // output is the authoritative size after SDLActivity creates that surface.
+    int outputWidth = 0;
+    int outputHeight = 0;
+    if(SDL_GetRendererOutputSize(renderer, &outputWidth, &outputHeight) == 0 &&
+       outputWidth > 0 && outputHeight > 0) {
+        settings.video.physicalWidth = outputWidth;
+        settings.video.physicalHeight = outputHeight;
+        SDL_Log("Android SDL window: %dx%d physical, %dx%d fixed logical",
+                settings.video.physicalWidth, settings.video.physicalHeight,
+                settings.video.width, settings.video.height);
+    }
+#endif
     
+    // Browser frames are paced by the explicit Asyncify yield below. SDL's
+    // web VSync hook expects emscripten_set_main_loop(), which this legacy
+    // synchronous loop intentionally does not use.
+#ifndef __EMSCRIPTEN__
     // Set VSync after renderer creation (works better on macOS Metal)
     if(settings.video.frameLimit) {
         SDL_RenderSetVSync(renderer, 1);
@@ -205,6 +318,20 @@ void setVideoMode(int displayIndex)
         SDL_RenderSetVSync(renderer, 0);
         SDL_Log("VSync disabled");
     }
+#endif
+    if(settings.video.interfaceHeight > 0) {
+        settings.video.height = settings.video.interfaceHeight;
+#ifdef __ANDROID__
+        settings.video.width = validatedInterfaceWidth(requestedInterfaceWidth, settings.video.height);
+#else
+        // Only the height is a preset; the width follows the shape of the
+        // window (or desktop) so the interface fills it without black bars.
+        settings.video.width = interfaceWidthForShape(settings.video.height, presentedWidth, presentedHeight);
+#endif
+    }
+    SDL_Log("Display: %dx%d physical, %dx%d logical, interface preset=%d",
+            settings.video.physicalWidth, settings.video.physicalHeight,
+            settings.video.width, settings.video.height, settings.video.interfaceHeight);
     SDL_RenderSetLogicalSize(renderer, settings.video.width, settings.video.height);
     screenTexture = SDL_CreateTexture(renderer, SCREEN_FORMAT, SDL_TEXTUREACCESS_TARGET, settings.video.width, settings.video.height);
 
@@ -536,6 +663,7 @@ void createDefaultConfigFile(const std::string& configfilepath, const std::strin
                                 "Language = %s               # en = English, fr = French, de = German\n"
                                 "Scroll Speed = 50           # Amount to scroll the map when the cursor is near the screen border\n"
                                 "Show Tutorial Hints = true  # Show tutorial hints during the game\n"
+                                "Multiple Players Per House = false  # Custom game: allow two players per house\n"
                                 "\n"
                                 "[Video]\n"
                                 "# Minimum resolution is 640x480\n"
@@ -543,6 +671,9 @@ void createDefaultConfigFile(const std::string& configfilepath, const std::strin
                                 "Height = 480\n"
                                 "Physical Width = 640\n"
                                 "Physical Height = 480\n"
+                                "Interface Height = 0       # 0 = automatic; 480/600/768 = fixed UI size; Width keeps 4:3 or 16:9\n"
+                                "Start Menu Mode = 0        # 0 = classic; 1 = enlarged TV/tablet/accessibility layout\n"
+                                "Menu Palette = 0           # 0 = desert gold; 1 = high contrast\n"
                                 "Fullscreen = true\n"
                                 "FrameLimit = true           # Enable VSync for smooth, tear-free rendering.\n"
                                 "Preferred Zoom Level = 1    # 0 = no zooming, 1 = 2x, 2 = 3x\n"
@@ -562,13 +693,14 @@ void createDefaultConfigFile(const std::string& configfilepath, const std::strin
                                 "Music Volume = 64           # Volume between 0 and 128\n"
                                 "Play SFX = true\n"
                                 "SFX Volume = 64             # Volume between 0 and 128\n"
+                                "Play Credits SFX = false    # Play sound when credits change (harvester deliveries, spending credits)\n"
                                 "\n"
                                 "[Network]\n"
                                 "ServerPort = %d\n"
                                 "MetaServer = %s\n"
                                 "\n"
                                 "[AI]\n"
-                                "Campaign AI = CampaignAIPlayer\n"
+                                "Campaign AI = qBotEasy\n"
                                 "\n"
                                 "[Game Options]\n"
                                 "Game Speed = 16                         # The default speed of the game: 32 = very slow, 8 = very fast, 16 = default\n"
@@ -708,6 +840,7 @@ int main(int argc, char *argv[]) {
     SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "0");
 #ifdef __ANDROID__
     SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1");
+    SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
 #endif
 
     // v1.0.512: build-stamp log so Stefan can verify the binary on disk
@@ -725,7 +858,7 @@ int main(int argc, char *argv[]) {
     // Discord connected and there was no log entry to diagnose why. With
     // this handler, the crash dump is written before exit so the cause
     // can be inspected post-mortem.
-    #ifndef _WIN32
+    #if !defined(_WIN32) && !defined(__EMSCRIPTEN__)
     {
         struct sigaction sa {};
         sa.sa_sigaction = [](int sig, siginfo_t* info, void* /*ucontext*/) {
@@ -925,8 +1058,17 @@ int main(int argc, char *argv[]) {
             settings.general.language = myINIFile.getStringValue("General","Language","en");
             settings.general.scrollSpeed = myINIFile.getIntValue("General","Scroll Speed",50);
             settings.general.showTutorialHints = myINIFile.getBoolValue("General","Show Tutorial Hints",true);
+            settings.general.multiplePlayersPerHouse = myINIFile.getBoolValue("General","Multiple Players Per House",false);
             settings.video.width = myINIFile.getIntValue("Video","Width",640);
             settings.video.height = myINIFile.getIntValue("Video","Height",480);
+            settings.video.interfaceHeight = validatedInterfaceHeight(
+                myINIFile.getIntValue("Video", "Interface Height", 0),
+#ifdef __ANDROID__
+                true
+#else
+                false
+#endif
+            );
             settings.video.physicalWidth= myINIFile.getIntValue("Video","Physical Width",640);
             settings.video.physicalHeight = myINIFile.getIntValue("Video","Physical Height",480);
             settings.video.fullscreen = myINIFile.getBoolValue("Video","Fullscreen",false);
@@ -936,6 +1078,8 @@ int main(int argc, char *argv[]) {
             settings.video.rotateUnitGraphics = myINIFile.getBoolValue("Video","RotateUnitGraphics",false);
             settings.video.showWatermark = myINIFile.getBoolValue("Video","Show Watermark",true);
             settings.video.cursorVisibility = myINIFile.getIntValue("Video","Cursor Visibility",0);
+            settings.video.menuPalette = validatedMenuPalette(myINIFile.getIntValue("Video", "Menu Palette", 0));
+            settings.video.startMenuMode = validatedStartMenuMode(myINIFile.getIntValue("Video", "Start Menu Mode", 0));
             settings.video.cursorScale = myINIFile.getIntValue("Video","Cursor Scale",0);
             settings.audio.musicType = myINIFile.getStringValue("Audio","Music Type","adl");
             settings.audio.adlHarmonicStereo = myINIFile.getBoolValue("Audio","ADL Harmonic Stereo", false);
@@ -943,7 +1087,7 @@ int main(int argc, char *argv[]) {
             settings.audio.musicVolume = myINIFile.getIntValue("Audio","Music Volume", 64);
             settings.audio.playSFX = myINIFile.getBoolValue("Audio","Play SFX", true);
             settings.audio.sfxVolume = myINIFile.getIntValue("Audio","SFX Volume", 64);
-            settings.audio.playCreditsSFX = myINIFile.getBoolValue("Audio","Play Credits SFX", true);
+            settings.audio.playCreditsSFX = myINIFile.getBoolValue("Audio","Play Credits SFX", false);
 
             settings.network.serverPort = myINIFile.getIntValue("Network","ServerPort",DEFAULT_PORT);
             settings.network.metaServer = myINIFile.getStringValue("Network","MetaServer",DEFAULT_METASERVER);
@@ -1024,7 +1168,6 @@ int main(int argc, char *argv[]) {
                 SDL_SetHint(SDL_HINT_FRAMEBUFFER_ACCELERATION, "1");
                 SDL_SetHint(SDL_HINT_VIDEO_MAC_FULLSCREEN_SPACES, "0");
                 SDL_SetHint(SDL_HINT_VIDEO_ALLOW_SCREENSAVER, "0");
-                SDL_SetHint(SDL_HINT_VIDEO_HIGHDPI_DISABLED, "1");
                 SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1");
                 // VSync disabled by default - controlled via renderer flags in setVideoMode()
                 SDL_SetHint(SDL_HINT_RENDER_VSYNC, "0");
@@ -1054,6 +1197,23 @@ int main(int argc, char *argv[]) {
                 SDL_Log("SDL2_ttf compile-time v%d.%d.%d", TTFCompiledVersion.major, TTFCompiledVersion.minor, TTFCompiledVersion.patch);
             }
 
+#ifdef __EMSCRIPTEN__
+            // Migrate the old forced VGA browser default once. Preserve any
+            // other saved resolution and every subsequent explicit VGA choice.
+            if(bFirstInit && myINIFile.getIntValue("Video", "Browser Display Version", 0) < 1) {
+                if(bFirstGamestart || (settings.video.physicalWidth == 640 && settings.video.physicalHeight == 480)) {
+                    settings.video.physicalWidth = WebRuntime::defaultVideoWidth();
+                    settings.video.physicalHeight = WebRuntime::defaultVideoHeight();
+                    myINIFile.setIntValue("Video", "Physical Width", settings.video.physicalWidth);
+                    myINIFile.setIntValue("Video", "Physical Height", settings.video.physicalHeight);
+                    settings.video.preferredZoomLevel = 1;
+                    myINIFile.setIntValue("Video", "Preferred Zoom Level", 1);
+                }
+                myINIFile.setIntValue("Video", "Browser Display Version", 1);
+                myINIFile.saveChangesTo(getConfigFilepath());
+                WebRuntime::syncPersistentFiles();
+            }
+#else
             if(bFirstGamestart == true && bFirstInit == true) {
                 SDL_DisplayMode displayMode;
                 SDL_GetDesktopDisplayMode(currentDisplayIndex, &displayMode);
@@ -1074,35 +1234,32 @@ int main(int argc, char *argv[]) {
                 myINIFile.saveChangesTo(getConfigFilepath());
             }
 
+#endif
+
 #ifdef __ANDROID__
             if(bFirstInit == true) {
                 SDL_DisplayMode displayMode;
                 SDL_GetDesktopDisplayMode(currentDisplayIndex, &displayMode);
 
-                if(displayMode.w > 0 && displayMode.h > 0 &&
-                   (settings.video.physicalHeight > settings.video.physicalWidth ||
-                    settings.video.physicalWidth != displayMode.w ||
-                    settings.video.physicalHeight != displayMode.h)) {
-                    int factor = getLogicalToPhysicalResolutionFactor(displayMode.w, displayMode.h);
+                if(displayMode.w > 0 && displayMode.h > 0) {
                     settings.video.physicalWidth = displayMode.w;
                     settings.video.physicalHeight = displayMode.h;
-                    settings.video.width = std::max(640, displayMode.w / factor);
-                    settings.video.height = std::max(480, displayMode.h / factor);
-                    settings.video.fullscreen = true;
-                    settings.video.preferredZoomLevel = 1;
-
-                    SDL_Log("Android display config updated to %dx%d physical, %dx%d logical",
-                            settings.video.physicalWidth, settings.video.physicalHeight,
-                            settings.video.width, settings.video.height);
-
-                    myINIFile.setIntValue("Video","Width",settings.video.width);
-                    myINIFile.setIntValue("Video","Height",settings.video.height);
-                    myINIFile.setIntValue("Video","Physical Width",settings.video.physicalWidth);
-                    myINIFile.setIntValue("Video","Physical Height",settings.video.physicalHeight);
-                    myINIFile.setBoolValue("Video","Fullscreen",settings.video.fullscreen);
-                    myINIFile.setIntValue("Video","Preferred Zoom Level",settings.video.preferredZoomLevel);
-                    myINIFile.saveChangesTo(getConfigFilepath());
                 }
+                settings.video.height = settings.video.interfaceHeight;
+                settings.video.width = validatedInterfaceWidth(settings.video.width, settings.video.height);
+                settings.video.fullscreen = true;
+
+                SDL_Log("Android display config updated to %dx%d physical, %dx%d fixed logical",
+                        settings.video.physicalWidth, settings.video.physicalHeight,
+                        settings.video.width, settings.video.height);
+
+                myINIFile.setIntValue("Video","Width",settings.video.width);
+                myINIFile.setIntValue("Video","Height",settings.video.height);
+                myINIFile.setIntValue("Video","Physical Width",settings.video.physicalWidth);
+                myINIFile.setIntValue("Video","Physical Height",settings.video.physicalHeight);
+                myINIFile.setBoolValue("Video","Fullscreen",settings.video.fullscreen);
+                myINIFile.setIntValue("Video","Preferred Zoom Level",settings.video.preferredZoomLevel);
+                myINIFile.saveChangesTo(getConfigFilepath());
             }
 #endif
 
@@ -1194,8 +1351,10 @@ int main(int argc, char *argv[]) {
                 SDL_Log("Setting video mode...");
                 setVideoMode(currentDisplayIndex);
                 
-                // Give the renderer time to fully initialize
+                // Native renderers benefit from a short initialization pause.
+#ifndef __EMSCRIPTEN__
                 SDL_Delay(100);
+#endif
                 
                 SDL_RendererInfo rendererInfo;
                 SDL_GetRendererInfo(renderer, &rendererInfo);
@@ -1253,7 +1412,7 @@ int main(int argc, char *argv[]) {
                 pSFXManager = std::make_unique<SFXManager>();
 #endif
 
-                GUIStyle::setGUIStyle(std::make_unique<DuneStyle>());
+                GUIStyle::setGUIStyle(std::make_unique<DuneStyle>(settings.video.menuPalette));
 
                 if(bFirstInit == true) {
                     SDL_Log("Starting sound player...");
@@ -1275,8 +1434,17 @@ int main(int argc, char *argv[]) {
                     //musicPlayer->changeMusic(MUSIC_INTRO);
                 }
 
+                WebRuntime::markGameReady();
+
+                // Browser visitors enter the playable menu immediately on first
+                // launch. They can still enable the original intro in Options.
+                bool shouldPlayIntro = (bFirstGamestart == true) || (settings.general.playIntro == true);
+#ifdef __EMSCRIPTEN__
+                shouldPlayIntro = settings.general.playIntro;
+#endif
+
                 // Playing intro
-                if(((bFirstGamestart == true) || (settings.general.playIntro == true)) && (bFirstInit==true)) {
+                if(shouldPlayIntro && (bFirstInit==true)) {
                     SDL_Log("Playing intro...");
                     Intro().run();
                 }

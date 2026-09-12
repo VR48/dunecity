@@ -190,7 +190,24 @@ CustomGamePlayers::CustomGamePlayers(const GameInitSettings& newGameInitSettings
     minimap.setSurface( GUIStyle::getInstance().createButtonSurface(130,130,_("Choose map"), true, false) );
     rightVBox.addWidget(&minimap);
 
-    if(gameInitSettings.getGameType() == GameType::CustomGame || gameInitSettings.getGameType() == GameType::CustomMultiplayer) {
+    if(isCoopGameType(gameInitSettings.getGameType())) {
+        fixedCoopHouses = gameInitSettings.getHouseInfoList();
+        if(gameInitSettings.getGameType() != GameType::LoadCoop) {
+            auto rw = sdl2::RWops_ptr{SDL_RWFromConstMem(gameInitSettings.getFiledata().data(), gameInitSettings.getFiledata().size())};
+            INIFile map(rw.get());
+            extractMapInfo(&map);
+        } else {
+            minimap.setSurface(GUIStyle::getInstance().createButtonSurface(130, 130, _("Campaign save"), true, false));
+        }
+        numHouses = 1;
+        slotToTeam[0] = 0;
+        boundHousesOnMap.clear();
+        boundHousesOnMap.push_back(gameInitSettings.getHouseID());
+        brainEqHumanSlot = 0;
+        mapPropertyPlayers.setText("2 co-op");
+        captionLabel.setText(gameInitSettings.getServername().empty()
+            ? _("Campaign co-op") : gameInitSettings.getServername());
+    } else if(gameInitSettings.getGameType() == GameType::CustomGame || gameInitSettings.getGameType() == GameType::CustomMultiplayer) {
         auto RWops = sdl2::RWops_ptr{ SDL_RWFromConstMem(gameInitSettings.getFiledata().c_str(), gameInitSettings.getFiledata().size()) };
 
         INIFile inimap(RWops.get());
@@ -198,25 +215,7 @@ CustomGamePlayers::CustomGamePlayers(const GameInitSettings& newGameInitSettings
     } else if(gameInitSettings.getGameType() == GameType::LoadMultiplayer) {
         IMemoryStream memStream(gameInitSettings.getFiledata().c_str(), gameInitSettings.getFiledata().size());
 
-        Uint32 magicNum = memStream.readUint32();
-        if(magicNum != SAVEMAGIC) {
-            SDL_Log("CustomGamePlayers: No valid savegame! Expected magic number %.8X, but got %.8X!", SAVEMAGIC, magicNum);
-        }
-
-        Uint32 savegameVersion = memStream.readUint32();
-        if (savegameVersion != SAVEGAMEVERSION) {
-            SDL_Log("CustomGamePlayers: No valid savegame! Expected savegame version %d, but got %d!", SAVEGAMEVERSION, savegameVersion);
-        }
-
-        memStream.readString();     // dune legacy version
-
-        // read gameInitSettings
-        GameInitSettings tmpGameInitSettings(memStream);
-
-        Uint32 numHouseInfo = memStream.readUint32();
-        for(Uint32 i=0;i<numHouseInfo;i++) {
-            houseInfoListSetup.push_back(GameInitSettings::HouseInfo(memStream));
-        }
+        GameInitSettings tmpGameInitSettings = GameInitSettings::readSaveSetup(memStream, houseInfoListSetup);
 
         auto RWops = sdl2::RWops_ptr{ SDL_RWFromConstMem(tmpGameInitSettings.getFiledata().c_str(), tmpGameInitSettings.getFiledata().size()) };
 
@@ -231,14 +230,6 @@ CustomGamePlayers::CustomGamePlayers(const GameInitSettings& newGameInitSettings
     } else {
         INIFile inimap(gameInitSettings.getFilename());
         extractMapInfo(&inimap);
-    }
-
-    // House and color uniqueness is enforced when starting a game. Keep the
-    // lobby consistent with that rule instead of exposing an unusable second
-    // player slot. Loaded multiplayer saves retain their recorded layout.
-    if(gameInitSettings.getGameType() == GameType::CustomGame
-       || gameInitSettings.getGameType() == GameType::CustomMultiplayer) {
-        gameInitSettings.setMultiplePlayersPerHouse(false);
     }
 
     rightVBox.addWidget(VSpacer::create(10));
@@ -284,7 +275,7 @@ CustomGamePlayers::CustomGamePlayers(const GameInitSettings& newGameInitSettings
     chatVBox.addWidget(Spacer::create(), 0.03);
     buttonHBox.addWidget(&chatVBox, 0.675);
 
-    if(gameInitSettings.getGameType() != GameType::CustomMultiplayer && gameInitSettings.getGameType() != GameType::LoadMultiplayer) {
+    if(!isNetworkGameType(gameInitSettings.getGameType())) {
         chatVBox.setVisible(false);
         chatVBox.setEnabled(false);
     }
@@ -459,7 +450,7 @@ CustomGamePlayers::CustomGamePlayers(const GameInitSettings& newGameInitSettings
         }
         curHouseInfo.player1DropDown.setOnSelectionChange(std::bind(&CustomGamePlayers::onChangePlayerDropDownBoxes, this, std::placeholders::_1, 2*i));
         curHouseInfo.player1DropDown.setOnClick(std::bind(&CustomGamePlayers::onClickPlayerDropDownBox, this, 2*i));
-        curHouseInfo.playerHBox.addWidget(&curHouseInfo.player1DropDown, 100);
+        curHouseInfo.playerHBox.addWidget(&curHouseInfo.player1DropDown, 180);
 
         curHouseInfo.playerHBox.addWidget(HSpacer::create(10));
 
@@ -526,7 +517,7 @@ CustomGamePlayers::CustomGamePlayers(const GameInitSettings& newGameInitSettings
         }
         curHouseInfo.player2DropDown.setOnSelectionChange(std::bind(&CustomGamePlayers::onChangePlayerDropDownBoxes, this, std::placeholders::_1, 2*i + 1));
         curHouseInfo.player2DropDown.setOnClick(std::bind(&CustomGamePlayers::onClickPlayerDropDownBox, this, 2*i + 1));
-        curHouseInfo.playerHBox.addWidget(&curHouseInfo.player2DropDown, 100);
+        curHouseInfo.playerHBox.addWidget(&curHouseInfo.player2DropDown, 180);
 
         curHouseInfo.houseInfoVBox.addWidget(&curHouseInfo.playerHBox);
 
@@ -541,6 +532,17 @@ CustomGamePlayers::CustomGamePlayers(const GameInitSettings& newGameInitSettings
         }
     }
 
+    if(isCoopGameType(gameInitSettings.getGameType())) {
+        auto& shared = houseInfo[0];
+        shared.teamDropDown.setSelectedItem(0);
+        shared.player2DropDown.clearAllEntries();
+        shared.player2DropDown.addEntry(_("Open: human co-op"), PLAYER_OPEN);
+        for(const char* cls : {"qBotEasy", "qBotMedium", "qBotHard", "qBotBrutal", "qBotDefend", "qBotSupportEasy", "qBotSupportMedium", "qBotSupportHard", "qBotSupportBrutal"}) {
+            const int index = PlayerFactory::getIndexByPlayerClass(cls);
+            if(index >= 0) shared.player2DropDown.addEntry(PlayerFactory::getByIndex(index)->getName(), index);
+        }
+        shared.player2DropDown.setSelectedItem(0);
+    }
     onChangeHousesDropDownBoxes(false);
 
     checkPlayerBoxes();
@@ -1244,12 +1246,18 @@ void CustomGamePlayers::updateDiscordGameStarting() {
 
 void CustomGamePlayers::onNext()
 {
+    if(isCoopGameType(gameInitSettings.getGameType())
+       && (houseInfo[0].player1DropDown.getSelectedEntryIntData() != PLAYER_HUMAN
+           || houseInfo[0].player2DropDown.getSelectedEntryIntData() == PLAYER_OPEN
+           || houseInfo[0].player2DropDown.getSelectedEntryIntData() == PLAYER_CLOSED)) {
+        openWindow(MsgBox::create(_("Wait for your co-op partner, or select a QuantBot.")));
+        return;
+    }
     // check if we have at least two houses on the map and if we have more than one team
     int numUsedHouses = 0;
     int numTeams = 0;
     bool houseAlreadyUsed[NUM_HOUSES] = {};
     bool colorAlreadyUsed[NUM_HOUSE_COLOR_SLOTS] = {};
-    bool bTwoPlayersInSameHouse = false;
     bool bDuplicateHouse = false;
     bool bDuplicateColor = false;
 
@@ -1264,10 +1272,6 @@ void CustomGamePlayers::onNext()
 
         if(bPlayer1Active || bPlayer2Active) {
             numUsedHouses++;
-
-            if(bPlayer1Active && bPlayer2Active) {
-                bTwoPlayersInSameHouse = true;
-            }
 
             const int selectedHouse = curHouseInfo.houseDropDown.getSelectedEntryIntData();
             if(selectedHouse >= 0 && isCustomGameHouseAvailable(static_cast<HOUSETYPE>(selectedHouse))) {
@@ -1311,16 +1315,14 @@ void CustomGamePlayers::onNext()
         }
     }
 
-    if(numUsedHouses < 2) {
+    if(numUsedHouses < 2 && !isCoopGameType(gameInitSettings.getGameType())) {
         // No game possible with only 1 house
         openWindow(MsgBox::create(_("At least 2 houses must be controlled\nby a human player or an AI player!")));
-    } else if(bTwoPlayersInSameHouse) {
-        openWindow(MsgBox::create(_("Each player must use a different house/color.")));
     } else if(bDuplicateHouse) {
         openWindow(MsgBox::create(_("The same house cannot be used twice.")));
     } else if(bDuplicateColor) {
         openWindow(MsgBox::create(_("The same color cannot be used twice.")));
-    } else if(numTeams < 2) {
+    } else if(numTeams < 2 && !isCoopGameType(gameInitSettings.getGameType())) {
         // No game possible with only 1 team
         openWindow(MsgBox::create(_("There must be at least two different teams!")));
     } else {
@@ -1376,6 +1378,10 @@ void CustomGamePlayers::onNext()
 void CustomGamePlayers::addAllPlayersToGameInitSettings()
 {
     gameInitSettings.clearHouseInfo();
+    if(isCoopGameType(gameInitSettings.getGameType())) {
+        for(const auto& enemy : fixedCoopHouses)
+            if(enemy.houseID != gameInitSettings.getHouseID()) gameInitSettings.addHouseInfo(enemy);
+    }
 
     for(int i=0;i<numHouses;i++) {
         HouseInfo& curHouseInfo = houseInfo[i];
@@ -1388,6 +1394,12 @@ void CustomGamePlayers::addAllPlayersToGameInitSettings()
         int player2 = curHouseInfo.player2DropDown.getSelectedEntryIntData();
         std::string player2name = curHouseInfo.player2DropDown.getSelectedEntry();
 
+        if(isCoopGameType(gameInitSettings.getGameType())) {
+            houseID = gameInitSettings.getHouseID();
+            team = 1;
+            for(const auto& fixed : fixedCoopHouses)
+                if(fixed.houseID == houseID) colorOfHouse = fixed.colorOfHouse;
+        }
         GameInitSettings::HouseInfo newHouseInfo((HOUSETYPE) houseID, team);
         colorOfHouse = resolveSelectedColorSlot(colorOfHouse, houseID);
         if(isValidHouseColorSlot(colorOfHouse)) {
@@ -1669,7 +1681,7 @@ void CustomGamePlayers::onChangeHousesDropDownBoxes(bool bInteractive, int house
             }
         }
 
-        if(gameInitSettings.getGameType() == GameType::LoadMultiplayer) {
+        if(gameInitSettings.getGameType() == GameType::LoadMultiplayer || isCoopGameType(gameInitSettings.getGameType())) {
             // no house changes possible
             continue;
         }
@@ -1974,6 +1986,13 @@ void CustomGamePlayers::setPlayer2Slot(const std::string& playername, int slot) 
 }
 
 void CustomGamePlayers::checkPlayerBoxes() {
+    if(isCoopGameType(gameInitSettings.getGameType())) {
+        auto& shared = houseInfo[0];
+        shared.houseDropDown.setEnabled(false);
+        shared.teamDropDown.setEnabled(false);
+        shared.bonusColorCheckbox.setEnabled(false);
+        shared.colorDropDown.setEnabled(false);
+    }
     int numPlayers = 0;
 
     for(int i=0;i<numHouses;i++) {
