@@ -37,6 +37,7 @@ anything inside their own authority, exactly as on ENet.
 | ⤷ browser | `src/Network/RelayWebSocketEmscripten.cpp` | Emscripten WebSocket, queued into the game loop. |
 | Session | `include/Network/RoomRelayClient.h`, `src/Network/RoomRelayClient.cpp` | Handshake, logical peers, membership, heartbeats, deadlines. |
 | Shared receive path | `include/Network/GamePayloadRouter.h`, `src/Network/GamePayloadRouter.cpp` | The payload handling both transports use. |
+| Content rule | `include/Network/ContentCompatibility.h` | Whether two installs may be in the same match, in one place. |
 | Transport switch | `src/Network/NetworkManager.cpp` | `NetworkManager::Transport::RoomRelay`. |
 | Menu | `src/Menu/CrossplayMenu.cpp` | Host a room, join by code, carry it into the lobby. |
 | Digest | `include/Network/GameStateDigest.h` | The periodic deterministic fingerprint. |
@@ -171,11 +172,33 @@ Every one of these is visible to the player rather than silent:
 | No relay configured | "Online play has not been set up in this copy of the game." |
 | libcurl without WebSocket support | The reason is shown, and the online buttons stay disabled. |
 | Wrong or expired code | The admission request fails with the relay's reason. |
-| Content or version mismatch | Refused at admission, and again by the lobby's config check. |
+| Content or version mismatch | Refused at admission, reported in the lobby, and the match refuses to start. |
+| This install cannot hash its own content | It refuses to go online at all rather than sending an empty fingerprint. |
+| The host changes mod after the room opened | The host re-checks before starting and refuses if anyone now differs. |
 | The host leaves | The room ends for everybody with "The host left the game." |
 | A player stops responding | The relay drops them after 20 s; the match ends after 45 s of waiting. |
 | The connection falls behind | The session ends rather than dropping queued gameplay messages. |
+| The game loop stops draining | The session ends, the backlog is discarded, and the close is still delivered. |
 | Simulations disagree | The state digest reports it once, in the news ticker. |
+
+Two of those need spelling out, because the obvious implementation of each is wrong.
+
+**Content agreement is never assumed.** A peer that has not reported its content hashes yet has
+not shown that it matches, and an install that could not hash its own content has not shown
+anything at all — two such installs would otherwise compare equal and neither would have verified
+anything. The first case is recoverable and says so ("waiting for …"); the second and a real
+disagreement both stop the match. The room's fingerprint is checked again at start, because the
+lobby lets the host pick a different mod after the room was admitted against the old one. The
+rule itself lives in `include/Network/ContentCompatibility.h` so the three places that apply it
+cannot drift apart.
+
+**A session that ends discards what it could not keep up with.** The event queue is bounded by
+count *and* by aggregate size — four thousand events each carrying a 256 KiB payload is a
+gigabyte, which a count alone would never notice. When either bound is reached the session ends,
+the backlog goes with it, and the close is still delivered: applying a prefix of what the game
+could not keep up with is exactly how a lockstep match desynchronises quietly. An *orderly* close
+is the opposite case and keeps its pending events, because a co-op continuation is sent
+immediately before the host disconnects and dropping it would strand the other player.
 
 A lockstep command is **never** skipped to keep a match moving. Skipping one desynchronises the
 simulation silently, which is worse than an honest disconnect and is exactly what the digest
@@ -199,14 +222,30 @@ Verification tools:
 tests/wasm/run-relay-wire-harness.sh wasm
 tests/wasm/run-relay-wire-harness.sh native
 
-# Cross-table agreement, in the normal test target:
-ctest --test-dir build --output-on-failure -R 'dunelegacy_tests|relay_wire_harness'
+# Cross-table agreement, the content rule, and the session's queue behaviour:
+ctest --test-dir build --output-on-failure \
+      -R 'dunelegacy_tests|relay_wire_harness|relay_session_tests'
 
 # Two real peers against a real relay on loopback:
 cmake --build build --target relay_transport_harness
 tests/relay/run-relay-transport-harness.sh
 tests/relay/run-relay-transport-harness.sh diverge   # injected divergence must be detected
+tests/relay/run-relay-transport-harness.sh bulk      # partial writes, every byte verified
 ```
+
+`relay_session_tests` is a separate executable rather than another file in the main test target,
+because it compiles the production `RoomRelayClient.cpp` against a scripted socket. The session
+reaches its transport through two free functions, so the test target supplies its own definitions
+of them instead of linking `RelayWebSocketCurl.cpp`: the code under test is exactly what ships and
+the production build carries no hook for it. That is what makes the queue bounds testable at all —
+overflowing them against a real relay would mean pushing a gigabyte through a socket.
+
+`bulk` mode pushes messages far larger than a socket buffer, so `curl_ws_send()` consumes part of
+a frame and the rest has to be offered again as a continuation. It verifies every byte on the far
+side rather than the message count, because a continuation that resumes at the wrong offset still
+produces a message of exactly the right length. Whether the partial path actually runs depends on
+the machine's socket buffers; the script says which happened, and `RELAY_BULK_COUNT` and
+`RELAY_BULK_BYTES` push harder.
 
 The browser side cannot be driven from a shell. Build the web target, open it with
 `?relay=http://127.0.0.1:8787&relaydev=1`, and host or join against the same relay the native

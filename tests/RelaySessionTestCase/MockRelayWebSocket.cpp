@@ -63,8 +63,9 @@ std::unique_ptr<RelayWebSocket> createRelayWebSocket(const std::string& url,
     }
 
     auto socket = std::make_unique<MockRelayWebSocket>();
-    // The session owns the socket; the test observes it through this raw pointer, which stays
-    // valid because a test never outlives the session it created.
+    // The session owns the socket; the test observes it through this raw pointer. It is valid
+    // until that session is destroyed or stopped - stop() releases the socket - so every test
+    // calls reset() before it starts rather than trusting what a previous one left behind.
     currentSocket = socket.get();
     return socket;
 }
