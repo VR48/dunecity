@@ -1,5 +1,13 @@
 ## Crossplay candidate — 12 September 2026
 
+Final candidate CI `34694065319` is successful on Windows, macOS and Linux, with
+all six packages downloaded under `../outputs/network-hardening/release-657-artifacts-b4c6af3/`.
+Actual Hermes's final installer recheck (`20260912_124943_2a850b`) clears the six
+previous findings for bundle source `c1bd25e`. The archive is staged outside the live
+website under `/home/dunelegacy-deploy/relay-deployment-c1bd25e/`; its checksum was
+read back and verified. Operator instructions: `../outputs/network-hardening/relay-administrator-handoff.md`.
+Administrator access and actual public WSS/proxy/SQLite verification are still required.
+
 Branch `fix/network-hardening` is published for candidate packaging as
 `release-1.0.657`; current main `8879732` is incorporated. Production main and the
 stable tag are deliberately not advanced: the restricted metaserver SSH account

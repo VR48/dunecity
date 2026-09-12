@@ -44,10 +44,17 @@ artifact identity and rollback gaps. Actual Opus implemented the revisions in se
 53 isolated helper checks successfully. The installer now binds the revision to its
 manifest, checks exact cached inventories including symlink targets, installs files
 atomically, validates service identity and local/public HTTPS, and reports rollback
-failures explicitly. It has not been executed on the production host. The restricted metaserver account cannot administer services; administrator
+failures explicitly. Actual Hermes then rechecked bundle `c1bd25e` in session
+`20260912_124943_2a850b`: none of its six installer findings remains a blocker;
+archive/manifest hashes, all 36 manifest entries and the 53 helper checks pass.
+That is installer-scope approval, not evidence of execution on the production host. The restricted metaserver account cannot administer services; administrator
 access remains unknown. No production relay, main merge or stable tag is claimed.
-Candidate package CI: https://github.com/VR48/dunecity/actions/runs/34693670790
-(the `4940aef` candidate, before the follow-up lobby presentation changes).
+Final game candidate CI: https://github.com/VR48/dunecity/actions/runs/34694065319
+(`b4c6af3`, including the clearer lobby). All three platform builds, native Linux
+tests and relay tests pass. Six packages were downloaded with a local SHA256 manifest.
+Installer bundle `c1bd25e` is staged in the deploy account's private home directory;
+its server-side SHA256 matches `3c5f995dcdabd4fb729ef4c155ff2243a371ae4022e3c9e8fc54ccb6b534731f`.
+This staging does not change the live website or install the service.
 
 ## Earlier reviewed source and scope
 
@@ -109,7 +116,7 @@ Local review reports, test output and the failed Claude attempt are preserved un
 ## Remaining release gates
 
 - Complete native/browser commands, menus and disconnect checks and verify the revised lobby layout.
-- Complete review and verification of the revised administrator bootstrap.
+- Execute the reviewed administrator bootstrap once administrator access is available.
 - Verify public WSS certificates, reverse-proxy settings, Origin/address forwarding and
   browser connectivity across real networks, latency and loss.
 
