@@ -107,6 +107,8 @@ private:
 
     Label           statusLabel;
     Label           roomCodeLabel;
+    HBox            roomCodeHBox;
+    TextButton      copyCodeButton;
 
     HBox            hostHBox;
     TextButton      hostCustomGameButton;

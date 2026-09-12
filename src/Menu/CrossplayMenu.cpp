@@ -35,6 +35,7 @@
 #include <globals.h>
 #include <main.h>
 #include <misc/FileSystem.h>
+#include <misc/WebRuntime.h>
 #include <players/QuantBotConfig.h>
 
 #include <algorithm>
@@ -105,7 +106,16 @@ CrossplayMenu::CrossplayMenu() : MenuBase() {
 
     roomCodeLabel.setAlignment(Alignment_HCenter);
     roomCodeLabel.setTextFontSize(24);
-    mainVBox.addWidget(&roomCodeLabel, 34);
+    roomCodeHBox.addWidget(Spacer::create(), 0.2);
+    roomCodeHBox.addWidget(&roomCodeLabel, 0.6);
+    copyCodeButton.setText(_("Copy code"));
+    copyCodeButton.setOnClick([this]() {
+        if(roomCode.empty()) return;
+        copyCodeButton.setText(WebRuntime::copyText(roomCode) ? _("Copied!") : _("Try again"));
+    });
+    roomCodeHBox.addWidget(&copyCodeButton, 130);
+    roomCodeHBox.addWidget(Spacer::create(), 0.2);
+    mainVBox.addWidget(&roomCodeHBox, 34);
 
     mainVBox.addWidget(VSpacer::create(16));
 
@@ -197,6 +207,9 @@ void CrossplayMenu::refreshControls() {
     const bool showCode = !roomCode.empty()
         && (stage == Stage::HostReady || stage == Stage::ClientWaiting);
     roomCodeLabel.setText(showCode ? (_("Game code: ") + roomCode) : std::string());
+    copyCodeButton.setVisible(showCode);
+    copyCodeButton.setEnabled(showCode);
+    copyCodeButton.setText(_("Copy code"));
 
     backButton.setEnabled(!busy);
 }

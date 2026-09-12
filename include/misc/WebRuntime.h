@@ -11,6 +11,7 @@ void reportMatchStats(const std::string& phase, const std::string& matchID, cons
 void yieldToBrowser();
 void markGameReady();
 void syncPersistentFiles();
+bool copyText(const std::string& text);
 
 }
 

@@ -36,6 +36,7 @@
 
 #include <misc/fnkdat.h>
 #include <misc/FileSystem.h>
+#include <misc/WebRuntime.h>
 #include <misc/draw_util.h>
 #include <misc/string_util.h>
 #include <misc/IMemoryStream.h>
@@ -168,7 +169,12 @@ CustomGamePlayers::CustomGamePlayers(const GameInitSettings& newGameInitSettings
 
     captionLabel.setText(getBasename(gameInitSettings.getFilename(), true));
     captionLabel.setAlignment(Alignment_HCenter);
-    mainVBox.addWidget(&captionLabel, 24);
+    captionHBox.addWidget(&captionLabel, 1.0);
+    copyCodeButton.setText(_("Copy code"));
+    copyCodeButton.setVisible(false);
+    copyCodeButton.setEnabled(false);
+    captionHBox.addWidget(&copyCodeButton, 130);
+    mainVBox.addWidget(&captionHBox, 24);
     mainVBox.addWidget(VSpacer::create(24));
 
     mainVBox.addWidget(Spacer::create(), 0.04);
@@ -593,6 +599,11 @@ CustomGamePlayers::CustomGamePlayers(const GameInitSettings& newGameInitSettings
         // on screen for as long as the lobby is open.
         const std::string roomCode = pNetworkManager->getRoomCode();
         if(!roomCode.empty()) {
+            copyCodeButton.setVisible(true);
+            copyCodeButton.setEnabled(true);
+            copyCodeButton.setOnClick([this, roomCode]() {
+                copyCodeButton.setText(WebRuntime::copyText(roomCode) ? _("Copied!") : _("Try again"));
+            });
             captionLabel.setText(captionLabel.getText() + "   [" + roomCode + "]");
             addInfoMessage(_("Game code: ") + roomCode);
             if(bServer) {

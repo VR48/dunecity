@@ -1,9 +1,24 @@
 #include <misc/WebRuntime.h>
+#include <SDL.h>
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 
 namespace {
+
+EM_ASYNC_JS(int, copyBrowserText, (const char* text), {
+    const value = UTF8ToString(text);
+    try {
+        if (!navigator.clipboard || !navigator.clipboard.writeText) return 0;
+        // Bound the wait so a browser permission prompt cannot stall the lobby indefinitely.
+        return await Promise.race([
+            navigator.clipboard.writeText(value).then(() => 1, () => 0),
+            new Promise(resolve => setTimeout(() => resolve(0), 2000))
+        ]);
+    } catch (_) {
+        return 0;
+    }
+});
 
 EM_JS(void, syncBrowserFileSystem, (), {
     if (typeof Module.requestPersistentSync === 'function') {
@@ -19,6 +34,14 @@ EM_JS(void, markBrowserGameReady, (), {
 
 }
 #endif
+
+bool WebRuntime::copyText(const std::string& text) {
+#ifdef __EMSCRIPTEN__
+    return copyBrowserText(text.c_str()) != 0;
+#else
+    return SDL_SetClipboardText(text.c_str()) == 0;
+#endif
+}
 
 void WebRuntime::yieldToBrowser() {
 #ifdef __EMSCRIPTEN__

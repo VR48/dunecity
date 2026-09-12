@@ -124,6 +124,8 @@ private:
     VBox            mainVBox;
 
     Label           captionLabel;
+    HBox            captionHBox;
+    TextButton      copyCodeButton;
 
     HBox            mainHBox;
 
