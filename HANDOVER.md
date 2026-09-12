@@ -1,4 +1,4 @@
-# Public co-op release preparation — 1.0.653
+# Public co-op release published — 1.0.653
 
 Release version bump only over the user-tested 1.0.652 gameplay. Includes all
 unreleased fixes since 1.0.642 plus campaign/skirmish shared-house co-op.
@@ -7,8 +7,20 @@ Ninja dependency audits passed; CTest reports 588 passed and 3 expected skips.
 Installed /Applications/dunecity.app, SHA256
 9647fa6549b42527dfb7dc42251d5c94683cbb4134d484d4903adb14cd2344e9.
 Backup: /Applications/.dunecity-653-fvc2i619/dunecity-previous.app.
-Remote packages, website release copy and SourceForge publication remain to be
-verified. Original user profile remains untouched; reports/ stays unstaged.
+Published and verified on 2026-09-12. GitHub tag v1.0.653 points to eaaff4a753d00fe2916c1d8f9c951ae2193cd54d.
+Build Dune Legacy run 34672540279 passed Windows, macOS (Mac mini), Linux,
+Linux tests and release publication. All six packages are present in the stable release:
+https://github.com/VR48/dunecity/releases/tag/v1.0.653.
+SourceForge run 34673037345 succeeded: six packages plus notes/checksums were
+read back and hash-verified; all three OS defaults now select 1.0.653.
+SourceForge dunecity branch and peeled dunecity-v1.0.653 tag match eaaff4a.
+Website commit dcfec4a / Deploy to Droplet run 34673168756 succeeded; live home,
+Dune City, co-op guide, modding and sitemap match the published source. Co-op is
+announced as available and all desktop download links point to 1.0.653.
+Legacy SourceForge master commit 591b9e1 adds co-op hosting guidance. The changed
+downloads.html was backed up, uploaded atomically, read back and byte-verified
+against both the source and public page. Original user profile remains untouched.
+Concurrent uncommitted 1.0.654 browser work and reports/ are outside this release.
 
 # Internet-listed co-op smoke test — 2026-09-12
 
@@ -47,9 +59,8 @@ Co-op navigation tab and home/DuneCity announcements (website commit 964ac35,
 Deploy to Droplet run 34671938595 successful; six live files byte-verified).
 Home link reads "Play campaign co-op with your friends online!" per Stefan.
 Guide covers hosting, joining, QuantBot partners, skirmish and solo/shared saves.
-Public desktop download remains 1.0.642: guide accurately requires 1.0.652 and
-states that public co-op release is pending. When publishing the game release,
-update this availability paragraph as well as the normal download links.
+At that checkpoint public desktop downloads were still 1.0.642. The 1.0.653
+release above supersedes that pending state and updates the guide/download links.
 
 The Mac mini guest was stopped after switching to the requested local test.
 Its portable bundle needed SDL3 explicitly included beside SDL2: Homebrew's
