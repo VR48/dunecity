@@ -83,3 +83,27 @@ future decentralization claims are not features demonstrated by this snapshot.
 The existing-network hardening can ship independently of this transport work.
 Before integrating the transport, rebase onto that hardening and rerun the same
 boundary tests for each transport rather than replacing its checks.
+
+## Subsequent PR update and coordination
+
+At PR24 head `0b172c2222e96167cba3ed6c72c15d89b63d9ad1`, commit `69655ca`
+changes the root CMake file, build workflow and gitignore; the WebRTC PR3 head is
+still `db4c81e`. The updated root CMake version is 1.0.655 but config.h and
+vcpkg.json remain 1.0.531. Running the PR's version checker against its own files
+fails with the expected mismatch. Do not substitute that head for the current
+working tree merely because its root project version matches.
+
+Stefan authorized posting these findings. The source-pinned review and update are
+[in PR24's comment](https://github.com/VR48/dunecity/pull/24#issuecomment-5644077955).
+No code has been copied from Quix's branches at this checkpoint; the seven bridge
+tests were executed on an isolated source snapshot.
+
+A Codex thread heartbeat named **Hermes review of Quix networking changes** checks
+both PRs every five minutes. It asks the real Hermes CLI to review newly observed
+changes, retains commit checkpoints in the task's output directory, and brings
+only actionable findings or failures back to the coordinating task. It does not
+merge, push, deploy or post comments automatically.
+
+Scope now includes implementing updated-desktop/browser and browser/browser
+multiplayer with Opus, real browser game tests, and an independent Hermes security
+review. Existing-network hardening remains the first acceptance checkpoint.
