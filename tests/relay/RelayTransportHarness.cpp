@@ -30,6 +30,7 @@
 
 #include <misc/SDL2pp.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -49,6 +50,9 @@ struct Options {
     bool        corruptState = false;
     bool        expectMismatch = false;
     int         seconds = 25;
+    int         bulkMessages = 0;
+    int         expectBulk = 0;
+    int         bulkBytes = 200000;
 };
 
 void usage() {
@@ -59,7 +63,10 @@ void usage() {
         "  --coop               host a two-player co-op room instead of a custom room\n"
         "  --corrupt            perturb this peer's synthetic state to force a divergence\n"
         "  --expect-mismatch    succeed only if a divergence is detected\n"
-        "  --seconds=N          how long to stay in the room (default 25)\n");
+        "  --seconds=N          how long to stay in the room (default 25)\n"
+        "  --bulk=N             send N large messages as fast as the socket accepts them\n"
+        "  --expect-bulk=N      require N large messages to arrive, each byte-exact\n"
+        "  --bulk-bytes=N       body size of a bulk message (default 200000)\n");
 }
 
 bool parseOptions(int argc, char** argv, Options& options) {
@@ -74,6 +81,12 @@ bool parseOptions(int argc, char** argv, Options& options) {
             options.hosting = false;
         } else if(argument.rfind("--seconds=", 0) == 0) {
             options.seconds = std::atoi(argument.c_str() + 10);
+        } else if(argument.rfind("--bulk=", 0) == 0) {
+            options.bulkMessages = std::atoi(argument.c_str() + 7);
+        } else if(argument.rfind("--expect-bulk=", 0) == 0) {
+            options.expectBulk = std::atoi(argument.c_str() + 14);
+        } else if(argument.rfind("--bulk-bytes=", 0) == 0) {
+            options.bulkBytes = std::atoi(argument.c_str() + 13);
         } else if(argument == "--host") {
             options.hosting = true;
         } else if(argument == "--dev") {
@@ -99,7 +112,64 @@ bool parseOptions(int argc, char** argv, Options& options) {
     if(options.seconds < 1 || options.seconds > 600) {
         return false;
     }
+    if(options.bulkMessages < 0 || options.bulkMessages > 100000) {
+        return false;
+    }
+    if(options.expectBulk < 0 || options.expectBulk > 100000) {
+        return false;
+    }
+    // Four bytes of the payload are the packet id, and the whole relay frame has to stay under
+    // the transport limit.
+    const int maxBulkBody =
+        static_cast<int>(RoomRelay::Limits::kMaxGamePayloadBytes) - 4 - 64;
+    if(options.bulkBytes < 16 || options.bulkBytes > maxBulkBody) {
+        return false;
+    }
     return true;
+}
+
+/**
+    A bulk message whose every byte is a function of its index and position.
+
+    That is the point: a partial send that resumes at the wrong offset, or two messages that get
+    spliced, produces bytes that cannot be explained by any index. A length check alone would
+    miss both.
+*/
+std::vector<std::uint8_t> bulkPayload(int index, int bodyBytes) {
+    std::vector<std::uint8_t> payload(static_cast<std::size_t>(4 + bodyBytes), 0);
+    const std::uint32_t packetType = NETWORKPACKET_CHATMESSAGE;
+    for(int shift = 0; shift < 32; shift += 8) {
+        payload[static_cast<std::size_t>(shift / 8)] =
+            static_cast<std::uint8_t>((packetType >> shift) & 0xFF);
+    }
+    for(int position = 0; position < bodyBytes; position++) {
+        payload[static_cast<std::size_t>(4 + position)] =
+            static_cast<std::uint8_t>((index * 131 + position * 17) & 0xFF);
+    }
+    return payload;
+}
+
+/// \return the index the payload claims to be, or -1 if it is not an intact bulk message.
+int identifyBulkPayload(const std::vector<std::uint8_t>& payload, int bodyBytes) {
+    if(payload.size() != static_cast<std::size_t>(4 + bodyBytes) || bodyBytes < 1) {
+        return -1;
+    }
+    // Recover the index from the first body byte, then verify every other byte agrees with it.
+    for(int candidate = 0; candidate < 256; candidate++) {
+        if(static_cast<std::uint8_t>((candidate * 131) & 0xFF) != payload[4]) {
+            continue;
+        }
+        bool matches = true;
+        for(int position = 1; position < bodyBytes && matches; position++) {
+            const std::uint8_t expected =
+                static_cast<std::uint8_t>((candidate * 131 + position * 17) & 0xFF);
+            matches = (payload[static_cast<std::size_t>(4 + position)] == expected);
+        }
+        if(matches) {
+            return candidate;
+        }
+    }
+    return -1;
 }
 
 /**
@@ -230,6 +300,11 @@ int main(int argc, char** argv) {
     std::map<std::uint32_t, GameStateDigest::Digest> ourDigests;
     std::map<std::uint32_t, GameStateDigest::Digest> theirDigests;
 
+    int bulkSent = 0;
+    int bulkReceived = 0;
+    int bulkCorrupt = 0;
+    std::size_t peakBacklogBytes = 0;
+
     int sentPayloads = 0;
     int receivedPayloads = 0;
     int digestsSent = 0;
@@ -312,6 +387,28 @@ int main(int argc, char** argv) {
 
                     case RoomRelayClient::Event::Type::GamePayload: {
                         receivedPayloads++;
+
+                        const bool looksBulk =
+                            options.expectBulk > 0
+                            && event.gameMessageType == NETWORKPACKET_CHATMESSAGE
+                            && event.payload.size()
+                                   == static_cast<std::size_t>(4 + options.bulkBytes);
+                        if(looksBulk) {
+                            const int index =
+                                identifyBulkPayload(event.payload, options.bulkBytes);
+                            if(index < 0) {
+                                bulkCorrupt++;
+                                std::printf("BULK corrupt bytes=%zu\n", event.payload.size());
+                            } else {
+                                bulkReceived++;
+                                if((bulkReceived % 8) == 0 || bulkReceived == options.expectBulk) {
+                                    std::printf("BULK recv count=%d bytes=%zu\n",
+                                                bulkReceived, event.payload.size());
+                                }
+                            }
+                            break;
+                        }
+
                         std::printf("RECV type=%u from=%u bytes=%zu\n",
                                     static_cast<unsigned>(event.gameMessageType),
                                     static_cast<unsigned>(event.peerId), event.payload.size());
@@ -362,6 +459,43 @@ int main(int argc, char** argv) {
                     } break;
                 }
                 std::fflush(stdout);
+            }
+
+            // Bulk mode replaces the once-a-second exchange. It exists to make the transport's
+            // partial-write path run for real: messages this large do not fit in a socket buffer,
+            // so curl_ws_send() consumes part of one and the rest has to be offered again as a
+            // continuation of the same frame. Every byte is checked on the other side, because
+            // resuming at the wrong offset produces a message of exactly the right length.
+            if(options.bulkMessages > 0 && joined && !relay.peers().empty()) {
+                // Stay well inside both the client's own outgoing bound and the relay's
+                // per-recipient backpressure limit while still keeping the socket saturated.
+                constexpr std::size_t kBacklogTarget = 512 * 1024;
+
+                while(bulkSent < options.bulkMessages
+                      && relay.outgoingBacklogBytes() < kBacklogTarget) {
+                    const std::vector<std::uint8_t> payload =
+                        bulkPayload(bulkSent, options.bulkBytes);
+                    if(!relay.sendGamePayload(payload.data(), payload.size(), 0, 0)) {
+                        std::printf("BULK send refused at %d\n", bulkSent);
+                        break;
+                    }
+                    bulkSent++;
+                    sentPayloads++;
+                    peakBacklogBytes = std::max(peakBacklogBytes, relay.outgoingBacklogBytes());
+                    if((bulkSent % 8) == 0 || bulkSent == options.bulkMessages) {
+                        std::printf("BULK sent count=%d backlog=%zu\n",
+                                    bulkSent, relay.outgoingBacklogBytes());
+                        std::fflush(stdout);
+                    }
+                }
+
+                peakBacklogBytes = std::max(peakBacklogBytes, relay.outgoingBacklogBytes());
+
+                if(relay.status() == RoomRelayClient::Status::Closed) {
+                    break;
+                }
+                SDL_Delay(1);
+                continue;
             }
 
             // Once there is somebody to talk to, run the agreed exchange one step per second.
@@ -443,14 +577,25 @@ int main(int argc, char** argv) {
     const bool exchanged = (sentPayloads > 0) && (receivedPayloads > 0);
     const bool digestOutcome = options.expectMismatch ? (digestMismatches > 0)
                                                       : (digestMismatches == 0);
+    // A bulk sender has to have offered everything it promised; a bulk receiver has to have got
+    // all of it with every byte intact. "Right number of messages" is not enough on its own -
+    // a resumed partial write that restarts at the wrong offset still produces the right count.
+    const bool bulkSendOutcome = (options.bulkMessages == 0)
+                              || (bulkSent == options.bulkMessages);
+    const bool bulkReceiveOutcome = (options.expectBulk == 0)
+                                 || (bulkReceived == options.expectBulk && bulkCorrupt == 0);
+
+    const bool succeeded = sawPeer && exchanged && digestOutcome
+                        && bulkSendOutcome && bulkReceiveOutcome;
 
     std::printf("RESULT %s peers=%d sent=%d received=%d digests=%d compared=%d mismatches=%d "
-                "close=%u detail=%s\n",
-                (sawPeer && exchanged && digestOutcome) ? "ok" : "failed",
+                "bulksent=%d bulkrecv=%d bulkcorrupt=%d peakbacklog=%zu close=%u detail=%s\n",
+                succeeded ? "ok" : "failed",
                 peersSeen, sentPayloads, receivedPayloads, digestsSent, digestsCompared,
-                digestMismatches, static_cast<unsigned>(closeCode), closeMessage.c_str());
+                digestMismatches, bulkSent, bulkReceived, bulkCorrupt, peakBacklogBytes,
+                static_cast<unsigned>(closeCode), closeMessage.c_str());
     (void)peersLeft;
 
     SDL_Quit();
-    return (sawPeer && exchanged && digestOutcome) ? 0 : 1;
+    return succeeded ? 0 : 1;
 }

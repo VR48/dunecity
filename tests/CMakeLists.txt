@@ -27,6 +27,7 @@ target_sources(dunelegacy_tests
         NetworkManagerTestCase/NetworkManagerTestCase.cpp
         NetworkHardeningTestCase/NetworkHardeningTestCase.cpp
         RelayProtocolTestCase/RelayProtocolTestCase.cpp
+        RelayProtocolTestCase/ContentCompatibilityTestCase.cpp
         GenericNinthHouseRegressionTestCase/GenericNinthHouseRegressionTestCase.cpp
         ZoneStructureTestCase/ZoneStructureTestCase.cpp
         RoadPlacementTestCase/RoadPlacementTestCase.cpp
@@ -195,6 +196,47 @@ target_include_directories(relay_wire_harness
 )
 
 add_test(NAME relay_wire_harness COMMAND relay_wire_harness)
+
+# Relay session tests.
+#
+# A separate executable rather than another file in dunelegacy_tests, because it compiles the
+# production RoomRelayClient.cpp and needs the transport to be a scripted one. RoomRelayClient
+# reaches its socket through two free functions; this target supplies its own definitions of them
+# instead of linking RelayWebSocketCurl.cpp, so the code under test is exactly what ships and the
+# production build carries no test hook for it.
+add_executable(relay_session_tests
+    RelaySessionTestCase/RelaySessionTestCase.cpp
+    RelaySessionTestCase/MockRelayWebSocket.cpp
+    ${CMAKE_SOURCE_DIR}/src/Network/RoomRelayClient.cpp
+    # misc/SDL2pp.h reaches misc/exceptions.h, whose THROW macro is built on fmt.
+    ${CMAKE_SOURCE_DIR}/src/misc/format.cpp
+)
+
+target_include_directories(relay_session_tests
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_BINARY_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/RelaySessionTestCase
+)
+
+target_link_libraries(relay_session_tests
+    PRIVATE
+        Catch2::Catch2WithMain
+        SDL2::SDL2
+        $<IF:$<TARGET_EXISTS:SDL2_mixer::SDL2_mixer>,SDL2_mixer::SDL2_mixer,SDL2_mixer::SDL2_mixer-static>
+)
+
+target_compile_options(relay_session_tests
+    PRIVATE
+        $<$<CXX_COMPILER_ID:MSVC>:/W4>
+        $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra -pedantic>
+)
+
+if(WIN32)
+    target_link_libraries(relay_session_tests PRIVATE ws2_32 winmm version)
+endif()
+
+add_test(NAME relay_session_tests COMMAND relay_session_tests)
 
 # Relay transport harness.
 #

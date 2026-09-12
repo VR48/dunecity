@@ -235,7 +235,12 @@ public:
         if(state_ == State::Closed) {
             return;
         }
-        if(state_ == State::Open) {
+        // A close frame is a new frame, and libcurl refuses to start one while a previous frame
+        // still has payload outstanding ("starting new frame with N bytes from last one
+        // remaining to be sent"). If a large message was only partially written, the socket is
+        // already not keeping up; going quiet is the honest outcome and the relay's own liveness
+        // deadline notices within seconds.
+        if(state_ == State::Open && frameSent_ == 0) {
             // A close frame carries a big-endian status code followed by an optional reason.
             std::vector<std::uint8_t> body;
             body.push_back(static_cast<std::uint8_t>((code >> 8) & 0xFF));
@@ -326,9 +331,25 @@ private:
     }
 
     /**
-        Offers queued messages to curl. A partial write leaves the rest of the message at the
-        head of the queue; the remainder is offered again as a continuation of the same frame,
-        which is what CURLWS_OFFSET means.
+        Offers queued messages to curl, one WebSocket frame per message.
+
+        The partial-write contract, from curl_ws_send(3):
+
+          - Without CURLWS_OFFSET, libcurl writes a frame header for exactly `buflen` bytes and
+            `fragsize` is not used. "fragsize should always be set to zero unless a (huge) frame
+            shall be sent using multiple calls with partial content per call explicitly."
+          - "If the return value is CURLE_OK but sent is less than the given buflen, libcurl was
+            unable to consume the complete payload in a single call. In this case the application
+            must call this function again until all payload is processed."
+          - CURLWS_OFFSET with a zero fragsize continues a frame that is already in progress.
+
+        So the first call for a message declares the whole message as one frame and passes no
+        fragsize, and any remainder is offered as a continuation. Passing a non-zero fragsize on
+        that first call, as this used to, was ignored by libcurl but read as if it mattered - and
+        it is the parameter libcurl would start validating if it ever validated one.
+
+        CURLWS_CONT is deliberately absent: that splits one *message* across several frames,
+        which this transport never needs.
     */
     void drainOutgoing() {
         while(state_ == State::Open && !outgoing_.empty()) {
@@ -337,17 +358,13 @@ private:
 
             std::size_t sent = 0;
             unsigned int flags = CURLWS_BINARY;
-            std::size_t fragsize = 0;
-            if(frameSent_ == 0) {
-                // First piece: tell curl the whole message size so it can write one header.
-                fragsize = frame.size();
-            } else {
-                flags |= CURLWS_OFFSET;
+            if(frameSent_ != 0) {
+                flags |= CURLWS_OFFSET;     // continuing the frame the first call started
             }
 
             const CURLcode result = curl_ws_send(
                 easy_, reinterpret_cast<const char*>(frame.data() + frameSent_), remaining,
-                &sent, static_cast<curl_off_t>(fragsize), flags);
+                &sent, 0, flags);
 
             if(result == CURLE_AGAIN) {
                 return;         // socket is full; try again on the next pump

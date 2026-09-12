@@ -17,6 +17,7 @@
 
 #include <Network/GamePayloadRouter.h>
 
+#include <Network/ContentCompatibility.h>
 #include <Network/NetworkPacketPolicy.h>
 #include <Network/NetworkPacketTypes.h>
 
@@ -112,7 +113,8 @@ void storeReceivedMap(const GameInitSettings& gameInitSettings, GamePayloadPeer&
 }
 
 void handleConfigHash(InputStream& stream, GamePayloadPeer& peer,
-                      const GamePayloadContext& context) {
+                      const GamePayloadContext& context,
+                      const NetworkSessionCallbacks& callbacks) {
     const Uint32 peerProtocolVersion = stream.readUint32();
     const std::string gameVersion    = stream.readString();
     const std::string quantBotHash   = stream.readString();
@@ -148,13 +150,35 @@ void handleConfigHash(InputStream& stream, GamePayloadPeer& peer,
         return;
     }
 
-    const bool quantBotMatches   = (quantBotHash == localQuantBotHash);
-    const bool objectDataMatches = (objectDataHash == localObjectDataHash);
-    if(!quantBotMatches || !objectDataMatches) {
-        SDL_Log("Config mismatch with '%s' (QuantBot %s, ObjectData %s)", peer.name().c_str(),
-                quantBotMatches ? "match" : "differ", objectDataMatches ? "match" : "differ");
-    } else {
+    ContentCompatibility::Fingerprint local;
+    local.gameVersion    = localVersion;
+    local.quantBotHash   = localQuantBotHash;
+    local.objectDataHash = localObjectDataHash;
+
+    ContentCompatibility::Fingerprint reported;
+    reported.gameVersion    = gameVersion;
+    reported.quantBotHash   = quantBotHash;
+    reported.objectDataHash = objectDataHash;
+
+    // The same rule the host applies again just before it starts. An absent hash is a mismatch
+    // here too: a peer that could not fingerprint its own content has not shown that it matches
+    // ours, and treating "I do not know" as "we agree" is how an unverified install ends up in a
+    // lockstep match.
+    std::string reason;
+    const ContentCompatibility::Verdict verdict =
+        ContentCompatibility::compare(local, reported, peer.name(), reason);
+
+    if(verdict == ContentCompatibility::Verdict::Match) {
         SDL_Log("Config verification passed for '%s'", peer.name().c_str());
+    } else {
+        SDL_Log("Config check for '%s': %s", peer.name().c_str(), reason.c_str());
+
+        // Only where nothing can repair the difference. On the mesh a mismatch is the expected
+        // prelude to a mod transfer, and reporting it as an error would break a working flow.
+        if(context.contentMustMatch && verdict == ContentCompatibility::Verdict::Mismatch
+           && callbacks.onConfigMismatch && *callbacks.onConfigMismatch) {
+            (*callbacks.onConfigMismatch)(reason);
+        }
     }
 
     if(!context.isHost && context.replyToConfigHash) {
@@ -256,7 +280,7 @@ bool GamePayloadRouter::handle(Uint32 packetType, InputStream& stream, GamePaylo
         } return true;
 
         case NETWORKPACKET_CONFIG_HASH: {
-            handleConfigHash(stream, peer, context);
+            handleConfigHash(stream, peer, context, callbacks);
         } return true;
 
         case NETWORKPACKET_COOP_MISSION: {

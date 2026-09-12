@@ -1232,7 +1232,16 @@ void CustomGamePlayers::checkAllClientsReady() {
     if(!bServer || !bWaitingForModAcks) {
         return;
     }
-    
+
+    // The countdown is what commits everyone to the match: it sends STARTGAME and, on the relay,
+    // moves the room into its match phase. Once that has happened, "we noticed a problem" is too
+    // late, so the check belongs here rather than only in update().
+    if(bConfigMismatchDetected) {
+        SDL_Log("HOST: not starting - a content mismatch was reported");
+        bWaitingForModAcks = false;
+        return;
+    }
+
     // Get list of all connected remote peers (humans only). AI slots are not peers.
     std::set<std::string> connectedPlayers;
     if (pNetworkManager != nullptr) {
@@ -1465,8 +1474,27 @@ void CustomGamePlayers::onNext()
                 SDL_Log("HOST: Waiting for mod ACKs from clients before starting game");
             } else {
                 // Crossplay carries bundled content only: there is nothing to transfer and so
-                // nothing to acknowledge. Matching content was already required to join, and the
-                // config hashes just sent are still checked on both sides.
+                // nothing to acknowledge. Matching content was required to be admitted to the
+                // room, but that was checked against whatever was active *then* - and the lobby
+                // lets the host pick a different mod afterwards. So compare again, now, against
+                // what is actually about to be played, and refuse rather than report agreement
+                // nobody established.
+                std::string reason;
+                const NetworkManager::ContentCheck check = pNetworkManager->checkRelayContent(
+                    quantBotHash, objectDataHash, VERSIONSTRING, reason);
+                if(check == NetworkManager::ContentCheck::Mismatch) {
+                    bWaitingForModAcks = false;
+                    onConfigMismatch(reason);
+                    return;
+                }
+                if(check == NetworkManager::ContentCheck::AwaitingPeer) {
+                    // Recoverable: a peer that has joined but whose content has not arrived yet.
+                    // Say so and let the host try again rather than killing the lobby.
+                    bWaitingForModAcks = false;
+                    addInfoMessage(reason);
+                    return;
+                }
+
                 for(const std::string& peerName : pNetworkManager->getConnectedPeers()) {
                     clientsAckedMod.insert(peerName);
                 }

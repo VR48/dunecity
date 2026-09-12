@@ -59,6 +59,13 @@ struct NetworkSessionCallbacks {
     const std::function<void (size_t, Uint32)>*                                   onReceiveSetPathBudget = nullptr;
     /// Campaign continuation chosen by the host; empty settings mean "leave the campaign".
     const std::function<void (const GameInitSettings&)>*                          onReceiveCoopMission = nullptr;
+    /**
+        A peer's game content does not match ours and this transport cannot fix that.
+
+        The lobby uses it to stop the match starting and to say why. It is not called on the mesh
+        transport, where a mismatch is the expected prelude to a mod transfer.
+    */
+    const std::function<void (const std::string&)>*                               onConfigMismatch = nullptr;
 };
 
 /**
@@ -132,6 +139,15 @@ struct GamePayloadContext {
         refused. The relay client sends its hashes once when it enters the lobby instead.
     */
     bool   replyToConfigHash = true;
+    /**
+        Whether a content mismatch is fatal to the session rather than something to resolve.
+
+        On the mesh a mismatch is expected: the host announces its mod and the client downloads
+        it, so reporting it as an error would break a working flow. On the relay there is no
+        content transfer at all, so a mismatch is final and has to stop the match rather than
+        appear only in a log.
+    */
+    bool   contentMustMatch = false;
 };
 
 namespace GamePayloadRouter {

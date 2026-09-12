@@ -38,6 +38,8 @@ bool RoomRelayClient::start(const Config& config, std::string& error) {
     config_ = config;
     peers_.clear();
     events_.clear();
+    eventBytes_ = 0;
+    closedEventQueued_ = false;
     helloSent_ = false;
     localPeerId_ = 0;
     localRole_ = RoomRelay::Role::Unknown;
@@ -116,31 +118,65 @@ bool RoomRelayClient::sendFrame(const std::vector<std::uint8_t>& frame) {
     return true;
 }
 
+std::size_t RoomRelayClient::eventCost(const Event& event) {
+    return RoomRelay::Limits::kQueuedEventOverheadBytes
+         + event.payload.size() + event.name.size() + event.runtime.size()
+         + event.message.size();
+}
+
 void RoomRelayClient::pushEvent(Event&& event) {
-    if(events_.size() >= kMaxQueuedEvents) {
-        // The game loop is not draining. Ending the session is the honest outcome: dropping
-        // queued gameplay events would desynchronise the match instead.
-        finish(RoomRelay::Close::SlowConsumer, "This computer fell too far behind the game.");
+    const std::size_t cost = eventCost(event);
+
+    // Both bounds matter. The count stops a flood of tiny events; the byte budget stops a much
+    // smaller number of large ones, which is the case a count alone misses entirely - four
+    // thousand maximum-size payloads would be a gigabyte.
+    const bool tooMany = (events_.size() >= kMaxQueuedEvents);
+    const bool tooLarge = (cost > RoomRelay::Limits::kMaxQueuedEventBytes)
+                       || (eventBytes_ > RoomRelay::Limits::kMaxQueuedEventBytes - cost);
+
+    if(tooMany || tooLarge) {
+        // The game loop is not draining. Ending the session is the honest outcome, and the
+        // backlog goes with it: applying part of what we could not keep up with is exactly how a
+        // lockstep match desynchronises without anybody noticing.
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "RoomRelayClient: event queue full (%zu events, %zu bytes) - ending session",
+                     events_.size(), eventBytes_);
+        finish(RoomRelay::Close::SlowConsumer, "This computer fell too far behind the game.",
+               PendingEvents::Discard);
         return;
     }
+
+    eventBytes_ += cost;
     events_.push_back(std::move(event));
 }
 
-void RoomRelayClient::finish(std::uint16_t code, const std::string& message) {
+void RoomRelayClient::finish(std::uint16_t code, const std::string& message,
+                             PendingEvents pending) {
+    // stop() also marks the session closed, and a caller that asked to leave does not need to be
+    // told that it left. Either way this runs at most once.
     if(status_ == Status::Closed) {
         return;
     }
     status_ = Status::Closed;
+    closedEventQueued_ = true;
     closeCode_ = (code != 0) ? code : closeCode_;
     statusMessage_ = message;
+
+    if(pending == PendingEvents::Discard) {
+        events_.clear();
+        eventBytes_ = 0;
+    }
 
     Event event;
     event.type = Event::Type::Closed;
     event.code = closeCode_;
     event.message = message;
-    if(events_.size() < kMaxQueuedEvents) {
-        events_.push_back(std::move(event));
-    }
+
+    // The terminal event is never dropped for space. A caller that never learns the session
+    // ended would keep feeding the game whatever was already queued and then go quiet, which is
+    // the failure this whole path exists to make visible.
+    eventBytes_ += eventCost(event);
+    events_.push_back(std::move(event));
 
     if(socket_) {
         socket_->close(code, message);
@@ -219,6 +255,8 @@ bool RoomRelayClient::pollEvent(Event& event) {
     if(events_.empty()) {
         return false;
     }
+    const std::size_t cost = eventCost(events_.front());
+    eventBytes_ -= (cost < eventBytes_) ? cost : eventBytes_;
     event = std::move(events_.front());
     events_.pop_front();
     return true;

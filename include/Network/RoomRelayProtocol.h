@@ -110,6 +110,24 @@ constexpr std::size_t   kMaxIncomingQueueBytes = 4 * 1024 * 1024;
 /// How much outbound data may sit unsent before the session is considered broken.
 constexpr std::size_t   kMaxOutgoingQueueBytes = 4 * 1024 * 1024;
 constexpr std::size_t   kMaxQueuedFrames       = 4096;
+
+/**
+    How much decoded event data the relay session will hold for the game loop.
+
+    A count alone is not a bound. Four thousand queued events, each carrying a payload of up to
+    kMaxGamePayloadBytes, is a gigabyte - so the aggregate size is capped as well, and whichever
+    limit is reached first ends the session. The value matches the socket's own inbound bound
+    because the event queue is fed from it: the two together are the session's memory ceiling.
+*/
+constexpr std::size_t   kMaxQueuedEventBytes   = 4 * 1024 * 1024;
+
+/**
+    Charged against kMaxQueuedEventBytes for every event regardless of its payload.
+
+    Without it, an unbounded number of empty events would cost nothing by weight and only the
+    count would bound them; with it, both limits are meaningful on their own.
+*/
+constexpr std::size_t   kQueuedEventOverheadBytes = 128;
 } // namespace Limits
 
 // ---------------------------------------------------------------------------------------------

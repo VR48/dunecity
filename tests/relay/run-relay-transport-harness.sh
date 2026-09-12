@@ -4,15 +4,24 @@
 #
 #   tests/relay/run-relay-transport-harness.sh             # both peers native
 #   tests/relay/run-relay-transport-harness.sh diverge     # one peer's state is perturbed
+#   tests/relay/run-relay-transport-harness.sh bulk        # large messages, partial writes
 #
 # What this proves: HTTPS admission, the WebSocket handshake, the relay handshake, membership,
 # routing, the host-driven phase change and the diagnostic channel, through the production code
 # paths rather than through a mock. In "diverge" mode the perturbed peer's digest must be
 # detected as a mismatch by both sides - a divergence test that fails if the detection is broken.
 #
+# "bulk" mode is about the transport rather than the protocol. It pushes messages far larger than
+# a socket buffer as fast as the socket accepts them, so curl_ws_send() consumes part of a frame
+# and the remainder has to be offered again as a continuation. Every byte of every message is
+# checked on the receiving side: a continuation that resumes at the wrong offset still produces a
+# message of exactly the right length, so a length check would not notice.
+#
 # Prerequisites:
 #   * the relay's dependencies installed:  (cd tools/room-relay && npm ci)
 #   * relay_transport_harness built:       cmake --build build --target relay_transport_harness
+#
+# tools/room-relay lives in the combined tree; this script expects it beside the game sources.
 #
 # The browser side cannot be driven from a shell; build the game for the web and open it with
 #   ?relay=http://127.0.0.1:8787&relaydev=1
@@ -72,9 +81,22 @@ done
 curl -fsS "${ENDPOINT}/v1/health" > /dev/null
 kill -0 "${RELAY_PID}"
 
+# Fewer than 256 messages, so the index each message carries is unambiguous on arrival.
+BULK_COUNT="${RELAY_BULK_COUNT:-48}"
+BULK_BYTES="${RELAY_BULK_BYTES:-200000}"
+
+HOST_FLAGS=()
+GUEST_FLAGS=()
+if [ "${MODE}" = "diverge" ]; then
+    GUEST_FLAGS=(--corrupt --expect-mismatch)
+elif [ "${MODE}" = "bulk" ]; then
+    HOST_FLAGS=(--bulk="${BULK_COUNT}" --bulk-bytes="${BULK_BYTES}")
+    GUEST_FLAGS=(--expect-bulk="${BULK_COUNT}" --bulk-bytes="${BULK_BYTES}")
+fi
+
 echo "== hosting"
 "${HARNESS}" --endpoint="${ENDPOINT}" --dev --host --name=desktop --seconds=20 \
-    > "${WORK}/host.log" 2>&1 &
+    ${HOST_FLAGS[@]+"${HOST_FLAGS[@]}"} > "${WORK}/host.log" 2>&1 &
 HOST_PID=$!
 
 ROOM=""
@@ -93,11 +115,6 @@ if [ -z "${ROOM}" ]; then
     exit 1
 fi
 echo "== room ${ROOM}"
-
-GUEST_FLAGS=()
-if [ "${MODE}" = "diverge" ]; then
-    GUEST_FLAGS+=(--corrupt --expect-mismatch)
-fi
 
 echo "== joining"
 "${HARNESS}" --endpoint="${ENDPOINT}" --dev --join="${ROOM}" --name=guest --seconds=18 \
@@ -138,6 +155,23 @@ fi
 if [ "${HOST_STATUS}" -ne 0 ] || [ "${GUEST_STATUS}" -ne 0 ]; then
     echo "host exited ${HOST_STATUS}, guest exited ${GUEST_STATUS}" >&2
     exit 1
+fi
+
+if [ "${MODE}" = "bulk" ]; then
+    if ! grep -q "bulkrecv=${BULK_COUNT} bulkcorrupt=0" "${WORK}/guest.log"; then
+        echo "the receiving peer did not get every bulk message intact" >&2
+        exit 1
+    fi
+    PEAK="$(sed -n 's/.*peakbacklog=\([0-9]*\).*/\1/p' "${WORK}/host.log" | tail -1)"
+    if [ -z "${PEAK}" ] || [ "${PEAK}" = "0" ]; then
+        # Not a failure: the messages arrived intact, which is the thing that matters. But the
+        # socket accepted every frame whole, so the continuation path did not actually run on
+        # this machine. Raise RELAY_BULK_COUNT or RELAY_BULK_BYTES to push harder.
+        echo "== note: the outgoing queue never backed up, so partial writes were not exercised"
+    else
+        echo "== bulk transfer intact, peak outgoing backlog ${PEAK} bytes"
+    fi
+    exit 0
 fi
 
 echo "== both peers agreed"

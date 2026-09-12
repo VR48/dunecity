@@ -100,6 +100,32 @@ public:
         return pRelayClient ? pRelayClient->roomCode() : std::string();
     }
 
+    /// The outcome of comparing every relay peer's content with ours.
+    enum class ContentCheck {
+        Match,          ///< everybody reported, and everybody agrees
+        AwaitingPeer,   ///< somebody has not reported yet; try again shortly
+        Mismatch        ///< somebody reported content this transport cannot reconcile
+    };
+
+    /**
+        Checks every relay peer's reported content against ours, for the host to call before it
+        starts a match.
+
+        The per-message check happens when a peer's hashes arrive, but the lobby lets the host
+        pick a different mod afterwards, so the comparison has to be made again against what is
+        actually about to be played. A peer that has not reported yet is reported separately from
+        one that disagrees: waiting is recoverable, disagreeing is not.
+
+        \param  quantBotHash    our current QuantBot config hash
+        \param  objectDataHash  our current object data hash
+        \param  gameVersion     our build version
+        \param  reason          set to a player-facing explanation unless everybody matches
+    */
+    ContentCheck checkRelayContent(const std::string& quantBotHash,
+                                   const std::string& objectDataHash,
+                                   const std::string& gameVersion,
+                                   std::string& reason) const;
+
     /**
         Sends a bounded diagnostic to the room. Carried in the relay envelope, never as a game
         packet, so the ENet wire format and NETWORK_PROTOCOL_VERSION are untouched.

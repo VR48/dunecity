@@ -19,6 +19,7 @@
 
 #include <config.h>
 
+#include <Network/ContentCompatibility.h>
 #include <Network/ENetHelper.h>
 #include <Network/StunClient.h>
 
@@ -973,7 +974,50 @@ NetworkSessionCallbacks NetworkManager::sessionCallbacks() const {
     callbacks.onReceiveClientStats     = &pOnReceiveClientStats;
     callbacks.onReceiveSetPathBudget   = &pOnReceiveSetPathBudget;
     callbacks.onReceiveCoopMission     = &pOnReceiveCoopMissionBridge;
+    callbacks.onConfigMismatch         = &pOnConfigMismatch;
     return callbacks;
+}
+
+NetworkManager::ContentCheck NetworkManager::checkRelayContent(
+        const std::string& quantBotHash, const std::string& objectDataHash,
+        const std::string& gameVersion, std::string& reason) const {
+    reason.clear();
+
+    if(!pRelayClient) {
+        return ContentCheck::Match;
+    }
+
+    ContentCompatibility::Fingerprint local;
+    local.gameVersion    = gameVersion;
+    local.quantBotHash   = quantBotHash;
+    local.objectDataHash = objectDataHash;
+
+    ContentCheck worst = ContentCheck::Match;
+    for(const RoomRelayClient::Peer& peer : pRelayClient->peers()) {
+        ContentCompatibility::Fingerprint reported;
+        reported.gameVersion    = peer.gameVersion;
+        reported.quantBotHash   = peer.quantBotConfigHash;
+        reported.objectDataHash = peer.objectDataHash;
+
+        std::string peerReason;
+        // One rule, shared with the per-message check in GamePayloadRouter, so the answer cannot
+        // depend on which of the two noticed first.
+        switch(ContentCompatibility::compare(local, reported, peer.name, peerReason)) {
+            case ContentCompatibility::Verdict::Mismatch:
+                reason = peerReason;
+                return ContentCheck::Mismatch;      // final; no point looking further
+            case ContentCompatibility::Verdict::AwaitingPeer:
+                if(worst == ContentCheck::Match) {
+                    worst = ContentCheck::AwaitingPeer;
+                    reason = peerReason;
+                }
+                break;
+            case ContentCompatibility::Verdict::Match:
+                break;
+        }
+    }
+
+    return worst;
 }
 
 bool NetworkManager::startRelaySession(const RoomRelayClient::Config& config, std::string& error) {
@@ -1037,7 +1081,8 @@ void NetworkManager::updateRelaySession() {
     pRelayClient->update();
 
     RoomRelayClient::Event event;
-    while(pRelayClient->pollEvent(event)) {
+    bool sessionEnded = false;
+    while(!sessionEnded && pRelayClient->pollEvent(event)) {
         switch(event.type) {
             case RoomRelayClient::Event::Type::PeerJoined: {
                 debugNetwork("Relay peer '%s' joined (%s, %s)\n", event.name.c_str(),
@@ -1095,6 +1140,10 @@ void NetworkManager::updateRelaySession() {
 
             case RoomRelayClient::Event::Type::Closed: {
                 SDL_Log("NetworkManager: relay session ended: %s", event.message.c_str());
+                // Nothing after this belongs to a live session. The terminal event is always
+                // last, but stopping here is what makes that a rule rather than an ordering
+                // accident - and the disconnect callback below can reenter the menu loop.
+                sessionEnded = true;
                 if(pOnPeerDisconnected) {
                     // Look like a lost host connection so every existing menu and the running
                     // game react the way they already do when a session ends.
@@ -1222,6 +1271,9 @@ void NetworkManager::handleRelayGamePayload(RoomRelayClient::Peer& peer,
         // On the relay a client sends its hashes once when it enters the lobby; answering the
         // host's would race the host's own move to the match phase and be refused.
         payloadContext.replyToConfigHash = false;
+        // Nothing on this transport can transfer content, so a difference is final and the
+        // lobby has to be told rather than only the log.
+        payloadContext.contentMustMatch = true;
         payloadContext.coopPartnerIsSolePeer =
             (pRelayClient->peers().size() == 1) && peer.isHost();
 

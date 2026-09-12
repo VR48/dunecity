@@ -130,6 +130,10 @@ public:
 
     bool pollEvent(Event& event);
 
+    /// Events waiting for the game loop. Both of these are bounded; see pushEvent().
+    std::size_t queuedEventCount() const { return events_.size(); }
+    std::size_t queuedEventBytes() const { return eventBytes_; }
+
     Status status() const { return status_; }
     bool   isJoined() const { return status_ == Status::Joined; }
     bool   isHost() const { return localRole_ == RoomRelay::Role::Host; }
@@ -144,6 +148,16 @@ public:
 
     /// Round-trip time to the relay in milliseconds, or 0 before the first heartbeat answer.
     Uint32 roundTripTimeMs() const { return roundTripMs_; }
+
+    /**
+        Bytes handed to the transport that it has not written to the socket yet.
+
+        A caller that produces faster than the socket drains can watch this instead of finding
+        out when the session dies of a full outgoing queue.
+    */
+    std::size_t outgoingBacklogBytes() const {
+        return socket_ ? socket_->outgoingBacklogBytes() : 0;
+    }
 
     const std::vector<Peer>& peers() const { return peers_; }
     Peer* findPeer(std::uint32_t peerId);
@@ -177,14 +191,33 @@ public:
                         std::size_t length);
 
 private:
+    /**
+        What happens to events that are already queued when the session ends.
+
+        A session that ends in order - the host left, the relay closed the room, the socket went
+        away - may still have valid events queued ahead of the close, and they matter: a co-op
+        continuation is sent immediately before the host disconnects, and discarding it would
+        strand the other player. Those are kept, with the close appended after them.
+
+        A session that ends *because* the queue overflowed is the opposite case. The backlog is
+        precisely the thing the game could not keep up with, and applying a prefix of it is how a
+        lockstep match desynchronises quietly. Those events are dropped, and the close is the
+        only thing left to deliver.
+    */
+    enum class PendingEvents { Keep, Discard };
+
     void handleFrame(const std::vector<std::uint8_t>& frame);
     void handleWelcome(const RoomRelay::ServerFrame& frame);
     void handlePeerJoined(const RoomRelay::ServerFrame& frame);
     void handlePeerLeft(const RoomRelay::ServerFrame& frame);
     void handleRelayPayload(RoomRelay::ServerFrame& frame);
-    void finish(std::uint16_t code, const std::string& message);
+    void finish(std::uint16_t code, const std::string& message,
+                PendingEvents pending = PendingEvents::Keep);
     void pushEvent(Event&& event);
     bool sendFrame(const std::vector<std::uint8_t>& frame);
+
+    /// What one event costs against the queue's byte budget.
+    static std::size_t eventCost(const Event& event);
 
     std::unique_ptr<RelayWebSocket> socket_;
     Config          config_;
@@ -199,6 +232,10 @@ private:
 
     std::vector<Peer>  peers_;
     std::deque<Event>  events_;
+    /// Aggregate cost of everything in events_, kept in step with it on both ends.
+    std::size_t        eventBytes_ = 0;
+    /// True once the terminal event has been queued; it is delivered exactly once.
+    bool               closedEventQueued_ = false;
 
     bool   helloSent_          = false;
     Uint32 lastHeartbeatSent_  = 0;

@@ -67,8 +67,10 @@ std::string CrossplayMenu::contentFingerprint() {
     const std::string quantBot = getQuantBotConfig().getConfigHash();
     const std::string objectData = getObjectDataHash();
     if(!isChecksumToken(quantBot) || !isChecksumToken(objectData)) {
-        // Something could not be hashed locally. Send nothing rather than something malformed;
-        // the lobby's own config exchange still catches a genuine mismatch.
+        // Something could not be hashed locally. An empty fingerprint is not a wildcard and must
+        // never be sent as one: callers treat it as "this install cannot be checked" and refuse
+        // to go online, because two installs that both failed to hash themselves would otherwise
+        // match each other and neither would have verified anything.
         return std::string();
     }
     return quantBot + objectData;
@@ -269,12 +271,22 @@ void CrossplayMenu::beginAdmission(bool hosting) {
         return;
     }
 
+    // Fail closed. Going online without being able to describe our own content would ask the
+    // game service to match us against a fingerprint we never computed, and would leave the
+    // lobby with nothing to compare either.
+    const std::string fingerprint = contentFingerprint();
+    if(fingerprint.empty()) {
+        setStatus(_("This copy of the game could not check its own content files, "
+                    "so it cannot play online. Reinstalling the game usually fixes this."));
+        return;
+    }
+
     AdmissionRequest request;
     request.baseUrl = settings.network.activeRelayEndpoint();
     request.allowLoopbackPlaintext = settings.network.relayUseDevelopmentEndpoint;
     request.appVersion = VERSIONSTRING;
     request.gameProtocol = static_cast<std::uint16_t>(NETWORK_PROTOCOL_VERSION);
-    request.contentHash = contentFingerprint();
+    request.contentHash = fingerprint;
 #ifdef __EMSCRIPTEN__
     request.runtime = "browser";
 #else
@@ -298,12 +310,23 @@ void CrossplayMenu::beginAdmission(bool hosting) {
 }
 
 void CrossplayMenu::openRelaySession() {
+    // The fingerprint is recomputed rather than remembered: admission and the handshake must
+    // describe the same install, and anything that changed in between has to be caught here.
+    const std::string fingerprint = contentFingerprint();
+    if(fingerprint.empty()) {
+        setStatus(_("This copy of the game could not check its own content files, "
+                    "so it cannot play online."));
+        stage = Stage::Finished;
+        refreshControls();
+        return;
+    }
+
     RoomRelayClient::Config config;
     config.socketUrl   = grantedRoom.socketUrl;
     config.grant       = grantedRoom.grant;
     config.displayName = settings.general.playerName;
     config.appVersion  = VERSIONSTRING;
-    config.contentHash = contentFingerprint();
+    config.contentHash = fingerprint;
     config.gameProtocolVersion = static_cast<std::uint16_t>(NETWORK_PROTOCOL_VERSION);
     config.allowLoopbackPlaintext = settings.network.relayUseDevelopmentEndpoint;
 #ifdef __EMSCRIPTEN__
