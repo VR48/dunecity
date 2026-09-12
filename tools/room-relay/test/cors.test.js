@@ -232,4 +232,28 @@ describe('allowed origin configuration', () => {
       else process.env.RELAY_ALLOWED_ORIGINS = saved;
     }
   });
+
+  it('requires explicit browser origins and proxy trust in production', () => {
+    const names = ['RELAY_PUBLIC_URL', 'RELAY_ALLOWED_ORIGINS', 'RELAY_TRUST_FORWARDED_FOR'];
+    const saved = Object.fromEntries(names.map((name) => [name, process.env[name]]));
+    try {
+      process.env.RELAY_PUBLIC_URL = 'wss://dunelegacy.com/relay/v1/socket';
+      delete process.env.RELAY_ALLOWED_ORIGINS;
+      delete process.env.RELAY_TRUST_FORWARDED_FOR;
+      assert.throws(() => configFromEnv([]), /RELAY_ALLOWED_ORIGINS/);
+      process.env.RELAY_ALLOWED_ORIGINS = 'https://dunelegacy.com';
+      assert.throws(() => configFromEnv([]), /RELAY_TRUST_FORWARDED_FOR/);
+      process.env.RELAY_TRUST_FORWARDED_FOR = 'true';
+      assert.throws(() => configFromEnv([]), /RELAY_TRUST_FORWARDED_FOR/);
+      process.env.RELAY_TRUST_FORWARDED_FOR = '0';
+      assert.equal(configFromEnv([]).trustForwardedFor, false);
+      process.env.RELAY_TRUST_FORWARDED_FOR = '1';
+      assert.equal(configFromEnv([]).trustForwardedFor, true);
+    } finally {
+      for (const name of names) {
+        if (saved[name] === undefined) delete process.env[name];
+        else process.env[name] = saved[name];
+      }
+    }
+  });
 });

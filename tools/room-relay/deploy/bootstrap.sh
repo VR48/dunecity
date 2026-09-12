@@ -80,11 +80,13 @@ if [[ ! -x "$NODE/bin/node" ]]; then
   (cd "$NODE_STAGE/node-v$NODE_VERSION-linux-$ARCH"; find . -type f ! -name .installed-sha256 -print0 | sort -z | xargs -0 sha256sum > .installed-sha256)
   mv "$NODE_STAGE/node-v$NODE_VERSION-linux-$ARCH" "$NODE"
 fi
-[[ $("$NODE/bin/node" --version) == v$NODE_VERSION ]] || exit 2
-[[ -z $(find "$NODE" \( ! -user root -o -perm /022 \) -print -quit) ]] || { echo 'Unsafe cached Node ownership/mode' >&2; exit 2; }
+# The official archive contains npm/corepack symlinks, whose mode is normally
+# 0777. Check ownership for every entry and write permissions on real entries.
+[[ -z $(find "$NODE" \( ! -user root -o \( ! -type l -a -perm /022 \) \) -print -quit) ]] || { echo 'Unsafe cached Node ownership/mode' >&2; exit 2; }
 (cd "$NODE"; sha256sum --check --status .installed-sha256)
+[[ $("$NODE/bin/node" --version) == v$NODE_VERSION ]] || exit 2
 if [[ -d "$RELEASE" ]]; then
-  [[ -z $(find "$RELEASE" \( ! -user root -o -perm /022 \) -print -quit) ]] || exit 2
+  [[ -z $(find "$RELEASE" \( ! -user root -o \( ! -type l -a -perm /022 \) \) -print -quit) ]] || exit 2
   [[ $(cat "$RELEASE/.source-manifest-sha256") == "$MANIFEST_SHA" ]] || exit 2
   (cd "$RELEASE"; sha256sum --check --status .installed-sha256)
 else

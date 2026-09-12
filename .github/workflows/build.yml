@@ -446,6 +446,8 @@ jobs:
     if: |
       always() &&
       github.ref == 'refs/heads/main' &&
+      needs.test-linux.result == 'success' &&
+      needs.relay-tests.result == 'success' &&
       (needs.build-windows.result == 'success' || needs.build-linux.result == 'success' || needs.build-macos.result == 'success')
     runs-on: ubuntu-latest
     permissions:

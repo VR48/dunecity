@@ -7,7 +7,8 @@ const { assertAllowedOrigins } = require('./admission');
 
 // Entry point. The relay never terminates TLS itself: in production it listens on loopback
 // behind a reverse proxy that holds the certificate, and `RELAY_OBSERVED_TRANSPORT=wss` records
-// what the proxy actually served. It needs no deploy keys and makes no outbound connections.
+// what the proxy actually served. It needs no deploy keys; optional lifecycle analytics
+// are the only configured outbound connection.
 
 function parseOrigins(raw) {
   if (!raw) return [];
