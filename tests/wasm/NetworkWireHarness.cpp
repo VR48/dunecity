@@ -28,6 +28,7 @@
 #include <enet/enet.h>
 
 #include <cstdio>
+#include <cstring>
 #include <cstdint>
 #include <limits>
 #include <string>
@@ -325,6 +326,89 @@ void testPathBudgetOrders() {
           "far future apply cycle is refused");
 }
 
+void testTrafficBudgets() {
+    NetworkPacketPolicy::RateWindow window;
+    const Uint32 start = 30000;
+    const Uint64 chunkBytes = 64 * 1024;
+
+    bool burstAccepted = true;
+    for(Uint64 sent = 0; sent < 10ull * 1024 * 1024; sent += chunkBytes) {
+        if(!window.accept(start, chunkBytes, NetworkPacketPolicy::kMaxModTransferBytesPerWindow,
+                          NetworkPacketPolicy::kTrafficWindowMs)) {
+            burstAccepted = false;
+            break;
+        }
+    }
+    check(burstAccepted, "a requested 10 MiB mod burst fits the raised budget");
+
+    NetworkPacketPolicy::RateWindow ordinary;
+    bool bulkRefused = false;
+    for(Uint64 sent = 0; sent < 10ull * 1024 * 1024; sent += chunkBytes) {
+        if(!ordinary.accept(start, chunkBytes, NetworkPacketPolicy::kMaxPeerBytesPerWindow,
+                            NetworkPacketPolicy::kTrafficWindowMs)) {
+            bulkRefused = true;
+            break;
+        }
+    }
+    check(bulkRefused, "bulk data without a requested transfer is refused");
+
+    NetworkPacketPolicy::RateWindow saturating;
+    check(!saturating.accept(start, 0xFFFFFFFFFFFFFFFFull,
+                             NetworkPacketPolicy::kMaxPeerBytesPerWindow,
+                             NetworkPacketPolicy::kTrafficWindowMs),
+          "a byte count near the 64 bit maximum saturates instead of wrapping");
+
+    NetworkPacketPolicy::RefusalCounter counter;
+    bool crossed = false;
+    for(Uint32 i = 0; i < NetworkPacketPolicy::kMaxRefusalsPerBurst; i++) {
+        crossed = counter.noteRefusal(start + i, NetworkPacketPolicy::kMaxRefusalsPerBurst,
+                                      NetworkPacketPolicy::kRefusalDecayMs);
+    }
+    check(crossed, "a burst of refusals crosses the disconnect threshold");
+    check(counter.beginDisconnect(), "the disconnect is started once");
+    check(!counter.beginDisconnect(), "the disconnect is not started twice");
+    check(!counter.noteRefusal(start + 5000, NetworkPacketPolicy::kMaxRefusalsPerBurst,
+                               NetworkPacketPolicy::kRefusalDecayMs),
+          "packets from a peer being dropped are no longer counted");
+
+    NetworkPacketPolicy::RefusalCounter isolated;
+    Uint32 now = start;
+    bool everCrossed = false;
+    for(int i = 0; i < 200; i++) {
+        now += NetworkPacketPolicy::kRefusalDecayMs + 1;
+        everCrossed |= isolated.noteRefusal(now, NetworkPacketPolicy::kMaxRefusalsPerBurst,
+                                            NetworkPacketPolicy::kRefusalDecayMs);
+    }
+    check(!everCrossed, "isolated phase-race refusals never accumulate into a disconnect");
+
+    check(NetworkPacketPolicy::isExpectedOrderingRefusal(
+              NetworkPacketPolicy::PacketVerdict::RejectWrongPhase),
+          "out-of-phase traffic is an expected ordering refusal");
+    check(!NetworkPacketPolicy::isExpectedOrderingRefusal(
+              NetworkPacketPolicy::PacketVerdict::RejectNotHostPeer),
+          "forged host traffic is not an ordering refusal");
+}
+
+void testStatValues() {
+    // Runtime bytes, so a fast-math build cannot fold the decision away.
+    volatile Uint32 refused[] = {0x7f800000u, 0xff800000u, 0x7fc00001u, 0xbf800000u};
+    for(unsigned i = 0; i < 4; ++i) {
+        float value;
+        Uint32 bits = refused[i];
+        std::memcpy(&value, &bits, sizeof(value));
+        check(!NetworkPacketPolicy::isUsableStatValue(value),
+              "non-finite or negative stat value is refused");
+    }
+
+    volatile Uint32 accepted[] = {0x00000000u, 0x80000000u, 0x42700000u, 0x7f7fffffu};
+    for(unsigned i = 0; i < 4; ++i) {
+        float value;
+        Uint32 bits = accepted[i];
+        std::memcpy(&value, &bits, sizeof(value));
+        check(NetworkPacketPolicy::isUsableStatValue(value), "finite stat value is accepted");
+    }
+}
+
 void testModPayloadBounds() {
     const std::size_t payloadSize = 1024;
     check(ModTransferValidation::fitsWithinPayload(0, payloadSize, payloadSize),
@@ -352,6 +436,8 @@ int main() {
     testMapFilenames();
     testCommandValidation();
     testPathBudgetOrders();
+    testTrafficBudgets();
+    testStatValues();
     testModPayloadBounds();
 
     std::printf("%d checks, %d failures\n", checks, failures);

@@ -98,11 +98,38 @@ The additive bounds checks matter specifically on wasm32, where `size_t` is 32 b
   against - not authentication. A malicious host can still send a mod whose checksum matches
   the mod it announced.
 
-## Abuse accounting
+## Phase races are not abuse
 
-Refused packets are counted per peer, the log line is throttled, and a peer that keeps sending
-garbage is disconnected. A separate per-peer packet rate limit (4096/s, far above a mod
-transfer burst) drops peers that only want to burn CPU.
+Peers change phase at slightly different times: clients start their countdown half a round trip
+before the host, and campaign co-op moves between missions. Command, selection, stats and late
+lobby packets can therefore be legitimately in flight across a phase boundary. They are still
+dropped - the phase gate is what protects the receiver, and lockstep retransmits the rolling
+history once both sides are in the match - but `NetworkPacketPolicy::isExpectedOrderingRefusal()`
+keeps them out of the abuse budget so an honest session cannot disconnect itself.
+
+`COOP_MISSION` is the one host control packet that is valid in either phase: `sand.cpp` sends the
+next campaign mission after `runMainLoop()` returns, while the session is still marked in-game
+and the client waits in `CoopMissionWait`. It still has to come from the established host
+connection, and the receiving handler still requires exactly one remote peer.
+
+## Abuse accounting and traffic budgets
+
+All of this lives in `NetworkPacketPolicy` (`RateWindow`, `RefusalCounter`) so it stays
+transport independent and the tests use the same values production does:
+
+- Refused packets are counted per peer with a 10 s decay, so isolated refusals never
+  accumulate. A burst of 64 disconnects the peer **once**: the connection is marked, and after
+  that nothing from it is parsed, counted or logged again.
+- Per peer, per second: at most 4096 packets and 8 MiB. While this client is receiving a mod
+  transfer it asked for, the byte budget on the host connection rises to 24 MiB/s, which passes
+  a complete 10 MiB transfer arriving in one burst on loopback or LAN.
+- ENet itself is capped before it allocates: `maximumPacketSize` 4 MiB (checked against the
+  announced fragment total *before* the reassembly buffer is allocated) and
+  `maximumWaitingData` 16 MiB per peer, down from 32 MiB each. The largest legitimate packet is
+  a map inside `SENDGAMEINFO`; a mod chunk is 64 KiB.
+- Only the host emits `DISCONNECT`. Every client is connected to every other client and sees
+  its own ENet disconnect event, so a client-sent `DISCONNECT` was both redundant and refused by
+  the receivers' host-only rule.
 
 ## Running the tests
 

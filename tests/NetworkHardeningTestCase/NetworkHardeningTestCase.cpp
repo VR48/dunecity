@@ -419,6 +419,198 @@ TEST_CASE_METHOD(ENetRuntime, "Wire: runtime non-finite stats are refused in fas
     }
 }
 
+TEST_CASE_METHOD(ENetRuntime, "Wire: runtime finite stats are still accepted",
+                 "[network][security][wire][pathbudget][compatibility]") {
+    // Values a real client reports, plus the two signed zeroes and the extremes, all taken
+    // from runtime bytes so no constant folding can decide the outcome.
+    volatile Uint32 accepted[] = {
+        0x00000000u,    // +0.0
+        0x80000000u,    // -0.0, produced by an idle counter
+        0x42700000u,    // 60.0 fps
+        0x3f800000u,    // 1.0 ms
+        0x7f7fffffu     // FLT_MAX, finite
+    };
+    for(unsigned i = 0; i < 5; ++i) {
+        ENetPacketOStream output(ENET_PACKET_FLAG_RELIABLE);
+        output.writeUint32(accepted[i]);
+        ENetPacketIStream input(output.getPacket());
+        INFO("bit pattern index " << i);
+        REQUIRE(NetworkPacketPolicy::isUsableStatValue(input.readFloat()));
+    }
+
+    volatile Uint32 refused[] = {
+        0xbf800000u,    // -1.0
+        0xff7fffffu,    // -FLT_MAX
+        0x80000001u     // smallest negative denormal
+    };
+    for(unsigned i = 0; i < 3; ++i) {
+        ENetPacketOStream output(ENET_PACKET_FLAG_RELIABLE);
+        output.writeUint32(refused[i]);
+        ENetPacketIStream input(output.getPacket());
+        INFO("bit pattern index " << i);
+        REQUIRE_FALSE(NetworkPacketPolicy::isUsableStatValue(input.readFloat()));
+    }
+}
+
+// =============================================================================
+// Abuse accounting: refusal one-shot, decay, and traffic budgets
+// =============================================================================
+
+TEST_CASE("Abuse: a burst of refusals disconnects exactly once",
+          "[network][security][abuse]") {
+    NetworkPacketPolicy::RefusalCounter counter;
+    const Uint32 now = 100000;
+
+    for(Uint32 i = 1; i < NetworkPacketPolicy::kMaxRefusalsPerBurst; i++) {
+        INFO("refusal " << i);
+        REQUIRE_FALSE(counter.noteRefusal(now + i, NetworkPacketPolicy::kMaxRefusalsPerBurst,
+                                          NetworkPacketPolicy::kRefusalDecayMs));
+        REQUIRE_FALSE(counter.isDisconnecting());
+    }
+
+    // The threshold crossing is reported once...
+    REQUIRE(counter.noteRefusal(now + NetworkPacketPolicy::kMaxRefusalsPerBurst,
+                                NetworkPacketPolicy::kMaxRefusalsPerBurst,
+                                NetworkPacketPolicy::kRefusalDecayMs));
+    REQUIRE(counter.beginDisconnect());
+
+    // ...and never again: further packets from this peer are not counted, logged or parsed.
+    REQUIRE(counter.isDisconnecting());
+    REQUIRE_FALSE(counter.beginDisconnect());
+    for(Uint32 i = 0; i < 1000; i++) {
+        REQUIRE_FALSE(counter.noteRefusal(now + 1000 + i, NetworkPacketPolicy::kMaxRefusalsPerBurst,
+                                          NetworkPacketPolicy::kRefusalDecayMs));
+    }
+    REQUIRE_FALSE(counter.beginDisconnect());
+}
+
+TEST_CASE("Abuse: isolated refusals never accumulate into a disconnect",
+          "[network][security][abuse][compatibility]") {
+    NetworkPacketPolicy::RefusalCounter counter;
+    Uint32 now = 50000;
+
+    // Phase transitions and peers leaving produce the odd refusal minutes apart. A thousand of
+    // those must never disconnect an honest peer.
+    for(int i = 0; i < 1000; i++) {
+        now += NetworkPacketPolicy::kRefusalDecayMs + 1;
+        REQUIRE_FALSE(counter.noteRefusal(now, NetworkPacketPolicy::kMaxRefusalsPerBurst,
+                                          NetworkPacketPolicy::kRefusalDecayMs));
+    }
+    REQUIRE_FALSE(counter.isDisconnecting());
+}
+
+TEST_CASE("Abuse: the packet budget passes a mod transfer and stops a flood",
+          "[network][security][abuse]") {
+    NetworkPacketPolicy::RateWindow window;
+    const Uint32 start = 20000;
+
+    // A complete 10 MiB mod transfer is ~160 chunk packets plus handshake traffic.
+    for(Uint32 i = 0; i < 256; i++) {
+        REQUIRE(window.accept(start, 1, NetworkPacketPolicy::kMaxPacketsPerWindow,
+                              NetworkPacketPolicy::kTrafficWindowMs));
+    }
+
+    // A flood inside the same window is refused once the budget is used up.
+    bool refused = false;
+    for(Uint32 i = 0; i < NetworkPacketPolicy::kMaxPacketsPerWindow; i++) {
+        if(!window.accept(start, 1, NetworkPacketPolicy::kMaxPacketsPerWindow,
+                          NetworkPacketPolicy::kTrafficWindowMs)) {
+            refused = true;
+            break;
+        }
+    }
+    REQUIRE(refused);
+
+    // The next window starts clean, so an honest peer recovers.
+    REQUIRE(window.accept(start + NetworkPacketPolicy::kTrafficWindowMs, 1,
+                          NetworkPacketPolicy::kMaxPacketsPerWindow,
+                          NetworkPacketPolicy::kTrafficWindowMs));
+}
+
+TEST_CASE("Abuse: the byte budget passes a full mod burst and stops bulk garbage",
+          "[network][security][abuse]") {
+    const Uint64 modTransferBytes = 10ull * 1024 * 1024;     // MAX_MOD_TRANSFER_SIZE
+    const Uint64 chunkBytes = 64 * 1024;                     // MOD_CHUNK_SIZE
+    const Uint32 start = 30000;
+
+    SECTION("a requested 10 MiB transfer arriving in one burst is accepted") {
+        NetworkPacketPolicy::RateWindow window;
+        for(Uint64 sent = 0; sent < modTransferBytes; sent += chunkBytes) {
+            REQUIRE(window.accept(start, chunkBytes,
+                                  NetworkPacketPolicy::kMaxModTransferBytesPerWindow,
+                                  NetworkPacketPolicy::kTrafficWindowMs));
+        }
+    }
+
+    SECTION("the same volume is refused when no transfer was requested") {
+        NetworkPacketPolicy::RateWindow window;
+        bool refused = false;
+        for(Uint64 sent = 0; sent < modTransferBytes; sent += chunkBytes) {
+            if(!window.accept(start, chunkBytes, NetworkPacketPolicy::kMaxPeerBytesPerWindow,
+                              NetworkPacketPolicy::kTrafficWindowMs)) {
+                refused = true;
+                break;
+            }
+        }
+        REQUIRE(refused);
+    }
+
+    SECTION("ordinary lobby and gameplay traffic stays far inside the budget") {
+        NetworkPacketPolicy::RateWindow window;
+        // A 1 MiB map inside SENDGAMEINFO plus a second of command traffic.
+        REQUIRE(window.accept(start, 1024 * 1024, NetworkPacketPolicy::kMaxPeerBytesPerWindow,
+                              NetworkPacketPolicy::kTrafficWindowMs));
+        for(int i = 0; i < 60; i++) {
+            REQUIRE(window.accept(start, 512, NetworkPacketPolicy::kMaxPeerBytesPerWindow,
+                                  NetworkPacketPolicy::kTrafficWindowMs));
+        }
+    }
+
+    SECTION("a byte count near the 64 bit maximum saturates instead of wrapping") {
+        NetworkPacketPolicy::RateWindow window;
+        REQUIRE_FALSE(window.accept(start, 0xFFFFFFFFFFFFFFFFull,
+                                    NetworkPacketPolicy::kMaxPeerBytesPerWindow,
+                                    NetworkPacketPolicy::kTrafficWindowMs));
+        REQUIRE_FALSE(window.accept(start, 1, NetworkPacketPolicy::kMaxPeerBytesPerWindow,
+                                    NetworkPacketPolicy::kTrafficWindowMs));
+    }
+}
+
+TEST_CASE("Abuse: out-of-phase traffic is dropped without being held against the sender",
+          "[network][security][abuse][phase][compatibility]") {
+    // In-flight command traffic from a peer that started the match first.
+    const PacketVerdict staleCommand = NetworkPacketPolicy::classifyPacket(
+        context(NETWORKPACKET_COMMANDLIST, LocalRole::Host, SessionPhase::Lobby,
+                PeerAdmission::Established, false));
+    REQUIRE(staleCommand == PacketVerdict::RejectWrongPhase);
+    REQUIRE(NetworkPacketPolicy::isExpectedOrderingRefusal(staleCommand));
+
+    // A late lobby packet arriving after this peer entered the match.
+    const PacketVerdict lateLobby = NetworkPacketPolicy::classifyPacket(
+        context(NETWORKPACKET_CHANGEEVENTLIST, LocalRole::Client, SessionPhase::InGame,
+                PeerAdmission::Established, true));
+    REQUIRE(lateLobby == PacketVerdict::RejectWrongPhase);
+    REQUIRE(NetworkPacketPolicy::isExpectedOrderingRefusal(lateLobby));
+
+    // Forgery and pre-handshake traffic are not ordering races and do count.
+    const PacketVerdict forgedStart = NetworkPacketPolicy::classifyPacket(
+        context(NETWORKPACKET_STARTGAME, LocalRole::Client, SessionPhase::Lobby,
+                PeerAdmission::Established, false));
+    REQUIRE(forgedStart == PacketVerdict::RejectNotHostPeer);
+    REQUIRE_FALSE(NetworkPacketPolicy::isExpectedOrderingRefusal(forgedStart));
+
+    const PacketVerdict earlyCommands = NetworkPacketPolicy::classifyPacket(
+        context(NETWORKPACKET_COMMANDLIST, LocalRole::Host, SessionPhase::InGame,
+                PeerAdmission::Handshaking, false));
+    REQUIRE(earlyCommands == PacketVerdict::RejectPreHandshake);
+    REQUIRE_FALSE(NetworkPacketPolicy::isExpectedOrderingRefusal(earlyCommands));
+
+    REQUIRE_FALSE(NetworkPacketPolicy::isExpectedOrderingRefusal(PacketVerdict::RejectUnknownType));
+    REQUIRE_FALSE(NetworkPacketPolicy::isExpectedOrderingRefusal(
+        PacketVerdict::RejectUnidentifiedPeer));
+    REQUIRE_FALSE(NetworkPacketPolicy::isExpectedOrderingRefusal(PacketVerdict::RejectWrongRole));
+}
+
 // =============================================================================
 // Wire decoding: ENetPacketIStream over real packets
 // =============================================================================

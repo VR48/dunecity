@@ -333,15 +333,130 @@ inline bool sanitizeReceivedMapFilename(const std::string& filename, std::string
     \return true if the value can be used
 */
 inline bool isUsableStatValue(float value) {
-    // Release builds on macOS use -ffast-math, which permits the compiler to
-    // assume floating-point inputs are finite. Inspect the wire representation
-    // before doing floating-point comparisons; literal-only tests miss this.
+    // Older Release builds used -ffast-math, which lets the compiler
+    // assume floating-point operands are finite - std::isfinite() is then folded away, and a
+    // mixed check still leaves a floating-point comparison the optimiser can fold back into
+    // the same assumption. The test is therefore entirely integer: reject any exponent of all
+    // ones (infinity and NaN) and any negative value other than -0.0.
     static_assert(sizeof(float) == sizeof(Uint32), "Network stats require binary32 floats");
     Uint32 bits;
     std::memcpy(&bits, &value, sizeof(bits));
     const Uint32 magnitude = bits & 0x7fffffffu;
     return magnitude < 0x7f800000u && ((bits & 0x80000000u) == 0 || magnitude == 0);
 }
+
+/**
+    True when a refusal is the expected result of two peers changing phase at slightly
+    different times rather than a peer misbehaving.
+
+    Clients start their countdown half a round trip before the host and campaign co-op moves
+    between missions, so command, selection, stats and late lobby packets can legitimately be
+    in flight across a phase boundary. They must still be dropped - the phase gate is what
+    protects the receiver - but they must not count towards the abuse budget, or an honest
+    session can disconnect itself. A flood of them is still bounded by the per-peer packet
+    rate and byte budgets.
+    \param  verdict the result of classifyPacket()
+    \return true if the refusal should be dropped quietly
+*/
+inline bool isExpectedOrderingRefusal(PacketVerdict verdict) {
+    return verdict == PacketVerdict::RejectWrongPhase;
+}
+
+/// Length of the window the traffic budgets below are measured over.
+constexpr Uint32 kTrafficWindowMs = 1000;
+/// Packets one peer may deliver per window. A full 10 MiB mod transfer is ~160 packets and
+/// in-game traffic is a few dozen per second.
+constexpr Uint32 kMaxPacketsPerWindow = 4096;
+/// Bytes one peer may deliver per window outside a mod transfer. Gameplay traffic is a few
+/// KiB/s; the headroom covers a full-size map packet arriving with the rest of the handshake.
+constexpr Uint64 kMaxPeerBytesPerWindow = 8ull * 1024 * 1024;
+/// Raised byte budget while this peer is delivering a mod transfer that was asked for. A
+/// complete 10 MiB transfer arriving in a single burst (loopback or LAN) stays inside it.
+constexpr Uint64 kMaxModTransferBytesPerWindow = 24ull * 1024 * 1024;
+/// Refused packets in one burst that justify dropping a peer.
+constexpr Uint32 kMaxRefusalsPerBurst = 64;
+/// Gap after which a burst of refusals is considered over.
+constexpr Uint32 kRefusalDecayMs = 10000;
+
+/**
+    Fixed-window accounting for "how much has this peer sent recently", used for both the
+    packet count and the aggregate byte budget. Transport independent on purpose: the same
+    accounting applies to any future transport.
+*/
+struct RateWindow {
+    Uint32 windowStart = 0;     ///< start of the current window, in SDL_GetTicks() milliseconds
+    Uint64 amount = 0;          ///< amount accumulated inside the current window
+
+    /**
+        Adds to the current window, starting a new one when the old one has elapsed.
+        \param  nowMs       current time in milliseconds
+        \param  amountToAdd packets or bytes this call accounts for
+        \param  budget      most that may be accumulated inside one window
+        \param  windowMs    length of the window
+        \return true if the peer is still inside its budget
+    */
+    bool accept(Uint32 nowMs, Uint64 amountToAdd, Uint64 budget, Uint32 windowMs) {
+        if(windowMs == 0) {
+            return true;
+        }
+        if(nowMs - windowStart >= windowMs) {
+            windowStart = nowMs;
+            amount = 0;
+        }
+        // Saturating: a pathological amount must not wrap the accumulator back under budget.
+        if(amountToAdd > (0xFFFFFFFFFFFFFFFFull - amount)) {
+            amount = 0xFFFFFFFFFFFFFFFFull;
+        } else {
+            amount += amountToAdd;
+        }
+        return amount <= budget;
+    }
+};
+
+/**
+    Abuse accounting for refused packets, with a decay so isolated refusals never accumulate,
+    and a one-shot disconnect so a peer being dropped is logged once and its queued packets
+    are not parsed again.
+*/
+struct RefusalCounter {
+    Uint32 refusals = 0;
+    Uint32 lastRefusalTime = 0;
+    bool   disconnecting = false;
+
+    /// \return true once a drop has been started for this peer
+    bool isDisconnecting() const { return disconnecting; }
+
+    /**
+        Marks this peer as being dropped.
+        \return true the first time only, so the caller logs and requests the disconnect once
+    */
+    bool beginDisconnect() {
+        if(disconnecting) {
+            return false;
+        }
+        disconnecting = true;
+        return true;
+    }
+
+    /**
+        Counts one refused packet.
+        \param  nowMs       current time in milliseconds
+        \param  maxRefusals refusals in one burst that justify a disconnect
+        \param  decayMs     gap after which the burst is considered over
+        \return true when this refusal crosses the threshold
+    */
+    bool noteRefusal(Uint32 nowMs, Uint32 maxRefusals, Uint32 decayMs) {
+        if(disconnecting) {
+            return false;
+        }
+        if(lastRefusalTime != 0 && (nowMs - lastRefusalTime) > decayMs) {
+            refusals = 0;
+        }
+        lastRefusalTime = nowMs;
+        refusals++;
+        return refusals >= maxRefusals;
+    }
+};
 
 } // namespace NetworkPacketPolicy
 

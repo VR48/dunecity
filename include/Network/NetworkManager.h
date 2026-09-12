@@ -332,6 +332,22 @@ private:
     */
     void noteRejectedPacket(ENetPeer* peer, const char* reason);
 
+    /**
+        Requests a disconnect once and marks the connection, so further packets from it are
+        dropped without being parsed, counted or logged again.
+        \param  peer    the connection to drop
+        \param  reason  short description for the single log line
+    */
+    void beginPeerDisconnect(ENetPeer* peer, const char* reason);
+
+    /**
+        Accounts the raw size of an inbound packet against this peer's byte budget.
+        \param  peer        the connection the packet arrived on
+        \param  byteCount   size of the packet as delivered by ENet
+        \return true if the packet may be parsed
+    */
+    bool acceptIncomingBytes(ENetPeer* peer, std::size_t byteCount);
+
     class PeerData {
     public:
         enum class PeerState {
@@ -362,11 +378,10 @@ private:
         std::list<ENetPeer*>    notYetConnectedPeers;
 
         // Abuse accounting: a legitimate peer never trips these.
-        Uint32                  rejectedPackets = 0;
-        Uint32                  lastRejectTime = 0;
+        NetworkPacketPolicy::RefusalCounter refusals;
+        NetworkPacketPolicy::RateWindow     packetWindow;
+        NetworkPacketPolicy::RateWindow     byteWindow;
         Uint32                  lastRejectLogTime = 0;
-        Uint32                  packetWindowStart = 0;
-        Uint32                  packetsInWindow = 0;
     };
 
     /**
@@ -389,19 +404,26 @@ private:
     static constexpr std::size_t MAX_CHAT_MESSAGE_LENGTH = 512;
     /// The ENet host is created with 32 peer slots; the mesh can never legitimately exceed it.
     static constexpr std::size_t MAX_MESH_PEERS = 32;
-    /// A peer is dropped after this many refused packets in one burst.
-    static constexpr Uint32     MAX_REJECTED_PACKETS_PER_PEER = 64;
-    /// Isolated refusals decay, so the handful of packets that can race the lobby/match
-    /// transition never accumulate into a disconnect over a long session.
-    static constexpr Uint32     REJECT_DECAY_MS = 10000;
+    /// Traffic budgets and abuse thresholds live in NetworkPacketPolicy so they stay
+    /// transport independent and the tests use the same values the production path does.
+    static constexpr Uint32     MAX_REJECTED_PACKETS_PER_PEER = NetworkPacketPolicy::kMaxRefusalsPerBurst;
+    static constexpr Uint32     REJECT_DECAY_MS = NetworkPacketPolicy::kRefusalDecayMs;
+    static constexpr Uint32     MAX_PACKETS_PER_PEER_PER_SECOND = NetworkPacketPolicy::kMaxPacketsPerWindow;
+    static constexpr Uint32     BYTE_WINDOW_MS = NetworkPacketPolicy::kTrafficWindowMs;
+    static constexpr Uint64     MAX_PEER_BYTES_PER_SECOND = NetworkPacketPolicy::kMaxPeerBytesPerWindow;
+    static constexpr Uint64     MAX_MOD_TRANSFER_BYTES_PER_SECOND = NetworkPacketPolicy::kMaxModTransferBytesPerWindow;
     /// Rejection log lines per peer are throttled to one per this many milliseconds.
     static constexpr Uint32     REJECT_LOG_INTERVAL_MS = 5000;
-    /// Packets per second a single peer may send before it is dropped. A full 10 MiB mod
-    /// transfer is ~160 packets and in-game traffic is a few dozen per second.
-    static constexpr Uint32     MAX_PACKETS_PER_PEER_PER_SECOND = 4096;
+    /// Largest single packet ENet will reassemble. Applied before the reassembly buffer is
+    /// allocated, so an announced fragment total beyond it costs nothing. The largest
+    /// legitimate packet is a multiplayer map inside SENDGAMEINFO; a mod chunk is 64 KiB.
+    static constexpr std::size_t MAX_ENET_PACKET_SIZE = 4u * 1024 * 1024;
+    /// Aggregate incoming data ENet may hold for one peer while commands are reassembled.
+    static constexpr std::size_t MAX_ENET_WAITING_DATA = 16u * 1024 * 1024;
 
     std::unique_ptr<GameInitSettings> pendingCoopMission;
     Uint32 nextClientId = 1;        ///< source of the stable per-connection client ids
+    Uint32 lastUnidentifiedLogTime = 0;  ///< throttles logging for connections without peer state
     Uint32 simulationSeed = 0;
     ENetHost* host = nullptr;
     bool bIsServer = false;

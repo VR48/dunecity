@@ -63,6 +63,15 @@ NetworkManager::NetworkManager(int port, const std::string& metaserver) {
         THROW(std::runtime_error, "NetworkManager: Cannot activate range coder.");
     }
 
+    // Bound what ENet itself will allocate for an inbound peer before we ever see a packet.
+    // maximumPacketSize is checked against the announced fragment total *before* the
+    // reassembly buffer is allocated (src/enet/protocol.c), and maximumWaitingData bounds the
+    // data one peer may have queued. Both defaults are 32 MiB, far above anything this
+    // protocol sends: the largest legitimate packet is a map inside SENDGAMEINFO and the
+    // largest legitimate burst is a 10 MiB mod transfer in 64 KiB chunks.
+    host->maximumPacketSize = MAX_ENET_PACKET_SIZE;
+    host->maximumWaitingData = MAX_ENET_WAITING_DATA;
+
     try {
         pLANGameFinderAndAnnouncer = std::make_unique<LANGameFinderAndAnnouncer>();
         pMetaServerClient = std::make_unique<MetaServerClient>(metaserver);
@@ -682,9 +691,15 @@ void NetworkManager::update()
                 //debugNetwork("NetworkManager: A packet of length %u was received from %s:%u on channel %u on this server.\n",
                 //                (unsigned int) event.packet->dataLength, Address2String(peer->address).c_str(), peer->address.port, event.channelID);
 
+                const std::size_t receivedBytes = (event.packet != nullptr) ? event.packet->dataLength : 0;
+
+                // The stream takes ownership of the packet, so build it first: the packet is
+                // released even when the byte budget refuses to parse it.
                 ENetPacketIStream packetStream(event.packet);
 
-                handlePacket(peer, packetStream);
+                if(acceptIncomingBytes(peer, receivedBytes)) {
+                    handlePacket(peer, packetStream);
+                }
             } break;
 
             case ENET_EVENT_TYPE_DISCONNECT: {
@@ -696,7 +711,11 @@ void NetworkManager::update()
 
                 if(peerData != nullptr) {
                     if(std::find(awaitingConnectionList.begin(), awaitingConnectionList.end(), peer) != awaitingConnectionList.end()) {
-                        if(peerData->peerState == PeerData::PeerState::WaitingForOtherPeersToConnect) {
+                        // Only the host announces that a peer is gone. Every client is
+                        // connected to every other client, so each of them sees its own ENet
+                        // disconnect event; a client-sent DISCONNECT is both redundant and
+                        // refused by the receiving peers' host-only rule for this packet.
+                        if(bIsServer && peerData->peerState == PeerData::PeerState::WaitingForOtherPeersToConnect) {
                             ENetPacketOStream packetStream(ENET_PACKET_FLAG_RELIABLE);
                             packetStream.writeUint32(NETWORKPACKET_DISCONNECT);
                             packetStream.writeUint32(SDL_SwapBE32(peer->address.host));
@@ -714,12 +733,14 @@ void NetworkManager::update()
                         debugNetwork("Removing '%s' from peer list\n", peerData->name.c_str());
                         peerList.remove(peer);
 
-                        ENetPacketOStream packetStream(ENET_PACKET_FLAG_RELIABLE);
-                        packetStream.writeUint32(NETWORKPACKET_DISCONNECT);
-                        packetStream.writeUint32(SDL_SwapBE32(peer->address.host));
-                        packetStream.writeUint16(peer->address.port);
+                        if(bIsServer) {
+                            ENetPacketOStream packetStream(ENET_PACKET_FLAG_RELIABLE);
+                            packetStream.writeUint32(NETWORKPACKET_DISCONNECT);
+                            packetStream.writeUint32(SDL_SwapBE32(peer->address.host));
+                            packetStream.writeUint16(peer->address.port);
 
-                        sendPacketToAllConnectedPeers(packetStream);
+                            sendPacketToAllConnectedPeers(packetStream);
+                        }
 
                         if(pOnPeerDisconnected) {
                             pOnPeerDisconnected(peerData->name, (peer == connectPeer), disconnectCause);
@@ -760,48 +781,106 @@ NetworkManager::PeerData* NetworkManager::createPeerData(ENetPeer* peer, PeerDat
     return peerData;
 }
 
+void NetworkManager::beginPeerDisconnect(ENetPeer* peer, const char* reason) {
+    if(peer == nullptr) {
+        return;
+    }
+
+    PeerData* peerData = static_cast<PeerData*>(peer->data);
+
+    if(peerData == nullptr) {
+        // Nothing to mark; throttle the log so a connection without peer state cannot spin it.
+        const Uint32 now = SDL_GetTicks();
+        if(lastUnidentifiedLogTime == 0 || (now - lastUnidentifiedLogTime) >= REJECT_LOG_INTERVAL_MS) {
+            lastUnidentifiedLogTime = now;
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "NetworkManager: dropping traffic from unidentified peer %s:%u (%s)",
+                        Address2String(peer->address).c_str(), peer->address.port, reason);
+        }
+        enet_peer_disconnect_later(peer, NETWORKDISCONNECT_TIMEOUT);
+        return;
+    }
+
+    if(!peerData->refusals.beginDisconnect()) {
+        // The drop was already requested and logged once; say nothing further.
+        return;
+    }
+
+    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                 "NetworkManager: disconnecting '%s' (%s:%u): %s",
+                 peerData->name.c_str(), Address2String(peer->address).c_str(),
+                 peer->address.port, reason);
+    enet_peer_disconnect_later(peer, NETWORKDISCONNECT_TIMEOUT);
+}
+
 void NetworkManager::noteRejectedPacket(ENetPeer* peer, const char* reason) {
     if(peer == nullptr) {
         return;
     }
 
     PeerData* peerData = static_cast<PeerData*>(peer->data);
-    const Uint32 now = SDL_GetTicks();
 
     if(peerData == nullptr) {
-        // No state to account against: drop the connection straight away, it has no business
-        // sending us anything.
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                    "NetworkManager: dropping packet from unidentified peer %s:%u (%s)",
-                    Address2String(peer->address).c_str(), peer->address.port, reason);
-        enet_peer_disconnect_later(peer, NETWORKDISCONNECT_TIMEOUT);
+        beginPeerDisconnect(peer, reason);
         return;
     }
 
-    // Refusals that are far apart are not an attack: a few in-game packets can legitimately
-    // race the lobby/match transition, because clients start their countdown half a round trip
-    // before the host does.
-    if(peerData->lastRejectTime != 0 && (now - peerData->lastRejectTime) > REJECT_DECAY_MS) {
-        peerData->rejectedPackets = 0;
+    if(peerData->refusals.isDisconnecting()) {
+        return;
     }
-    peerData->lastRejectTime = now;
-    peerData->rejectedPackets++;
 
-    if(peerData->rejectedPackets <= 3
+    const Uint32 now = SDL_GetTicks();
+
+    // Refusals that are far apart are not an attack: a few packets can legitimately race a
+    // phase transition or a peer leaving.
+    const bool bTooMany = peerData->refusals.noteRefusal(now, MAX_REJECTED_PACKETS_PER_PEER,
+                                                         REJECT_DECAY_MS);
+
+    if(peerData->refusals.refusals <= 3
        || (now - peerData->lastRejectLogTime) >= REJECT_LOG_INTERVAL_MS) {
         peerData->lastRejectLogTime = now;
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                     "NetworkManager: rejected packet from '%s' (%s:%u): %s (%u refused so far)",
                     peerData->name.c_str(), Address2String(peer->address).c_str(),
-                    peer->address.port, reason, peerData->rejectedPackets);
+                    peer->address.port, reason, peerData->refusals.refusals);
     }
 
-    if(peerData->rejectedPackets >= MAX_REJECTED_PACKETS_PER_PEER) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                     "NetworkManager: disconnecting '%s' after %u refused packets",
-                     peerData->name.c_str(), peerData->rejectedPackets);
-        enet_peer_disconnect_later(peer, NETWORKDISCONNECT_TIMEOUT);
+    if(bTooMany) {
+        // One shot: this marks the peer, so nothing from it is parsed, counted or logged again.
+        beginPeerDisconnect(peer, "too many refused packets");
     }
+}
+
+bool NetworkManager::acceptIncomingBytes(ENetPeer* peer, std::size_t byteCount) {
+    if(peer == nullptr) {
+        return false;
+    }
+
+    PeerData* peerData = static_cast<PeerData*>(peer->data);
+    if(peerData == nullptr) {
+        // No admitted state: the packet is refused by admitPacket() anyway, and that path
+        // drops the connection.
+        return true;
+    }
+
+    if(peerData->refusals.isDisconnecting()) {
+        return false;
+    }
+
+    // Only a mod transfer this client asked for may use the large budget, and only on the
+    // connection to the host. Everything else lives far below the ordinary budget.
+    const bool expectingModTransfer = (!bIsServer) && (connectPeer != nullptr) && (peer == connectPeer)
+        && (modTransferState.requested || modTransferState.inProgress);
+    const Uint64 budget = expectingModTransfer ? MAX_MOD_TRANSFER_BYTES_PER_SECOND
+                                               : MAX_PEER_BYTES_PER_SECOND;
+
+    if(!peerData->byteWindow.accept(SDL_GetTicks(), static_cast<Uint64>(byteCount),
+                                    budget, BYTE_WINDOW_MS)) {
+        beginPeerDisconnect(peer, "incoming byte budget exceeded");
+        return false;
+    }
+
+    return true;
 }
 
 bool NetworkManager::admitPacket(ENetPeer* peer, Uint32 packetType) {
@@ -811,22 +890,17 @@ bool NetworkManager::admitPacket(ENetPeer* peer, Uint32 packetType) {
 
     PeerData* peerData = static_cast<PeerData*>(peer->data);
 
+    // Already dropped: stop parsing anything else this peer has queued.
+    if(peerData != nullptr && peerData->refusals.isDisconnecting()) {
+        return false;
+    }
+
     // Cheap flood guard: even well-formed packets are refused above a rate no legitimate
     // peer reaches (a full mod transfer is ~160 packets, in-game traffic a few dozen/s).
     if(peerData != nullptr) {
-        const Uint32 now = SDL_GetTicks();
-        if(now - peerData->packetWindowStart >= 1000) {
-            peerData->packetWindowStart = now;
-            peerData->packetsInWindow = 0;
-        }
-        peerData->packetsInWindow++;
-        if(peerData->packetsInWindow > MAX_PACKETS_PER_PEER_PER_SECOND) {
-            if(peerData->packetsInWindow == MAX_PACKETS_PER_PEER_PER_SECOND + 1) {
-                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                             "NetworkManager: peer '%s' exceeded the packet rate limit - disconnecting",
-                             peerData->name.c_str());
-                enet_peer_disconnect_later(peer, NETWORKDISCONNECT_TIMEOUT);
-            }
+        if(!peerData->packetWindow.accept(SDL_GetTicks(), 1, MAX_PACKETS_PER_PEER_PER_SECOND,
+                                          BYTE_WINDOW_MS)) {
+            beginPeerDisconnect(peer, "packet rate limit exceeded");
             return false;
         }
     }
@@ -850,6 +924,15 @@ bool NetworkManager::admitPacket(ENetPeer* peer, Uint32 packetType) {
     const NetworkPacketPolicy::PacketVerdict verdict = NetworkPacketPolicy::classifyPacket(context);
     if(verdict == NetworkPacketPolicy::PacketVerdict::Accept) {
         return true;
+    }
+
+    if(NetworkPacketPolicy::isExpectedOrderingRefusal(verdict)) {
+        // Peers change phase at slightly different times - clients start their countdown half
+        // a round trip before the host, and campaign co-op moves between missions - so packets
+        // that are valid but stale are dropped quietly rather than held against the sender.
+        debugNetwork("NetworkManager: dropping out-of-phase packet %u from %s:%u\n",
+                     packetType, Address2String(peer->address).c_str(), peer->address.port);
+        return false;
     }
 
     noteRejectedPacket(peer, NetworkPacketPolicy::describeVerdict(verdict));
