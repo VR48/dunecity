@@ -22,8 +22,11 @@ endif()
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     if(APPLE)
         set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum OS X deployment version" FORCE)
-        set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -ffast-math")
-        set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -O3 -ffast-math")
+        # Network/config validation and deterministic simulation share these flags.
+        # Fast-math assumes finite inputs and can remove security checks; it also
+        # changes arithmetic relative to the browser and other native builds.
+        set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
+        set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -O3")
     endif()
 endif()
 
