@@ -25,6 +25,7 @@ target_sources(dunelegacy_tests
         ${CMAKE_SOURCE_DIR}/src/players/AIDecisionLog.cpp
         PathBudgetTestCase/PathBudgetTestCase.cpp
         NetworkManagerTestCase/NetworkManagerTestCase.cpp
+        NetworkHardeningTestCase/NetworkHardeningTestCase.cpp
         GenericNinthHouseRegressionTestCase/GenericNinthHouseRegressionTestCase.cpp
         ZoneStructureTestCase/ZoneStructureTestCase.cpp
         RoadPlacementTestCase/RoadPlacementTestCase.cpp
@@ -137,6 +138,45 @@ target_compile_options(dunelegacy_tests
 
 # Add test
 add_test(NAME dunelegacy_tests COMMAND dunelegacy_tests)
+
+# Standalone network wire harness.
+#
+# Same sources as tests/wasm/run-network-wire-harness.sh, built for the host so the wire
+# boundary can be checked without the rest of the test target (and, with the script, under
+# Emscripten where size_t is 32 bits). It needs no game data and no Catch2.
+add_executable(network_wire_harness
+    wasm/NetworkWireHarness.cpp
+    ${CMAKE_SOURCE_DIR}/src/misc/format.cpp
+    ${CMAKE_SOURCE_DIR}/src/enet/callbacks.c
+    ${CMAKE_SOURCE_DIR}/src/enet/compress.c
+    ${CMAKE_SOURCE_DIR}/src/enet/host.c
+    ${CMAKE_SOURCE_DIR}/src/enet/list.c
+    ${CMAKE_SOURCE_DIR}/src/enet/packet.c
+    ${CMAKE_SOURCE_DIR}/src/enet/peer.c
+    ${CMAKE_SOURCE_DIR}/src/enet/protocol.c
+    $<$<NOT:$<PLATFORM_ID:Windows>>:${CMAKE_SOURCE_DIR}/src/enet/unix.c>
+    $<$<PLATFORM_ID:Windows>:${CMAKE_SOURCE_DIR}/src/enet/win32.c>
+)
+
+target_include_directories(network_wire_harness
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_BINARY_DIR}/include
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/enet
+)
+
+target_link_libraries(network_wire_harness
+    PRIVATE
+        SDL2::SDL2
+        $<IF:$<TARGET_EXISTS:SDL2_mixer::SDL2_mixer>,SDL2_mixer::SDL2_mixer,SDL2_mixer::SDL2_mixer-static>
+)
+
+if(WIN32)
+    target_link_libraries(network_wire_harness PRIVATE ws2_32 winmm)
+endif()
+
+add_test(NAME network_wire_harness COMMAND network_wire_harness)
 
 # Set test properties
 set_tests_properties(dunelegacy_tests PROPERTIES

@@ -3,11 +3,33 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <string_view>
 
 namespace ModTransferValidation {
+
+/**
+    Bounds check for "read length bytes at offset out of a payload of payloadSize bytes".
+
+    The additive form (offset + length > payloadSize) wraps when size_t is 32 bits, which it is
+    on wasm32, so a crafted length near 0xFFFFFFFF passes the check and the read runs off the
+    end of the buffer. The subtraction form below cannot wrap, and length is widened so a
+    32-bit length is never truncated either.
+
+    \param  offset      current read position, must be inside the payload
+    \param  length      number of bytes the payload claims to hold at that position
+    \param  payloadSize total size of the payload
+    \return true if the requested bytes are really present
+*/
+inline bool fitsWithinPayload(std::size_t offset, std::uint64_t length, std::size_t payloadSize) {
+    if(offset > payloadSize) {
+        return false;
+    }
+    return length <= static_cast<std::uint64_t>(payloadSize - offset);
+}
 
 inline bool isReservedWindowsName(std::string_view component) {
     const std::size_t dot = component.find('.');

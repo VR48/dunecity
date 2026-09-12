@@ -128,6 +128,28 @@ inline bool isWellFormedCommand(Uint32 commandID, std::size_t parameterCount) {
     return parameterCount == static_cast<std::size_t>(expected);
 }
 
+/// Hard caps for a received COMMANDLIST packet. One legitimate packet covers
+/// [gameCycle - MILLI2CYCLES(2500), gameCycle + networkCycleBuffer), i.e. a few dozen entries,
+/// each holding the commands one player issued in a single cycle.
+constexpr Uint32 kMaxCommandListEntries = 1024;
+constexpr Uint32 kMaxCommandsPerEntry = 1024;
+
+/**
+    \param  entryCount  number of cycle entries the packet claims to contain
+    \return true if a COMMANDLIST with this many entries may be parsed
+*/
+inline bool isAcceptableCommandListEntryCount(Uint32 entryCount) {
+    return entryCount <= kMaxCommandListEntries;
+}
+
+/**
+    \param  commandCount    number of commands one cycle entry claims to contain
+    \return true if a cycle entry with this many commands may be parsed
+*/
+inline bool isAcceptableCommandCountPerEntry(Uint32 commandCount) {
+    return commandCount <= kMaxCommandsPerEntry;
+}
+
 /// Extra cycles of slack accepted beyond the receiver's own command buffer, covering the
 /// sender running ahead by up to one buffer plus lockstep jitter.
 constexpr Uint32 kCycleWindowSlack = 64;

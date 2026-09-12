@@ -1129,7 +1129,7 @@ bool ModManager::saveReceivedMod(const std::string& modName, const std::string& 
     // Subtraction form throughout: 'offset' never exceeds packagedData.size(), while the
     // additive form wraps on 32-bit size_t targets (wasm32) and lets a crafted length pass.
     for (uint32_t i = 0; i < numFiles; i++) {
-        if (sizeof(uint32_t) > packagedData.size() - offset) {
+        if (!ModTransferValidation::fitsWithinPayload(offset, sizeof(uint32_t), packagedData.size())) {
             return fail("Unexpected end of received mod while reading a path length");
         }
 
@@ -1138,7 +1138,7 @@ bool ModManager::saveReceivedMod(const std::string& modName, const std::string& 
         offset += sizeof(nameLen);
 
         if (nameLen == 0 || nameLen > MAX_RECEIVED_PATH_LENGTH
-            || static_cast<std::size_t>(nameLen) > packagedData.size() - offset) {
+            || !ModTransferValidation::fitsWithinPayload(offset, nameLen, packagedData.size())) {
             return fail("Received mod contains an invalid path length");
         }
 
@@ -1156,7 +1156,7 @@ bool ModManager::saveReceivedMod(const std::string& modName, const std::string& 
             return fail("Received mod contains duplicate or case-colliding paths");
         }
 
-        if (sizeof(uint32_t) > packagedData.size() - offset) {
+        if (!ModTransferValidation::fitsWithinPayload(offset, sizeof(uint32_t), packagedData.size())) {
             return fail("Unexpected end of received mod while reading a file length");
         }
 
@@ -1164,7 +1164,7 @@ bool ModManager::saveReceivedMod(const std::string& modName, const std::string& 
         memcpy(&dataLen, packagedData.data() + offset, sizeof(dataLen));
         offset += sizeof(dataLen);
 
-        if (static_cast<std::size_t>(dataLen) > packagedData.size() - offset) {
+        if (!ModTransferValidation::fitsWithinPayload(offset, dataLen, packagedData.size())) {
             return fail("Unexpected end of received mod while reading file data");
         }
 
