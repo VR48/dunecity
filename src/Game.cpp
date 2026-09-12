@@ -616,6 +616,12 @@ void Game::startMatchAnalytics() {
         return;
     }
     matchAnalyticsID = analyticsMatchID(gameInitSettings);
+#ifdef __EMSCRIPTEN__
+    // Browser builds have no SDL worker threads. Submit asynchronously through
+    // the same-origin web shell instead of creating a native MetaServerClient.
+    WebRuntime::reportMatchStats("start", matchAnalyticsID, buildMatchAnalyticsPayload(false));
+    matchAnalyticsStarted = true;
+#else
     try {
         matchAnalyticsClient = std::make_unique<MetaServerClient>(settings.network.metaServer);
         matchAnalyticsClient->reportGameStats("start", matchAnalyticsID, buildMatchAnalyticsPayload(false));
@@ -624,15 +630,22 @@ void Game::startMatchAnalytics() {
         SDL_Log("Game: Match analytics reporter unavailable: %s", exception.what());
         matchAnalyticsClient.reset();
     }
+#endif
 }
 
 void Game::finishMatchAnalytics() {
+#ifdef __EMSCRIPTEN__
+    if (!matchAnalyticsStarted) return;
+    WebRuntime::reportMatchStats("end", matchAnalyticsID, buildMatchAnalyticsPayload(true));
+    matchAnalyticsStarted = false;
+#else
     if (!matchAnalyticsStarted || !matchAnalyticsClient) return;
     matchAnalyticsClient->reportGameStats("end", matchAnalyticsID, buildMatchAnalyticsPayload(true));
     // The client's worker drains the queued end event before joining. A failed
     // request is caught inside MetaServerClient and can never affect teardown.
     matchAnalyticsClient.reset();
     matchAnalyticsStarted = false;
+#endif
 }
 
 std::string Game::buildMatchAnalyticsPayload(bool finishedMatch) const {
@@ -796,6 +809,11 @@ std::string Game::buildMatchAnalyticsPayload(bool finishedMatch) const {
     const std::string mapName = getBasename(gameInitSettings.getFilename(), true);
     std::ostringstream payload;
     payload << "{\"schema_version\":3"
+#ifdef __EMSCRIPTEN__
+            << ",\"client_runtime\":\"browser\""
+#else
+            << ",\"client_runtime\":\"native\""
+#endif
             << ",\"game_type\":" << AITelemetry::Record::quote(analyticsGameType(gameInitSettings.getGameType()))
             << ",\"game_version\":" << AITelemetry::Record::quote(VERSION)
             << ",\"map\":{\"name\":" << AITelemetry::Record::quote(mapName)

@@ -11,7 +11,8 @@ function shell(width, height, coarse = false) {
         elements[id] = { width: 640, height: 480, clientWidth: width, clientHeight: height,
             style: {}, addEventListener() {}, focus() {}, classList: { add() {} } };
     }
-    const context = vm.createContext({ URL, console, setInterval() {}, setTimeout() {},
+    const context = vm.createContext({ URL, URLSearchParams, TextEncoder, AbortController,
+        console, clearTimeout() {}, setInterval() {}, setTimeout() {},
         ResizeObserver: class { constructor(callback) { this.callback = callback; } observe() {} },
         MutationObserver: class { constructor(callback) { this.callback = callback; } observe() {} },
         document: { currentScript: { src: 'https://example.com/play/shell.js?v=654-hash' },
@@ -46,4 +47,34 @@ test('wasm and data use the same build token as the shell', () => {
     const { context } = shell(1280,720);
     assert.equal(context.Module.locateFile('dunecity.wasm','/play/'), '/play/dunecity.wasm?v=654-hash');
     assert.equal(context.Module.locateFile('dunecity.data',''), 'dunecity.data?v=654-hash');
+});
+
+
+test('analytics sends ordered POSTs, retries once and keeps the runtime summary', async () => {
+    const { context } = shell(1280,720);
+    const calls = [];
+    context.fetch = async (url, options) => {
+        calls.push({url, options});
+        return {ok: calls.length !== 1, status: calls.length === 1 ? 503 : 200, text: async () => 'OK\n'};
+    };
+    const stats = JSON.stringify({schema_version:3,client_runtime:'browser'});
+    context.Module.reportMatchStats('start','browser-test-match',stats);
+    await context.Module.reportMatchStats('end','browser-test-match',stats);
+    assert.deepEqual(calls.map(c=>c.options.body.get('phase')), ['start','start','end']);
+    for (const {url,options} of calls) {
+        assert.equal(url,'/metaserver/metaserver.php');
+        assert.equal(options.method,'POST');
+        assert.equal(options.credentials,'omit');
+        assert.equal(options.body.get('stats'),stats);
+        assert.equal(options.keepalive,true);
+    }
+});
+
+test('analytics failure is bounded and does not reject the game callback', async () => {
+    const { context } = shell(1280,720);
+    let attempts = 0;
+    context.console = {error() {}};
+    context.fetch = async () => { ++attempts; throw new Error('offline'); };
+    await context.Module.reportMatchStats('start','browser-test-match','{}');
+    assert.equal(attempts,2);
 });

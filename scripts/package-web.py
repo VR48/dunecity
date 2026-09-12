@@ -28,7 +28,11 @@ def package(build_root, play_root):
     index = play_root / 'index.html'
     html = index.read_text()
     for name in ('shell.css', 'shell.js', 'dunecity.js'):
-        html = html.replace('"' + name + '"', '"' + name + '?v=' + token + '"')
+        # Release HTML is minified and may have unquoted attributes.
+        html, count = re.subn(r"\b(src|href)=[\"']?" + re.escape(name) + r"(?:[\"']|(?=[\s>]))",
+                              lambda match: match[1] + '="' + name + '?v=' + token + '"', html)
+        if count != 1:
+            raise RuntimeError(f'Expected exactly one HTML reference to {name}, found {count}')
     index.write_text(html)
     names = [name for name in files if name != '.htaccess']
     manifest = {

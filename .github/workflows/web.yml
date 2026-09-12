@@ -23,7 +23,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Test browser shell
-        run: node --test scripts/tests/test-web-shell.cjs
+        run: |
+          node --test scripts/tests/test-web-shell.cjs
+          python3 -m unittest discover -s scripts/tests -p 'test_package_web.py'
       - name: Select latest published release
         run: |
           TAG=$(gh release view --json tagName --jq .tagName)

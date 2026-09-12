@@ -53,3 +53,11 @@ int WebRuntime::defaultVideoHeight() {
     return 720;
 #endif
 }
+
+void WebRuntime::reportMatchStats(const std::string& phase, const std::string& matchID, const std::string& payload) {
+#ifdef __EMSCRIPTEN__
+    EM_ASM({
+        Module.reportMatchStats(UTF8ToString($0), UTF8ToString($1), UTF8ToString($2));
+    }, phase.c_str(), matchID.c_str(), payload.c_str());
+#endif
+}

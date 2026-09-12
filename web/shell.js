@@ -8,6 +8,7 @@ const progressNode = document.getElementById('progress');
 let lastDependencyCount = 0;
 let syncPending = false;
 let gameReady = false;
+let analyticsQueue = Promise.resolve();
 
 // Resize only CSS presentation. SDL owns the backing buffer and input mapping.
 function fitCanvas() {
@@ -23,6 +24,31 @@ new MutationObserver(fitCanvas).observe(canvas, { attributes: true, attributeFil
 
 var Module = {
     locateFile: function(path, prefix) { return prefix + path + buildQuery; },
+    reportMatchStats: function(phase, matchID, stats) {
+        // Serialize start/end requests and retry transient failures once. This
+        // queue never blocks the game and sends only its existing match summary.
+        const body = new URLSearchParams({ command: 'gamestats', phase, match_id: matchID, stats });
+        const keepalive = new TextEncoder().encode(body.toString()).length <= 60000;
+        analyticsQueue = analyticsQueue.then(async function() {
+            for (let attempt = 0; attempt < 2; ++attempt) {
+                const controller = new AbortController();
+                const timer = setTimeout(() => controller.abort(), 3000);
+                try {
+                    const response = await fetch('/metaserver/metaserver.php', {
+                        method: 'POST', body, credentials: 'omit', keepalive, signal: controller.signal
+                    });
+                    if (response.ok && (await response.text()).trim() === 'OK') return;
+                    if (response.status >= 400 && response.status < 500) break;
+                } catch (error) {
+                    // Offline/timeout is non-fatal; the next attempt is bounded.
+                } finally {
+                    clearTimeout(timer);
+                }
+            }
+            console.error('Could not record match analytics ' + phase + '.');
+        }).catch(function() { console.error('Could not queue match analytics.'); });
+        return analyticsQueue;
+    },
     defaultVideoSize: function() {
         const stage = document.getElementById('stage');
         if (window.matchMedia('(pointer: coarse)').matches && window.innerWidth < 900) {

@@ -1,3 +1,29 @@
+# Browser match logging — 1.0.655
+
+Extends the Play Online display hotfix below. Both start/end summaries carry an
+optional schema-3 client_runtime (browser/native). Emscripten bypasses the native
+MetaServerClient SDL thread, which is unavailable without pthreads, and queues
+same-origin POSTs through the shell with two bounded attempts. Form payloads
+avoid GET length limits; small requests use keepalive. Game code never waits on
+analytics. Tab close/crash can still leave a start-only match.
+
+Metaserver commit e02d40d adds client_runtime to analytics_matches in both PHP/PDO
+and Python backends. Legacy/missing/invalid values default to unknown; missing
+later values preserve known runtimes. No historical classification is invented.
+Deployment 34673787973 and compatibility CI 34673787975 passed. Live health
+migrated 1220 existing matches as unknown. SQLite backup before migration:
+/tmp/dunecity-runtime-655/live-before.sqlite on metaserver. Query details and
+compatibility tests are in the website repo's metaserver/ANALYTICS.md.
+
+Local Emscripten and native Release builds passed; dependency audits and CTest
+passed (588 passed, 3 expected skips). Actual Chrome skirmish start and quit
+produced matching start/end IDs, client_runtime=browser, version 1.0.655, and
+abandoned outcome (649/2602-byte summaries), captured at
+/tmp/dunecity-analytics-events.jsonl. Shell tests cover ordered POST/retry/offline
+behaviour. The packager now handles Emscripten's unquoted minified HTML attributes;
+a regression test verifies all three asset references receive the build token.
+Publication and live browser verification are recorded below when complete.
+
 # Play Online display fixes — 1.0.654
 
 Browser hotfix based on the latest released 1.0.653 gameplay. Removed the web
@@ -14,7 +40,7 @@ verified actual backing sizes, both aspect buttons with Automatic selected,
 1920x1080 through the Options dropdown, reload persistence, browser resize and
 fullscreen, old-VGA migration, explicit-VGA preservation and fresh touch default.
 Native Release build/dependency audits passed; CTest: 588 passed, 3 expected skips.
-Three Node shell tests cover defaults, aspect fitting and common asset versioning.
+Three initial Node shell tests cover defaults, aspect fitting and common asset versioning.
 Local app rebuilt in build/bin; installed /Applications app left as 1.0.653.
 
 Shared Python packager (also called from PowerShell) records source commit and
