@@ -29,6 +29,7 @@ target_sources(dunelegacy_tests
         RelayProtocolTestCase/RelayProtocolTestCase.cpp
         RelayProtocolTestCase/ContentCompatibilityTestCase.cpp
         CommandEmissionTestCase/CommandEmissionTestCase.cpp
+        CommandBufferPolicyTestCase/CommandBufferPolicyTestCase.cpp
         GenericNinthHouseRegressionTestCase/GenericNinthHouseRegressionTestCase.cpp
         ZoneStructureTestCase/ZoneStructureTestCase.cpp
         RoadPlacementTestCase/RoadPlacementTestCase.cpp

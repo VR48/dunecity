@@ -152,6 +152,7 @@ public:
 
     /// Round-trip time to the relay in milliseconds, or 0 before the first heartbeat answer.
     Uint32 roundTripTimeMs() const { return roundTripMs_; }
+    RelayTransportKind transportKind() const { return relayTransportKindForUrl(config_.socketUrl); }
 
     /**
         Bytes handed to the transport that it has not written to the socket yet.

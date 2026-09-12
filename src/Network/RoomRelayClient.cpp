@@ -414,6 +414,12 @@ void RoomRelayClient::handleWelcome(const RoomRelay::ServerFrame& frame) {
     status_ = Status::Joined;
     statusMessage_ = isHost() ? "Waiting for another player to join."
                               : "Joined. Waiting for the host.";
+
+    // Request the first latency sample at join so a quick lobby need not wait five seconds.
+    // Match startup still handles an unanswered sample with a bounded fallback allowance.
+    const Uint32 now = SDL_GetTicks();
+    lastHeartbeatSent_ = now;
+    sendFrame(RoomRelay::encodeHeartbeat(now));
 }
 
 void RoomRelayClient::handlePeerJoined(const RoomRelay::ServerFrame& frame) {

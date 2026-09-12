@@ -57,6 +57,8 @@ std::mutex Game::performanceLogMutex;
 #include <players/HumanPlayer.h>
 #include <players/QuantBot.h>
 
+#include <CommandBufferPolicy.h>
+
 #include <Network/NetworkManager.h>
 #include <Network/MetaServerClient.h>
 #include <Network/PathBudgetSync.h>
@@ -3481,17 +3483,28 @@ void Game::initializeNetwork() {
         lockstepStallReported = false;
         lastStateDigestCycle = 0;
 
-        // Network buffer: RTT-based + 5 cycles padding
-        // LAN games: Use RTT-based (typically 5 cycles = 100ms)
-        // Internet games: Use minimum of 10 cycles (200ms) to handle jitter
-        const int rttBuffer = MILLI2CYCLES(pNetworkManager->getMaxPeerRoundTripTime()) + 5;
-        const int minInternetBuffer = 10;  // 200ms minimum for internet
-        const bool isLAN = pNetworkManager->isLANServer();
-        const int networkBuffer = isLAN ? rttBuffer : std::max(rttBuffer, minInternetBuffer);
+        // Fix the relay allowance at match start. Moving it backwards later could put new
+        // input into a cycle the other peer has already processed.
+        Uint32 networkBuffer = 0;
+        if(pNetworkManager->isRelayHttpPollingSession()) {
+            const Uint32 relayRoundTripMs = pNetworkManager->getRelayServerRoundTripTimeMs();
+            const int gameSpeedMs = getGameSpeed();
+            networkBuffer = CommandBufferPolicy::relayCommandBufferCycles(relayRoundTripMs, gameSpeedMs);
+            SDL_Log("Network buffer set to %u cycles (relay hop: %ums%s, allowance: %ums, %dms per cycle)",
+                    static_cast<unsigned>(networkBuffer), static_cast<unsigned>(relayRoundTripMs),
+                    relayRoundTripMs == 0 ? " - not sampled yet" : "",
+                    static_cast<unsigned>(networkBuffer * gameSpeedMs), gameSpeedMs);
+        } else {
+            // Preserve the existing ENet and WebSocket RTT formula and Internet minimum.
+            const int rttBuffer = MILLI2CYCLES(pNetworkManager->getMaxPeerRoundTripTime()) + 5;
+            const bool isLAN = pNetworkManager->isLANServer();
+            networkBuffer = isLAN ? rttBuffer : std::max(rttBuffer, 10);
+            SDL_Log("Network buffer set to %u cycles (RTT: %dms, %s)",
+                    static_cast<unsigned>(networkBuffer), pNetworkManager->getMaxPeerRoundTripTime(),
+                    isLAN ? "LAN" : "Internet");
+        }
+
         cmdManager.setNetworkCycleBuffer(networkBuffer);
-        SDL_Log("Network buffer set to %d cycles (RTT: %dms, %s)", 
-                networkBuffer, pNetworkManager->getMaxPeerRoundTripTime(),
-                isLAN ? "LAN" : "Internet");
     }
 }
 

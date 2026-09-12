@@ -2160,7 +2160,7 @@ void NetworkManager::sendSelectedList(const std::set<Uint32>& selectedList, int 
 
 int NetworkManager::getMaxPeerRoundTripTime() {
     if(isRelaySession()) {
-        // Every peer is reached through the same relay hop; that round trip is the bound.
+        // This measures the local relay hop, not the peer path or polling delivery delay.
         return pRelayClient ? static_cast<int>(pRelayClient->roundTripTimeMs()) : 0;
     }
 
@@ -2171,6 +2171,14 @@ int NetworkManager::getMaxPeerRoundTripTime() {
     }
 
     return maxPeerRTT;
+}
+
+Uint32 NetworkManager::getRelayServerRoundTripTimeMs() const {
+    return pRelayClient ? pRelayClient->roundTripTimeMs() : 0u;
+}
+
+bool NetworkManager::isRelayHttpPollingSession() const {
+    return pRelayClient && pRelayClient->transportKind() == RelayTransportKind::HttpPolling;
 }
 
 void NetworkManager::debugNetwork(const char* fmt, ...) {

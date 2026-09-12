@@ -198,7 +198,13 @@ public:
         return peerNameList;
     }
 
+    /// Largest ENet peer RTT; for relay sessions this is only the local heartbeat RTT.
+    /// Relay heartbeat timing does not measure or bound the complete peer delivery path.
     int getMaxPeerRoundTripTime();
+
+    /// Local relay heartbeat RTT in milliseconds; zero before the first sample or without a relay.
+    Uint32 getRelayServerRoundTripTimeMs() const;
+    bool isRelayHttpPollingSession() const;
 
     LANGameFinderAndAnnouncer* getLANGameFinderAndAnnouncer() {
         return pLANGameFinderAndAnnouncer.get();

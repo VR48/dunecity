@@ -1,19 +1,27 @@
 ## Public HTTPS polling acceptance — 13 September 2026
 
-**Release is currently held:** actual public 1.0.659 browser/native and browser/browser
-matches ended with polling close code 4431 (slow consumer). The browser/native match
-ran about 197 seconds and reached at least cycle 8624 without a logged digest mismatch;
-this is not a successful acceptance test. Browser packet instrumentation captured
-repeated 64-frame responses before the browser/browser failure. Command history is
-currently retransmitted every simulation/wait iteration, exceeding sustained polling
-capacity. Actual Claude Opus implemented a 100 ms relay emission cadence with a contiguous-history
-retention guard, plus removal of two redundant browser wait timers. This is candidate
-1.0.660; native CTest 6/6 and dependency audits pass. Actual Hermes found no blocker in
-its focused review, while noting model-test limitations. Codex added an explicit
-post-watermark input regression and made final model emission obey the real schedule.
-Public 1.0.660 gameplay acceptance is still required. Do not publish the existing
-1.0.659 packages as a verified crossplay release.
-Evidence: `../outputs/network-hardening/public-659-failure-evidence.json`.
+**Release remains held for public gameplay acceptance of 1.0.661.** Public 1.0.659
+matches overflowed the polling consumer queue (close 4431). Candidate 1.0.660 at
+52ac12e paces relay command history every 100 ms with a retention guard and removes
+two redundant browser waits. Public browser/native and browser/browser matches then
+ran approximately 22 and 19 minutes and ended intentionally. Sampled state digests
+matched (84 crossplay and over 90 browser pairs); 20-second RAF captures averaged
+16.66 ms. This is sampled agreement, not complete determinism proof.
+
+However, simulation still advanced only about 37–42 cycles/s against 62.5 configured.
+The old startup buffer used only the local relay heartbeat RTT and omitted polling
+waits. Actual Claude Opus implemented a bounded startup allowance; Codex narrowed it
+to HTTP polling, preserving ENet/WSS sizing and CommandValidation's existing bounds.
+Candidate 1.0.661 budgets 700–1120 ms, capped at 70 cycles, fixed for the match. It
+requests a heartbeat at join and has a fallback before an answer arrives. The tradeoff
+is additional input delay. Arbitrary jitter/asymmetry can still stall lockstep; actual
+public simulation-rate and command-response tests remain required.
+
+Actual Hermes's first review flagged transport scope and insufficient evidence for
+claims of eliminating stutter. Final narrowed-source reviews are pending. Native
+CTest 6/6 and dependency audits pass. Evidence is under
+`../outputs/network-hardening/poll-latency-review/` and
+`../outputs/network-hardening/public-660-interim-evidence.json`.
 
 The existing server now runs the restricted-account Apache/PHP HTTPS gateway at
 `https://dunelegacy.com/relay`, with Node bound only to loopback. Deployment revision
@@ -31,7 +39,7 @@ signed relay lifecycle records arrived over local HTTPS. External event submissi
 return 403. Bounded concurrent gateway requests and a short-body timeout test passed.
 The limited test was not a capacity or DDoS certification.
 
-Candidate CI 34701395863 built all six desktop artifacts for 1.0.659 successfully.
+Candidate CI 34704561806 built all six desktop artifacts for 1.0.660 successfully.
 Native CTest 6/6, dependency audits and the browser build also passed. Main remains
 8879732, no stable tag was advanced, and the normal `/play/` page remains the previous
 release. Website companion branch `fix/relay-analytics` tracks the gateway and receiver

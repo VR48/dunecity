@@ -198,6 +198,31 @@ DrainResult drain(RoomRelayClient& client) {
 
 } // namespace
 
+TEST_CASE("relay latency policy can distinguish polling from WebSocket admission", "[relay][session][latency]") {
+    for(const auto& endpoint : {std::string("http://127.0.0.1:8787/v1/poll"),
+                               std::string("ws://127.0.0.1:8787/v1/socket")}) {
+        MockRelayTransport::reset();
+        RoomRelayClient client;
+        auto config = testConfig();
+        config.socketUrl = endpoint;
+        std::string error;
+        REQUIRE(client.start(config, error));
+        REQUIRE(client.transportKind() == (endpoint.substr(0, 4) == "http"
+            ? RelayTransportKind::HttpPolling : RelayTransportKind::WebSocket));
+    }
+}
+
+TEST_CASE("joining requests a latency sample without waiting for the heartbeat interval", "[relay][session][latency]") {
+    JoinedSession session;
+    REQUIRE(session.client.transportKind() == RelayTransportKind::WebSocket);
+    REQUIRE(session.socket->sentFrames.size() == 2);
+    REQUIRE(session.socket->sentFrames[1].size() == 5);
+    REQUIRE(session.socket->sentFrames[1][0] == static_cast<std::uint8_t>(RoomRelay::ClientMessage::Heartbeat));
+    for(int i = 0; i < 4; ++i) session.client.update();
+    REQUIRE(session.socket->sentFrames.size() == 2);
+    REQUIRE(session.client.isJoined());
+}
+
 TEST_CASE("a joined session hands the game its events in order", "[relay][session]") {
     JoinedSession session;
 
