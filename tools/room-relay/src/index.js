@@ -1,0 +1,82 @@
+'use strict';
+
+const { createRelay } = require('./server');
+const { LifecycleLog } = require('./logging');
+
+// Entry point. The relay never terminates TLS itself: in production it listens on loopback
+// behind a reverse proxy that holds the certificate, and `RELAY_OBSERVED_TRANSPORT=wss` records
+// what the proxy actually served. It needs no deploy keys and makes no outbound connections.
+
+function parseOrigins(raw) {
+  if (!raw) return [];
+  return raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0 && s.length <= 256);
+}
+
+function boolEnv(name, fallback) {
+  const raw = process.env[name];
+  if (raw === undefined) return fallback;
+  return raw === '1' || raw.toLowerCase() === 'true';
+}
+
+function intEnv(name, fallback) {
+  const raw = process.env[name];
+  if (raw === undefined || !/^[0-9]{1,6}$/.test(raw)) return fallback;
+  return Number.parseInt(raw, 10);
+}
+
+function configFromEnv(argv) {
+  const dev = argv.includes('--dev');
+  const host = process.env.RELAY_HOST || '127.0.0.1';
+  const port = intEnv('RELAY_PORT', dev ? 8787 : 8787);
+  const observedTransport = process.env.RELAY_OBSERVED_TRANSPORT || (dev ? 'ws' : 'wss');
+  const publicSocketUrl = process.env.RELAY_PUBLIC_URL
+    || (dev ? `ws://127.0.0.1:${port}/v1/socket` : '');
+
+  if (!dev && publicSocketUrl === '') {
+    throw new Error('RELAY_PUBLIC_URL must be set (the wss:// URL the reverse proxy publishes)');
+  }
+  if (!dev && !publicSocketUrl.startsWith('wss://')) {
+    throw new Error('RELAY_PUBLIC_URL must be a wss:// URL outside development mode');
+  }
+
+  return {
+    host,
+    port,
+    app: process.env.RELAY_APP || 'dunecity',
+    socketPath: process.env.RELAY_SOCKET_PATH || '/v1/socket',
+    publicSocketUrl,
+    observedTransport,
+    allowedOrigins: parseOrigins(process.env.RELAY_ALLOWED_ORIGINS),
+    trustForwardedFor: boolEnv('RELAY_TRUST_FORWARDED_FOR', false),
+    requiredGameProtocol: intEnv('RELAY_GAME_PROTOCOL', 0),
+    maxConnections: intEnv('RELAY_MAX_CONNECTIONS', undefined),
+    maxRooms: intEnv('RELAY_MAX_ROOMS', undefined),
+  };
+}
+
+async function main(argv) {
+  const raw = configFromEnv(argv);
+  const config = Object.fromEntries(Object.entries(raw).filter(([, v]) => v !== undefined));
+  config.log = new LifecycleLog({});
+
+  const relay = createRelay(config);
+  await relay.start();
+
+  const shutdown = () => {
+    relay.stop().then(() => process.exit(0), () => process.exit(1));
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+}
+
+if (require.main === module) {
+  main(process.argv.slice(2)).catch((err) => {
+    process.stderr.write(`room-relay: ${err.message}\n`);
+    process.exit(1);
+  });
+}
+
+module.exports = { main, configFromEnv };

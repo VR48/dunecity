@@ -1,0 +1,19 @@
+{
+  "name": "dunecity-room-relay",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Room-scoped WebSocket relay for DuneCity crossplay (browser/browser and desktop/browser)",
+  "license": "GPL-2.0-or-later",
+  "main": "src/index.js",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node src/index.js --dev",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "ws": "8.21.3"
+  }
+}
