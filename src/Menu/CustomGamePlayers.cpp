@@ -1930,6 +1930,18 @@ void CustomGamePlayers::onBonusColorCheckbox(int houseInfoNum) {
 }
 
 void CustomGamePlayers::onChangePlayerDropDownBoxes(bool bInteractive, int boxnum) {
+    if(bInteractive && (boxnum < 0 || boxnum >= numHouses * 2)) return;
+    if(bInteractive && pNetworkManager != nullptr
+       && !LobbyAuthorization::mayConfigurePlayerSlot(editableSeats, settings.general.playerName,
+                                                       static_cast<Uint32>(boxnum), bServer)) {
+        auto& box = boxnum % 2 == 0 ? houseInfo[boxnum / 2].player1DropDown
+                                   : houseInfo[boxnum / 2].player2DropDown;
+        const int previous = lastPlayerSelections[boxnum];
+        for(int i = 0; i < box.getNumEntries(); ++i) {
+            if(box.getEntryIntData(i) == previous) { box.setSelectedItem(i); break; }
+        }
+        return;
+    }
     if(bInteractive && boxnum >= 0 && pNetworkManager != nullptr) {
         DropDownBox& dropDownBox = (boxnum % 2 == 0) ? houseInfo[boxnum / 2].player1DropDown : houseInfo[boxnum / 2].player2DropDown;
 
@@ -1945,6 +1957,10 @@ void CustomGamePlayers::onChangePlayerDropDownBoxes(bool bInteractive, int boxnu
 }
 
 void CustomGamePlayers::onClickPlayerDropDownBox(int boxnum) {
+    if(boxnum < 0 || boxnum >= numHouses * 2) return;
+    if(pNetworkManager != nullptr && LobbyAuthorization::authorizeClientEvent(
+        makeSeatSnapshot(), settings.general.playerName,
+        ChangeEventList::ChangeEvent(boxnum, settings.general.playerName)) != LobbyAuthorization::Decision::Allow) return;
     DropDownBox& dropDownBox = (boxnum % 2 == 0) ? houseInfo[boxnum / 2].player1DropDown : houseInfo[boxnum / 2].player2DropDown;
 
     if(dropDownBox.getSelectedEntryIntData() == PLAYER_CLOSED) {
@@ -2183,6 +2199,25 @@ void CustomGamePlayers::checkPlayerBoxes() {
                 curHouseInfo.player2DropDown.setEnabled(bEnableDropDown2);
             }
             curHouseInfo.player2Label.setVisible(true);
+        }
+    }
+
+    editableSeats = makeSeatSnapshot();
+    for(int slot = 0; slot < numHouses * 2; ++slot) {
+        auto& box = slot % 2 == 0 ? houseInfo[slot / 2].player1DropDown
+                                : houseInfo[slot / 2].player2DropDown;
+        lastPlayerSelections[slot] = box.getSelectedEntryIntData();
+        if(pNetworkManager != nullptr) {
+            const bool editable = LobbyAuthorization::mayConfigurePlayerSlot(
+                editableSeats, settings.general.playerName, slot, bServer);
+            const bool loadedBot = gameInitSettings.getGameType() == GameType::LoadMultiplayer
+                && editableSeats.slots[slot].kind == LobbyAuthorization::SlotKind::AI;
+            box.setEnabled(editable && !loadedBot && box.isVisible());
+            // Disabled dropdowns have a separate click-to-claim path. Protect that path too,
+            // so clicking another player's support bot cannot silently move/swap the human.
+            box.setOnClickEnabled(LobbyAuthorization::authorizeClientEvent(editableSeats,
+                settings.general.playerName, ChangeEventList::ChangeEvent(slot, settings.general.playerName))
+                == LobbyAuthorization::Decision::Allow);
         }
     }
 

@@ -33,7 +33,7 @@
     view. A client only ever sends *requests*, and the widgets it can operate decide which
     requests are legitimate:
 
-      - it can click any player drop-down that is not "closed" to take that seat
+      - it can claim an open seat or an unowned bot seat without displacing a human
         (CustomGamePlayers::onClickPlayerDropDownBox sends SetHumanPlayer with its own name);
       - the house, team, colour and partner-slot drop-downs are only enabled for the house row
         the client currently occupies (CustomGamePlayers.cpp, the bIsThisPlayer loops), so
@@ -116,8 +116,23 @@ enum class Decision {
     RejectClosedSeat,       ///< the host closed that seat
     RejectNotYourHouse,     ///< changing a house the sender does not occupy
     RejectHostOnly,         ///< an event only the host may originate
+    RejectOccupiedSeat,     ///< another human or their support slot is already assigned
     RejectTooManyClaims     ///< more than one seat claim in one transaction
 };
+
+/// The host may configure unoccupied houses; each human owns their own partner/bot slot.
+/// No selector may replace a human, including the local player, with a bot.
+inline bool mayConfigurePlayerSlot(const SeatSnapshot& snapshot, const std::string& name,
+                                  Uint32 slot, bool isHost) {
+    if(snapshot.numHouses <= 0 || snapshot.numHouses > MAX_CUSTOM_GAME_PLAYERS
+       || slot >= static_cast<Uint32>(snapshot.slotCount())
+       || (!snapshot.multiplePlayersPerHouse && slot % 2 == 1)
+       || snapshot.slots[slot].kind == SlotKind::Human) return false;
+    const int house = static_cast<int>(slot / 2);
+    if(snapshot.occupiesHouse(name, house)) return true;
+    return isHost && snapshot.slots[house * 2].kind != SlotKind::Human
+                  && snapshot.slots[house * 2 + 1].kind != SlotKind::Human;
+}
 
 /**
     Judges one event a client sent to the host.
@@ -152,6 +167,12 @@ inline Decision authorizeClientEvent(const SeatSnapshot& snapshot, const std::st
                 // The second seat of a house does not exist in this lobby.
                 return Decision::RejectSlotOutOfRange;
             }
+            const auto& target = snapshot.slots[slot];
+            if((target.kind == SlotKind::Human && target.name != senderName)
+               || (target.kind == SlotKind::AI
+                   && !mayConfigurePlayerSlot(snapshot, senderName, slot, true))) {
+                return Decision::RejectOccupiedSeat;
+            }
             return Decision::Allow;
         }
 
@@ -160,11 +181,17 @@ inline Decision authorizeClientEvent(const SeatSnapshot& snapshot, const std::st
             if(slot >= static_cast<Uint32>(snapshot.slotCount())) {
                 return Decision::RejectSlotOutOfRange;
             }
+            if(!snapshot.multiplePlayersPerHouse && slot % 2 == 1) {
+                return Decision::RejectSlotOutOfRange;
+            }
             if(!snapshot.isSeated(senderName)) {
                 return Decision::RejectUnknownSender;
             }
             if(!snapshot.occupiesHouse(senderName, static_cast<int>(slot) / 2)) {
                 return Decision::RejectNotYourHouse;
+            }
+            if(!mayConfigurePlayerSlot(snapshot, senderName, slot, false) || event.newValue == 0) {
+                return Decision::RejectOccupiedSeat;
             }
             return Decision::Allow;
         }
@@ -240,6 +267,7 @@ inline const char* describeDecision(Decision decision) {
         case Decision::RejectClosedSeat:     return "seat is closed";
         case Decision::RejectNotYourHouse:   return "house not occupied by sender";
         case Decision::RejectHostOnly:       return "host-only change";
+        case Decision::RejectOccupiedSeat:   return "seat belongs to another player or is human";
         case Decision::RejectTooManyClaims:  return "more than one seat claim";
         default:                             return "refused";
     }

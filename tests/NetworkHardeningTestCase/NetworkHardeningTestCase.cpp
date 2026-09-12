@@ -1336,8 +1336,12 @@ TEST_CASE("Lobby authorization: house settings are restricted to the sender's ow
     }
 
     SECTION("changing the partner slot of the sender's own house is allowed") {
-        REQUIRE(judge(lobby, "stefan", houseChange(EventType::ChangePlayer, 3, 0))
+        SeatSnapshot withSupport = lobby;
+        withSupport.slots[3] = {SlotKind::AI, {}};
+        REQUIRE(judge(withSupport, "stefan", houseChange(EventType::ChangePlayer, 3, 1))
                 == LobbyDecision::Allow);
+        REQUIRE(judge(lobby, "stefan", houseChange(EventType::ChangePlayer, 3, 1))
+                == LobbyDecision::RejectOccupiedSeat);
     }
 
     SECTION("changing a slot in another house is refused") {
@@ -1622,4 +1626,29 @@ TEST_CASE("Received save settings preserve larger snapshots and closed house row
     ENetPacketIStream in(packet);
     const GameInitSettings received(in);
     REQUIRE(accepts(received, reason));
+}
+
+TEST_CASE("Lobby authorization: support AI belongs to its human, including against host UI",
+          "[lobby][security][authorization]") {
+    SeatSnapshot lobby = exampleLobby();
+    lobby.slots[1] = {SlotKind::AI, {}};
+    lobby.slots[3] = {SlotKind::AI, {}};
+    using EventType = ChangeEventList::ChangeEvent::EventType;
+    REQUIRE(LobbyAuthorization::mayConfigurePlayerSlot(lobby, "host", 1, true));
+    REQUIRE_FALSE(LobbyAuthorization::mayConfigurePlayerSlot(lobby, "host", 3, true));
+    REQUIRE(LobbyAuthorization::mayConfigurePlayerSlot(lobby, "host", 4, true));
+    REQUIRE(LobbyAuthorization::mayConfigurePlayerSlot(lobby, "stefan", 3, false));
+    REQUIRE_FALSE(LobbyAuthorization::mayConfigurePlayerSlot(lobby, "stefan", 1, false));
+    REQUIRE(judge(lobby, "stefan", houseChange(EventType::ChangePlayer, 1, 1))
+            == LobbyDecision::RejectNotYourHouse);
+    REQUIRE(judge(lobby, "stefan", seatClaim(1, "stefan")) == LobbyDecision::RejectOccupiedSeat);
+    REQUIRE(judge(lobby, "host", seatClaim(3, "host")) == LobbyDecision::RejectOccupiedSeat);
+    REQUIRE(judge(lobby, "stefan", seatClaim(0, "stefan")) == LobbyDecision::RejectOccupiedSeat);
+    REQUIRE(judge(lobby, "stefan", houseChange(EventType::ChangePlayer, 2, 1))
+            == LobbyDecision::RejectOccupiedSeat);
+    REQUIRE(judge(lobby, "stefan", houseChange(EventType::ChangePlayer, 3, 0))
+            == LobbyDecision::RejectOccupiedSeat);
+    lobby.multiplePlayersPerHouse = false;
+    REQUIRE(judge(lobby, "stefan", houseChange(EventType::ChangePlayer, 3, 1))
+            == LobbyDecision::RejectSlotOutOfRange);
 }

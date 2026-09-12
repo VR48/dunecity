@@ -173,6 +173,8 @@ private:
         DropDownBox     player2DropDown;
     };
 
+    LobbyAuthorization::SeatSnapshot editableSeats;
+    std::array<int, MAX_CUSTOM_GAME_PLAYERS * 2> lastPlayerSelections{};
     bool                    bServer;
     bool                    bLANServer;
     HouseInfo               houseInfo[MAX_CUSTOM_GAME_PLAYERS];
