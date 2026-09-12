@@ -1171,6 +1171,30 @@ void NetworkManager::handlePacket(ENetPeer* peer, ENetPacketIStream& packetStrea
             case NETWORKPACKET_CHANGEEVENTLIST: {
                 ChangeEventList changeEventList(packetStream);
 
+                PeerData* peerData = static_cast<PeerData*>(peer->data);
+                if(peerData == nullptr) {
+                    break;
+                }
+
+                if(bIsServer) {
+                    // A client only ever seats itself: every lobby slot claim it sends carries
+                    // its own name (CustomGamePlayers::onClickPlayerDropDownBox). Anything else
+                    // is a peer trying to move another player around.
+                    bool bForeignSlotClaim = false;
+                    for(const ChangeEventList::ChangeEvent& changeEvent : changeEventList.changeEventList) {
+                        if(changeEvent.eventType == ChangeEventList::ChangeEvent::EventType::SetHumanPlayer
+                           && changeEvent.newStringValue != peerData->name) {
+                            bForeignSlotClaim = true;
+                            break;
+                        }
+                    }
+
+                    if(bForeignSlotClaim) {
+                        noteRejectedPacket(peer, "lobby slot claim for another player");
+                        break;
+                    }
+                }
+
                 if(pOnReceiveChangeEventList) {
                     pOnReceiveChangeEventList(changeEventList);
                 }

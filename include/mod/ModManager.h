@@ -20,6 +20,7 @@
 
 #include <mod/ModInfo.h>
 #include <DataTypes.h>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -188,6 +189,25 @@ public:
      * \return true if successful
      */
     bool saveReceivedMod(const std::string& modName, const std::string& packagedData);
+
+    /**
+     * Save a received mod, but only install it if the staged payload really produces the
+     * checksum the sender announced.
+     *
+     * The payload is unpacked into a staging directory, its combined checksum is computed
+     * there, and the mod directory is only replaced when that matches expectedChecksum. This
+     * is an integrity and ordering guarantee, not an authentication one: the same peer sends
+     * both the payload and the expected checksum, and the checksum is FNV-1a, not a signature.
+     * What it does buy is that nothing is written into the active mod - and nothing is
+     * activated - unless the content matches what the lobby verified against.
+     *
+     * \param  modName          Name of the mod to save
+     * \param  packagedData     Packaged mod data (from network transfer)
+     * \param  expectedChecksum Combined checksum the sender announced; empty disables the check
+     * \return true if the mod was installed
+     */
+    bool saveReceivedMod(const std::string& modName, const std::string& packagedData,
+                         const std::string& expectedChecksum);
     
     // === Vanilla seeding ===
     
@@ -275,6 +295,24 @@ private:
      * "FILE_NOT_FOUND" if the file is missing.
      */
     static std::string hashFileCanonical(const std::string& path);
+
+    /**
+     * Combine the per-file hashes into the checksum that is exchanged in multiplayer.
+     * Shared by updateChecksums() and the staged verification of a received mod so both
+     * produce byte-identical results.
+     */
+    static std::string combineChecksumParts(const std::string& objectDataHash,
+                                            const std::string& quantBotHash,
+                                            const std::string& gameOptionsHash,
+                                            const std::string& customHouseHash,
+                                            const std::string& engineCompatibility);
+
+    /**
+     * Compute the combined checksum a mod directory would produce if it were the active mod.
+     * Used to verify a received mod while it is still staged, before anything is installed.
+     */
+    std::string computeCombinedChecksumForDirectory(const std::string& modName,
+                                                    const std::filesystem::path& directory) const;
 
     /**
      * Returns true when the installed mod's ObjectData.ini canonical hash

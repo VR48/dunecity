@@ -20,6 +20,7 @@
 #include <cstdarg>
 #include <ctime>
 #include <chrono>
+#include <cmath>
 
 // Initialize static performance logging members
 std::ofstream Game::performanceLogFile;
@@ -58,6 +59,7 @@ std::mutex Game::performanceLogMutex;
 
 #include <Network/NetworkManager.h>
 #include <Network/MetaServerClient.h>
+#include <Network/PathBudgetSync.h>
 #include <mod/ModManager.h>
 
 #include <GUI/dune/InGameMenu.h>
@@ -1450,7 +1452,29 @@ void Game::handleClientStats(Uint32 clientId, Uint32 gameCycle, float avgFps, fl
     if(pNetworkManager == nullptr || !pNetworkManager->isServer()) {
         return;  // Only host processes client stats
     }
-    
+
+    // Advisory numbers from a peer: non-finite values poison every later comparison and a
+    // report from the future would defeat the staleness logic.
+    if(!std::isfinite(avgFps) || !std::isfinite(simMsAvg) || avgFps < 0.0f || simMsAvg < 0.0f) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "[PathBudget HOST] Ignoring non-finite stats from client %u", clientId);
+        return;
+    }
+    if(gameCycle > gameCycleCount + static_cast<Uint32>(kBudgetCheckInterval)) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "[PathBudget HOST] Ignoring stats from client %u for future cycle %u (current %u)",
+                    clientId, gameCycle, gameCycleCount);
+        return;
+    }
+
+    // One entry per connected client; a peer cannot grow this map.
+    if(clientStats.size() >= kMaxTrackedClients && clientStats.find(clientId) == clientStats.end()) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "[PathBudget HOST] Ignoring stats from client %u: tracking limit reached", clientId);
+        return;
+    }
+
+
     // Store client stats
     ClientPerformanceStats stats;
     stats.clientId = clientId;
@@ -1763,7 +1787,26 @@ void Game::resyncClientBudget(Uint32 clientId) {
 
 void Game::handleSetPathBudget(size_t newBudget, Uint32 applyCycle) {
     // ALL CLIENTS: Queue the budget change for deterministic application
-    
+
+    // The host schedules budget changes on interval boundaries in the near future. Anything
+    // else desynchronises the deterministic pathfinding schedule, so it is refused here even
+    // though the sender already had to be the host connection.
+    if(!PathBudgetSync::isAcceptableBudgetOrder(newBudget, applyCycle, gameCycleCount,
+                                                static_cast<uint32_t>(kBudgetCheckInterval),
+                                                kMinBudget, kMaxBudget)) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "[PathBudget] Refusing budget order %zu at cycle %u (current cycle %u)",
+                    newBudget, applyCycle, gameCycleCount);
+        return;
+    }
+
+    if(pendingBudgetChanges.size() >= PathBudgetSync::kMaxPendingBudgetChanges) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "[PathBudget] Refusing budget order: %zu changes already pending",
+                    pendingBudgetChanges.size());
+        return;
+    }
+
     // LOGGING: Inbound budget order from host
     SDL_Log("[PathBudget CLIENT] ← INBOUND from host: budget %zu → %zu (apply cycle %d, current cycle %d, delta=%d cycles)",
             negotiatedBudget, newBudget, applyCycle, gameCycleCount, 
@@ -4533,9 +4576,14 @@ void Game::onReceiveSelectionList(const std::string& name, const std::set<Uint32
                 pObject->setSelectedByOtherPlayer(true);
             }
         }
-    } else {
+    } else if(groupListIndex >= 0 && groupListIndex < NUMSELECTEDLISTS) {
         // some other player has assigned a number to a list of units
         pHumanPlayer->setGroupList(groupListIndex, newSelectionList);
+    } else {
+        // setGroupList() indexes a fixed-size array; the network boundary rejects this too.
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "Game: ignoring selection list from '%s' with group index %d",
+                    name.c_str(), groupListIndex);
     }
 }
 

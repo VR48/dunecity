@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <cmath>
 #include <vector>
 
 namespace PathBudgetSync {
@@ -119,6 +120,61 @@ inline bool shouldMakeDecision(uint32_t currentCycle, uint32_t checkInterval) {
  */
 inline uint32_t calculateApplyCycle(uint32_t currentCycle, uint32_t checkInterval) {
     return ((currentCycle / checkInterval) + 1) * checkInterval;
+}
+
+/**
+ * Most budget orders that may be waiting to be applied.
+ *
+ * The host schedules at most one order per check interval, and every order is consumed at its
+ * apply cycle, so a legitimate session never holds more than a couple. The bound stops a peer
+ * from growing the queue without limit.
+ */
+constexpr size_t kMaxPendingBudgetChanges = 8;
+
+/**
+ * Decides whether a received budget order is one the host could legitimately have scheduled.
+ *
+ * Protocol contract (see Game::broadcastBudgetChange):
+ * - the budget is inside the negotiated range,
+ * - the order applies in the future, but not further away than one full check interval plus
+ *   the slack needed for the message to arrive, and
+ * - the apply cycle is a check interval boundary, which is what keeps the change deterministic.
+ *
+ * \param newBudget      budget the order asks for
+ * \param applyCycle     cycle the order should take effect at
+ * \param currentCycle   receiver's current game cycle
+ * \param checkInterval  budget check interval (typically 375)
+ * \param minBudget      lowest budget the simulation accepts
+ * \param maxBudget      highest budget the simulation accepts
+ * \return true if the order may be queued
+ */
+inline bool isAcceptableBudgetOrder(
+    size_t newBudget,
+    uint32_t applyCycle,
+    uint32_t currentCycle,
+    uint32_t checkInterval,
+    size_t minBudget,
+    size_t maxBudget
+) {
+    if(checkInterval == 0) {
+        return false;
+    }
+    if(newBudget < minBudget || newBudget > maxBudget) {
+        return false;
+    }
+    if((applyCycle % checkInterval) != 0) {
+        return false;
+    }
+    if(applyCycle < currentCycle) {
+        return false;
+    }
+    // Two intervals of headroom covers the interval the order is scheduled for plus a late
+    // delivery; anything beyond that is not something the host schedules.
+    const uint32_t headroom = checkInterval * 2;
+    if(currentCycle > 0xFFFFFFFFu - headroom) {
+        return true;
+    }
+    return applyCycle <= currentCycle + headroom;
 }
 
 } // namespace PathBudgetSync

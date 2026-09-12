@@ -670,6 +670,20 @@ void CustomGamePlayers::onReceiveChangeEventList(const ChangeEventList& changeEv
 {
     for(const ChangeEventList::ChangeEvent& changeEvent : changeEventList.changeEventList) {
 
+        // houseInfo has MAX_CUSTOM_GAME_PLAYERS entries and the slot arrives over the network:
+        // house-level events index it directly, player events index it as slot/2.
+        const bool isPlayerSlotEvent =
+            (changeEvent.eventType == ChangeEventList::ChangeEvent::EventType::ChangePlayer)
+            || (changeEvent.eventType == ChangeEventList::ChangeEvent::EventType::SetHumanPlayer);
+        const Uint32 slotLimit = isPlayerSlotEvent ? static_cast<Uint32>(numHouses) * 2u
+                                                   : static_cast<Uint32>(numHouses);
+        if(numHouses <= 0 || numHouses > MAX_CUSTOM_GAME_PLAYERS || changeEvent.slot >= slotLimit) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "CustomGamePlayers: ignoring lobby change event for slot %u",
+                        changeEvent.slot);
+            continue;
+        }
+
         switch(changeEvent.eventType) {
             case ChangeEventList::ChangeEvent::EventType::ChangeHouse: {
                 HOUSETYPE houseType = (HOUSETYPE) changeEvent.newValue;
@@ -1024,9 +1038,20 @@ void CustomGamePlayers::onModDownloadComplete(bool success, const std::string& d
     }
     
     SDL_Log("CLIENT: Mod download complete (%zu bytes)", data.size());
-    
-    // Save the received mod
-    if(ModManager::instance().saveReceivedMod(hostModName, data)) {
+
+    if(hostModName.empty() || !ModManager::instance().isValidModName(hostModName)) {
+        SDL_Log("CLIENT: Refusing mod payload without a valid announced mod name");
+        addInfoMessage("Mod sync failed: unexpected payload");
+        bConfigMismatchDetected = true;
+        if(pNetworkManager != nullptr) {
+            pNetworkManager->sendModAck(false, "");
+        }
+        return;
+    }
+
+    // Verify the staged payload against the checksum the host announced *before* anything is
+    // installed or activated. A mismatch leaves the existing mod directory untouched.
+    if(ModManager::instance().saveReceivedMod(hostModName, data, hostModChecksum)) {
         SDL_Log("CLIENT: Mod '%s' saved successfully", hostModName.c_str());
         
         // Switch to the new mod
@@ -1069,8 +1094,10 @@ void CustomGamePlayers::onModDownloadComplete(bool success, const std::string& d
             }
         }
     } else {
-        SDL_Log("CLIENT: Failed to save mod '%s'", hostModName.c_str());
-        addInfoMessage("Failed to save mod: " + hostModName);
+        // Either the payload was malformed or it did not match the announced checksum; in
+        // both cases nothing was installed and the previously active mod is untouched.
+        SDL_Log("CLIENT: Refused mod '%s' (verification or unpacking failed)", hostModName.c_str());
+        addInfoMessage("Mod rejected before installation: " + hostModName);
         bConfigMismatchDetected = true;
         
         // Send failure ACK

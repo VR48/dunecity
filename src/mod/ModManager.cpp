@@ -811,6 +811,83 @@ bool ModManager::installedObjectDataDiffersFromDefaults(const std::string& modNa
     return hashFileCanonical(installed) != hashFileCanonical(defaults);
 }
 
+std::string ModManager::combineChecksumParts(const std::string& objectDataHash,
+                                             const std::string& quantBotHash,
+                                             const std::string& gameOptionsHash,
+                                             const std::string& customHouseHash,
+                                             const std::string& engineCompatibility) {
+    const std::string combined = objectDataHash + quantBotHash + gameOptionsHash
+        + customHouseHash + engineCompatibility;
+
+    uint64_t hash = 14695981039346656037ULL;
+    const uint64_t prime = 1099511628211ULL;
+    for (char c : combined) {
+        hash ^= static_cast<uint64_t>(static_cast<unsigned char>(c));
+        hash *= prime;
+    }
+
+    char hashStr[17];
+    snprintf(hashStr, sizeof(hashStr), "%016llx", (unsigned long long)hash);
+    return std::string(hashStr);
+}
+
+std::string ModManager::computeCombinedChecksumForDirectory(const std::string& modName,
+                                                            const std::filesystem::path& directory) const {
+    // Mirrors updateChecksums(), but resolves the mod's own files inside 'directory' instead
+    // of inside the installed mod, so a staged payload can be checked before it is installed.
+    const std::string root = directory.string();
+
+    auto resolveWithFallback = [&](const char* fileName, const char* defaultName) -> std::string {
+        std::string filePath = root + "/" + fileName;
+        if (!existsFile(filePath) && modName != VANILLA_MOD_NAME) {
+            filePath = getModPath(VANILLA_MOD_NAME) + "/" + fileName;
+        }
+        if (!existsFile(filePath) && defaultName != nullptr) {
+            const std::string templatePath = getInstallConfigPath() + "/" + defaultName;
+            if (existsFile(templatePath)) {
+                return templatePath;
+            }
+        }
+        return filePath;
+    };
+
+    const std::string objectDataHash =
+        hashFileCanonical(resolveWithFallback(OBJECT_DATA_FILE, OBJECT_DATA_DEFAULT));
+    const std::string quantBotHash =
+        hashFileCanonical(resolveWithFallback(QUANTBOT_CONFIG_FILE, QUANTBOT_CONFIG_DEFAULT));
+
+    std::string gameOptionsPath = root + "/" + GAME_OPTIONS_FILE;
+    if (!existsFile(gameOptionsPath) && modName != VANILLA_MOD_NAME) {
+        gameOptionsPath = getModPath(VANILLA_MOD_NAME) + "/" + GAME_OPTIONS_FILE;
+    }
+    const std::string gameOptionsHash = existsFile(gameOptionsPath)
+        ? hashFileCanonical(gameOptionsPath)
+        : std::string("0000000000000000");
+
+    const std::string customHousePath = root + "/" + CUSTOM_HOUSE_CONFIG;
+    const std::string customHouseHash = existsFile(customHousePath)
+        ? hashFileCanonical(customHousePath)
+        : std::string();
+
+    std::string engineCompatibility;
+    if (modName == TORNIE_MOD_NAME) {
+        const std::string manifestPath = root + "/manifest.json";
+        const std::string checksumsPath = root + "/checksums.sha256";
+        engineCompatibility = TORNIE_ENGINE_COMPATIBILITY;
+        engineCompatibility += ':';
+        engineCompatibility += existsFile(manifestPath)
+            ? hashFileCanonical(manifestPath)
+            : "MANIFEST_NOT_FOUND";
+        engineCompatibility += ':';
+        engineCompatibility += existsFile(checksumsPath)
+            ? Dune2RAssetManager::sha256File(checksumsPath)
+            : "CHECKSUMS_NOT_FOUND";
+    }
+
+    return combineChecksumParts(objectDataHash, quantBotHash, gameOptionsHash,
+                                customHouseHash, engineCompatibility);
+}
+
 void ModManager::updateChecksums() {
     cachedChecksums.objectData = hashFileCanonical(getActiveObjectDataPath());
     cachedChecksums.quantBotConfig = hashFileCanonical(getActiveQuantBotConfigPath());
@@ -848,18 +925,12 @@ void ModManager::updateChecksums() {
 
     // The compatibility suffix is empty outside Tornie, preserving every
     // existing mod checksum while rejecting incompatible Tornie engines.
-    std::string combined = cachedChecksums.objectData + cachedChecksums.quantBotConfig
-        + cachedChecksums.gameOptions + cachedChecksums.customHouse + engineCompatibility;
-    uint64_t hash = 14695981039346656037ULL;
-    const uint64_t prime = 1099511628211ULL;
-    for (char c : combined) {
-        hash ^= static_cast<uint64_t>(static_cast<unsigned char>(c));
-        hash *= prime;
-    }
-    char hashStr[17];
-    snprintf(hashStr, sizeof(hashStr), "%016llx", (unsigned long long)hash);
-    cachedChecksums.combined = std::string(hashStr);
-    
+    cachedChecksums.combined = combineChecksumParts(cachedChecksums.objectData,
+                                                    cachedChecksums.quantBotConfig,
+                                                    cachedChecksums.gameOptions,
+                                                    cachedChecksums.customHouse,
+                                                    engineCompatibility);
+
     checksumsDirty = false;
     SDL_Log("ModManager: Updated checksums - OD:%s QB:%s GO:%s Combined:%s",
             cachedChecksums.objectData.c_str(), cachedChecksums.quantBotConfig.c_str(),
@@ -996,6 +1067,11 @@ bool ModManager::deleteMod(const std::string& name) {
 }
 
 bool ModManager::saveReceivedMod(const std::string& modName, const std::string& packagedData) {
+    return saveReceivedMod(modName, packagedData, std::string());
+}
+
+bool ModManager::saveReceivedMod(const std::string& modName, const std::string& packagedData,
+                                 const std::string& expectedChecksum) {
     if (!isValidModName(modName) || modName == VANILLA_MOD_NAME) {
         SDL_Log("ModManager: Invalid mod name for save: '%s'", modName.c_str());
         return false;
@@ -1050,8 +1126,10 @@ bool ModManager::saveReceivedMod(const std::string& modName, const std::string& 
 
     std::set<std::string> receivedPathKeys;
 
+    // Subtraction form throughout: 'offset' never exceeds packagedData.size(), while the
+    // additive form wraps on 32-bit size_t targets (wasm32) and lets a crafted length pass.
     for (uint32_t i = 0; i < numFiles; i++) {
-        if (offset + sizeof(uint32_t) > packagedData.size()) {
+        if (sizeof(uint32_t) > packagedData.size() - offset) {
             return fail("Unexpected end of received mod while reading a path length");
         }
 
@@ -1060,7 +1138,7 @@ bool ModManager::saveReceivedMod(const std::string& modName, const std::string& 
         offset += sizeof(nameLen);
 
         if (nameLen == 0 || nameLen > MAX_RECEIVED_PATH_LENGTH
-            || offset + nameLen > packagedData.size()) {
+            || static_cast<std::size_t>(nameLen) > packagedData.size() - offset) {
             return fail("Received mod contains an invalid path length");
         }
 
@@ -1078,7 +1156,7 @@ bool ModManager::saveReceivedMod(const std::string& modName, const std::string& 
             return fail("Received mod contains duplicate or case-colliding paths");
         }
 
-        if (offset + sizeof(uint32_t) > packagedData.size()) {
+        if (sizeof(uint32_t) > packagedData.size() - offset) {
             return fail("Unexpected end of received mod while reading a file length");
         }
 
@@ -1086,7 +1164,7 @@ bool ModManager::saveReceivedMod(const std::string& modName, const std::string& 
         memcpy(&dataLen, packagedData.data() + offset, sizeof(dataLen));
         offset += sizeof(dataLen);
 
-        if (offset + dataLen > packagedData.size()) {
+        if (static_cast<std::size_t>(dataLen) > packagedData.size() - offset) {
             return fail("Unexpected end of received mod while reading file data");
         }
 
@@ -1122,6 +1200,18 @@ bool ModManager::saveReceivedMod(const std::string& modName, const std::string& 
             SDL_Log("ModManager: Received Tornie payload failed integrity verification: %s",
                     integrityError.c_str());
             return fail("Received Tornie payload failed integrity verification");
+        }
+    }
+
+    // Verify while still staged: nothing is installed, and nothing can be activated, unless
+    // the payload produces the checksum the lobby verified against. This is an integrity and
+    // ordering guarantee, not authentication - the same peer supplied both.
+    if(!expectedChecksum.empty()) {
+        const std::string stagedChecksum = computeCombinedChecksumForDirectory(modName, stagedPath);
+        if(stagedChecksum != expectedChecksum) {
+            SDL_Log("ModManager: Received mod checksum mismatch (staged=%s, expected=%s)",
+                    stagedChecksum.c_str(), expectedChecksum.c_str());
+            return fail("Received mod failed checksum verification");
         }
     }
 

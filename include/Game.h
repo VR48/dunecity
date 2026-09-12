@@ -971,6 +971,8 @@ private:
     
     // Multiplayer budget negotiation state
     std::vector<PendingBudgetChange> pendingBudgetChanges;
+    /// Upper bound on tracked clients; the ENet host has 32 peer slots.
+    static constexpr size_t kMaxTrackedClients = 32;
     std::map<Uint32, ClientPerformanceStats> clientStats;  // Host only
     
     // Track previous budget to avoid false DESYNC detection.

@@ -17,6 +17,7 @@
 
 #include <CommandManager.h>
 
+#include <CommandValidation.h>
 #include <Network/NetworkManager.h>
 #include <players/HumanPlayer.h>
 
@@ -25,6 +26,7 @@
 #include <Game.h>
 
 #include <algorithm>
+#include <limits>
 
 
 CommandManager::CommandManager() {
@@ -91,28 +93,65 @@ void CommandManager::addCommandList(const std::string& playername, const Command
         return;
     }
 
+    const Uint32 currentCycle = currentGame->getGameCycleCount();
+
     for(const CommandList::CommandListEntry& commandListEntry : commandList.commandList) {
         if(pPlayer->nextExpectedCommandsCycle > commandListEntry.cycle) {
+            // Already processed; this is one of the retransmissions in the rolling history.
+            continue;
+        }
+
+        // addCommand() resizes its timeslot vector to the cycle number, so a cycle far in the
+        // future is an unbounded allocation. Past cycles stay acceptable: they are how the
+        // rolling 2.5 s history and its retransmissions work.
+        if(!CommandValidation::isAcceptableCommandCycle(commandListEntry.cycle, currentCycle,
+                                                        networkCycleBuffer)) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "CommandManager: dropping commands from '%s' for cycle %u (current cycle %u)",
+                        playername.c_str(), commandListEntry.cycle, currentCycle);
             continue;
         }
 
         for(const Command& command : commandListEntry.commands) {
+            // A peer may only ever issue commands for its own player. Players that share a
+            // house each have their own player id, so this still allows co-op control.
             if(command.getPlayerID() != pPlayer->getPlayerID()) {
-                SDL_Log("Warning: Player '%s' send a command which he is not allowed to give!", playername.c_str());
+                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                            "CommandManager: dropping command from '%s' issued for player %u",
+                            playername.c_str(), static_cast<unsigned int>(command.getPlayerID()));
+                continue;
+            }
+
+            // An unknown command id or a wrong parameter count makes executeCommand() throw
+            // out of the simulation loop, which takes down every peer that accepted it.
+            if(!CommandValidation::isWellFormedCommand(static_cast<Uint32>(command.getCommandID()),
+                                                       command.getParameter().size())) {
+                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                            "CommandManager: dropping malformed command %u from '%s'",
+                            static_cast<unsigned int>(command.getCommandID()), playername.c_str());
+                continue;
             }
 
             addCommand(command, commandListEntry.cycle);
         }
 
-        pPlayer->nextExpectedCommandsCycle = std::max(pPlayer->nextExpectedCommandsCycle, commandListEntry.cycle+1);
+        pPlayer->nextExpectedCommandsCycle = std::max(pPlayer->nextExpectedCommandsCycle,
+                                                      CommandValidation::nextCycleAfter(commandListEntry.cycle));
     }
 }
 
 void CommandManager::addCommand(const Command& cmd, Uint32 CycleNumber) {
     if(bReadOnly == false) {
 
+        if(CycleNumber == std::numeric_limits<Uint32>::max()) {
+            // CycleNumber+1 would wrap to 0 and leave timeslot[CycleNumber] out of bounds.
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "CommandManager: refusing a command scheduled for the maximum cycle");
+            return;
+        }
+
         if(CycleNumber >= timeslot.size()) {
-            timeslot.resize(CycleNumber+1);
+            timeslot.resize(static_cast<std::size_t>(CycleNumber) + 1);
         }
 
         timeslot[CycleNumber].push_back(cmd);
