@@ -271,6 +271,9 @@ function createAdmissionHandler(ctx) {
   if (ctx.lifecycle === undefined) ctx.lifecycle = NULL_LIFECYCLE;
   const lobby = new LobbyChat(ctx.now);
   // Polling must not exhaust the much smaller host/join admission allowance.
+  const ingressGlobal = new WindowCounter(8192, 60000);
+  const ingressAddress = new BoundedRateTable({ limit: 360, windowMs: 60000,
+    maxEntries: LIMITS.HTTP_ADDRESS_TABLE_ENTRIES, ttlMs: LIMITS.HTTP_ADDRESS_TABLE_TTL_MS });
   const pollGlobal = new WindowCounter(4096, 60000);
   const pollAddress = new BoundedRateTable({ limit: 90, windowMs: 60000,
     maxEntries: LIMITS.HTTP_ADDRESS_TABLE_ENTRIES, ttlMs: LIMITS.HTTP_ADDRESS_TABLE_TTL_MS });
@@ -283,6 +286,9 @@ function createAdmissionHandler(ctx) {
       || ['/v1/lobby/enter', '/v1/lobby/poll', '/v1/lobby/say'].includes(url);
 
     try {
+      if (!ingressGlobal.allow(ctx.now(), 1) || !ingressAddress.allow(address, ctx.now())) {
+        throw new AdmissionError(429, 'rate_limited', 'Too many requests. Try again in a minute.');
+      }
       if (req.method === 'GET' && url === '/v1/health') {
         sendText(res, 200, [
           ['status', 'ok'],
@@ -351,7 +357,7 @@ function createAdmissionHandler(ctx) {
       }
 
       if (url.startsWith('/v1/lobby/')) {
-        const lines = lobby.handle(url.slice('/v1/lobby/'.length), form, { gameProtocol, contentHash });
+        const lines = lobby.handle(url.slice('/v1/lobby/'.length), form, { gameProtocol, contentHash, address });
         sendText(res, 200, [['status', 'ok'], ['protocol', String(RELAY_PROTOCOL_VERSION)], ...lines], false, cors);
         return;
       }

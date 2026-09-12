@@ -39,7 +39,7 @@ anything inside their own authority, exactly as on ENet.
 | Shared receive path | `include/Network/GamePayloadRouter.h`, `src/Network/GamePayloadRouter.cpp` | The payload handling both transports use. |
 | Content rule | `include/Network/ContentCompatibility.h` | Whether two installs may be in the same match, in one place. |
 | Transport switch | `src/Network/NetworkManager.cpp` | `NetworkManager::Transport::RoomRelay`. |
-| Menu | `src/Menu/CrossplayMenu.cpp` | Host a room, join by code, carry it into the lobby. |
+| Menu | `src/Menu/CrossplayMenu.cpp` | Confirm a chat name, discover public rooms or use private invites, then enter the game lobby. |
 | Digest | `include/Network/GameStateDigest.h` | The periodic deterministic fingerprint. |
 
 ## 3. Building
@@ -137,13 +137,26 @@ it has no UDP socket to do it with.
 
 Then:
 
-1. One player chooses **Host a Game** or **Host Campaign Co-op** and reads out the game code.
-2. The other types the code and chooses **Join Game**. Codes look like `H4PQ-7T2M-9XKB`; dashes
-   and capitalisation do not matter.
-3. The host picks a map (or a campaign mission) and the normal lobby opens for both players. The
-   game code stays on screen in the lobby caption and in the chat area.
-4. **Start Game** works as it always has. Campaign co-op continues into the next mission the same
-   way, and leaving ends the room.
+1. Enter a **Player Name**. Choose **Confirm name for chat** to join the shared public-lobby
+   conversation. The relay reserves that display name in the compatible-content lobby until
+   the chat session expires; names are not authenticated accounts. Chat input stays disabled
+   until confirmation succeeds. Hosting/joining also validates and saves the player name.
+2. Public hosting is the default. Choose **Host a Game** or **Host Campaign Co-op**; another
+   player selects the listing and chooses **Join selected**. No invitation code is shown or
+   typed for public play.
+3. For an invitation-only game, select **Private - invite by code**. Only the private host sees
+   the game code and **Copy code**. A friend chooses **Join private game**, enters the invitation
+   and chooses **Join Game**. The host can change Public/Private before the first match starts;
+   the UI waits for an authenticated relay acknowledgement. Existing invitation holders and
+   already admitted players retain their access; changing visibility is not a kick or revocation.
+4. The host picks a map or campaign mission. Normal game-room chat remains separate from public
+   lobby chat. **Start Game** and campaign continuation follow the existing game flow.
+
+Public chat is ephemeral, with a 90-second idle / 30-minute absolute session expiry, 120-byte UTF-8 messages,
+4 sends per 10 seconds per session, and bounded recent history. It is shared by players with
+matching protocol/content, not by private room code. It pauses while nested map/game menus own
+the event loop; on return, an expired session asks for name confirmation again. No chat text,
+names, room codes, host control tokens or chat tokens are added to analytics.
 
 ## 7. What relay v1 deliberately does not do
 
@@ -156,10 +169,10 @@ Then:
   port. They are refused at the relay and have no code path in relay mode. Membership is typed
   relay events instead. This is the point of the relay: nothing in this path can be told to open
   a socket to an address of somebody else's choosing.
-- **No discovery service.** Room codes are how a game is found. The legacy `list`/`list2`
-  metaserver endpoints describe UDP hosts with an address and a port; a relay room has neither,
-  and an old client handed one would try to open a UDP socket to nonsense. Advertising relay
-  rooms needs a separate, capability-aware endpoint that old clients never request.
+- **Discovery stays centralized.** The relay exposes a separate capability-aware public-room
+  directory. Legacy PHP metaserver `list`/`list2` UDP results are unchanged; relay rooms are not
+  inserted into that incompatible list. Public directory/chat state lives in relay memory,
+  separately from the additive SQLite runtime analytics.
 - **Two players for co-op**, up to four for a custom relay room. The lobby's own limits still
   apply on top.
 

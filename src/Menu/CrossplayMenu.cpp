@@ -282,7 +282,8 @@ void CrossplayMenu::refreshControls() {
 }
 
 void CrossplayMenu::refreshPublicGames(unsigned offset) {
-    if(stage != Stage::Choosing || directoryPending) return;
+    if((stage != Stage::Choosing && stage != Stage::HostReady && stage != Stage::ClientWaiting)
+       || directoryPending) return;
     nextDirectoryRefresh = SDL_GetTicks() + 15000;
     const std::string fingerprint = contentFingerprint();
     if(fingerprint.empty()) {
@@ -389,12 +390,13 @@ void CrossplayMenu::updateLobbyChat() {
                     chatSession.clear();
                     chatLabel.setText(_("Chat restarted. Confirm your name again."));
                 } else {
+                    if(response.chatGap) chatLines.push_back(_("Older lobby messages have expired."));
                     for(const auto& message : response.messages) {
                         if(message.id > chatCursor) chatLines.push_back(message.name + ": " + message.text);
                     }
                     chatCursor = response.chatCursor;
                     if(chatLines.size() > 60) chatLines.erase(chatLines.begin(), chatLines.end() - 60);
-                    if(!response.messages.empty()) {
+                    if(!response.messages.empty() || response.chatGap) {
                         std::string text;
                         for(const auto& line : chatLines) text += line + "\n";
                         chatHistory.setText(text);
@@ -673,7 +675,8 @@ void CrossplayMenu::update() {
         directory.cancel();
         refreshControls();
     }
-    if(stage == Stage::Choosing && !directoryPending
+    if((stage == Stage::Choosing || stage == Stage::HostReady || stage == Stage::ClientWaiting)
+       && !directoryPending
        && SDL_TICKS_PASSED(SDL_GetTicks(), nextDirectoryRefresh)) refreshPublicGames();
     // Network callbacks run inside NetworkManager::update(). Defer menu loops and
     // manager destruction until that dispatch has returned to MenuBase.
@@ -729,6 +732,7 @@ void CrossplayMenu::update() {
             setStatus(_("Joined. Waiting for the host to choose a map..."));
         }
         refreshControls();
+        refreshPublicGames();
         return;
     }
 

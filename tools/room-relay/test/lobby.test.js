@@ -1,7 +1,7 @@
 'use strict';
 const assert = require('node:assert/strict');
 const { describe, it } = require('node:test');
-const { LobbyChat, SESSION_TTL, MAX_HISTORY, MAX_SESSIONS } = require('../src/lobby');
+const { LobbyChat, SESSION_TTL, SESSION_LIFETIME, MAX_HISTORY, MAX_SESSIONS } = require('../src/lobby');
 const { startRelay, joinAsHost, admitJoin, postForm, GAME_PROTOCOL, CONTENT_HASH } = require('./helpers');
 const { PHASE } = require('../src/rooms');
 const fields = { app: 'dunecity', appVersion: '1.0.655', runtime: 'browser',
@@ -35,7 +35,7 @@ describe('confirmed public lobby chat', () => {
   it('bounds messages, Unicode, history, batches, sessions, expiry and sending frequency', () => {
     let now = 100000;
     const lobby = new LobbyChat(() => now);
-    const enter = name => Object.fromEntries(lobby.handle('enter', { name: hex(name) }, fields)).session;
+    const enter = name => Object.fromEntries(lobby.handle('enter', { name: hex(name) }, { ...fields, address: name })).session;
     const alice = enter('Alice');
     const say = text => lobby.handle('say', { session: alice, text: hex(text) }, fields);
     for (const text of ['', ' ', 'bad\nname', 'a'.repeat(121), '\u202eevil', '\u0000']) {
@@ -45,15 +45,45 @@ describe('confirmed public lobby chat', () => {
     for (let i = 0; i < 4; i++) say(`message ${i}`);
     assert.throws(() => say('flood'), error => error.code === 'rate_limited');
     for (let i = 0; i < 110; i++) { now += 10001; say(`next ${i}`); }
-    assert.ok(lobby.history.length <= MAX_HISTORY);
+    assert.ok([...lobby.channels.values()][0].history.length <= MAX_HISTORY);
     const page = lobby.handle('poll', { session: alice, cursor: '0' }, fields);
-    assert.equal(page.length, 13);
+    assert.equal(page.length, 14);
     assert.equal(page.filter(([key]) => key === 'chat').length, 12);
     now += SESSION_TTL;
     assert.throws(() => say('expired'), error => error.code === 'session_expired');
     enter('Alice');
     for (let i = 1; i < MAX_SESSIONS; i++) enter(`Person ${i}`);
     assert.throws(() => enter('overflow'), error => error.code === 'capacity');
+  });
+
+  it('expires kept-alive reservations and isolates channel history with explicit gap reporting', () => {
+    let now = 100000;
+    const lobby = new LobbyChat(() => now);
+    const enter = (name, spec = fields) => Object.fromEntries(lobby.handle('enter', { name: hex(name) }, spec)).session;
+    const alice = enter('Alice');
+    const bob = enter('Bob');
+    enter('C'); enter('D');
+    assert.throws(() => enter('E'), error => error.code === 'rate_limited');
+    const other = { ...fields, contentHash: 'b'.repeat(16), address: 'other' };
+    const attacker = enter('X', other);
+    lobby.handle('say', { session: alice, text: hex('preserve me') }, fields);
+    for (let i = 0; i < 105; i++) {
+      now += 2501;
+      lobby.handle('poll', { session: alice, cursor: '0' }, fields);
+      lobby.handle('poll', { session: bob, cursor: '0' }, fields);
+      lobby.handle('say', { session: attacker, text: hex('other channel') }, other);
+    }
+    const victim = Object.fromEntries(lobby.handle('poll', { session: bob, cursor: '0' }, fields));
+    assert.equal(victim.chat, `1|${hex('Alice')}|${hex('preserve me')}`);
+    const flood = Object.fromEntries(lobby.handle('poll', { session: attacker, cursor: '0' }, other));
+    assert.equal(flood.gap, '1');
+    while (now + 30000 < 100000 + SESSION_LIFETIME) {
+      now += 30000;
+      lobby.handle('poll', { session: alice, cursor: '0' }, fields);
+    }
+    now = 100000 + SESSION_LIFETIME;
+    assert.throws(() => lobby.handle('poll', { session: alice, cursor: '0' }, fields),
+      error => error.code === 'session_expired');
   });
 
   it('checks origins and polling cannot consume host/join admission budgets', async () => {
@@ -73,7 +103,21 @@ describe('confirmed public lobby chat', () => {
   });
 });
 
-describe('host visibility control', () => {
+describe('all-route ingress budget', () => {
+  it('rate limits unknown paths before admission processing', async () => {
+    const relay = await startRelay();
+    try {
+      for (let i = 0; i < 360; i++) {
+        assert.equal((await postForm(relay, '/unknown', {})).status, 404);
+      }
+      assert.equal((await postForm(relay, '/unknown', {})).status, 429);
+      const { AdmissionError } = require('../src/rooms');
+      assert.equal(new AdmissionError(400, 'bad_request', 'bad').controlToken, undefined);
+    } finally { await relay.stop(); }
+  });
+});
+
+describe('host visibility control' , () => {
   it('lets only a live host change visibility before play; stale public listings cannot join private rooms', async () => {
     const relay = await startRelay();
     try {

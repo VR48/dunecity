@@ -73,6 +73,7 @@ struct AdmissionResponse {
     std::string controlToken;
     std::string chatSession;
     std::uint64_t chatCursor = 0;
+    bool chatGap = false;
     std::vector<LobbyChatMessage> messages;
 
     // Only when ok == false.
@@ -182,7 +183,7 @@ inline bool parseAdmissionResponse(const std::string& body, AdmissionResponse& o
     bool sawStatus = false;
     bool sawProtocol = false;
     bool sawNext = false;
-    bool sawVisibility = false, sawControl = false, sawSession = false, sawCursor = false;
+    bool sawVisibility = false, sawControl = false, sawSession = false, sawCursor = false, sawGap = false;
     std::size_t lineCount = 0;
     std::size_t cursor = 0;
 
@@ -301,6 +302,12 @@ inline bool parseAdmissionResponse(const std::string& body, AdmissionResponse& o
                     error = "The lobby chat answer is malformed."; return false;
                 }
                 sawCursor = true;
+            } else if(key == "gap") {
+                if(sawGap || (value != "0" && value != "1")) {
+                    error = "The lobby chat answer is malformed."; return false;
+                }
+                sawGap = true;
+                out.chatGap = value == "1";
             } else if(key == "chat") {
                 LobbyChatMessage message;
                 const auto first = value.find('|');

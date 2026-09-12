@@ -810,6 +810,9 @@ void testLobbyChatParsing() {
     check(!parse(header + "cursor=1\nchat=1|41|42\nchat=1|41|42\n", AdmissionOperation::ChatPoll), "chat refuses repeated ids");
     check(!parse(header + "cursor=1\ncursor=2\n", AdmissionOperation::ChatPoll), "chat refuses duplicate cursor");
     check(!parse(header + "cursor=1000000000000000\n", AdmissionOperation::ChatPoll), "chat cursor is bounded on wasm32");
+    check(parse(header + "cursor=12\ngap=1\n", AdmissionOperation::ChatPoll) && response.chatGap,
+          "chat reports expired history");
+    check(!parse(header + "cursor=12\ngap=2\n", AdmissionOperation::ChatPoll), "chat rejects invalid gap marker");
     check(!parse(header + "cursor=1\nchat=1|41|42\n", AdmissionOperation::ChatSay), "send cannot masquerade as poll");
     check(parse(header + "visibility=private\n", AdmissionOperation::Visibility) && response.visibility == "private", "host control acknowledges private visibility");
     check(!parse(header, AdmissionOperation::Visibility), "host control requires visibility acknowledgement");

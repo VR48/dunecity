@@ -44,7 +44,7 @@ carries a credential in its URL.
 
 ### 3.1 Requests
 
-Both endpoints take `application/x-www-form-urlencoded` bodies. Unknown keys are ignored.
+Admission and lobby endpoints take `application/x-www-form-urlencoded` bodies. Unknown keys are ignored.
 Every value is length-capped (see §3.4).
 
 ```
@@ -591,3 +591,51 @@ same commit, and `RELAY_PROTOCOL_VERSION` changes with them.
 
 See [docs/room-relay-logging.md](room-relay-logging.md) for the lifecycle event schema the relay
 emits and the integration requirements for the website metaserver repository.
+
+## 8. Additive public directory, host visibility and lobby chat (September 2026)
+
+These HTTP extensions retain relay wire protocol 1. Old host requests default to **private**;
+old clients ignore the additional admission response fields. All routes use the same HTTPS,
+exact-Origin CORS allowlist, non-cacheable responses, request deadlines, 4 KiB body cap,
+256-byte encoded-field cap and 8 KiB / 16-line response cap as admission.
+
+- `POST /v1/admission/list` accepts common client fields plus `offset` (0..64). It returns
+  `status`, `protocol`, `next` (0 means end), and up to 12 repeated
+  `game=code|players|maxPeers|mode|nameHex` lines. The name hex preserves the original HELLO
+  byte string (Latin-1 storage of UTF-8 bytes). Only opted-in public rooms with a connected
+  host, matching game protocol/content, an available reserved seat, and no previous match
+  appear. No grants or control tokens appear in discovery. The code is an internal public
+  room locator; public UI joins from the listing and never asks the player to handle it.
+- Host admission accepts `visibility=public|private` and returns `visibility` plus a separate
+  256-bit random `control` token. Client admission returns visibility but never host control.
+  `POST /v1/admission/visibility` takes common fields, `room`, `control`, `visibility`.
+  Only the live host credential can update an unstarted lobby; the result acknowledges the
+  authoritative visibility. Ordinary invitation holders cannot change visibility.
+  A public-list join sends `publicOnly=1`; stale listings fail once a room becomes private.
+  Visibility does not revoke earlier invitations, issued grants or existing peers.
+- `POST /v1/lobby/enter` takes common fields and `name` (UTF-8 hex, 1..64 bytes after decoding).
+  The name is explicitly confirmed by the player, unique by NFKC/case normalization within
+  the protocol/content channel. Returns `session` (256-bit random token) and `cursor`.
+  These are temporary display-name reservations, not verified identities or accounts.
+- `POST /v1/lobby/poll` takes `session` and decimal `cursor` (up to 15 digits). It returns a
+  cursor and up to 12 `chat=id|nameHex|textHex` lines from that compatible-content channel.
+  IDs increase monotonically; clients reject malformed, duplicate or out-of-order messages.
+  Confirmation begins at the current cursor; later polling can catch up from bounded history.
+- `POST /v1/lobby/say` takes `session` and `text` (UTF-8 hex, maximum 120 bytes). The server
+  supplies the name from the session and ignores any claimed author. UTF-8 must be valid;
+  Unicode control/formatting/line-separator characters and blank messages are refused.
+  The response acknowledges a cursor; clients poll to retrieve messages, including their own.
+
+Chat is capped at 128 sessions, 4 per originating address, and 32 protocol/content channels.
+Each channel has its own 100-message history and sequence, so another channel cannot evict it.
+Sessions expire after 90 seconds idle or 30 minutes total even if polled continuously; history
+expires after 15 minutes. Poll responses include `gap=0|1` so an evicted/expired interval is
+reported explicitly. The extra line still fits the 16-line response cap with 12 messages. A session may send 4 messages per 10-second fixed window.
+Directory, chat poll and chat send share separate bounded limits of 90 requests/address/minute
+and 4096 globally/minute. Host/join, visibility and chat confirmation retain the stricter
+10/address/minute and 120/global/minute admission budget, so normal polling cannot starve
+room admission. A separate all-route ingress budget of 360/address/minute and 8192 globally
+applies before routing, including health, preflight and unknown endpoints. All limiter address
+tables remain bounded. New error codes include
+`name_taken`, `session_expired`, `forbidden`; unknown error codes remain generic failures.
+No chat payload/name/session token or host control token is recorded in lifecycle analytics.

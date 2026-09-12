@@ -16,7 +16,6 @@ class AdmissionError extends Error {
     this.name = 'AdmissionError';
     this.httpStatus = httpStatus;
     this.code = code;
-    this.controlToken = crypto.randomBytes(32).toString('hex');
   }
 }
 
