@@ -1,3 +1,32 @@
+# Internet-listed co-op smoke test — 2026-09-12
+
+Tested installed 1.0.652 using two independent local app bundles, profiles and
+ports (29851/29853). Host Campaign Co-op registered successfully with the live
+metaserver; its list2 response and the guest's Internet Games UI both contained
+the lobby. Guest joined from that listing, passed mod/config verification, and
+both human controllers entered Ordos mission SCENO001.INI. Before save/reload,
+337 valve-debug and 42 daily CitySim rows had identical shared prefixes, with
+no desync logged. During Stefan's interaction, the guest rehosted a campaign
+save and the original host joined through Internet Games; both completed all
+save-load stages and resumed the shared game with reversed network roles.
+
+Same-NAT detection selected the local address for game packets. This verifies
+real Internet discovery plus local co-op joining/play/save hosting, not a
+connection across separate routers. UPnP discovery found no usable IGD; STUN
+and metaserver registration succeeded. The second local instance could not
+bind the shared LAN discovery port and retried every five seconds, but Internet
+listing/joining worked independently. Toggle buttons require Space rather than
+Return for keyboard activation (Button::handleKeyPress).
+
+Evidence snapshots: /tmp/internet-test-dunecity-internet-host.log and
+/tmp/internet-test-dunecity-internet-guest-local.log. Live profiles are
+/tmp/dunecity-internet-host and /tmp/dunecity-internet-guest-local; test apps
+DuneInternetHost.app and DuneInternetGuestLocal.app remain open for Stefan.
+The Mac mini guest was stopped after switching to the requested local test.
+Its portable bundle needed SDL3 explicitly included beside SDL2: Homebrew's
+sdl2-compat loads SDL3 dynamically, so otool dependency traversal alone misses
+it. No game source, installed app, normal profile, or remote release changed.
+
 # Campaign and mission shared-house co-op — 1.0.652 (local)
 
 Campaign house selection and single-mission/skirmish setup have Host Co-op.
