@@ -1,3 +1,12 @@
+# Deployment paths
+
+For the current restricted Apache account, use the HTTPS polling deployment in
+[https-relay-deployment.md](../../../docs/https-relay-deployment.md). Its public
+file is `relay/http-gateway.php` alongside `http-gateway.htaccess` installed as
+`relay/.htaccess`; it uses private loopback18787 and requires no Apache restart.
+The administrator bootstrap below is a separate, optional WebSocket deployment.
+Do not run it or mix its8787/WSS settings into the polling deployment.
+
 # Production relay on the existing website host
 
 The application uses `https://dunelegacy.com/relay`; Apache terminates the existing

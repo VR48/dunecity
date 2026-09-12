@@ -259,15 +259,14 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // Reported, not enforced. Which transport this run uses is decided by the endpoint the
+    // admission answer hands out, and an HTTPS polling endpoint works on a machine whose libcurl
+    // has no ws/wss handlers at all - so a missing WebSocket is only fatal once the relay has
+    // actually asked for one (RoomRelayClient::start checks that).
     const RelayWebSocketSupport support = relayWebSocketSupport();
     std::printf("HARNESS role=%s name=%s websocket=%s\n",
                 options.hosting ? "host" : "client", options.name.c_str(),
                 support.available ? "available" : "unavailable");
-    if(!support.available) {
-        std::printf("RESULT failed reason=no-websocket detail=%s\n", support.reason.c_str());
-        SDL_Quit();
-        return 1;
-    }
 
     AdmissionRequest request;
     request.baseUrl = options.endpoint;
@@ -335,6 +334,9 @@ int main(int argc, char** argv) {
                 const AdmissionResponse& granted = admission.response();
                 std::printf("ROOM code=%s peers=%u\n", granted.roomCode.c_str(),
                             static_cast<unsigned>(granted.maxPeers));
+                std::printf("TRANSPORT kind=%s\n",
+                            relayTransportKindForUrl(granted.socketUrl)
+                                == RelayTransportKind::HttpPolling ? "https-poll" : "websocket");
                 std::fflush(stdout);
 
                 RoomRelayClient::Config config;

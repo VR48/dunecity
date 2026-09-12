@@ -184,11 +184,18 @@ add_test(NAME network_wire_harness COMMAND network_wire_harness)
 # Standalone relay wire harness.
 #
 # The crossplay equivalent of the above, and the reason it is separate: the relay protocol, the
-# endpoint validation, the admission parser and the state digest have no SDL, ENet or game
-# dependencies at all, so this target is a single translation unit. tests/wasm/
-# run-relay-wire-harness.sh builds the same file under Emscripten, which is the run that matters
-# because the browser client is wasm32.
-add_executable(relay_wire_harness wasm/RelayWireHarness.cpp)
+# endpoint validation, the admission parser, the HTTPS polling batch format and the state digest
+# have no SDL, ENet or game dependencies at all. tests/wasm/run-relay-wire-harness.sh builds the
+# same sources under Emscripten, which is the run that matters because the browser client is
+# wasm32 and an additive length check wraps there.
+#
+# RelayHttpTransport.cpp is compiled in for the same reason: it is the polling state machine, it
+# is deliberately free of SDL, libcurl and Emscripten, and its own length checks have to hold on
+# a 32-bit size_t as well.
+add_executable(relay_wire_harness
+    wasm/RelayWireHarness.cpp
+    ${CMAKE_SOURCE_DIR}/src/Network/RelayHttpTransport.cpp
+)
 
 target_include_directories(relay_wire_harness
     PRIVATE
@@ -239,6 +246,38 @@ endif()
 
 add_test(NAME relay_session_tests COMMAND relay_session_tests)
 
+# Relay HTTPS polling transport tests.
+#
+# Separate from dunelegacy_tests for the same reason relay_session_tests is: it compiles a
+# production source file - the polling state machine - and supplies its collaborator itself. The
+# transport reaches HTTP and the clock through RelayHttpBackend, so the test target provides a
+# scripted backend with a virtual clock and asserts on the exact bytes the transport sent. No
+# hook exists in the production build for any of it.
+add_executable(relay_http_transport_tests
+    RelayHttpTransportTestCase/RelayHttpTransportTestCase.cpp
+    ${CMAKE_SOURCE_DIR}/src/Network/RelayHttpTransport.cpp
+)
+
+target_include_directories(relay_http_transport_tests
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_BINARY_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/RelayHttpTransportTestCase
+)
+
+target_link_libraries(relay_http_transport_tests
+    PRIVATE
+        Catch2::Catch2WithMain
+)
+
+target_compile_options(relay_http_transport_tests
+    PRIVATE
+        $<$<CXX_COMPILER_ID:MSVC>:/W4>
+        $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra -pedantic>
+)
+
+add_test(NAME relay_http_transport_tests COMMAND relay_http_transport_tests)
+
 # Relay transport harness.
 #
 # Not a ctest: it needs a running relay, so it is driven by hand or by
@@ -250,6 +289,10 @@ if(NOT EMSCRIPTEN)
         ${CMAKE_SOURCE_DIR}/src/Network/RoomRelayClient.cpp
         ${CMAKE_SOURCE_DIR}/src/Network/RoomAdmissionClient.cpp
         ${CMAKE_SOURCE_DIR}/src/Network/RelayWebSocketCurl.cpp
+        # Both transports, because createRelayWebSocket() now dispatches on the endpoint scheme
+        # and the harness has to be able to follow the relay to whichever it hands out.
+        ${CMAKE_SOURCE_DIR}/src/Network/RelayHttpTransport.cpp
+        ${CMAKE_SOURCE_DIR}/src/Network/RelayHttpTransportCurl.cpp
         ${CMAKE_SOURCE_DIR}/src/misc/FileSystem.cpp
         ${CMAKE_SOURCE_DIR}/src/misc/fnkdat.cpp
         ${CMAKE_SOURCE_DIR}/src/misc/format.cpp

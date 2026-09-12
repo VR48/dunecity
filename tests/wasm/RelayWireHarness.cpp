@@ -16,12 +16,16 @@
 
 #include <Network/GameStateDigest.h>
 #include <Network/NetworkPacketTypes.h>
+#include <Network/RelayHttpTransport.h>
+#include <Network/RelayPollProtocol.h>
 #include <Network/RelayWebSocket.h>
 #include <Network/RoomAdmissionClient.h>
 #include <Network/RoomRelayProtocol.h>
 
 #include <cstdio>
 #include <cstdint>
+#include <cstring>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -452,6 +456,44 @@ void testEndpointValidation() {
     withControl += "Host: evil";
     check(!isAcceptableRelayUrl(withControl, false, error),
           "control characters in an endpoint are refused");
+
+    // The HTTPS polling endpoint goes through the same validator, under the same rules. The one
+    // that matters most is the third check here: adding an HTTP transport must not become a way
+    // to reach a remote host in the clear.
+    check(isAcceptableRelayUrl("https://dunelegacy.com/relay/v1/poll", false, error),
+          "a secure poll endpoint is accepted");
+    check(isAcceptableRelayUrl("https://dunelegacy.com:8443/relay/v1/poll", false, error),
+          "a secure poll endpoint with a port is accepted");
+    check(!isAcceptableRelayUrl("http://dunelegacy.com/relay/v1/poll", true, error),
+          "a plain poll endpoint to a remote host is refused even in development");
+    check(!isAcceptableRelayUrl("http://127.0.0.1:8787/relay/v1/poll", false, error),
+          "a plain loopback poll endpoint needs the development opt-in");
+    check(isAcceptableRelayUrl("http://127.0.0.1:8787/relay/v1/poll", true, error),
+          "a plain loopback poll endpoint is accepted with the development opt-in");
+    check(!isAcceptableRelayUrl("https://user:password@dunelegacy.com/relay", false, error),
+          "credentials in a poll endpoint are refused");
+    check(!isAcceptableRelayUrl("https://dunelegacy.com/relay?x=1", false, error),
+          "a query string in a poll endpoint is refused");
+    check(!isAcceptableRelayUrl("https://dunelegacy.com/relay#x", false, error),
+          "a fragment in a poll endpoint is refused");
+    check(!isAcceptableRelayUrl("httpss://dunelegacy.com/relay", false, error),
+          "a scheme that merely looks like https is refused");
+
+    check(relayTransportKindForUrl("https://dunelegacy.com/relay/v1/poll")
+              == RelayTransportKind::HttpPolling
+          && relayTransportKindForUrl("http://127.0.0.1:8787/relay")
+              == RelayTransportKind::HttpPolling
+          && relayTransportKindForUrl("wss://relay.example.net/v1/socket")
+              == RelayTransportKind::WebSocket
+          && relayTransportKindForUrl("ws://127.0.0.1:8787/v1/socket")
+              == RelayTransportKind::WebSocket,
+          "the transport is chosen by scheme");
+
+    check(RoomPoll::pollEndpointUrl("https://dunelegacy.com/relay/v1/poll", "/open")
+              == "https://dunelegacy.com/relay/v1/poll/open"
+          && RoomPoll::pollEndpointUrl("https://dunelegacy.com/relay/v1/poll/", "/exchange")
+              == "https://dunelegacy.com/relay/v1/poll/exchange",
+          "poll endpoints are built without doubling a slash");
 }
 
 void testRoomCodes() {
@@ -826,6 +868,230 @@ void testLobbyChatParsing() {
     check(!parse(header + "visibility=private\n", AdmissionOperation::Room), "control response cannot replace admission grant");
 }
 
+// --- HTTPS polling ---------------------------------------------------------------------------
+
+/// Builds a gateway answer, with room to declare a shape the bytes do not support.
+std::vector<std::uint8_t> pollResponse(std::uint32_t sequence, std::uint16_t closeCode,
+                                       const std::vector<std::vector<std::uint8_t>>& frames,
+                                       int declaredCount = -1,
+                                       const std::vector<std::uint32_t>& declaredLengths = {}) {
+    std::vector<std::uint8_t> body;
+    body.insert(body.end(), RoomPoll::kResponseMagic, RoomPoll::kResponseMagic + 4);
+    RoomPoll::appendUint32LE(body, sequence);
+    RoomPoll::appendUint16LE(body, closeCode);
+    RoomPoll::appendUint16LE(body, static_cast<std::uint16_t>(
+        declaredCount >= 0 ? declaredCount : static_cast<int>(frames.size())));
+    for(std::size_t index = 0; index < frames.size(); ++index) {
+        RoomPoll::appendUint32LE(body, index < declaredLengths.size()
+            ? declaredLengths[index] : static_cast<std::uint32_t>(frames[index].size()));
+        body.insert(body.end(), frames[index].begin(), frames[index].end());
+    }
+    return body;
+}
+
+bool pollParses(const std::vector<std::uint8_t>& body, std::uint32_t expectedSequence,
+                RoomPoll::ExchangeResponse& out) {
+    RoomPoll::BatchError error = RoomPoll::BatchError::None;
+    return RoomPoll::parseExchangeResponse(body.data(), body.size(), expectedSequence, out,
+                                           error);
+}
+
+void testPollBatches() {
+    // --- fixtures. These byte strings are the contract with the Node/PHP side; if one of them
+    // has to change, the two implementations have stopped agreeing.
+    std::vector<std::uint8_t> encoded;
+    check(RoomPoll::encodeExchangeRequest(1, {}, encoded), "an empty batch encodes");
+    const std::uint8_t emptyRequest[] = {
+        'D', 'H', 'P', '1', 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+    };
+    check(encoded.size() == sizeof(emptyRequest)
+          && std::memcmp(encoded.data(), emptyRequest, sizeof(emptyRequest)) == 0,
+          "an empty batch is twelve bytes of little-endian header");
+
+    check(RoomPoll::encodeExchangeRequest(0x01020304u, {{0xAA, 0xBB}}, encoded),
+          "a one-frame batch encodes");
+    const std::uint8_t oneFrameRequest[] = {
+        'D', 'H', 'P', '1',
+        0x04, 0x03, 0x02, 0x01,             // sequence, little endian
+        0x01, 0x00, 0x00, 0x00,             // frame count
+        0x02, 0x00, 0x00, 0x00,             // frame length
+        0xAA, 0xBB
+    };
+    check(encoded.size() == sizeof(oneFrameRequest)
+          && std::memcmp(encoded.data(), oneFrameRequest, sizeof(oneFrameRequest)) == 0,
+          "a frame is length-prefixed little endian and copied verbatim");
+
+    // --- round trip
+    RoomPoll::ExchangeResponse response;
+    check(pollParses(pollResponse(7, 0, {{1, 2, 3}, {4}}), 7, response)
+          && response.sequence == 7 && response.closeCode == 0 && response.frames.size() == 2
+          && response.frames[0].size() == 3 && response.frames[1].size() == 1,
+          "a well-formed batch round trips");
+    check(pollParses(pollResponse(7, 4440, {{1}}), 7, response) && response.closeCode == 4440
+          && response.frames.size() == 1,
+          "a closing batch still carries its final frames");
+
+    // --- refusals
+    const auto valid = pollResponse(1, 0, {{0xAA}});
+    auto badMagic = valid;
+    badMagic[3] = '2';
+    check(!pollParses(badMagic, 1, response), "the response magic is checked");
+    check(!pollParses(std::vector<std::uint8_t>(valid.begin(), valid.begin() + 11), 1, response),
+          "a header shorter than twelve bytes is refused");
+    check(!pollParses(valid, 2, response), "a batch answering another request is refused");
+    check(!pollParses(pollResponse(1, 42, {{0xAA}}), 1, response),
+          "an invalid close code is refused");
+    check(!pollParses(pollResponse(1, 1006, {{0xAA}}), 1, response),
+          "a WebSocket-only close code is refused");
+    check(pollParses(pollResponse(1, 1000, {}), 1, response),
+          "a normal close code is accepted");
+    check(pollParses(pollResponse(1, 3999, {}), 1, response),
+          "the bottom of the private close range is accepted");
+    check(!pollParses(pollResponse(1, 2999, {}), 1, response),
+          "just below the private close range is refused");
+    check(!pollParses(pollResponse(1, 0, {{0xAA}}, 65), 1, response),
+          "more than sixty-four frames is refused");
+    check(!pollParses(pollResponse(1, 0, {{0xAA}}, 2), 1, response),
+          "a frame count the bytes do not support is refused");
+    check(!pollParses(pollResponse(1, 0, {{0xAA}}, 1, {0}), 1, response),
+          "a zero-length frame is refused");
+    check(!pollParses(pollResponse(1, 0, {{0xAA}}, 1,
+                                   {static_cast<std::uint32_t>(
+                                        RoomPoll::Limits::kMaxFrameBytes + 1)}), 1, response),
+          "a frame above the ceiling is refused");
+    check(!pollParses(pollResponse(1, 0, {{0xAA}}, 1, {0xFFFFFFFFu}), 1, response),
+          "a frame length of four gigabytes cannot wrap the cursor");
+    auto trailing = valid;
+    trailing.push_back(0);
+    check(!pollParses(trailing, 1, response), "trailing bytes are refused");
+    check(!pollParses(std::vector<std::uint8_t>(RoomPoll::Limits::kMaxResponseBytes + 1, 0), 1,
+                      response),
+          "a batch above the response ceiling is refused");
+
+    // Nothing is handed back from a refused batch, not even a prefix of it.
+    check(response.frames.empty(), "a refused batch delivers no frames");
+
+    // --- session tokens
+    std::string token;
+    const std::string good(64, 'a');
+    const std::string body = good + "\n";
+    check(RoomPoll::parseOpenResponse(reinterpret_cast<const std::uint8_t*>(body.data()),
+                                      body.size(), token) && token == good,
+          "a session token is sixty-four hex characters and one newline");
+    const std::string noNewline = good;
+    check(!RoomPoll::parseOpenResponse(reinterpret_cast<const std::uint8_t*>(noNewline.data()),
+                                       noNewline.size(), token),
+          "a session token without its newline is refused");
+    const std::string upper = std::string(64, 'A') + "\n";
+    check(!RoomPoll::parseOpenResponse(reinterpret_cast<const std::uint8_t*>(upper.data()),
+                                       upper.size(), token),
+          "an uppercase session token is refused");
+    const std::string crlf = good + "\r\n";
+    check(!RoomPoll::parseOpenResponse(reinterpret_cast<const std::uint8_t*>(crlf.data()),
+                                       crlf.size(), token),
+          "a CRLF session token is refused");
+}
+
+/**
+    The smallest backend that can drive the transport: one scripted answer at a time and a clock
+    the harness moves by hand. This exists so the state machine itself is exercised where size_t
+    is 32 bits, not just the codec it calls.
+*/
+class HarnessHttpBackend final : public RelayHttpBackend {
+public:
+    std::uint32_t nowMs() const override { return now; }
+
+    bool start(const RelayHttpRequest& request) override {
+        if(inFlight) { overlapping++; }
+        lastRequest = request;
+        started++;
+        inFlight = true;
+        hasAnswer = false;
+        return true;
+    }
+
+    bool poll(RelayHttpOutcome& outcome) override {
+        if(!inFlight || !hasAnswer) { return false; }
+        outcome = answer;
+        hasAnswer = false;
+        inFlight = false;
+        return true;
+    }
+
+    void cancel() override {
+        if(inFlight) { cancelled++; }
+        inFlight = false;
+        hasAnswer = false;
+    }
+
+    void answerWith(long status, const std::vector<std::uint8_t>& bytes) {
+        answer = RelayHttpOutcome();
+        answer.kind = RelayHttpOutcome::Kind::Completed;
+        answer.status = status;
+        answer.body = bytes;
+        hasAnswer = true;
+    }
+
+    std::uint32_t now = 1000;
+    bool inFlight = false;
+    bool hasAnswer = false;
+    int started = 0;
+    int cancelled = 0;
+    int overlapping = 0;
+    RelayHttpRequest lastRequest;
+    RelayHttpOutcome answer;
+};
+
+void testPollTransport() {
+    auto owned = std::unique_ptr<HarnessHttpBackend>(new HarnessHttpBackend());
+    HarnessHttpBackend* backend = owned.get();
+    RelayHttpTransport transport("https://dunelegacy.com/relay/v1/poll", std::move(owned));
+
+    check(backend->started == 1
+          && backend->lastRequest.url == "https://dunelegacy.com/relay/v1/poll/open"
+          && backend->lastRequest.body.empty()
+          && backend->lastRequest.sessionToken.empty(),
+          "the transport opens with an empty POST and no credential");
+    check(transport.state() == RelayWebSocket::State::Connecting,
+          "nothing may be sent before the session is open");
+
+    const std::string token(64, 'c');
+    const std::string openBody = token + "\n";
+    backend->answerWith(200, std::vector<std::uint8_t>(openBody.begin(), openBody.end()));
+    transport.pump();
+    check(transport.state() == RelayWebSocket::State::Open, "a valid token opens the session");
+
+    check(transport.send(std::vector<std::uint8_t>(4, 0x11)), "a frame is accepted");
+    check(backend->started == 2
+          && backend->lastRequest.url == "https://dunelegacy.com/relay/v1/poll/exchange"
+          && backend->lastRequest.sessionToken == token
+          && backend->lastRequest.url.find(token) == std::string::npos,
+          "the session token is a header, never part of a URL");
+
+    backend->answerWith(200, pollResponse(1, 0, {{0x81, 0x01}}));
+    transport.pump();
+
+    std::vector<std::uint8_t> received;
+    check(transport.receive(received) && received.size() == 2,
+          "a frame from the batch is delivered");
+    check(!transport.receive(received), "and only once");
+    check(transport.sequence() == 2, "the sequence advances after an accepted answer");
+
+    // A refused batch ends the session and hands nothing over.
+    backend->now += RoomPoll::Timing::kMinExchangeIntervalMs;
+    transport.pump();
+    check(backend->started == 3, "the next exchange starts once the interval has passed");
+    auto corrupt = pollResponse(2, 0, {{0x81, 0x01}});
+    corrupt.push_back(0);
+    backend->answerWith(200, corrupt);
+    transport.pump();
+    check(transport.state() == RelayWebSocket::State::Closed
+          && transport.closeCode() == RoomRelay::Close::ProtocolError
+          && !transport.receive(received),
+          "a malformed batch ends the session and delivers nothing");
+    check(backend->overlapping == 0, "only one request is ever in flight");
+}
+
 } // namespace
 
 int main() {
@@ -840,6 +1106,8 @@ int main() {
     testRoomCodes();
     testAdmissionParsing();
     testLobbyChatParsing();
+    testPollBatches();
+    testPollTransport();
     testWireFixtures();
     testStateDigest();
 

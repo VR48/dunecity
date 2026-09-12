@@ -28,6 +28,10 @@ authority, exactly as on ENet.
 
 - WebSocket over TLS (`wss://`). Plain `ws://` is accepted by clients **only** for explicit
   loopback development endpoints (see §7).
+- Or HTTPS polling, when the admission answer's `url` is an `https://` endpoint instead: the same
+  frames, batched inside ordinary HTTPS requests. See
+  [room-relay-http-polling.md](room-relay-http-polling.md). Everything in §4, §5 and §6 below
+  applies unchanged to those frames; only the pipe differs.
 - Binary frames only. A text frame is a protocol error (close `4400`).
 - `permessage-deflate` is disabled on the server. A client must not negotiate it.
 - Server `maxPayload` is `262144` bytes and is enforced by the WebSocket layer *before* the

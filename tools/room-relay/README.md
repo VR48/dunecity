@@ -31,7 +31,7 @@ npm test
 | `test/admission.test.js` | HTTP admission, field validation, body limits, Origin allowlist, rate limits, logging hygiene |
 | `test/e2e.test.js` | real `ws` clients: membership, routing, phases, co-op continuation, diagnostics, large payloads, shutdown |
 | `test/abuse.test.js` | grant replay/expiry, foreign origins, wrong roles, banned packet types, cross-room routing, duplicate names, full rooms, deadlines, floods, rate limits, backpressure |
-| `test/analytics.test.js` | lifecycle DTO schema, configuration and startup failures, HMAC over exact bytes, idempotent retries, queue drops, absolute deadlines, refused redirects, TLS verification, full relay lifecycle into a captured receiver |
+| `test/analytics.test.js` | lifecycle DTO schema, the server-observed transport allowlist, configuration and startup failures, HMAC over exact bytes, idempotent retries, queue drops, absolute deadlines, refused redirects, TLS verification, full relay lifecycle into a captured receiver over `wss` and `https-poll` |
 | `test/phase.test.js` | admission and grant redemption once a match has started, co-op intermission, lobby leave/rejoin |
 | `test/cors.test.js` | CORS for allowlisted origins on success and error, foreign/null refusal, preflight, origin allowlist validation |
 | `test/routing.test.js` | the game-message matrix against the C++ table, host-destined messages, channels and flag bits |
@@ -80,7 +80,8 @@ relay's loopback port.
 
 ## Optional lifecycle delivery to the metaserver
 
-Off unless an operator sets both variables, and off unless `RELAY_OBSERVED_TRANSPORT=wss`:
+Off unless an operator sets both variables, and off unless `RELAY_OBSERVED_TRANSPORT` names a
+transport the schema can state: `wss` or `https-poll`.
 
 ```bash
 DUNE_RELAY_ANALYTICS_URL=https://metaserver.example/relay-events.php \
@@ -92,6 +93,15 @@ It POSTs one signed, fixed-schema lifecycle event per room creation, join, match
 and close. Invitation codes, grants, names, chat and payloads are not part of that schema and
 cannot reach it. Setting one variable without the other fails startup. The full contract,
 including the remaining variables, is [`docs/room-relay-analytics.md`](../../docs/room-relay-analytics.md).
+
+Each event carries `schema_version: 2` and a `transport` field holding that one server-observed
+value. It is fixed when the publisher is built and is never taken from a client, a lifecycle
+hook's argument or a tuning override, so an HTTPS-polling relay cannot report itself as `wss`
+and a development `ws` relay reports nothing at all (`analytics_status` logs
+`disabled_transport_not_allowed`). `client_runtime` stays separate and stays client reported.
+The receiver still accepts `schema_version: 1` bodies from an older relay and reads them as
+`wss`; the storage side, its migration and the receiver key file are documented in
+`metaserver/ANALYTICS.md` in the website repository.
 
 ## Deployment expectations
 

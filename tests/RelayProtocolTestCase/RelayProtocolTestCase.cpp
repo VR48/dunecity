@@ -189,6 +189,27 @@ TEST_CASE("a relay endpoint is only plaintext for explicit loopback development"
     REQUIRE_FALSE(error.empty());
 }
 
+TEST_CASE("an HTTPS polling endpoint follows the same plaintext rule", "[relay][security]") {
+    std::string error;
+
+    REQUIRE(isAcceptableRelayUrl("https://dunelegacy.com/relay/v1/poll", false, error));
+    // The rule that must not weaken: a remote host in the clear is refused for the HTTP
+    // transport exactly as it is for the WebSocket one, development opt-in or not.
+    REQUIRE_FALSE(isAcceptableRelayUrl("http://dunelegacy.com/relay/v1/poll", true, error));
+    REQUIRE_FALSE(isAcceptableRelayUrl("http://127.0.0.1:8787/relay/v1/poll", false, error));
+    REQUIRE(isAcceptableRelayUrl("http://127.0.0.1:8787/relay/v1/poll", true, error));
+    REQUIRE_FALSE(isAcceptableRelayUrl("https://user:pass@dunelegacy.com/relay", false, error));
+    // A query or a fragment would survive into `<url>/open`, so the base URL may carry neither.
+    REQUIRE_FALSE(isAcceptableRelayUrl("https://dunelegacy.com/relay?next=1", false, error));
+    REQUIRE_FALSE(isAcceptableRelayUrl("https://dunelegacy.com/relay#frag", false, error));
+    REQUIRE_FALSE(isAcceptableRelayUrl("httpx://dunelegacy.com/relay", false, error));
+
+    REQUIRE(relayTransportKindForUrl("https://dunelegacy.com/relay/v1/poll")
+            == RelayTransportKind::HttpPolling);
+    REQUIRE(relayTransportKindForUrl("wss://relay.example.net/v1/socket")
+            == RelayTransportKind::WebSocket);
+}
+
 TEST_CASE("an admission answer is parsed strictly", "[relay][security]") {
     AdmissionResponse response;
     std::string error;

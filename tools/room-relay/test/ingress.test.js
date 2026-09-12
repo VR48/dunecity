@@ -123,6 +123,8 @@ describe('HTTP ingress bounds', () => {
 
       // The idle sockets are reaped by the headers deadline, and capacity comes back.
       await waitFor(() => relay.httpSocketCount === 0, 6000);
+      // Server-side removal can precede delivery of FIN to the client event loop.
+      await waitFor(() => idle.every(client => client.closed), 2000);
       for (const client of idle) assert.equal(client.closed, true);
       const ok = await admitHost(relay);
       assert.equal(ok.fields.status, 'ok');

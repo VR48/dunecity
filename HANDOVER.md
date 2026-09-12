@@ -3884,3 +3884,22 @@ The user-authored single-player maps `4P - 192x192 - DuneCity.ini` and
 source is the local Dune City user-map directory on this Mac. The files are
 kept byte-for-byte unchanged, including their CC-BY-SA metadata, and are
 packaged under `Resources/maps/singleplayer` by the existing data copy step.
+
+
+## 2026-09-13 — HTTPS polling candidate 1.0.658
+
+Current work on `fix/network-hardening` adds browser/native HTTP polling over the
+existing Apache/PHP server, preserving the relay/game protocol. No main/public
+release or cron activation yet. See `docs/https-relay-deployment.md` for verified
+constraints, tests and remaining release gates; `docs/room-relay-http-polling.md`
+for the transport. Node analytics accepts a private key file and emits schema2
+with observed `https-poll`; the website receiver changes are in the separate
+`dunelegacy-relay-analytics` worktree. Never bundle the deployed private keys.
+
+User testing found two failures: generated EM_JS escaped a regex incorrectly,
+rejecting successful open responses; duplicate default names were refused but
+presented as an ended game with controls disabled. Both are fixed, with compiled
+JS and relay-session regression coverage. The lobby has a separate Join Game
+button and Change name action. Local two-browser gameplay has started successfully;
+this does not attest public Apache multiplayer. Test service 18790 and web8768
+serve the local 1.0.658 candidate, separate from old8787/8766 clients.

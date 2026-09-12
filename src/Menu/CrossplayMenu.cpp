@@ -115,12 +115,17 @@ CrossplayMenu::CrossplayMenu() : MenuBase() {
     moreGamesButton.setText(_("More"));
     moreGamesButton.setOnClick([this]() { refreshPublicGames(nextDirectoryPage); });
     directoryHBox.addWidget(&moreGamesButton, 80);
-    joinPublicButton.setText(_("Join public game"));
+    joinPublicButton.setText(_("Join Game"));
     joinPublicButton.setOnClick([this]() { joinPublicGame(); });
     mainVBox.addWidget(&directoryHBox, 28);
     publicGameList.setOnSelectionChange([this](bool) { refreshControls(); });
     mainVBox.addWidget(&publicGameList, 0.5);
-    mainVBox.addWidget(&joinPublicButton, 36);
+    mainVBox.addWidget(VSpacer::create(8));
+    joinPublicHBox.addWidget(Spacer::create(), 0.5);
+    joinPublicHBox.addWidget(&joinPublicButton, 260);
+    joinPublicHBox.addWidget(Spacer::create(), 0.5);
+    mainVBox.addWidget(&joinPublicHBox, 48);
+    mainVBox.addWidget(VSpacer::create(8));
     chatLabel.setText(_("Public lobby chat - confirm your name above to chat"));
     mainVBox.addWidget(&chatLabel, 24);
     mainVBox.addWidget(&chatHistory, 0.5);
@@ -201,7 +206,10 @@ CrossplayMenu::CrossplayMenu() : MenuBase() {
         setStatus(_("Online play has not been set up in this copy of the game."));
         stage = Stage::Finished;
     } else {
-        const RelayWebSocketSupport support = relayWebSocketSupport();
+        // Not relayWebSocketSupport(): the endpoint arrives in the admission answer, so at this
+        // point the menu cannot know whether the session will use a WebSocket or HTTPS polling.
+        // The question it can answer is whether either transport could work at all.
+        const RelayWebSocketSupport support = relayAnyTransportSupport();
         if(!support.available) {
             setStatus(support.reason);
             stage = Stage::Finished;
@@ -250,9 +258,9 @@ void CrossplayMenu::refreshControls() {
     joinButton.setEnabled(invite);
     joinCodeTextBox.setEnabled(invite);
     playerNameTextBox.setEnabled(idle && chatSession.empty() && !chatPending);
-    confirmNameButton.setEnabled(chatSession.empty() && !chatPending
-        && (idle || stage == Stage::HostReady || stage == Stage::ClientWaiting));
-    confirmNameButton.setText(chatSession.empty() ? _("Confirm name for chat") : _("Name confirmed"));
+    confirmNameButton.setEnabled(idle || (chatSession.empty() && !chatPending
+        && (stage == Stage::HostReady || stage == Stage::ClientWaiting)));
+    confirmNameButton.setText(chatSession.empty() ? _("Confirm name for chat") : _("Change name"));
     chatInput.setEnabled(!chatSession.empty());
     chatSendButton.setEnabled(!chatSession.empty() && !chatPending);
     visibilityChoice.setEnabled(idle || (stage == Stage::HostReady
@@ -261,7 +269,7 @@ void CrossplayMenu::refreshControls() {
     refreshGamesButton.setEnabled(idle && !directoryPending);
     moreGamesButton.setEnabled(idle && !directoryPending && nextDirectoryPage > 0);
     const int selected = publicGameList.getSelectedIndex();
-    joinPublicButton.setText(selected >= 0 ? _("Join public game") : _("Select a public game above to join"));
+    joinPublicButton.setText(_("Join Game"));
     joinPublicButton.setEnabled(idle && !directoryPending && selected >= 0
         && static_cast<std::size_t>(selected) < publicGames.size());
 
@@ -348,6 +356,14 @@ void CrossplayMenu::changeVisibility() {
 }
 
 void CrossplayMenu::confirmChatName() {
+    if(stage == Stage::Choosing && !chatSession.empty()) {
+        chat.cancel();
+        chatPending = false;
+        chatSession.clear();
+        chatLabel.setText(_("Enter a name above, then confirm it to chat."));
+        refreshControls();
+        return;
+    }
     if(chatPending || !chatSession.empty() || !validateAndSavePlayerName()) return;
     auto request = lobbyRequest();
     if(request.contentHash.empty()) { chatLabel.setText(_("Cannot check game content.")); return; }
@@ -620,12 +636,9 @@ void CrossplayMenu::teardownSession(std::string reason) {
     }
 
     roomCode.clear();
-    if(!reason.empty()) {
-        setStatus(reason);
-        stage = Stage::Finished;
-    } else {
-        stage = Stage::Choosing;
-    }
+    grantedRoom = AdmissionResponse();
+    stage = Stage::Choosing;
+    if(!reason.empty()) setStatus(reason);
     hostCustomGameButton.setText(_("Host a Game"));
     hostCoopButton.setText(_("Host Campaign Co-op"));
     refreshControls();
@@ -790,6 +803,13 @@ void CrossplayMenu::onPeerDisconnected(const std::string& playerName, bool isHos
         return;
     }
 
+    if(pNetworkManager && pNetworkManager->getRelayClient()) {
+        const auto* relay = pNetworkManager->getRelayClient();
+        if(relay->status() == RoomRelayClient::Status::Closed && !relay->statusMessage().empty()) {
+            pendingDisconnectReason = relay->statusMessage();
+            return;
+        }
+    }
     std::string message;
     switch(cause) {
         case NETWORKDISCONNECT_TIMEOUT:

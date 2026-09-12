@@ -19,12 +19,21 @@
 #define RELAYWEBSOCKET_H
 
 /**
-    The one thing the relay client needs from a platform: a non-blocking WebSocket that delivers
+    The one thing the relay client needs from a platform: a non-blocking transport that delivers
     whole binary messages.
 
-    Two implementations exist. The native one uses libcurl's WebSocket API on a CONNECT_ONLY
-    multi handle (src/Network/RelayWebSocketCurl.cpp); the browser one uses the Emscripten
-    WebSocket API (src/Network/RelayWebSocketEmscripten.cpp). Neither ever blocks, and neither
+    The name is historical. There are now two transports behind this interface, and the relay
+    session cannot tell them apart:
+
+      - a real WebSocket. The native one uses libcurl's WebSocket API on a CONNECT_ONLY multi
+        handle (src/Network/RelayWebSocketCurl.cpp); the browser one uses the Emscripten
+        WebSocket API (src/Network/RelayWebSocketEmscripten.cpp).
+      - HTTPS polling, which posts the same frames in batches to an ordinary HTTPS endpoint
+        (src/Network/RelayHttpTransport.cpp and its two backends). This exists because the
+        public WebSocket deployment was not available; see include/Network/RelayPollProtocol.h.
+
+    Which one is used is decided by the scheme of the URL the admission response handed out, so
+    the relay can move between them without a client release. Neither ever blocks, and neither
     ever calls back into the game: messages are queued and drained by the game loop.
 */
 
@@ -84,17 +93,70 @@ struct RelayWebSocketSupport {
 };
 
 /**
-    Runtime capability check. On native builds this asks libcurl whether it actually carries the
-    ws/wss protocol handlers: the macOS system libcurl does not, and the game must say so plainly
-    rather than failing later with a confusing error.
+    Runtime capability check for the **WebSocket** transport. On native builds this asks libcurl
+    whether it actually carries the ws/wss protocol handlers: the macOS system libcurl does not,
+    and the game must say so plainly rather than failing later with a confusing error.
+
+    This says nothing about HTTPS polling, which needs no WebSocket support at all. A caller
+    that only wants to know whether online play is possible should use
+    relayAnyTransportSupport(); a caller that is about to open a ws:// or wss:// URL wants this
+    one.
 */
 RelayWebSocketSupport relayWebSocketSupport();
 
+/// Which transport a relay endpoint asks for. The scheme is the whole decision.
+enum class RelayTransportKind {
+    WebSocket,      ///< ws:// or wss://
+    HttpPolling     ///< http:// or https://
+};
+
 /**
-    Creates a socket and starts connecting. Never blocks.
-    \param  url     a wss:// URL, or a ws:// loopback URL when the development endpoint is in use
+    Picks the transport for an endpoint by scheme alone.
+
+    Anything that is not an HTTP scheme is reported as WebSocket, which is safe: an endpoint
+    that is neither is refused by isAcceptableRelayUrl() before it reaches a transport.
+*/
+inline RelayTransportKind relayTransportKindForUrl(const std::string& url) {
+    if(url.compare(0, 8, "https://") == 0 || url.compare(0, 7, "http://") == 0) {
+        return RelayTransportKind::HttpPolling;
+    }
+    return RelayTransportKind::WebSocket;
+}
+
+/**
+    Whether online play can work on this machine over *either* transport.
+
+    A menu cannot know which transport it will get: the endpoint arrives in the admission
+    answer, long after the menu has to decide whether to offer online play at all. So the
+    question it can actually answer is this one.
+
+    HTTPS polling is reported as always available, and that is not an assumption: it needs
+    exactly the HTTP client the admission request itself uses, so if it were missing there would
+    be no admission answer to carry an endpoint in the first place. A machine whose libcurl has
+    no ws/wss handlers therefore reaches the menu, and finds out at connect time - with
+    relayWebSocketSupport()'s own wording - if the relay hands it a WebSocket URL anyway.
+*/
+inline RelayWebSocketSupport relayAnyTransportSupport() {
+    const RelayWebSocketSupport websocket = relayWebSocketSupport();
+    if(websocket.available) {
+        return websocket;
+    }
+    RelayWebSocketSupport support;
+    support.available = true;
+    return support;
+}
+
+/**
+    Creates a transport and starts connecting. Never blocks.
+
+    The scheme decides which one: ws/wss produce a WebSocket, http/https produce the HTTPS
+    polling transport. Both platform implementations of this function do that dispatch, so the
+    relay session never has to know.
+
+    \param  url     a wss:// or https:// URL, or the ws:// / http:// loopback equivalent when
+                    the development endpoint is in use
     \param  origin  Origin header to send, or empty for none (native clients send none)
-    \return the socket, or nullptr if the URL was refused or the platform cannot do this
+    \return the transport, or nullptr if the URL was refused or the platform cannot do this
 */
 std::unique_ptr<RelayWebSocket> createRelayWebSocket(const std::string& url,
                                                      const std::string& origin);
@@ -102,10 +164,17 @@ std::unique_ptr<RelayWebSocket> createRelayWebSocket(const std::string& url,
 /**
     Validates a relay endpoint before any network machinery sees it.
 
-    wss:// is always acceptable. Plain ws:// is acceptable only for loopback hosts and only when
-    the caller explicitly opted into a development endpoint - that is the one case where there is
-    no network to eavesdrop on. Credentials in the URL, control characters, non-numeric or
-    out-of-range ports and anything that is not ws/wss are refused outright.
+    wss:// and https:// are always acceptable. Their plaintext forms, ws:// and http://, are
+    acceptable only for loopback hosts and only when the caller explicitly opted into a
+    development endpoint - that is the one case where there is no network to eavesdrop on. The
+    rule is the same for both transports on purpose: adding HTTPS polling must not become a way
+    to reach a remote host in the clear. Credentials in the URL, control characters, non-numeric
+    or out-of-range ports and anything that is not one of those four schemes are refused
+    outright.
+
+    An HTTP endpoint additionally may not carry a query string or a fragment, because the poll
+    transport appends `/open`, `/exchange` and `/close` to it; a base URL that already ended in
+    `?x=1` would produce a request URL that nothing here ever checked.
 
     \param  url                     the endpoint
     \param  allowLoopbackPlaintext  true when the development endpoint was explicitly chosen
@@ -127,6 +196,7 @@ inline bool isAcceptableRelayUrl(const std::string& url, bool allowLoopbackPlain
     }
 
     bool secure = false;
+    bool httpScheme = false;
     std::size_t cursor = 0;
     if(url.compare(0, 6, "wss://") == 0) {
         secure = true;
@@ -134,8 +204,22 @@ inline bool isAcceptableRelayUrl(const std::string& url, bool allowLoopbackPlain
     } else if(url.compare(0, 5, "ws://") == 0) {
         secure = false;
         cursor = 5;
+    } else if(url.compare(0, 8, "https://") == 0) {
+        secure = true;
+        httpScheme = true;
+        cursor = 8;
+    } else if(url.compare(0, 7, "http://") == 0) {
+        secure = false;
+        httpScheme = true;
+        cursor = 7;
     } else {
-        error = "The game service address must start with wss://.";
+        error = "The game service address must start with wss:// or https://.";
+        return false;
+    }
+
+    if(httpScheme
+       && (url.find('?') != std::string::npos || url.find('#') != std::string::npos)) {
+        error = "The game service address is not valid.";
         return false;
     }
 

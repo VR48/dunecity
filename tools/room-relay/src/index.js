@@ -1,6 +1,7 @@
 'use strict';
 
 const { createRelay } = require('./server');
+const fs = require('node:fs');
 const { LifecycleLog } = require('./logging');
 const { createLifecycleSink } = require('./analytics');
 const { assertAllowedOrigins } = require('./admission');
@@ -36,15 +37,24 @@ function configFromEnv(argv) {
   const dev = argv.includes('--dev');
   const host = process.env.RELAY_HOST || '127.0.0.1';
   const port = intEnv('RELAY_PORT', dev ? 8787 : 8787);
-  const observedTransport = process.env.RELAY_OBSERVED_TRANSPORT || (dev ? 'ws' : 'wss');
+  const pollingEnabled = boolEnv('RELAY_HTTP_POLLING', false);
+  const observedTransport = process.env.RELAY_OBSERVED_TRANSPORT || (pollingEnabled ? (dev ? 'http-poll' : 'https-poll') : dev ? 'ws' : 'wss');
   const publicSocketUrl = process.env.RELAY_PUBLIC_URL
-    || (dev ? `ws://127.0.0.1:${port}/v1/socket` : '');
+    || (dev ? (pollingEnabled ? `http://127.0.0.1:${port}/v1/poll` : `ws://127.0.0.1:${port}/v1/socket`) : '');
 
   if (!dev && publicSocketUrl === '') {
     throw new Error('RELAY_PUBLIC_URL must be set (the wss:// URL the reverse proxy publishes)');
   }
-  if (!dev && !publicSocketUrl.startsWith('wss://')) {
-    throw new Error('RELAY_PUBLIC_URL must be a wss:// URL outside development mode');
+  if (!dev && !publicSocketUrl.startsWith(pollingEnabled ? 'https://' : 'wss://')) {
+    throw new Error('RELAY_PUBLIC_URL must use the secure scheme for the selected transport');
+  }
+  const gatewayKey = process.env.RELAY_GATEWAY_KEY_FILE
+    ? fs.readFileSync(process.env.RELAY_GATEWAY_KEY_FILE, 'utf8').trim() : '';
+  if (pollingEnabled && !dev && !/^[0-9a-f]{64}$/.test(gatewayKey)) {
+    throw new Error('Production HTTP polling requires RELAY_GATEWAY_KEY_FILE');
+  }
+  if (gatewayKey && (!/^[0-9a-f]{64}$/.test(gatewayKey) || host !== '127.0.0.1')) {
+    throw new Error('Gateway requires a 64-hex key and loopback binding');
   }
 
   const allowedOrigins = parseOrigins(process.env.RELAY_ALLOWED_ORIGINS);
@@ -57,6 +67,9 @@ function configFromEnv(argv) {
   return {
     host,
     port,
+    pollingEnabled,
+    gatewayKey,
+    maxPollingSessions: intEnv('RELAY_MAX_POLLING_SESSIONS', 16),
     app: process.env.RELAY_APP || 'dunecity',
     socketPath: process.env.RELAY_SOCKET_PATH || '/v1/socket',
     publicSocketUrl,

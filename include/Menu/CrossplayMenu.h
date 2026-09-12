@@ -143,6 +143,7 @@ private:
     Label           directoryLabel;
     TextButton      refreshGamesButton;
     TextButton      moreGamesButton;
+    HBox            joinPublicHBox;
     TextButton      joinPublicButton;
     ListBox         publicGameList;
 

@@ -16,6 +16,7 @@ const {
   AnalyticsSchemaError,
   LifecyclePublisher,
   NULL_LIFECYCLE,
+  TRANSPORTS,
   analyticsConfigFromEnv,
   buildLifecycleEvent,
   createLifecycleSink,
@@ -150,6 +151,7 @@ function makePublisher(url, overrides = {}) {
   return new LifecyclePublisher({
     destination: new URL(url),
     key: KEY,
+    transport: 'wss',
     timeoutMs: 500,
     maxAttempts: 3,
     backoffMs: 1,
@@ -186,16 +188,17 @@ function verifyReceived(record, key = KEY) {
 describe('lifecycle DTO', () => {
   const roomId = crypto.randomBytes(16).toString('base64url');
 
-  it('emits exactly the nine backend keys in a fixed order', () => {
+  it('emits exactly the ten backend keys in a fixed order', () => {
     const event = buildLifecycleEvent({
       kind: 'joined', roomId, participantId: 7, runtime: 'browser', gameVersion: '1.0.655',
-      occurredAt: 1757000000,
+      occurredAt: 1757000000, transport: 'wss',
     });
     assert.deepEqual(Object.keys(event), [
       'schema_version', 'event_id', 'room_id', 'kind', 'occurred_at',
-      'participant_id', 'client_runtime', 'game_version', 'reason',
+      'participant_id', 'client_runtime', 'game_version', 'reason', 'transport',
     ]);
-    assert.equal(event.schema_version, 1);
+    assert.equal(event.schema_version, 2);
+    assert.equal(event.transport, 'wss');
     assert.equal(event.room_id, roomId);
     assert.equal(event.reason, 'peer_joined');
     assert.match(event.event_id, /^[A-Za-z0-9_-]{22,64}$/);
@@ -204,7 +207,9 @@ describe('lifecycle DTO', () => {
   it('gives every event an independent id', () => {
     const ids = new Set();
     for (let i = 0; i < 50; i += 1) {
-      ids.add(buildLifecycleEvent({ kind: 'created', roomId, occurredAt: 1757000000 }).event_id);
+      ids.add(buildLifecycleEvent({
+        kind: 'created', roomId, occurredAt: 1757000000, transport: 'wss',
+      }).event_id);
     }
     assert.equal(ids.size, 50);
   });
@@ -212,10 +217,11 @@ describe('lifecycle DTO', () => {
   it('reports room events with unknown runtime, empty version and zero participant', () => {
     for (const kind of ['created', 'started', 'closed']) {
       const event = buildLifecycleEvent({
-        kind, roomId, occurredAt: 1757000000,
+        kind, roomId, occurredAt: 1757000000, transport: 'https-poll',
         // Even if a caller passes attribution, a room event carries none.
         participantId: 9, runtime: 'native', gameVersion: '1.0.655',
       });
+      assert.equal(event.transport, 'https-poll');
       assert.equal(event.client_runtime, 'unknown');
       assert.equal(event.game_version, '');
       assert.equal(event.participant_id, 0);
@@ -223,22 +229,23 @@ describe('lifecycle DTO', () => {
   });
 
   it('refuses relay-owned fields that are wrong', () => {
-    assert.throws(() => buildLifecycleEvent({ kind: 'nope', roomId, occurredAt: 1 }),
+    const ok = { roomId, occurredAt: 1, transport: 'wss' };
+    assert.throws(() => buildLifecycleEvent({ ...ok, kind: 'nope' }),
       AnalyticsSchemaError);
-    assert.throws(() => buildLifecycleEvent({ kind: 'created', roomId: 'short', occurredAt: 1 }),
+    assert.throws(() => buildLifecycleEvent({ ...ok, kind: 'created', roomId: 'short' }),
       AnalyticsSchemaError);
-    assert.throws(() => buildLifecycleEvent({ kind: 'created', roomId, occurredAt: 4102444801 }),
+    assert.throws(() => buildLifecycleEvent({ ...ok, kind: 'created', occurredAt: 4102444801 }),
       AnalyticsSchemaError);
-    assert.throws(() => buildLifecycleEvent({ kind: 'joined', roomId, occurredAt: 1 }),
+    assert.throws(() => buildLifecycleEvent({ ...ok, kind: 'joined' }),
       AnalyticsSchemaError, 'joined needs a positive participant id');
     assert.throws(() => buildLifecycleEvent({
-      kind: 'left', roomId, occurredAt: 1, participantId: 2 ** 32,
+      ...ok, kind: 'left', participantId: 2 ** 32,
     }), AnalyticsSchemaError);
   });
 
   it('clamps client-reported attribution instead of dropping the event', () => {
     const event = buildLifecycleEvent({
-      kind: 'left', roomId, participantId: 3, occurredAt: 1757000000,
+      kind: 'left', roomId, participantId: 3, occurredAt: 1757000000, transport: 'wss',
       runtime: 'ADMIN', gameVersion: 'INVITE CODE 4T2K-9QRS', reason: 'Chatty McChatface!!',
     });
     assert.equal(event.client_runtime, 'unknown');
@@ -246,11 +253,32 @@ describe('lifecycle DTO', () => {
     assert.equal(event.reason, 'unspecified');
   });
 
+  it('records the server-observed transport and refuses anything else', () => {
+    for (const transport of ['wss', 'https-poll']) {
+      const event = buildLifecycleEvent({
+        kind: 'joined', roomId, participantId: 1, occurredAt: 1757000000, transport,
+        runtime: 'browser', gameVersion: '1.0.655',
+      });
+      assert.equal(event.transport, transport);
+      // The runtime stays the client's word for itself; the transport is the relay's own.
+      assert.equal(event.client_runtime, 'browser');
+    }
+    // Unlike a client-reported field, an unknown transport is never clamped to a default: it
+    // would mislabel the connection, so the event is refused instead.
+    for (const transport of ['ws', 'WSS', 'wss ', 'https', 'http-poll', '', undefined, null, 2,
+      ['wss'], { transport: 'wss' }]) {
+      assert.throws(() => buildLifecycleEvent({
+        kind: 'joined', roomId, participantId: 1, occurredAt: 1757000000, transport,
+        runtime: 'browser', gameVersion: '1.0.655',
+      }), AnalyticsSchemaError);
+    }
+  });
+
   it('keeps every serialised event inside the 4096 byte body limit', () => {
     const event = buildLifecycleEvent({
       kind: 'left', roomId: 'r'.repeat(64), participantId: 0xffffffff, occurredAt: 4102444800,
       runtime: 'browser', gameVersion: 'v'.repeat(64), reason: 'x'.repeat(48),
-      eventId: 'e'.repeat(64),
+      eventId: 'e'.repeat(64), transport: 'https-poll',
     });
     assert.ok(serializeEvent(event).length <= 4096);
   });
@@ -259,6 +287,26 @@ describe('lifecycle DTO', () => {
 // --- configuration ------------------------------------------------------------------------------
 
 describe('analytics configuration', () => {
+  it('loads a bounded private key file and refuses ambiguous or unsafe sources', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-key-test-'));
+    const file = path.join(dir, 'analytics.key');
+    const env = { DUNE_RELAY_ANALYTICS_URL: 'https://metaserver.example/relay-events.php',
+      DUNE_RELAY_ANALYTICS_KEY_FILE: file };
+    try {
+      fs.writeFileSync(file, KEY + '\n', { mode: 0o640 });
+      assert.equal(analyticsConfigFromEnv(env).key, KEY);
+      assert.throws(() => analyticsConfigFromEnv({ ...env, DUNE_RELAY_ANALYTICS_KEY: KEY }), /only one/);
+      fs.chmodSync(file, 0o644);
+      assert.throws(() => analyticsConfigFromEnv(env), AnalyticsConfigError);
+      fs.chmodSync(file, 0o600);
+      fs.writeFileSync(file, 'x'.repeat(4096));
+      assert.throws(() => analyticsConfigFromEnv(env), AnalyticsConfigError);
+      assert.throws(() => analyticsConfigFromEnv({ ...env, DUNE_RELAY_ANALYTICS_KEY_FILE: dir }), AnalyticsConfigError);
+      fs.unlinkSync(file);
+      fs.symlinkSync('missing', file);
+      assert.throws(() => analyticsConfigFromEnv(env), AnalyticsConfigError);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
   it('is disabled when neither variable is set', () => {
     const config = analyticsConfigFromEnv({});
     assert.equal(config.enabled, false);
@@ -348,19 +396,47 @@ describe('analytics configuration', () => {
     }), /DUNE_RELAY_ANALYTICS_ATTEMPTS/);
   });
 
-  it('stays disabled unless the observed transport is exactly wss', () => {
+  it('stays disabled unless the observed transport is on the production allowlist', () => {
     const env = {
       DUNE_RELAY_ANALYTICS_URL: 'https://metaserver.example/relay-events.php',
       DUNE_RELAY_ANALYTICS_KEY: KEY,
     };
-    for (const transport of ['ws', '', undefined, 'WSS', 'wss ']) {
+    // Development transports, near misses, and anything a client might call itself.
+    for (const transport of ['ws', '', undefined, null, 'WSS', 'wss ', 'https-poll ', 'HTTPS-POLL',
+      'http-poll', 'https', 'poll', 'browser', 'native', 'udp', 1, {}]) {
       const built = createLifecycleSink({ env, observedTransport: transport });
       assert.equal(built.sink, NULL_LIFECYCLE);
-      assert.equal(built.state, 'disabled_transport_not_wss');
+      assert.equal(built.state, 'disabled_transport_not_allowed');
     }
-    const enabled = createLifecycleSink({ env, observedTransport: 'wss' });
-    assert.equal(enabled.state, 'enabled');
-    assert.ok(enabled.sink instanceof LifecyclePublisher);
+    assert.deepEqual([...TRANSPORTS], ['wss', 'https-poll']);
+    for (const transport of TRANSPORTS) {
+      const enabled = createLifecycleSink({ env, observedTransport: transport });
+      assert.equal(enabled.state, 'enabled');
+      assert.ok(enabled.sink instanceof LifecyclePublisher);
+      assert.equal(enabled.sink.transport, transport);
+    }
+  });
+
+  it('takes the transport from the server observation, not from a tuning override', () => {
+    const built = createLifecycleSink({
+      env: {
+        DUNE_RELAY_ANALYTICS_URL: 'https://metaserver.example/relay-events.php',
+        DUNE_RELAY_ANALYTICS_KEY: KEY,
+      },
+      observedTransport: 'https-poll',
+      overrides: { backoffMs: 1, transport: 'wss' },
+    });
+    assert.equal(built.sink.transport, 'https-poll');
+  });
+
+  it('refuses to build a publisher for a transport it cannot name', () => {
+    for (const transport of ['ws', 'https', undefined, 'wss ']) {
+      assert.throws(() => new LifecyclePublisher({
+        destination: new URL('https://metaserver.example/relay-events.php'),
+        key: KEY,
+        transport,
+      }), AnalyticsConfigError);
+    }
   });
 });
 
@@ -555,7 +631,7 @@ describe('lifecycle delivery', () => {
     const held = new Promise((resolve) => { release = resolve; });
     receiver.setResponder(async (req, res) => { await held; okResponder(req, res); });
     const sample = serializeEvent(buildLifecycleEvent({
-      kind: 'created', roomId: 'I'.repeat(22), occurredAt: 1757000000,
+      kind: 'created', roomId: 'I'.repeat(22), occurredAt: 1757000000, transport: 'wss',
     })).length;
     const publisher = makePublisher(receiver.url, {
       maxQueueEvents: 1000,
@@ -801,7 +877,9 @@ describe('TLS endpoint validation', () => {
       DUNE_RELAY_ANALYTICS_KEY: KEY,
       DUNE_RELAY_ANALYTICS_CA_FILE: material.certPath,
     });
-    const publisher = new LifecyclePublisher({ ...config, timeoutMs: 2000, backoffMs: 1 });
+    const publisher = new LifecyclePublisher({
+      ...config, transport: 'wss', timeoutMs: 2000, backoffMs: 1,
+    });
     try {
       publisher.participantJoined({
         roomLogId: 'M'.repeat(22), participantId: 1, runtime: 'browser', appVersion: '1.0.655',
@@ -895,9 +973,10 @@ describe('relay lifecycle delivery', () => {
         assert.ok(event.participant_id > 0);
       }
       for (const event of events) {
-        assert.equal(event.schema_version, 1);
+        assert.equal(event.schema_version, 2);
+        assert.equal(event.transport, 'wss');
         assert.ok(Math.abs(event.occurred_at - Math.floor(Date.now() / 1000)) < 120);
-        assert.deepEqual(Object.keys(event).length, 9);
+        assert.deepEqual(Object.keys(event).length, 10);
       }
 
       // Nothing secret anywhere: not in the signed bodies, not in the diagnostic log.
@@ -965,6 +1044,68 @@ describe('relay lifecycle delivery', () => {
       guest.client.close();
     } finally {
       await relay.stop();
+      await receiver.close();
+    }
+  });
+
+  it('labels an https-poll relay as https-poll, from the server observation only', async () => {
+    const receiver = await startReceiver();
+    const built = createLifecycleSink({
+      env: {
+        DUNE_RELAY_ANALYTICS_URL: receiver.url,
+        DUNE_RELAY_ANALYTICS_KEY: KEY,
+        DUNE_RELAY_ANALYTICS_ALLOW_LOOPBACK_HTTP: '1',
+      },
+      observedTransport: 'https-poll',
+      overrides: { backoffMs: 1, timeoutMs: 2000 },
+    });
+    assert.equal(built.state, 'enabled');
+    const relay = await startRelay({ observedTransport: 'https-poll', lifecycle: built.sink });
+    let host;
+    let guest;
+    try {
+      host = await joinAsHost(relay, { runtime: 'native' });
+      guest = await joinAsClient(relay, host.room, { runtime: 'browser' });
+      await host.client.expect(S2C.PEER_JOINED);
+      await guest.client.expect(S2C.PEER_JOINED);
+      await waitFor(() => receiver.requests.length >= 3, 8000);
+
+      const events = receiver.events();
+      for (const record of receiver.requests) verifyReceived(record);
+      for (const event of events) {
+        assert.equal(event.schema_version, 2);
+        assert.equal(event.transport, 'https-poll');
+      }
+      // The browser/native distinction is orthogonal to the transport and survives with it.
+      const joined = events.filter((e) => e.kind === 'joined');
+      assert.deepEqual(joined.map((e) => e.client_runtime).sort(), ['browser', 'native']);
+      assert.deepEqual(events.filter((e) => e.kind === 'created').length, 1);
+    } finally {
+      if (host) host.client.close();
+      if (guest) guest.client.close();
+      await relay.stop();
+      await receiver.close();
+    }
+  });
+
+  it('ignores a transport offered by a caller of the lifecycle hooks', async () => {
+    const receiver = await startReceiver();
+    const publisher = makePublisher(receiver.url, { transport: 'https-poll' });
+    try {
+      // Whatever a hook is handed, the published label stays the publisher's own observation.
+      publisher.participantJoined({
+        roomLogId: 'T'.repeat(22), participantId: 1, runtime: 'browser', appVersion: '1.0.655',
+        transport: 'wss', schema_version: 1, source: 'client',
+      });
+      publisher.roomCreated({ roomLogId: 'T'.repeat(22), transport: 'ws' });
+      await waitFor(() => publisher.stats.delivered === 2);
+      for (const event of receiver.events()) {
+        assert.equal(event.transport, 'https-poll');
+        assert.equal(event.schema_version, 2);
+        assert.equal(Object.keys(event).length, 10);
+      }
+    } finally {
+      await publisher.stop();
       await receiver.close();
     }
   });

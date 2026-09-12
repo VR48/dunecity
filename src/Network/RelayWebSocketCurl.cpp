@@ -43,6 +43,7 @@
 
 #include <Network/RelayWebSocket.h>
 
+#include <Network/RelayHttpTransport.h>
 #include <misc/FileSystem.h>
 #include <misc/SDL2pp.h>
 
@@ -517,6 +518,13 @@ RelayWebSocketSupport relayWebSocketSupport() {
 
 std::unique_ptr<RelayWebSocket> createRelayWebSocket(const std::string& url,
                                                      const std::string& origin) {
+    // An HTTP endpoint is the polling transport, which needs no WebSocket support at all - so
+    // this dispatch happens before the libcurl WebSocket check below. A build or a machine
+    // without ws/wss handlers can still play online over https://.
+    if(relayTransportKindForUrl(url) == RelayTransportKind::HttpPolling) {
+        return createRelayHttpTransport(url, origin);
+    }
+
 #ifndef DUNECITY_HAVE_CURL_WEBSOCKET
     (void)url;
     (void)origin;

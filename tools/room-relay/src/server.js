@@ -1,6 +1,8 @@
 'use strict';
 
 const http = require('node:http');
+const { timingSafeEqual } = require('node:crypto');
+const { createPolling } = require('./polling');
 const { WebSocket, WebSocketServer } = require('ws');
 
 const {
@@ -23,6 +25,9 @@ const { createAdmissionHandler, clientAddress, assertAllowedOrigins } = require(
 
 const DEFAULT_CONFIG = {
   host: '127.0.0.1',
+  pollingEnabled: false,
+  maxPollingSessions: 16,
+  gatewayKey: '',
   port: 8787,
   app: 'dunecity',
   socketPath: '/v1/socket',
@@ -83,6 +88,10 @@ class Connection {
 
 function createRelay(userConfig = {}) {
   const config = { ...DEFAULT_CONFIG, ...userConfig };
+  if (!Number.isInteger(config.maxPollingSessions) || config.maxPollingSessions < 1
+      || config.maxPollingSessions > 16) throw new Error('Polling session cap must be 1..16');
+  if (config.gatewayKey && (!/^[0-9a-f]{64}$/.test(config.gatewayKey)
+      || config.host !== '127.0.0.1')) throw new Error('Gateway requires a canonical key and loopback binding');
   // A non-canonical entry could never match a real Origin header, so it would be a silently
   // dead allowlist rather than a working one. Refuse it at startup instead.
   assertAllowedOrigins(config.allowedOrigins);
@@ -140,13 +149,29 @@ function createRelay(userConfig = {}) {
   // Ingress deadlines. Node only enforces headersTimeout/requestTimeout when its connection
   // check ticks, so the interval has to be short enough for the deadlines to mean anything.
   const headersTimeout = Math.min(config.httpHeadersTimeoutMs, config.httpRequestTimeoutMs);
+  let polling;
+  const admissionHandler = createAdmissionHandler(ctx);
+  function gatewayAuthorized(req) {
+    if (!config.gatewayKey) return true;
+    const remote = req.socket.remoteAddress;
+    const key = req.headers['x-dune-gateway'];
+    return ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(remote)
+      && typeof key === 'string' && /^[0-9a-f]{64}$/.test(key)
+      && key.length === config.gatewayKey.length
+      && timingSafeEqual(Buffer.from(key), Buffer.from(config.gatewayKey));
+  }
   const httpServer = http.createServer({
     headersTimeout,
     requestTimeout: config.httpRequestTimeoutMs,
     keepAliveTimeout: config.httpKeepAliveTimeoutMs,
     connectionsCheckingInterval: Math.max(50, Math.floor(headersTimeout / 2)),
     maxHeaderSize: LIMITS.HTTP_MAX_HEADER_BYTES,
-  }, createAdmissionHandler(ctx));
+  }, (req, res) => {
+    if (!gatewayAuthorized(req)) { res.writeHead(403).end(); return; }
+    if (config.pollingEnabled && (req.url || '').startsWith('/v1/poll/')) {
+      polling.handle(req, res).catch(() => { if (!res.headersSent) res.writeHead(500); res.end(); });
+    } else admissionHandler(req, res);
+  });
   httpServer.maxHeadersCount = LIMITS.HTTP_MAX_HEADER_COUNT;
   httpServer.setTimeout(config.httpIdleSocketTimeoutMs);
   httpServer.on('timeout', (socket) => socket.destroy());
@@ -615,6 +640,7 @@ function createRelay(userConfig = {}) {
   }
 
   httpServer.on('upgrade', (req, socket, head) => {
+    if (!gatewayAuthorized(req)) { rejectUpgrade(socket, 403, 'Forbidden'); return; }
     const url = (req.url || '').split('?')[0];
     const address = clientAddress(req, config.trustForwardedFor);
 
@@ -679,7 +705,7 @@ function createRelay(userConfig = {}) {
     });
   });
 
-  wss.on('connection', (ws, req) => {
+  function acceptConnection(ws, req) {
     const conn = new Connection(ws, clientAddress(req, config.trustForwardedFor), now(), config);
     connections.add(conn);
 
@@ -704,7 +730,18 @@ function createRelay(userConfig = {}) {
       connections.delete(conn);
       try { ws.terminate(); } catch { /* already gone */ }
     });
-  });
+    return conn;
+  }
+
+  polling = createPolling({ config, now, accept: acceptConnection, canAccept(req) {
+    const address = clientAddress(req, config.trustForwardedFor);
+    if (!socketLimiter.allow(address, now())) return 429;
+    if (connections.size >= config.maxConnections) return 503;
+    let pending = 0;
+    for (const conn of connections) if (!conn.authenticated) pending += 1;
+    return pending >= LIMITS.MAX_UNAUTHENTICATED_CONNECTIONS ? 503 : 200;
+  } });
+  wss.on('connection', acceptConnection);
 
   const sweepTimer = setInterval(() => {
     const at = now();
@@ -751,6 +788,7 @@ function createRelay(userConfig = {}) {
 
   async function stop() {
     clearInterval(sweepTimer);
+    polling.stop();
     for (const room of [...store.rooms.values()]) {
       closeRoom(room, CLOSE.SERVER_SHUTDOWN, 'The relay is restarting.', 'shutdown');
     }
@@ -790,6 +828,7 @@ function createRelay(userConfig = {}) {
     log,
     lifecycle,
     httpServer,
+    polling,
     wss,
     connections,
     start,

@@ -460,10 +460,20 @@ endif()
 # The crossplay relay transport has one implementation per platform. Only the matching one is
 # compiled: each file is also guarded internally, but listing them conditionally keeps the other
 # platform's headers (libcurl, emscripten/websocket.h) out of the build entirely.
+#
+# The HTTPS polling transport is split the same way, plus a platform-independent state machine
+# that both backends share. That file is where the sequencing, retry and pacing rules live, and
+# it is the one tests/RelayHttpTransportTestCase drives against a scripted backend.
+target_sources(dunecity PRIVATE Network/RelayHttpTransport.cpp)
+
 if(EMSCRIPTEN)
-    target_sources(dunecity PRIVATE Network/RelayWebSocketEmscripten.cpp)
+    target_sources(dunecity PRIVATE
+        Network/RelayWebSocketEmscripten.cpp
+        Network/RelayHttpTransportEmscripten.cpp)
 else()
-    target_sources(dunecity PRIVATE Network/RelayWebSocketCurl.cpp)
+    target_sources(dunecity PRIVATE
+        Network/RelayWebSocketCurl.cpp
+        Network/RelayHttpTransportCurl.cpp)
 
     # libcurl gained its WebSocket API in 7.86. Older libcurl still builds - the transport
     # compiles out and the game says online play is unavailable - but it is worth being loud

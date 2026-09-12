@@ -1,0 +1,4 @@
+Options -Indexes
+LimitRequestBody 1048576
+RewriteEngine On
+RewriteRule ^(?:health|v1/(?:admission/(?:host|join|list|visibility)|lobby/(?:enter|poll|say)|poll/(?:open|exchange|close)))$ http-gateway.php [END]

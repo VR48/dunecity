@@ -53,7 +53,7 @@ class BoundedRateTable {
     }
   }
 
-  allow(key, now) {
+  allow(key, now, amount = 1) {
     this.sweep(now);
 
     let entry = this.entries.get(key);
@@ -72,7 +72,7 @@ class BoundedRateTable {
       entry.windowStart = now;
       entry.count = 0;
     }
-    entry.count += 1;
+    entry.count += amount;
     entry.lastSeen = now;
     this.entries.set(key, entry);
 

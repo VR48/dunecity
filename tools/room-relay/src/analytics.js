@@ -20,12 +20,14 @@ const { LEAVE_REASON } = require('./constants');
 //   * the queue is bounded in both events and bytes, exactly one request is in flight, and no
 //     relay code path ever awaits delivery. Delivery outcomes cannot stall or close a game;
 //   * delivery is disabled unless an operator configured both a destination and a key, and it
-//     stays disabled unless the server-observed transport is actually wss.
+//     stays disabled unless the server-observed transport is one this build knows how to name
+//     (wss or https-poll). The transport recorded in an event is the operator-configured,
+//     server-observed one; a client can neither set it nor influence it.
 //
 // Never sent and never logged here: the analytics key, destination userinfo (refused at
 // startup), request bodies, invitation codes, grants, display names, chat, or raw addresses.
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 const MAX_BODY_BYTES = 4096;
 const MAX_OCCURRED_AT = 4102444800;
 const MIN_KEY_CHARS = 32;
@@ -34,6 +36,12 @@ const MAX_KEY_CHARS = 512;
 const SOCKET_CLOSE_GRACE_MS = 250;
 
 const KINDS = new Set(['created', 'joined', 'started', 'left', 'closed']);
+/**
+ * Server-observed transports this relay is allowed to report. It is deliberately not the set of
+ * transports the relay can serve: a development 'ws' listener, or anything a client claims about
+ * itself, has no entry here and therefore cannot be published under a production label.
+ */
+const TRANSPORTS = new Set(['wss', 'https-poll']);
 const PARTICIPANT_KINDS = new Set(['joined', 'left']);
 const RUNTIMES = new Set(['browser', 'native']);
 
@@ -112,10 +120,14 @@ function newEventId() {
 /**
  * Builds one fresh lifecycle DTO with exactly the keys the backend accepts, in a fixed order.
  *
- * Relay-owned fields (kind, room id, event id, participant id, timestamp) are invariants and
- * throw when they are wrong. Client-reported fields (runtime, version) and reasons are clamped
- * to the schema instead, because a client must not be able to suppress a lifecycle event by
- * reporting something unusual about itself.
+ * Relay-owned fields (kind, room id, event id, participant id, timestamp, transport) are
+ * invariants and throw when they are wrong. Client-reported fields (runtime, version) and
+ * reasons are clamped to the schema instead, because a client must not be able to suppress a
+ * lifecycle event by reporting something unusual about itself.
+ *
+ * `transport` is what the operator configured this process to observe on its own ingress, so it
+ * is an invariant like the room id and not a clamped field: an unknown value is a deployment or
+ * relay bug, and publishing a guess in its place would mislabel the connection.
  *
  * @throws {AnalyticsSchemaError}
  */
@@ -135,6 +147,11 @@ function buildLifecycleEvent(input) {
   const occurredAt = input.occurredAt;
   if (!Number.isInteger(occurredAt) || occurredAt < 0 || occurredAt > MAX_OCCURRED_AT) {
     throw new AnalyticsSchemaError('occurred_at is out of range');
+  }
+
+  const transport = input.transport;
+  if (typeof transport !== 'string' || !TRANSPORTS.has(transport)) {
+    throw new AnalyticsSchemaError('transport is not a server-observed allowlisted value');
   }
 
   const isParticipant = PARTICIPANT_KINDS.has(kind);
@@ -167,6 +184,7 @@ function buildLifecycleEvent(input) {
     client_runtime: runtime,
     game_version: gameVersion,
     reason,
+    transport,
   };
 }
 
@@ -254,7 +272,28 @@ function parseDestination(raw, { allowLoopbackHttp }) {
  */
 function analyticsConfigFromEnv(env = process.env) {
   const rawUrl = env.DUNE_RELAY_ANALYTICS_URL;
-  const rawKey = env.DUNE_RELAY_ANALYTICS_KEY;
+  let rawKey = env.DUNE_RELAY_ANALYTICS_KEY;
+  const keyFile = env.DUNE_RELAY_ANALYTICS_KEY_FILE;
+  if (typeof keyFile === 'string' && keyFile !== '') {
+    if (typeof rawKey === 'string' && rawKey !== '') {
+      throw new AnalyticsConfigError('Configure only one analytics key source');
+    }
+    let fd;
+    try {
+      fd = fs.openSync(keyFile, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+      const stat = fs.fstatSync(fd);
+      if (!stat.isFile() || (typeof process.getuid === 'function' && stat.uid !== process.getuid()) || (stat.mode & 0o027) !== 0 || stat.size > MAX_KEY_CHARS + 1) {
+        throw new Error('Invalid key file');
+      }
+      const buffer = Buffer.alloc(MAX_KEY_CHARS + 2);
+      const size = fs.readSync(fd, buffer, 0, buffer.length, 0);
+      rawKey = buffer.subarray(0, size).toString('utf8').replace(/\n$/, '');
+    } catch {
+      throw new AnalyticsConfigError('DUNE_RELAY_ANALYTICS_KEY_FILE must be a readable private regular file');
+    } finally {
+      if (fd !== undefined) fs.closeSync(fd);
+    }
+  }
   const hasUrl = typeof rawUrl === 'string' && rawUrl !== '';
   const hasKey = typeof rawKey === 'string' && rawKey !== '';
 
@@ -338,6 +377,14 @@ function isPermanentTransportError(err) {
 
 class LifecyclePublisher {
   constructor(options) {
+    // The one server-observed transport every event from this publisher is labelled with. It is
+    // fixed at construction from the operator's configuration, so no per-event caller and no
+    // client can change what a delivered event says about the connection.
+    if (typeof options.transport !== 'string' || !TRANSPORTS.has(options.transport)) {
+      throw new AnalyticsConfigError(
+        `the server-observed transport must be one of ${[...TRANSPORTS].join(', ')}`);
+    }
+    this.transport = options.transport;
     this.destination = options.destination;
     this.key = Buffer.from(options.key, 'utf8');
     this.ca = options.ca;
@@ -430,6 +477,8 @@ class LifecyclePublisher {
         ...fields,
         kind,
         occurredAt: Math.floor(this.now() / 1000),
+        // Last, and therefore never overridable by a caller's field of the same name.
+        transport: this.transport,
       });
       body = serializeEvent(event);
     } catch {
@@ -709,9 +758,11 @@ class LifecyclePublisher {
 /**
  * Builds the lifecycle sink for a relay.
  *
- * Delivery requires an operator configuration *and* a server-observed transport of exactly
- * 'wss'. A development relay serving plain ws reports nothing rather than labelling itself as
- * something it is not.
+ * Delivery requires an operator configuration *and* a server-observed transport on the
+ * allowlist: 'wss' for the WebSocket ingress, 'https-poll' for the HTTPS polling ingress. Both
+ * are TLS-terminated by the reverse proxy in front of this process and are recorded as distinct
+ * transports, never merged. A development relay serving plain ws, or any other value, reports
+ * nothing rather than labelling itself as something it is not.
  *
  * @throws {AnalyticsConfigError} when the configuration is present but wrong or incomplete
  */
@@ -721,11 +772,17 @@ function createLifecycleSink(options = {}) {
   if (!config.enabled) {
     return { sink: NULL_LIFECYCLE, state: config.state || 'disabled_not_configured' };
   }
-  if (options.observedTransport !== 'wss') {
-    return { sink: NULL_LIFECYCLE, state: 'disabled_transport_not_wss' };
+  if (typeof options.observedTransport !== 'string' || !TRANSPORTS.has(options.observedTransport)) {
+    return { sink: NULL_LIFECYCLE, state: 'disabled_transport_not_allowed' };
   }
   return {
-    sink: new LifecyclePublisher({ ...config, ...options.overrides, log: options.log }),
+    sink: new LifecyclePublisher({
+      ...config,
+      ...options.overrides,
+      // After the overrides: a test or tuning knob may not relabel the connection.
+      transport: options.observedTransport,
+      log: options.log,
+    }),
     state: 'enabled',
   };
 }
@@ -738,6 +795,7 @@ module.exports = {
   MAX_BODY_BYTES,
   NULL_LIFECYCLE,
   SCHEMA_VERSION,
+  TRANSPORTS,
   analyticsConfigFromEnv,
   buildLifecycleEvent,
   createLifecycleSink,

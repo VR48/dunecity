@@ -66,13 +66,19 @@ bool RoomRelayClient::start(const Config& config, std::string& error) {
         return false;
     }
 
-    const RelayWebSocketSupport support = relayWebSocketSupport();
-    if(!support.available) {
-        error = support.reason.empty()
-              ? std::string("Online play is not available on this computer.") : support.reason;
-        status_ = Status::Closed;
-        statusMessage_ = error;
-        return false;
+    // The WebSocket capability probe only applies to a WebSocket endpoint. HTTPS polling runs on
+    // the same HTTP client the admission request already used, so gating it on ws/wss support
+    // would refuse a session that works perfectly well.
+    if(relayTransportKindForUrl(config.socketUrl) == RelayTransportKind::WebSocket) {
+        const RelayWebSocketSupport support = relayWebSocketSupport();
+        if(!support.available) {
+            error = support.reason.empty()
+                  ? std::string("Online play is not available on this computer.")
+                  : support.reason;
+            status_ = Status::Closed;
+            statusMessage_ = error;
+            return false;
+        }
     }
 
     socket_ = createRelayWebSocket(config.socketUrl, config.origin);
@@ -345,6 +351,13 @@ void RoomRelayClient::handleFrame(const std::vector<std::uint8_t>& frame) {
         } break;
 
         case RoomRelay::ServerMessage::Error: {
+            if(status_ == Status::Handshaking) {
+                // A rejected HELLO cannot proceed. Preserve its actionable explanation before
+                // the transport closes with a broader code such as Forbidden.
+                finish(decoded.code, decoded.message.empty()
+                    ? std::string(RoomRelay::describeCloseCode(decoded.code)) : decoded.message);
+                return;
+            }
             refusalsFromRelay_++;
             Event event;
             event.type    = Event::Type::Refused;

@@ -31,6 +31,8 @@
 
 #include <Network/RelayWebSocket.h>
 
+#include <Network/RelayHttpTransport.h>
+
 #include <emscripten/emscripten.h>
 #include <emscripten/websocket.h>
 
@@ -264,6 +266,12 @@ RelayWebSocketSupport relayWebSocketSupport() {
 
 std::unique_ptr<RelayWebSocket> createRelayWebSocket(const std::string& url,
                                                      const std::string& origin) {
+    // An HTTP endpoint is the polling transport. It goes through the Fetch API and does not
+    // care whether this browser has WebSockets, so the check below must not gate it.
+    if(relayTransportKindForUrl(url) == RelayTransportKind::HttpPolling) {
+        return createRelayHttpTransport(url, origin);
+    }
+
     // The browser sets Origin itself and does not let a page override it, which is exactly why
     // Origin is worth checking on the relay for browsers and worth nothing for native clients.
     (void)origin;

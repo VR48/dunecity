@@ -396,6 +396,43 @@ TEST_CASE("a session refuses to start when the platform cannot open sockets",
     MockRelayTransport::reset();
 }
 
+TEST_CASE("an HTTPS endpoint does not need WebSocket support", "[relay][session]") {
+    // The WebSocket capability probe is about ws/wss. HTTPS polling runs on the HTTP client the
+    // admission request already used, so a machine whose libcurl carries no ws/wss handlers -
+    // the macOS system one, for instance - must still be able to play.
+    MockRelayTransport::reset();
+    MockRelayTransport::setSupported(false, "This browser cannot open game connections.");
+
+    RoomRelayClient client;
+    RoomRelayClient::Config config = testConfig();
+    config.socketUrl = "https://dunelegacy.com/relay/v1/poll";
+    config.allowLoopbackPlaintext = false;
+
+    std::string error;
+    REQUIRE(client.start(config, error));
+    REQUIRE(MockRelayTransport::lastUrl() == "https://dunelegacy.com/relay/v1/poll");
+    REQUIRE(client.status() == RoomRelayClient::Status::Connecting);
+
+    MockRelayTransport::reset();
+}
+
+TEST_CASE("a plain HTTP endpoint to a remote host is still refused",
+          "[relay][session][security]") {
+    MockRelayTransport::reset();
+
+    RoomRelayClient client;
+    RoomRelayClient::Config config = testConfig();
+    config.socketUrl = "http://dunelegacy.com/relay/v1/poll";
+    config.allowLoopbackPlaintext = true;       // even with the development opt-in
+
+    std::string error;
+    REQUIRE_FALSE(client.start(config, error));
+    REQUIRE_FALSE(error.empty());
+    REQUIRE(MockRelayTransport::lastUrl().empty());
+
+    MockRelayTransport::reset();
+}
+
 TEST_CASE("a session refuses an endpoint that is not acceptable", "[relay][session][security]") {
     MockRelayTransport::reset();
 
@@ -410,4 +447,26 @@ TEST_CASE("a session refuses an endpoint that is not acceptable", "[relay][sessi
     REQUIRE(MockRelayTransport::lastUrl().empty());
 
     MockRelayTransport::reset();
+}
+
+TEST_CASE("Relay handshake refusal preserves its actionable reason", "[relay][session]") {
+    MockRelayTransport::reset();
+    RoomRelayClient client;
+    std::string error;
+    REQUIRE(client.start(testConfig(), error));
+    auto* socket = MockRelayTransport::current();
+    REQUIRE(socket != nullptr);
+    socket->open();
+    client.update();
+    const std::string reason = "That player name is already used in this game.";
+    socket->deliver(ServerFrameBuilder(RoomRelay::ServerMessage::Error)
+        .u16(RoomRelay::Close::Forbidden).u16(static_cast<std::uint16_t>(reason.size()))
+        .raw(std::vector<std::uint8_t>(reason.begin(), reason.end())).bytes);
+    client.update();
+    REQUIRE(client.status() == RoomRelayClient::Status::Closed);
+    REQUIRE(client.statusMessage() == reason);
+    RoomRelayClient::Event event;
+    REQUIRE(client.pollEvent(event));
+    REQUIRE(event.type == RoomRelayClient::Event::Type::Closed);
+    REQUIRE(event.message == reason);
 }
