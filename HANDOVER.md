@@ -1,3 +1,29 @@
+# Play Online display fixes — 1.0.654
+
+Browser hotfix based on the latest released 1.0.653 gameplay. Removed the web
+640x480 reset and SDL_WINDOW_RESIZABLE (SDL otherwise substitutes the CSS size
+for the requested backing buffer). The shell fits the actual canvas ratio into
+the stage. Display exposes working 4:3/16:9 controls; Options offers 19 backing
+resolutions through 3840x2160, plus the saved custom size. Desktop default is
+1280x720, rising to 1600x900/1920x1080 when the stage fits; small touch screens
+start at 854x480. A one-time browser config marker migrates old forced VGA while
+preserving subsequent deliberate VGA selections and other saved resolutions.
+
+Emscripten 4.0.14 package built locally in /tmp/dunecity-web-build. Chrome tests
+verified actual backing sizes, both aspect buttons with Automatic selected,
+1920x1080 through the Options dropdown, reload persistence, browser resize and
+fullscreen, old-VGA migration, explicit-VGA preservation and fresh touch default.
+Native Release build/dependency audits passed; CTest: 588 passed, 3 expected skips.
+Three Node shell tests cover defaults, aspect fitting and common asset versioning.
+Local app rebuilt in build/bin; installed /Applications app left as 1.0.653.
+
+Shared Python packager (also called from PowerShell) records source commit and
+SHA256s, versions shell/WASM/data URLs together, and includes web/.htaccess.
+Publish browser build follows successful stable desktop releases and refuses a
+downgrade; see docs/release-operations.md. This workflow is configured for future
+releases; local browser hotfix publication is verified separately below. Browser
+multiplayer remains unavailable. The existing reports/ directory is unrelated.
+
 # Public co-op release published — 1.0.653
 
 Release version bump only over the user-tested 1.0.652 gameplay. Includes all

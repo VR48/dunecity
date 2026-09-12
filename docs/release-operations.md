@@ -91,3 +91,32 @@ stale current-state claims. When available, retain verified outcomes in Codex
 context-memory and deliberately promote shared engineering knowledge; memory is
 an index to evidence, not a replacement for repository documentation. Never put
 private keys, API tokens, raw secrets or browser session data into docs or memory.
+
+## Play Online browser releases
+
+Play Online has its own Emscripten package. Updating desktop download links does
+not update `website/play/`. Starting with 1.0.654, **Publish browser build**
+(`.github/workflows/web.yml`) follows successful stable desktop release builds,
+builds the latest published tag with Emscripten 4.0.14, packages it with
+`scripts/package-web.py`, validates the website policy/hashes, and pushes the
+website deploy. It refuses to overwrite a newer browser version. Check this run
+and the website deployment separately from desktop and SourceForge publishing.
+
+For an authorized browser hotfix, build current committed source locally:
+
+```sh
+source /path/to/emsdk/emsdk_env.sh
+emcmake cmake -S . -B build-web -G Ninja -DCMAKE_BUILD_TYPE=Release -DDUNECITY_BUILD_TESTS=OFF -DDUNECITY_ENABLE_PCH=OFF
+cmake --build build-web --parallel 8
+python3 scripts/package-web.py --build-root build-web --play-root ../dunelegacy.com/website/play
+python3 ../dunelegacy.com/deploy/check-web-security.py
+node --test scripts/tests/test-web-shell.cjs
+```
+
+Windows `package-web.ps1` uses the same packager (Python 3 required). The manifest
+records version, source commit, artifact hashes and packaging time. Every script,
+WASM and data URL carries the same version/content token; unversioned artifacts
+must revalidate. Verify the live `play/build.json` and download/hash every listed
+artifact after deployment. Browser-test fresh defaults, Display aspect changes,
+Options resolution changes, reload persistence, viewport resize and fullscreen.
+Browser play remains single-player; desktop co-op is not WebAssembly networking.

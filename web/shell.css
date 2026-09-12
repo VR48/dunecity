@@ -16,7 +16,7 @@ body { background: #0a0907; }
 .tool { display: inline-grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 1px solid #6d5a31; border-radius: 4px; background: #242018; color: #f4e8c6; font: 700 18px/1 system-ui, sans-serif; cursor: pointer; }
 .tool:hover, .tool:focus-visible { border-color: #e0b64b; background: #312a1d; outline: none; }
 .stage { position: relative; display: grid; place-items: center; min-height: 0; background: #000; }
-canvas { display: block; width: min(100%, calc((100vh - 48px) * 4 / 3)); height: min(calc(100vh - 48px), 75vw); image-rendering: pixelated; outline: none; touch-action: none; }
+canvas { display: block; max-width: 100%; max-height: 100%; image-rendering: pixelated; outline: none; touch-action: none; }
 .loading { position: absolute; inset: 0; display: grid; place-content: center; gap: 14px; padding: 24px; background: #0a0907; text-align: center; transition: opacity 180ms ease; }
 .loading[hidden] { display: none; }
 .loading strong { color: #f7d477; font-size: 18px; }
@@ -29,11 +29,9 @@ progress { width: min(420px, 78vw); height: 10px; accent-color: #d6a735; }
     .toolbar { padding-top: 3px; padding-bottom: 3px; }
     .brand span { display: none; }
     .tool { width: 34px; height: 34px; }
-    canvas { width: min(100%, calc((100vh - 42px) * 4 / 3)); height: min(calc(100vh - 42px), 75vw); }
 }
 
 @media (display-mode: fullscreen) {
     .app { grid-template-rows: minmax(0, 1fr); }
     .toolbar { display: none; }
-    canvas { width: min(100vw, 133.333vh); height: min(100vh, 75vw); }
 }

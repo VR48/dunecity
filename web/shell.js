@@ -1,5 +1,6 @@
 'use strict';
 
+const buildQuery = new URL(document.currentScript.src).search;
 const canvas = document.getElementById('canvas');
 const loading = document.getElementById('loading');
 const statusNode = document.getElementById('status');
@@ -8,7 +9,29 @@ let lastDependencyCount = 0;
 let syncPending = false;
 let gameReady = false;
 
+// Resize only CSS presentation. SDL owns the backing buffer and input mapping.
+function fitCanvas() {
+    const stage = document.getElementById('stage');
+    const scale = Math.min(stage.clientWidth / canvas.width, stage.clientHeight / canvas.height);
+    if (scale > 0) {
+        canvas.style.width = Math.floor(canvas.width * scale) + 'px';
+        canvas.style.height = Math.floor(canvas.height * scale) + 'px';
+    }
+}
+new ResizeObserver(fitCanvas).observe(document.getElementById('stage'));
+new MutationObserver(fitCanvas).observe(canvas, { attributes: true, attributeFilter: ['width', 'height'] });
+
 var Module = {
+    locateFile: function(path, prefix) { return prefix + path + buildQuery; },
+    defaultVideoSize: function() {
+        const stage = document.getElementById('stage');
+        if (window.matchMedia('(pointer: coarse)').matches && window.innerWidth < 900) {
+            return { width: 854, height: 480 };
+        }
+        if (stage.clientWidth >= 1920 && stage.clientHeight >= 1080) return { width: 1920, height: 1080 };
+        if (stage.clientWidth >= 1600 && stage.clientHeight >= 900) return { width: 1600, height: 900 };
+        return { width: 1280, height: 720 };
+    },
     canvas,
     preRun: [function() {
         FS.mkdirTree('/home/web_user');
@@ -30,6 +53,7 @@ var Module = {
     markGameReady: function() {
         gameReady = true;
         loading.hidden = true;
+        fitCanvas();
         canvas.focus();
     },
     printErr: function(text) {

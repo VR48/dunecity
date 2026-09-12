@@ -7,17 +7,22 @@
 #include <main.h>
 #include <GUI/MsgBox.h>
 #include <misc/MenuLayout.h>
+#include <misc/WebRuntime.h>
 
 DisplayMenu::DisplayMenu()
     : selectedHeight(settings.video.interfaceHeight),
       selectedWidescreen(
+#ifdef __EMSCRIPTEN__
+          settings.video.physicalWidth * 3 > settings.video.physicalHeight * 4),
+#else
           settings.video.interfaceHeight > 0
           && settings.video.width == interfaceWidthForHeight(settings.video.interfaceHeight, true)),
+#endif
       selectedLayout(validatedStartMenuMode(settings.video.startMenuMode)) {
     setBackground(pGFXManager->getUIGraphic(UI_MenuBackground));
     resize(getRendererWidth(), getRendererHeight());
     setWindowWidget(&content);
-#ifdef __ANDROID__
+#if defined(__ANDROID__) || defined(__EMSCRIPTEN__)
     const bool showAspect = true;
 #else
     // On desktop the interface takes the shape of the window, so there is no
@@ -103,7 +108,10 @@ void DisplayMenu::apply() {
     const int selectedWidth = selectedHeight > 0
         ? interfaceWidthForHeight(selectedHeight, selectedWidescreen)
         : settings.video.width;
-#ifdef __ANDROID__
+#ifdef __EMSCRIPTEN__
+    const int physicalWidth = interfaceWidthForHeight(settings.video.physicalHeight, selectedWidescreen);
+    const bool widthChanged = physicalWidth != settings.video.physicalWidth;
+#elif defined(__ANDROID__)
     const bool widthChanged = selectedHeight > 0 && selectedWidth != settings.video.width;
 #else
     const bool widthChanged = false; // the width follows the window shape
@@ -113,6 +121,9 @@ void DisplayMenu::apply() {
        && selectedLayout == settings.video.startMenuMode) { quit(); return; }
     INIFile config(getConfigFilepath());
     config.setIntValue("Video", "Interface Height", selectedHeight);
+#ifdef __EMSCRIPTEN__
+    config.setIntValue("Video", "Physical Width", physicalWidth);
+#endif
     if(selectedHeight > 0) {
         config.setIntValue("Video", "Width", selectedWidth);
         config.setIntValue("Video", "Height", selectedHeight);
@@ -122,11 +133,15 @@ void DisplayMenu::apply() {
         openWindow(MsgBox::create(_("Could not save display settings.")));
         return;
     }
+#ifdef __EMSCRIPTEN__
+    settings.video.physicalWidth = physicalWidth;
+#endif
     settings.video.interfaceHeight = selectedHeight;
     if(selectedHeight > 0) {
         settings.video.width = selectedWidth;
         settings.video.height = selectedHeight;
     }
     settings.video.startMenuMode = selectedLayout;
+    WebRuntime::syncPersistentFiles();
     quit(MENU_QUIT_REINITIALIZE);
 }

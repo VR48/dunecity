@@ -177,17 +177,19 @@ void setVideoMode(int displayIndex)
     int presentedHeight = 0;
 
 #ifdef __EMSCRIPTEN__
-    // Keep SDL's logical surface independent from the browser viewport. CSS
-    // owns presentation size and fullscreen so the website toolbar remains
-    // available and the game keeps its native 4:3 coordinate system.
-    videoFlags = SDL_WINDOW_RESIZABLE;
+    // The selected resolution is the backing surface; the browser shell fits
+    // that surface into the available stage without changing its aspect ratio.
+    // SDL_WINDOW_RESIZABLE would replace the requested backing resolution
+    // with the CSS size at creation and on viewport resize.
+    videoFlags = 0;
     settings.video.fullscreen = false;
-    settings.video.physicalWidth = 640;
-    settings.video.physicalHeight = 480;
-    settings.video.width = 640;
-    settings.video.height = 480;
-    presentedWidth = 640;
-    presentedHeight = 480;
+    settings.video.physicalWidth = std::max(settings.video.physicalWidth, SCREEN_MIN_WIDTH);
+    settings.video.physicalHeight = std::max(settings.video.physicalHeight, SCREEN_MIN_HEIGHT);
+    presentedWidth = settings.video.physicalWidth;
+    presentedHeight = settings.video.physicalHeight;
+    const int factor = getLogicalToPhysicalResolutionFactor(presentedWidth, presentedHeight);
+    settings.video.width = std::max(presentedWidth / factor, SCREEN_MIN_WIDTH);
+    settings.video.height = std::max(presentedHeight / factor, SCREEN_MIN_HEIGHT);
 #else
     if(settings.video.fullscreen) {
         videoFlags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
@@ -1193,6 +1195,23 @@ int main(int argc, char *argv[]) {
                 SDL_Log("SDL2_ttf compile-time v%d.%d.%d", TTFCompiledVersion.major, TTFCompiledVersion.minor, TTFCompiledVersion.patch);
             }
 
+#ifdef __EMSCRIPTEN__
+            // Migrate the old forced VGA browser default once. Preserve any
+            // other saved resolution and every subsequent explicit VGA choice.
+            if(bFirstInit && myINIFile.getIntValue("Video", "Browser Display Version", 0) < 1) {
+                if(bFirstGamestart || (settings.video.physicalWidth == 640 && settings.video.physicalHeight == 480)) {
+                    settings.video.physicalWidth = WebRuntime::defaultVideoWidth();
+                    settings.video.physicalHeight = WebRuntime::defaultVideoHeight();
+                    myINIFile.setIntValue("Video", "Physical Width", settings.video.physicalWidth);
+                    myINIFile.setIntValue("Video", "Physical Height", settings.video.physicalHeight);
+                    settings.video.preferredZoomLevel = 1;
+                    myINIFile.setIntValue("Video", "Preferred Zoom Level", 1);
+                }
+                myINIFile.setIntValue("Video", "Browser Display Version", 1);
+                myINIFile.saveChangesTo(getConfigFilepath());
+                WebRuntime::syncPersistentFiles();
+            }
+#else
             if(bFirstGamestart == true && bFirstInit == true) {
                 SDL_DisplayMode displayMode;
                 SDL_GetDesktopDisplayMode(currentDisplayIndex, &displayMode);
@@ -1212,6 +1231,8 @@ int main(int argc, char *argv[]) {
 
                 myINIFile.saveChangesTo(getConfigFilepath());
             }
+
+#endif
 
 #ifdef __ANDROID__
             if(bFirstInit == true) {

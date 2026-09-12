@@ -3,6 +3,8 @@
 
 namespace WebRuntime {
 
+int defaultVideoWidth();
+int defaultVideoHeight();
 void yieldToBrowser();
 void markGameReady();
 void syncPersistentFiles();

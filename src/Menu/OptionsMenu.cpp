@@ -16,6 +16,7 @@
  */
 
 #include <Menu/OptionsMenu.h>
+#include <misc/WebRuntime.h>
 
 #include <globals.h>
 
@@ -506,6 +507,7 @@ void OptionsMenu::onOptionsOK() {
     settings.network.metaServer = metaserver;
 
     saveConfiguration2File();
+    WebRuntime::syncPersistentFiles();
 
     // sound is not reinitialized when restarting
     // => music and sound player do not reload settings
@@ -615,6 +617,22 @@ void OptionsMenu::saveConfiguration2File() {
 
 void OptionsMenu::determineAvailableScreenResolutions() {
     availScreenRes.clear();
+#ifdef __EMSCRIPTEN__
+    // Browser backing buffers are independent of OS display modes and may be
+    // larger than the viewport. The shell scales them to fit.
+    for(const Coord size : {Coord(640, 480), Coord(854, 480), Coord(800, 600),
+            Coord(960, 540), Coord(1024, 768), Coord(1280, 720), Coord(1280, 800),
+            Coord(1280, 960), Coord(1366, 768), Coord(1440, 900), Coord(1600, 900),
+            Coord(1600, 1200), Coord(1680, 1050), Coord(1920, 1080), Coord(1920, 1200),
+            Coord(2560, 1440), Coord(2560, 1600), Coord(3440, 1440), Coord(3840, 2160)}) {
+        availScreenRes.push_back(size);
+    }
+    const Coord current(settings.video.physicalWidth, settings.video.physicalHeight);
+    if(std::find(availScreenRes.begin(), availScreenRes.end(), current) == availScreenRes.end()) {
+        availScreenRes.insert(availScreenRes.begin(), current);
+    }
+    return;
+#endif
 #ifdef __ANDROID__
     availScreenRes.emplace_back(640, 480);
     availScreenRes.emplace_back(854, 480);

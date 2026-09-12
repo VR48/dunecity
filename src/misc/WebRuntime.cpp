@@ -37,3 +37,19 @@ void WebRuntime::syncPersistentFiles() {
     syncBrowserFileSystem();
 #endif
 }
+
+int WebRuntime::defaultVideoWidth() {
+#ifdef __EMSCRIPTEN__
+    return EM_ASM_INT({ return Module.defaultVideoSize().width; });
+#else
+    return 1280;
+#endif
+}
+
+int WebRuntime::defaultVideoHeight() {
+#ifdef __EMSCRIPTEN__
+    return EM_ASM_INT({ return Module.defaultVideoSize().height; });
+#else
+    return 720;
+#endif
+}
