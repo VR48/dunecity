@@ -353,7 +353,7 @@ TEST_CASE("Mesh connect targets must be plausible unicast addresses",
 
     REQUIRE(NetworkPacketPolicy::isPlausibleMeshTarget(loopback, 28747));
     REQUIRE(NetworkPacketPolicy::isPlausibleMeshTarget(privateLan, 28747));
-    REQUIRE(NetworkPacketPolicy::isPlausibleMeshTarget(publicHost, 1));
+    REQUIRE_FALSE(NetworkPacketPolicy::isPlausibleMeshTarget(publicHost, 1));
 
     REQUIRE_FALSE(NetworkPacketPolicy::isPlausibleMeshTarget(loopback, 0));
     REQUIRE_FALSE(NetworkPacketPolicy::isPlausibleMeshTarget(0x00000000, 28747));
