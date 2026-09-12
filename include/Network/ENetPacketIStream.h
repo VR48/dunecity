@@ -23,7 +23,14 @@
 
 #include <enet/enet.h>
 
+#include <cstring>
 #include <string>
+
+/// Upper bound for a single string field inside a network packet.
+/// Legitimate senders stay far below this: mod chunks are MOD_CHUNK_SIZE (64 KiB) and the
+/// largest other string is a multiplayer map file. The bound exists so a malformed length
+/// can never drive an allocation that is unrelated to the bytes actually received.
+#define ENETPACKET_MAX_STRING_LENGTH (4 * 1024 * 1024)
 
 class ENetPacketIStream : public InputStream
 {
@@ -62,66 +69,65 @@ public:
         return *this;
     }
 
+    /**
+        \return the number of bytes that have not been consumed yet
+    */
+    size_t getRemainingLength() const override {
+        const size_t dataLength = (packet != nullptr) ? packet->dataLength : 0;
+        return (currentPos >= dataLength) ? 0 : (dataLength - currentPos);
+    }
+
     std::string readString() override
     {
         Uint32 length = readUint32();
 
-        if(currentPos + length > packet->dataLength) {
+        // Subtraction form: currentPos is never allowed past dataLength, so this cannot wrap.
+        // The additive form (currentPos + length) overflows on 32-bit size_t targets (wasm32).
+        if(length > ENETPACKET_MAX_STRING_LENGTH || length > getRemainingLength()) {
             THROW(InputStream::eof, "ENetPacketIStream::readString(): End-of-File reached!");
         }
 
-        std::string resultString((char*) (packet->data + currentPos), length);
-        currentPos += length;
+        std::string resultString((const char*) (packet->data + currentPos), (size_t) length);
+        currentPos += (size_t) length;
         return resultString;
     }
 
     Uint8 readUint8() override
     {
-        if(currentPos + sizeof(Uint8) > packet->dataLength) {
-            THROW(InputStream::eof, "ENetPacketIStream::readUint8(): End-of-File reached!");
-        }
-
-        Uint8 tmp = *((Uint8*) (packet->data + currentPos));
-        currentPos += sizeof(Uint8);
+        Uint8 tmp;
+        readRaw(&tmp, sizeof(tmp), "readUint8");
         return tmp;
     }
 
     Uint16 readUint16() override
     {
-        if(currentPos + sizeof(Uint16) > packet->dataLength) {
-            THROW(InputStream::eof, "ENetPacketIStream::readUint16(): End-of-File reached!");
-        }
-
-        Uint16 tmp = *((Uint16*) (packet->data + currentPos));
-        currentPos += sizeof(Uint16);
+        Uint16 tmp;
+        readRaw(&tmp, sizeof(tmp), "readUint16");
         return SDL_SwapLE16(tmp);
     }
 
     Uint32 readUint32() override
     {
-        if(currentPos + sizeof(Uint32) > packet->dataLength) {
-            THROW(InputStream::eof, "ENetPacketIStream::readUint32(): End-of-File reached!");
-        }
-
-        Uint32 tmp = *((Uint32*) (packet->data + currentPos));
-        currentPos += sizeof(Uint32);
+        Uint32 tmp;
+        readRaw(&tmp, sizeof(tmp), "readUint32");
         return SDL_SwapLE32(tmp);
     }
 
     Uint64 readUint64() override
     {
-        if(currentPos + sizeof(Uint64) > packet->dataLength) {
-            THROW(InputStream::eof, "ENetPacketIStream::readUint64(): End-of-File reached!");
-        }
-
-        Uint64 tmp = *((Uint64*) (packet->data + currentPos));
-        currentPos += sizeof(Uint64);
+        Uint64 tmp;
+        readRaw(&tmp, sizeof(tmp), "readUint64");
         return SDL_SwapLE64(tmp);
     }
 
     bool readBool() override
     {
-        return (readUint8() == 1 ? true : false);
+        // A boolean on the wire is exactly 0 or 1; anything else is a malformed packet.
+        const Uint8 value = readUint8();
+        if(value > 1) {
+            THROW(InputStream::error, "ENetPacketIStream::readBool(): Invalid boolean encoding!");
+        }
+        return value == 1;
     }
 
     float readFloat() override
@@ -133,6 +139,18 @@ public:
     }
 
 private:
+    /**
+        Copies size bytes out of the packet without ever dereferencing an unaligned typed
+        pointer (undefined behaviour, and a real fault on strict-alignment targets).
+    */
+    void readRaw(void* destination, size_t size, const char* what) {
+        if(size > getRemainingLength()) {
+            THROW(InputStream::eof, "ENetPacketIStream::%s(): End-of-File reached!", what);
+        }
+        memcpy(destination, packet->data + currentPos, size);
+        currentPos += size;
+    }
+
     size_t  currentPos;
     ENetPacket* packet;
 };

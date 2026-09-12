@@ -26,6 +26,12 @@
 
 #include <vector>
 
+/// Hard caps for a received COMMANDLIST packet. One legitimate packet covers
+/// [gameCycle - MILLI2CYCLES(2500), gameCycle + networkCycleBuffer), i.e. a few dozen entries,
+/// each holding the commands one player issued in a single cycle.
+#define COMMANDLIST_MAX_ENTRIES         1024
+#define COMMANDLIST_MAX_COMMANDS_PER_ENTRY 1024
+
 class CommandList {
 public:
     class CommandListEntry {
@@ -38,6 +44,12 @@ public:
         explicit CommandListEntry(InputStream& stream) {
             cycle = stream.readUint32();
             Uint32 numCommands = stream.readUint32();
+            if(numCommands > COMMANDLIST_MAX_COMMANDS_PER_ENTRY) {
+                throw InputStream::error("CommandList: too many commands in one cycle entry!");
+            }
+            // A command is at least playerID + commandID + parameter count = 9 bytes.
+            stream.requireReadableElements(numCommands, 9);
+            commands.reserve(numCommands);
             for(Uint32 i = 0; i < numCommands; i++) {
                 commands.push_back(Command(stream));
             }
@@ -60,6 +72,12 @@ public:
 
     explicit CommandList(InputStream& stream) {
         Uint32 numCommandListEntries = stream.readUint32();
+        if(numCommandListEntries > COMMANDLIST_MAX_ENTRIES) {
+            throw InputStream::error("CommandList: too many command list entries!");
+        }
+        // One entry is at least cycle + command count = 8 bytes.
+        stream.requireReadableElements(numCommandListEntries, 8);
+        commandList.reserve(numCommandListEntries);
         for(Uint32 i = 0; i < numCommandListEntries; i++) {
             commandList.emplace_back(stream);
         }

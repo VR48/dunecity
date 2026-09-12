@@ -17,6 +17,7 @@
  */
 
 #include <Command.h>
+#include <CommandValidation.h>
 
 #include <globals.h>
 
@@ -105,7 +106,14 @@ Command::Command(Uint8 playerID, Uint8* data, Uint32 length)
 
 Command::Command(InputStream& stream) {
     playerID = stream.readUint8();
-    commandID = (CMDTYPE) stream.readUint32();
+    const Uint32 rawCommandID = stream.readUint32();
+    if(!CommandValidation::isKnownCommandID(rawCommandID)) {
+        // Command::executeCommand() throws on an unknown id, and that throw escapes the
+        // simulation loop. Refuse the command while we are still parsing, so the caller
+        // (network receive or replay load) can drop it instead of crashing later.
+        throw InputStream::error("Command::Command(): CommandID unknown!");
+    }
+    commandID = (CMDTYPE) rawCommandID;
     parameter = stream.readUint32Vector();
 }
 

@@ -24,6 +24,10 @@
 
 #include <list>
 
+/// A full lobby refresh is 4 events per house slot (MAX_CUSTOM_GAME_PLAYERS = 9), so 64 is
+/// already far above anything a legitimate lobby sends.
+#define CHANGEEVENTLIST_MAX_EVENTS 64
+
 class ChangeEventList {
 public:
     class ChangeEvent {
@@ -47,7 +51,11 @@ public:
         }
 
         explicit ChangeEvent(InputStream& stream) {
-            eventType = static_cast<EventType>(stream.readUint32());
+            const Uint32 rawEventType = stream.readUint32();
+            if(rawEventType > static_cast<Uint32>(EventType::SetHumanPlayer)) {
+                throw InputStream::error("ChangeEventList: unknown change event type!");
+            }
+            eventType = static_cast<EventType>(rawEventType);
             slot = stream.readUint32();
 
             if(eventType == EventType::SetHumanPlayer) {
@@ -77,6 +85,11 @@ public:
 
     explicit ChangeEventList(InputStream& stream) {
         Uint32 numChangeEvents = stream.readUint32();
+        if(numChangeEvents > CHANGEEVENTLIST_MAX_EVENTS) {
+            throw InputStream::error("ChangeEventList: too many change events!");
+        }
+        // One event is at least type + slot + value = 12 bytes.
+        stream.requireReadableElements(numChangeEvents, 12);
         for(Uint32 i = 0; i < numChangeEvents; i++) {
             changeEventList.emplace_back(stream);
         }

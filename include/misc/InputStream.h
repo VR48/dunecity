@@ -26,12 +26,23 @@
 #include <vector>
 #include <set>
 #include <exception>
+#include <limits>
 
 class InputStream
 {
 public:
     InputStream() { ; };
     virtual ~InputStream() { ; };
+
+    /**
+        Number of bytes that can still be read from this stream, if the stream knows it.
+        Streams backed by a fixed-size buffer (e.g. a received network packet) override this so
+        that element counts read from the stream can be sanity checked before any allocation.
+        File-backed streams keep the default "unknown" answer and therefore keep their existing
+        parsing semantics (savegames, replays, map files).
+        \return the number of readable bytes left or std::numeric_limits<size_t>::max() if unknown
+    */
+    virtual size_t getRemainingLength() const { return std::numeric_limits<size_t>::max(); }
 
     /**
         readString reads in a strings from the stream.
@@ -116,12 +127,30 @@ public:
     }
 
     /**
+        Throws InputStream::eof if elementCount elements of elementSize bytes cannot possibly
+        fit into what is left of this stream. On streams that do not know their remaining length
+        this is a no-op, so file parsing behaviour is unchanged.
+        \param  elementCount    the number of elements the stream claims to contain
+        \param  elementSize     the minimum encoded size of one element in bytes
+    */
+    void requireReadableElements(size_t elementCount, size_t elementSize) const {
+        const size_t remaining = getRemainingLength();
+        if(remaining == std::numeric_limits<size_t>::max()) {
+            return;
+        }
+        if(elementSize == 0 || elementCount > remaining / elementSize) {
+            throw InputStream::eof("InputStream: declared element count exceeds the remaining stream length!");
+        }
+    }
+
+    /**
         Reads a list of Uint32 written by writeUint32List().
         \return the read list
     */
     std::list<Uint32> readUint32List() {
         std::list<Uint32> List;
         Uint32 size = readUint32();
+        requireReadableElements(size, sizeof(Uint32));
         for(unsigned int i=0; i < size; i++) {
             List.push_back(readUint32());
         }
@@ -135,6 +164,7 @@ public:
     std::vector<Uint32> readUint32Vector() {
         std::vector<Uint32> vec;
         Uint32 size = readUint32();
+        requireReadableElements(size, sizeof(Uint32));
         for(unsigned int i=0; i < size; i++) {
             vec.push_back(readUint32());
         }
@@ -148,6 +178,7 @@ public:
     std::set<Uint32> readUint32Set() {
         std::set<Uint32> retSet;
         Uint32 size = readUint32();
+        requireReadableElements(size, sizeof(Uint32));
         for(unsigned int i=0; i < size; i++) {
             retSet.insert(readUint32());
         }
