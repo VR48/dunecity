@@ -23,6 +23,7 @@
 #include <Network/StunClient.h>
 
 #include <GameInitSettings.h>
+#include <Network/GameInitSettingsPolicy.h>
 
 #include <misc/exceptions.h>
 #include <misc/FileSystem.h>
@@ -1117,30 +1118,47 @@ void NetworkManager::handlePacket(ENetPeer* peer, ENetPacketIStream& packetStrea
                     break;
                 }
 
+                // Decode into temporaries and validate the whole snapshot *before* any session
+                // state changes: a malformed or oversized packet must leave this client exactly
+                // as it was, not half-committed with its peer list already replaced.
+                GameInitSettings gameInitSettings(packetStream);
+                ChangeEventList changeEventList(packetStream);
+
+                std::string rejectionReason;
+                if(!GameInitSettingsPolicy::isAcceptableReceivedGameInitSettings(gameInitSettings,
+                                                                                 rejectionReason)) {
+                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                                "NetworkManager: refusing game info from the host: %s",
+                                rejectionReason.c_str());
+                    noteRejectedPacket(peer, "unacceptable game info");
+                    break;
+                }
+
+                const bool bHasMapPayload =
+                    gameInitSettings.getGameType() == GameType::CustomMultiplayer
+                    && !gameInitSettings.getFiledata().empty()
+                    && !gameInitSettings.getFilename().empty();
+
+                // A map we cannot store safely is a packet we do not accept at all - playing it
+                // from memory while refusing to write it would hide the problem from the player.
+                std::string mapFilename;
+                if(bHasMapPayload
+                   && !NetworkPacketPolicy::sanitizeReceivedMapFilename(
+                          gameInitSettings.getFilename(), mapFilename)) {
+                    noteRejectedPacket(peer, "unsafe received map filename");
+                    break;
+                }
+
+                // Commit membership only now that the packet is known to be usable.
                 peerList = awaitingConnectionList;
                 peerData->peerState = PeerData::PeerState::Connected;
                 peerData->timeout = 0;
                 awaitingConnectionList.clear();
 
-                GameInitSettings gameInitSettings(packetStream);
-                ChangeEventList changeEventList(packetStream);
-
                 // Save the received map to the user's maps/multiplayer directory
-                if(gameInitSettings.getGameType() == GameType::CustomMultiplayer &&
-                   !gameInitSettings.getFiledata().empty() &&
-                   !gameInitSettings.getFilename().empty()) {
-
+                if(bHasMapPayload) {
                     try {
-                        std::string mapFilename;
-                        if(!NetworkPacketPolicy::sanitizeReceivedMapFilename(
-                               gameInitSettings.getFilename(), mapFilename)) {
-                            // Traversal, absolute paths, control characters, reserved names:
-                            // the map is still played from memory, it is just not stored.
-                            noteRejectedPacket(peer, "unsafe received map filename");
-                        } else if(gameInitSettings.getFiledata().size()
-                                  > NetworkPacketPolicy::kMaxReceivedMapSize) {
-                            noteRejectedPacket(peer, "received map exceeds the size limit");
-                        } else {
+                        {
                             char tmp[FILENAME_MAX];
                             if(fnkdat("maps/multiplayer/", tmp, FILENAME_MAX, FNKDAT_USER | FNKDAT_CREAT) >= 0) {
                                 const std::filesystem::path mapDirectory =
@@ -1475,6 +1493,19 @@ void NetworkManager::handlePacket(ENetPeer* peer, ENetPacketIStream& packetStrea
                 // Co-op has only one remote peer; only the host can choose a mission.
                 if(!bIsServer && peerList.size() == 1 && peerList.front() == peer) {
                     auto next = std::make_unique<GameInitSettings>(packetStream);
+
+                    std::string coopRejectionReason;
+                    if(!GameInitSettingsPolicy::isAcceptableReceivedGameInitSettings(
+                           *next, coopRejectionReason)) {
+                        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                                    "NetworkManager: refusing co-op mission from the host: %s",
+                                    coopRejectionReason.c_str());
+                        noteRejectedPacket(peer, "unacceptable co-op mission");
+                        break;
+                    }
+
+                    // Either the next campaign mission, or the empty settings that end the
+                    // campaign; nothing else may replace the pending mission.
                     if(next->getGameType() == GameType::CampaignCoop || next->getGameType() == GameType::Invalid)
                         pendingCoopMission = std::move(next);
                 }
@@ -1518,6 +1549,11 @@ void NetworkManager::handlePacket(ENetPeer* peer, ENetPacketIStream& packetStrea
 
                 int groupListIndex = packetStream.readSint32();
                 std::set<Uint32> selectedList = packetStream.readUint32Set();
+
+                if(selectedList.size() > NetworkPacketPolicy::kMaxSelectionSize) {
+                    noteRejectedPacket(peer, "selection list exceeds the size limit");
+                    break;
+                }
 
                 // -1 means "current selection"; anything else indexes HumanPlayer::selectedLists.
                 if(groupListIndex < -1 || groupListIndex >= NUMSELECTEDLISTS) {

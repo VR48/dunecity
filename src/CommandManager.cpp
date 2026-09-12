@@ -94,50 +94,96 @@ void CommandManager::addCommandList(const std::string& playername, const Command
     }
 
     const Uint32 currentCycle = currentGame->getGameCycleCount();
+    const Uint32 firstExpectedCycle = pPlayer->nextExpectedCommandsCycle;
+
+    // Pass 1 - validate everything this batch would add, before anything is queued. A content
+    // fault (a command for another player, a malformed command, a cycle outside the window,
+    // too many commands) means the sender is not the game, so the whole batch is dropped and
+    // the watermark does not move.
+    std::size_t newCommandCount = 0;
+    const char* rejectionReason = nullptr;
 
     for(const CommandList::CommandListEntry& commandListEntry : commandList.commandList) {
-        if(pPlayer->nextExpectedCommandsCycle > commandListEntry.cycle) {
-            // Already processed; this is one of the retransmissions in the rolling history.
+        if(commandListEntry.cycle < firstExpectedCycle) {
+            // Already processed: this is one of the retransmissions in the rolling history.
             continue;
         }
 
         // addCommand() resizes its timeslot vector to the cycle number, so a cycle far in the
-        // future is an unbounded allocation. Past cycles stay acceptable: they are how the
-        // rolling 2.5 s history and its retransmissions work.
+        // future is an unbounded allocation.
         if(!CommandValidation::isAcceptableCommandCycle(commandListEntry.cycle, currentCycle,
                                                         networkCycleBuffer)) {
-            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                        "CommandManager: dropping commands from '%s' for cycle %u (current cycle %u)",
-                        playername.c_str(), commandListEntry.cycle, currentCycle);
-            continue;
+            rejectionReason = "cycle outside the acceptable window";
+            break;
+        }
+
+        if(!CommandValidation::isAcceptableCommandCountPerEntry(
+               static_cast<Uint32>(commandListEntry.commands.size()))) {
+            rejectionReason = "too many commands in one cycle";
+            break;
+        }
+
+        newCommandCount += commandListEntry.commands.size();
+        if(!CommandValidation::isAcceptableCommandTotal(newCommandCount)) {
+            rejectionReason = "too many commands in one packet";
+            break;
         }
 
         for(const Command& command : commandListEntry.commands) {
             // A peer may only ever issue commands for its own player. Players that share a
             // house each have their own player id, so this still allows co-op control.
             if(command.getPlayerID() != pPlayer->getPlayerID()) {
-                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                            "CommandManager: dropping command from '%s' issued for player %u",
-                            playername.c_str(), static_cast<unsigned int>(command.getPlayerID()));
-                continue;
+                rejectionReason = "command issued for another player";
+                break;
             }
 
             // An unknown command id or a wrong parameter count makes executeCommand() throw
             // out of the simulation loop, which takes down every peer that accepted it.
             if(!CommandValidation::isWellFormedCommand(static_cast<Uint32>(command.getCommandID()),
                                                        command.getParameter().size())) {
-                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                            "CommandManager: dropping malformed command %u from '%s'",
-                            static_cast<unsigned int>(command.getCommandID()), playername.c_str());
-                continue;
+                rejectionReason = "malformed command";
+                break;
             }
+        }
 
+        if(rejectionReason != nullptr) {
+            break;
+        }
+    }
+
+    if(rejectionReason != nullptr) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "CommandManager: dropping the whole command batch from '%s': %s",
+                    playername.c_str(), rejectionReason);
+        return;
+    }
+
+    // Pass 2 - apply the contiguous run that starts at the cycle we are waiting for, and stop
+    // at the first gap, so the watermark never moves past a cycle we did not receive. An
+    // unsorted, gapped or duplicated list therefore cannot advance it, while an ordinary packet
+    // loss (the command channel is unsequenced) still recovers from the overlapping history in
+    // the next packet instead of losing a whole batch.
+    Uint32 expectedCycle = firstExpectedCycle;
+
+    for(const CommandList::CommandListEntry& commandListEntry : commandList.commandList) {
+        if(commandListEntry.cycle < expectedCycle) {
+            continue;
+        }
+        if(commandListEntry.cycle != expectedCycle) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "CommandManager: '%s' skipped cycle %u (offered %u); ignoring the rest",
+                        playername.c_str(), expectedCycle, commandListEntry.cycle);
+            break;
+        }
+
+        for(const Command& command : commandListEntry.commands) {
             addCommand(command, commandListEntry.cycle);
         }
 
-        pPlayer->nextExpectedCommandsCycle = std::max(pPlayer->nextExpectedCommandsCycle,
-                                                      CommandValidation::nextCycleAfter(commandListEntry.cycle));
+        expectedCycle = CommandValidation::nextCycleAfter(commandListEntry.cycle);
     }
+
+    pPlayer->nextExpectedCommandsCycle = expectedCycle;
 }
 
 void CommandManager::addCommand(const Command& cmd, Uint32 CycleNumber) {

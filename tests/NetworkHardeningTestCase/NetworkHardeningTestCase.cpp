@@ -16,8 +16,10 @@
 #include <CommandAuthorization.h>
 #include <CommandValidation.h>
 #include <DataTypes.h>
+#include <GameInitSettings.h>
 #include <Menu/LobbyAuthorization.h>
 #include <Network/ChangeEventList.h>
+#include <Network/GameInitSettingsPolicy.h>
 #include <Network/ENetPacketIStream.h>
 #include <Network/ENetPacketOStream.h>
 #include <Network/NetworkPacketPolicy.h>
@@ -1417,4 +1419,136 @@ TEST_CASE("Lobby authorization: a transaction is judged as a whole",
         REQUIRE(LobbyAuthorization::authorizeClientTransaction(empty, "stefan", events, refused)
                 == Decision::RejectUnknownSender);
     }
+}
+
+// =============================================================================
+// Received game info: semantic bounds before anything is committed
+// =============================================================================
+
+namespace {
+
+/// A settings object of the shape a legitimate host sends for a custom multiplayer game.
+GameInitSettings plausibleReceivedSettings(const std::string& mapName = "Arrakis Duel.ini",
+                                           const std::string& mapData = "[MAP]\n") {
+    SettingsClass::GameOptionsClass options;
+    options.gameSpeed = GAMESPEED_DEFAULT;
+
+    GameInitSettings settings(mapName, mapData, "a server", true, options);
+
+    GameInitSettings::HouseInfo houseInfo(HOUSE_ATREIDES, 1);
+    houseInfo.addPlayerInfo(GameInitSettings::PlayerInfo("stefan", "HumanPlayer"));
+    settings.addHouseInfo(houseInfo);
+
+    GameInitSettings::HouseInfo secondHouse(HOUSE_HARKONNEN, 2);
+    secondHouse.addPlayerInfo(GameInitSettings::PlayerInfo("quix", "HumanPlayer"));
+    settings.addHouseInfo(secondHouse);
+
+    return settings;
+}
+
+bool accepts(const GameInitSettings& settings, std::string& reason) {
+    return GameInitSettingsPolicy::isAcceptableReceivedGameInitSettings(settings, reason);
+}
+
+} // namespace
+
+TEST_CASE("Received game info: a normal host snapshot is accepted",
+          "[network][security][gameinfo][compatibility]") {
+    std::string reason;
+    REQUIRE(accepts(plausibleReceivedSettings(), reason));
+    REQUIRE(reason.empty());
+}
+
+TEST_CASE("Received game info: impossible snapshots are refused before anything is committed",
+          "[network][security][gameinfo]") {
+    std::string reason;
+
+    SECTION("more houses than the lobby has seats") {
+        GameInitSettings settings = plausibleReceivedSettings();
+        for(int i = 0; i < MAX_CUSTOM_GAME_PLAYERS; i++) {
+            settings.addHouseInfo(GameInitSettings::HouseInfo(HOUSE_ORDOS, 1));
+        }
+        REQUIRE_FALSE(accepts(settings, reason));
+        REQUIRE(reason == "too many houses");
+    }
+
+    SECTION("more players in a house than seats") {
+        GameInitSettings settings = plausibleReceivedSettings();
+        settings.clearHouseInfo();
+        GameInitSettings::HouseInfo crowded(HOUSE_ATREIDES, 1);
+        for(int i = 0; i < 5; i++) {
+            crowded.addPlayerInfo(GameInitSettings::PlayerInfo("p", "HumanPlayer"));
+        }
+        settings.addHouseInfo(crowded);
+        REQUIRE_FALSE(accepts(settings, reason));
+        REQUIRE(reason == "too many players in one house");
+    }
+
+    SECTION("a map payload beyond the size limit") {
+        GameInitSettings settings = plausibleReceivedSettings(
+            "Arrakis Duel.ini", std::string(GameInitSettingsPolicy::kMaxMapFileSize + 1, 'x'));
+        REQUIRE_FALSE(accepts(settings, reason));
+        REQUIRE(reason == "map payload too large");
+    }
+
+    SECTION("an over-long filename") {
+        GameInitSettings settings = plausibleReceivedSettings(
+            std::string(GameInitSettingsPolicy::kMaxFilenameLength + 1, 'a'), "[MAP]\n");
+        REQUIRE_FALSE(accepts(settings, reason));
+        REQUIRE(reason == "filename too long");
+    }
+
+    SECTION("an out-of-range game speed") {
+        GameInitSettings settings = plausibleReceivedSettings();
+        settings.setGameSpeed(GAMESPEED_MAX + 1);
+        REQUIRE_FALSE(accepts(settings, reason));
+        REQUIRE(reason == "game speed out of range");
+
+        settings.setGameSpeed(GAMESPEED_MIN - 1);
+        REQUIRE_FALSE(accepts(settings, reason));
+    }
+
+    SECTION("a team number outside the lobby") {
+        GameInitSettings settings = plausibleReceivedSettings();
+        settings.clearHouseInfo();
+        settings.addHouseInfo(GameInitSettings::HouseInfo(HOUSE_ATREIDES, 9999));
+        REQUIRE_FALSE(accepts(settings, reason));
+        REQUIRE(reason == "team out of range");
+    }
+}
+
+TEST_CASE("Received game info: game type and house enums must be known",
+          "[network][security][gameinfo]") {
+    REQUIRE(GameInitSettingsPolicy::isKnownGameType(GameType::CustomMultiplayer));
+    REQUIRE(GameInitSettingsPolicy::isKnownGameType(GameType::CampaignCoop));
+    REQUIRE(GameInitSettingsPolicy::isKnownGameType(GameType::Invalid));
+    REQUIRE_FALSE(GameInitSettingsPolicy::isKnownGameType(static_cast<GameType>(42)));
+    REQUIRE_FALSE(GameInitSettingsPolicy::isKnownGameType(static_cast<GameType>(-7)));
+
+    REQUIRE(GameInitSettingsPolicy::isKnownHouse(HOUSE_HARKONNEN));
+    REQUIRE(GameInitSettingsPolicy::isKnownHouse(HOUSE_INVALID));
+    REQUIRE(GameInitSettingsPolicy::isKnownHouse(static_cast<HOUSETYPE>(NUM_HOUSES - 1)));
+    REQUIRE_FALSE(GameInitSettingsPolicy::isKnownHouse(static_cast<HOUSETYPE>(NUM_HOUSES)));
+    REQUIRE_FALSE(GameInitSettingsPolicy::isKnownHouse(static_cast<HOUSETYPE>(-99)));
+}
+
+TEST_CASE("Command batches: aggregate bounds are far below the product of the per-list bounds",
+          "[network][security][command][overflow]") {
+    REQUIRE(CommandValidation::isAcceptableCommandTotal(0));
+    REQUIRE(CommandValidation::isAcceptableCommandTotal(CommandValidation::kMaxCommandsPerPacket));
+    REQUIRE_FALSE(CommandValidation::isAcceptableCommandTotal(
+        static_cast<std::size_t>(CommandValidation::kMaxCommandsPerPacket) + 1));
+
+    // A packet that is nominally valid under the per-entry and per-list bounds alone would
+    // carry a quarter of a million commands; the aggregate bound is what actually stops it.
+    const std::size_t productOfBounds =
+        static_cast<std::size_t>(CommandValidation::kMaxCommandListEntries)
+        * static_cast<std::size_t>(CommandValidation::kMaxCommandsPerEntry);
+    REQUIRE_FALSE(CommandValidation::isAcceptableCommandTotal(productOfBounds));
+
+    // A real packet: the rolling history is ~156 cycles at the default speed and a busy cycle
+    // holds a command per selected unit.
+    REQUIRE(CommandValidation::isAcceptableCommandTotal(200));
+    REQUIRE(CommandValidation::isAcceptableCommandCountPerEntry(300));
+    REQUIRE(CommandValidation::isAcceptableCommandListEntryCount(200));
 }

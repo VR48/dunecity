@@ -66,6 +66,10 @@ public:
             team = stream.readSint32();
 
             Uint32 numPlayerInfo = stream.readUint32();
+            // A player info is two length-prefixed strings, so at least 8 bytes. On a
+            // packet-backed stream this refuses a count that cannot possibly be there before
+            // anything is allocated; file streams keep their existing behaviour.
+            stream.requireReadableElements(numPlayerInfo, 8);
             for(Uint32 i=0;i<numPlayerInfo;i++) {
                 playerInfoList.push_back(PlayerInfo(stream));
             }

@@ -373,6 +373,10 @@ constexpr Uint64 kMaxPeerBytesPerWindow = 8ull * 1024 * 1024;
 /// Raised byte budget while this peer is delivering a mod transfer that was asked for. A
 /// complete 10 MiB transfer arriving in a single burst (loopback or LAN) stays inside it.
 constexpr Uint64 kMaxModTransferBytesPerWindow = 24ull * 1024 * 1024;
+/// Largest selection a peer may announce. A player can box-select an army, so this is well
+/// above any real control group, but it is bounded: the set is copied into the receiving
+/// player's selection lists.
+constexpr std::size_t kMaxSelectionSize = 2048;
 /// Refused packets in one burst that justify dropping a peer.
 constexpr Uint32 kMaxRefusalsPerBurst = 64;
 /// Gap after which a burst of refusals is considered over.

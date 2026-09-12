@@ -129,10 +129,15 @@ inline bool isWellFormedCommand(Uint32 commandID, std::size_t parameterCount) {
 }
 
 /// Hard caps for a received COMMANDLIST packet. One legitimate packet covers
-/// [gameCycle - MILLI2CYCLES(2500), gameCycle + networkCycleBuffer), i.e. a few dozen entries,
-/// each holding the commands one player issued in a single cycle.
-constexpr Uint32 kMaxCommandListEntries = 1024;
-constexpr Uint32 kMaxCommandsPerEntry = 1024;
+/// [gameCycle - MILLI2CYCLES(2500), gameCycle + networkCycleBuffer): at the default game speed
+/// that is ~156 history cycles plus the buffer, and each entry holds the commands one player
+/// issued in a single cycle. A player pressing a control group or box-selecting hundreds of
+/// units still issues one command per unit in a cycle, so the per-cycle bound is generous.
+constexpr Uint32 kMaxCommandListEntries = 512;
+constexpr Uint32 kMaxCommandsPerEntry = 512;
+/// Aggregate bound for one packet. The product of the two bounds above would allow a quarter
+/// of a million commands in a nominally valid packet; a real one carries a handful.
+constexpr Uint32 kMaxCommandsPerPacket = 4096;
 
 /**
     \param  entryCount  number of cycle entries the packet claims to contain
@@ -148,6 +153,14 @@ inline bool isAcceptableCommandListEntryCount(Uint32 entryCount) {
 */
 inline bool isAcceptableCommandCountPerEntry(Uint32 commandCount) {
     return commandCount <= kMaxCommandsPerEntry;
+}
+
+/**
+    \param  totalCommands   commands decoded from one packet so far
+    \return true if the packet may hold this many commands in total
+*/
+inline bool isAcceptableCommandTotal(std::size_t totalCommands) {
+    return totalCommands <= static_cast<std::size_t>(kMaxCommandsPerPacket);
 }
 
 /// Extra cycles of slack accepted beyond the receiver's own command buffer, covering the

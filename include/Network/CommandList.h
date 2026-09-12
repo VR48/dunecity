@@ -73,8 +73,16 @@ public:
         // One entry is at least cycle + command count = 8 bytes.
         stream.requireReadableElements(numCommandListEntries, 8);
         commandList.reserve(numCommandListEntries);
+
+        std::size_t totalCommands = 0;
         for(Uint32 i = 0; i < numCommandListEntries; i++) {
             commandList.emplace_back(stream);
+            // The per-entry and per-list bounds multiply, so the aggregate is bounded too:
+            // one packet may not carry more commands than a real session ever produces.
+            totalCommands += commandList.back().commands.size();
+            if(!CommandValidation::isAcceptableCommandTotal(totalCommands)) {
+                throw InputStream::error("CommandList: too many commands in one packet!");
+            }
         }
     }
 

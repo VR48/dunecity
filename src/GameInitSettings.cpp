@@ -126,6 +126,8 @@ GameInitSettings::GameInitSettings(InputStream& stream) {
     gameOptions.immortalHumanPlayer = stream.readBool();
 
     Uint32 numHouseInfo = stream.readUint32();
+    // A house info is at least houseID + team + player count = 12 bytes.
+    stream.requireReadableElements(numHouseInfo, 12);
     for(Uint32 i=0;i<numHouseInfo;i++) {
         houseInfoList.push_back(HouseInfo(stream));
     }
@@ -140,6 +142,7 @@ GameInitSettings::GameInitSettings(InputStream& stream) {
 
             if(modMarker == GAMEINIT_MOD2_MARKER) {
                 Uint32 numHouseColors = stream.readUint32();
+                stream.requireReadableElements(numHouseColors, 4);
                 for(Uint32 i = 0; i < numHouseColors; i++) {
                     const int colorOfHouse = stream.readSint32();
                     if(i < houseInfoList.size()) {
