@@ -491,17 +491,27 @@ endif()
 # Link libraries
 if(EMSCRIPTEN)
     set_target_properties(dunecity PROPERTIES SUFFIX ".html")
+    # The production shell loads these external files before the generated
+    # runtime. Include them in raw CMake builds as well as packaged releases.
+    foreach(WEB_SHELL_ASSET shell.js shell.css)
+        configure_file("${CMAKE_SOURCE_DIR}/web/${WEB_SHELL_ASSET}"
+            "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${WEB_SHELL_ASSET}" COPYONLY)
+    endforeach()
     set_property(TARGET dunecity APPEND PROPERTY LINK_DEPENDS
         "${CMAKE_SOURCE_DIR}/web/shell.html")
     target_compile_options(dunecity PRIVATE
         "SHELL:-sUSE_SDL=2"
         "SHELL:-sUSE_SDL_MIXER=2"
         "SHELL:-sUSE_SDL_TTF=2"
+        "SHELL:-fexceptions"
+        "SHELL:-sDISABLE_EXCEPTION_CATCHING=0"
     )
     target_link_options(dunecity PRIVATE
         "SHELL:-sUSE_SDL=2"
         "SHELL:-sUSE_SDL_MIXER=2"
         "SHELL:-sUSE_SDL_TTF=2"
+        "SHELL:-fexceptions"
+        "SHELL:-sDISABLE_EXCEPTION_CATCHING=0"
         "SHELL:-sASYNCIFY=1"
         "SHELL:-sALLOW_MEMORY_GROWTH=1"
         "SHELL:-sINITIAL_MEMORY=268435456"
