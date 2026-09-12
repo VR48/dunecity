@@ -16,6 +16,7 @@ class AdmissionError extends Error {
     this.name = 'AdmissionError';
     this.httpStatus = httpStatus;
     this.code = code;
+    this.controlToken = crypto.randomBytes(32).toString('hex');
   }
 }
 
@@ -45,6 +46,7 @@ class Room {
     // Independent of the invitation credential; only this ID belongs in telemetry.
     this.logId = crypto.randomBytes(16).toString("base64url");
     this.code = code;
+    this.controlToken = crypto.randomBytes(32).toString('hex');
     this.maxPeers = spec.maxPeers;
     this.mode = spec.mode;
     this.gameProtocol = spec.gameProtocol;
@@ -143,6 +145,24 @@ class RoomStore {
     return id;
   }
 
+  setVisibility(rawCode, token, visibility) {
+    this.sweep();
+    const room = this.rooms.get(normalizeRoomCode(rawCode));
+    if (!room || room.closed || !room.host || typeof token !== 'string'
+        || !/^[0-9a-f]{64}$/.test(token)
+        || !crypto.timingSafeEqual(Buffer.from(token, 'hex'), Buffer.from(room.controlToken, 'hex'))) {
+      throw new AdmissionError(403, 'forbidden', 'Only the host can change visibility.');
+    }
+    if (room.everStarted || room.phase !== PHASE.LOBBY) {
+      throw new AdmissionError(409, 'match_in_progress', 'Visibility cannot change after play starts.');
+    }
+    if (visibility !== 'public' && visibility !== 'private') {
+      throw new AdmissionError(400, 'bad_request', 'Choose Public or Private.');
+    }
+    room.visibility = visibility;
+    return room;
+  }
+
   listPublicRooms(spec, offset = 0) {
     this.sweep();
     const eligible = [...this.rooms.values()].filter(room =>
@@ -237,6 +257,9 @@ class RoomStore {
     const room = this.rooms.get(code);
     if (room === undefined || room.closed) {
       throw new AdmissionError(404, 'room_not_found', 'That room code is not open.');
+    }
+    if (spec.publicOnly && room.visibility !== 'public') {
+      throw new AdmissionError(404, 'room_not_found', 'That public game is no longer listed.');
     }
     if (room.gameProtocol !== spec.gameProtocol || room.contentHash !== spec.contentHash) {
       throw new AdmissionError(409, 'content_mismatch',

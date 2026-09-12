@@ -75,6 +75,8 @@ public:
     bool isServer() const { return bIsServer; };
     bool isLANServer() const { return bLANServer; };
 
+    void setPublicRelayRoom(bool value) { publicRelayRoom = value; }
+    bool isPublicRelayRoom() const { return publicRelayRoom; }
     bool isRelaySession() const { return transport == Transport::RoomRelay; }
 
     /**
@@ -379,6 +381,7 @@ public:
     }
 
 private:
+    bool publicRelayRoom = false;
     static void debugNetwork(PRINTF_FORMAT_STRING const char* fmt, ...) PRINTF_VARARG_FUNC(1);
 
     /// Bundles the game's callbacks for the shared payload handling.

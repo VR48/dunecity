@@ -595,10 +595,9 @@ CustomGamePlayers::CustomGamePlayers(const GameInitSettings& newGameInitSettings
         // Update Discord Rich Presence for multiplayer lobby
         updateDiscordLobbyPresence();
 
-        // A crossplay room is joined with a code rather than an address, so the code has to be
-        // on screen for as long as the lobby is open.
+        // Only private hosts need an invitation code; public games are joined from the list.
         const std::string roomCode = pNetworkManager->getRoomCode();
-        if(!roomCode.empty()) {
+        if(bServer && !pNetworkManager->isPublicRelayRoom() && !roomCode.empty()) {
             copyCodeButton.setVisible(true);
             copyCodeButton.setEnabled(true);
             copyCodeButton.setOnClick([this, roomCode]() {

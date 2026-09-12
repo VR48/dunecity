@@ -2,6 +2,8 @@
 
 const { LIMITS, RELAY_PROTOCOL_VERSION, ROLE } = require('./constants');
 const { AdmissionError } = require('./rooms');
+const { LobbyChat } = require('./lobby');
+const { WindowCounter, BoundedRateTable } = require('./limits');
 const { NULL_LIFECYCLE } = require('./analytics');
 
 // HTTPS admission. This is deliberately a separate, bounded operation from the gameplay socket:
@@ -82,6 +84,8 @@ const FIELD_RULES = {
   runtime: { max: 16, pattern: /^(native|browser)$/ },
   mode: { max: 16, pattern: /^(coop|custom)$/ },
   visibility: { max: 7, pattern: /^(public|private)$/ },
+  control: { max: 64, pattern: /^[0-9a-f]{64}$/ },
+  publicOnly: { max: 1, pattern: /^[01]$/ },
   room: { max: 16, pattern: /^[0-9A-Za-z-]{1,16}$/ },
 };
 
@@ -265,12 +269,18 @@ function clientAddress(req, trustForwardedFor) {
  */
 function createAdmissionHandler(ctx) {
   if (ctx.lifecycle === undefined) ctx.lifecycle = NULL_LIFECYCLE;
+  const lobby = new LobbyChat(ctx.now);
+  // Polling must not exhaust the much smaller host/join admission allowance.
+  const pollGlobal = new WindowCounter(4096, 60000);
+  const pollAddress = new BoundedRateTable({ limit: 90, windowMs: 60000,
+    maxEntries: LIMITS.HTTP_ADDRESS_TABLE_ENTRIES, ttlMs: LIMITS.HTTP_ADDRESS_TABLE_TTL_MS });
   return async function handleRequest(req, res) {
     const address = clientAddress(req, ctx.config.trustForwardedFor);
     const url = (req.url || '').split('?')[0];
     const cors = corsHeaders(req.headers, ctx.config.allowedOrigins);
     const isAdmissionPath = url === '/v1/admission/host' || url === '/v1/admission/join'
-      || url === '/v1/admission/list';
+      || url === '/v1/admission/list' || url === '/v1/admission/visibility'
+      || ['/v1/lobby/enter', '/v1/lobby/poll', '/v1/lobby/say'].includes(url);
 
     try {
       if (req.method === 'GET' && url === '/v1/health') {
@@ -314,10 +324,11 @@ function createAdmissionHandler(ctx) {
       checkOrigin(req.headers, ctx.config.allowedOrigins);
 
       const now = ctx.now();
-      if (!ctx.globalLimiter.allow(now, 1)) {
+      const polling = url === '/v1/admission/list' || url === '/v1/lobby/poll' || url === '/v1/lobby/say';
+      if (!(polling ? pollGlobal : ctx.globalLimiter).allow(now, 1)) {
         throw new AdmissionError(429, 'rate_limited', 'The relay is busy. Try again in a moment.');
       }
-      if (!ctx.addressLimiter.allow(address, now)) {
+      if (!(polling ? pollAddress : ctx.addressLimiter).allow(address, now)) {
         throw new AdmissionError(429, 'rate_limited', 'Too many attempts. Try again in a minute.');
       }
 
@@ -339,6 +350,18 @@ function createAdmissionHandler(ctx) {
           'This relay expects a different game version.');
       }
 
+      if (url.startsWith('/v1/lobby/')) {
+        const lines = lobby.handle(url.slice('/v1/lobby/'.length), form, { gameProtocol, contentHash });
+        sendText(res, 200, [['status', 'ok'], ['protocol', String(RELAY_PROTOCOL_VERSION)], ...lines], false, cors);
+        return;
+      }
+      if (url === '/v1/admission/visibility') {
+        const room = ctx.store.setVisibility(requireField(form, 'room'), requireField(form, 'control'),
+          requireField(form, 'visibility'));
+        sendText(res, 200, [['status', 'ok'], ['protocol', String(RELAY_PROTOCOL_VERSION)],
+          ['visibility', room.visibility]], false, cors);
+        return;
+      }
       let result;
       let role;
       if (url === '/v1/admission/list') {
@@ -349,7 +372,7 @@ function createAdmissionHandler(ctx) {
         sendText(res, 200, [
           ['status', 'ok'], ['protocol', String(RELAY_PROTOCOL_VERSION)], ['next', String(page.next)],
           ...page.games.map(game => ['game', [game.code, game.players, game.maxPeers,
-            game.mode, Buffer.from(game.hostName, 'utf8').toString('hex')].join('|')]),
+            game.mode, Buffer.from(game.hostName, 'latin1').toString('hex')].join('|')]),
         ], false, cors);
         return;
       }
@@ -378,6 +401,7 @@ function createAdmissionHandler(ctx) {
         const roomCode = requireField(form, 'room');
         result = ctx.store.joinRoom(roomCode, {
           gameProtocol, contentHash, appVersion, runtime,
+          publicOnly: optionalField(form, 'publicOnly', '0') === '1',
         });
         role = ROLE.CLIENT;
       }
@@ -390,6 +414,8 @@ function createAdmissionHandler(ctx) {
         ['grantExpiresMs', String(ctx.store.grantTtlMs)],
         ['maxPeers', String(result.room.maxPeers)],
         ['url', ctx.config.publicSocketUrl],
+        ['visibility', result.room.visibility],
+        ...(role === ROLE.HOST ? [['control', result.room.controlToken]] : []),
       ], false, cors);
       void role;
     } catch (err) {

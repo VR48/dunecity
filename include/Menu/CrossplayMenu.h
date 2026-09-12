@@ -21,7 +21,7 @@
 /**
     Hosting and joining a game that desktop and browser players can share.
 
-    A host creates a room and gets a short code to pass to a friend; a friend types the code in.
+    Public games are discovered in the lobby; private games use invitation codes.
     There is no address to enter and no router to configure, because both sides only ever make
     one outbound connection to the same game service.
 */
@@ -33,6 +33,7 @@
 #include <GUI/ListBox.h>
 #include <GUI/StaticContainer.h>
 #include <GUI/TextBox.h>
+#include <GUI/TextView.h>
 #include <GUI/TextButton.h>
 #include <GUI/Spacer.h>
 #include <GUI/VBox.h>
@@ -71,7 +72,12 @@ private:
     void refreshPublicGames(unsigned offset = 0);
     void joinPublicGame();
 
-    void beginAdmission(bool hosting);
+    void beginAdmission(bool hosting, bool publicJoin = false);
+    AdmissionRequest lobbyRequest() const;
+    void confirmChatName();
+    void sendLobbyChat();
+    void updateLobbyChat();
+    void changeVisibility();
     void openRelaySession();
     void teardownSession(std::string reason);
     void enterReceivedLobby(const GameInitSettings& gameInitSettings,
@@ -99,6 +105,17 @@ private:
 
     RoomAdmissionClient admission;
     RoomAdmissionClient directory;
+    RoomAdmissionClient chat;
+    RoomAdmissionClient visibilityUpdate;
+    AdmissionOperation chatAction = AdmissionOperation::Room;
+    std::string chatSession;
+    std::uint64_t chatCursor = 0;
+    Uint32 nextChatPoll = 0;
+    bool chatPending = false;
+    bool visibilityPending = false;
+    bool publicRoom = true;
+    bool showPrivateJoin = false;
+    std::vector<std::string> chatLines;
     bool directoryPending = false;
     unsigned nextDirectoryPage = 0;
     Uint32 nextDirectoryRefresh = 0;
@@ -112,6 +129,13 @@ private:
     HBox            playerNameHBox;
     Label           playerNameLabel;
     TextBox         playerNameTextBox;
+    TextButton      confirmNameButton;
+    TextButton      privateInviteButton;
+    Label           chatLabel;
+    TextView        chatHistory;
+    HBox            chatInputHBox;
+    TextBox         chatInput;
+    TextButton      chatSendButton;
     HBox            visibilityHBox;
     Label           visibilityLabel;
     DropDownBox     visibilityChoice;

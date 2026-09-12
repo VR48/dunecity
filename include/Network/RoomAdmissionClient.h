@@ -43,6 +43,13 @@
 #include <vector>
 #include <array>
 
+enum class AdmissionOperation { Room, Visibility, ChatEnter, ChatPoll, ChatSay };
+struct LobbyChatMessage {
+    std::uint64_t id = 0;
+    std::string name;
+    std::string text;
+};
+
 struct PublicRelayGame {
     std::string roomCode;
     std::string hostName;
@@ -62,6 +69,11 @@ struct AdmissionResponse {
     std::uint8_t  maxPeers       = 0;
     std::vector<PublicRelayGame> games;
     unsigned nextPage = 0;
+    std::string visibility;
+    std::string controlToken;
+    std::string chatSession;
+    std::uint64_t chatCursor = 0;
+    std::vector<LobbyChatMessage> messages;
 
     // Only when ok == false.
     std::string   errorCode;
@@ -75,6 +87,36 @@ constexpr std::size_t kMaxResponseLines  = 16;
 constexpr std::size_t kMaxLineBytes      = 512;
 constexpr std::size_t kMaxKeyBytes       = 32;
 constexpr std::size_t kMaxValueBytes     = 480;
+
+inline std::string hexText(const std::string& text) {
+    static const char hex[] = "0123456789abcdef";
+    std::string out;
+    for(unsigned char c : text) { out += hex[c >> 4]; out += hex[c & 15]; }
+    return out;
+}
+
+inline bool decodeHexText(const std::string& hex, std::size_t maxBytes, std::string& out) {
+    if(hex.empty() || hex.size() > maxBytes * 2 || hex.size() % 2
+       || !RoomRelay::isLowercaseHex(hex)) return false;
+    const auto nibble = [](char c) { return c <= '9' ? c - '0' : c - 'a' + 10; };
+    out.clear();
+    for(std::size_t i = 0; i < hex.size(); i += 2) {
+        const unsigned char c = nibble(hex[i]) * 16 + nibble(hex[i + 1]);
+        if(c < 32 || c == 127) return false;
+        out += static_cast<char>(c);
+    }
+    return true;
+}
+
+inline bool parseChatNumber(const std::string& text, std::uint64_t& value) {
+    if(text.empty() || text.size() > 15) return false;
+    value = 0;
+    for(char c : text) {
+        if(c < '0' || c > '9') return false;
+        value = value * 10 + (c - '0');
+    }
+    return true;
+}
 
 inline bool parsePublicGame(const std::string& value, PublicRelayGame& game) {
     std::array<std::string, 5> fields;
@@ -128,7 +170,8 @@ inline bool parsePublicGame(const std::string& value, PublicRelayGame& game) {
     \return true if the response could be understood (including a well-formed error response)
 */
 inline bool parseAdmissionResponse(const std::string& body, AdmissionResponse& out,
-                                   std::string& error, bool directory = false) {
+                                   std::string& error, bool directory = false,
+                                   AdmissionOperation operation = AdmissionOperation::Room) {
     out = AdmissionResponse();
 
     if(body.empty() || body.size() > kMaxResponseBytes) {
@@ -139,6 +182,7 @@ inline bool parseAdmissionResponse(const std::string& body, AdmissionResponse& o
     bool sawStatus = false;
     bool sawProtocol = false;
     bool sawNext = false;
+    bool sawVisibility = false, sawControl = false, sawSession = false, sawCursor = false;
     std::size_t lineCount = 0;
     std::size_t cursor = 0;
 
@@ -192,7 +236,7 @@ inline bool parseAdmissionResponse(const std::string& body, AdmissionResponse& o
             }
 
             if(key == "status") {
-                if(directory && sawStatus) { error = "The game list is malformed."; return false; }
+                if(sawStatus) { error = "The game list is malformed."; return false; }
                 sawStatus = true;
                 out.ok = (value == "ok");
                 if(!out.ok && value != "error") {
@@ -200,7 +244,7 @@ inline bool parseAdmissionResponse(const std::string& body, AdmissionResponse& o
                     return false;
                 }
             } else if(key == "protocol") {
-                if(directory && sawProtocol) { error = "The game list is malformed."; return false; }
+                if(sawProtocol) { error = "The game list is malformed."; return false; }
                 sawProtocol = true;
                 unsigned long parsed = 0;
                 if(value.empty() || value.size() > 5) {
@@ -239,6 +283,37 @@ inline bool parseAdmissionResponse(const std::string& body, AdmissionResponse& o
                     }
                 }
                 out.games.push_back(std::move(game));
+            } else if(key == "visibility") {
+                if(sawVisibility || (value != "public" && value != "private")) {
+                    error = "The game visibility answer is malformed."; return false;
+                }
+                sawVisibility = true;
+                out.visibility = value;
+            } else if(key == "control" || key == "session") {
+                bool& seen = key == "control" ? sawControl : sawSession;
+                if(seen || value.size() != 64 || !RoomRelay::isLowercaseHex(value)) {
+                    error = "The game service sent an unusable credential."; return false;
+                }
+                seen = true;
+                (key == "control" ? out.controlToken : out.chatSession) = value;
+            } else if(key == "cursor") {
+                if(sawCursor || !parseChatNumber(value, out.chatCursor)) {
+                    error = "The lobby chat answer is malformed."; return false;
+                }
+                sawCursor = true;
+            } else if(key == "chat") {
+                LobbyChatMessage message;
+                const auto first = value.find('|');
+                const auto second = first == std::string::npos ? first : value.find('|', first + 1);
+                if(operation != AdmissionOperation::ChatPoll || out.messages.size() >= 12
+                   || first == std::string::npos || second == std::string::npos
+                   || !parseChatNumber(value.substr(0, first), message.id) || message.id == 0
+                   || (!out.messages.empty() && message.id <= out.messages.back().id)
+                   || !decodeHexText(value.substr(first + 1, second - first - 1), 64, message.name)
+                   || !decodeHexText(value.substr(second + 1), 120, message.text)) {
+                    error = "The lobby chat answer is malformed."; return false;
+                }
+                out.messages.push_back(std::move(message));
             } else if(key == "room") {
                 out.roomCode = value;
             } else if(key == "grant") {
@@ -299,6 +374,13 @@ inline bool parseAdmissionResponse(const std::string& body, AdmissionResponse& o
         error = "This version of the game cannot use that game service.";
         return false;
     }
+    if(operation != AdmissionOperation::Room) {
+        const bool valid = operation == AdmissionOperation::Visibility ? sawVisibility
+            : sawCursor && (operation != AdmissionOperation::ChatEnter || sawSession)
+              && (out.messages.empty() || out.messages.back().id <= out.chatCursor);
+        if(!valid) { error = "The game service sent an incomplete answer."; return false; }
+        return true;
+    }
     if(directory) {
         if(!sawNext) { error = "The game list is malformed."; return false; }
         return true;
@@ -358,6 +440,13 @@ struct AdmissionRequest {
     std::string contentHash;
     std::string runtime;        ///< "native" or "browser"; a claim, and logged as one
 
+    AdmissionOperation operation = AdmissionOperation::Room;
+    std::string controlToken;
+    std::string chatSession;
+    std::string displayName;
+    std::string chatText;
+    std::uint64_t chatCursor = 0;
+    bool publicOnly = false;
     bool        hosting  = true;
     bool        listing = false;
     unsigned    listOffset = 0;
@@ -401,6 +490,7 @@ private:
     AdmissionResponse     response_;
     std::string           errorMessage_;
     bool                  listing_ = false;
+    AdmissionOperation operation_ = AdmissionOperation::Room;
 };
 
 #endif // ROOMADMISSIONCLIENT_H

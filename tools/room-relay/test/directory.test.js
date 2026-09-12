@@ -16,15 +16,15 @@ describe('public room directory', () => {
     const relay = await startRelay();
     try {
       const privateHost = await joinAsHost(relay);
-      const publicHost = await joinAsHost(relay, { name: 'Alice|=Host',
+      const publicHost = await joinAsHost(relay, { name: Buffer.from('Álice|=Host', 'utf8').toString('latin1'),
         admission: { visibility: 'public', mode: 'custom', maxPeers: 4 } });
       const absentHost = await admitHost(relay, { visibility: 'public' });
       const response = await list(relay);
       assert.equal(response.status, 200);
       assert.match(response.text, new RegExp(`game=${publicHost.room}\\|1\\|4\\|custom\\|`));
-      assert.ok(response.text.includes(Buffer.from('Alice|=Host').toString('hex')));
+      assert.ok(response.text.includes(Buffer.from('Álice|=Host').toString('hex')));
       for (const secret of [privateHost.room, privateHost.admission.fields.grant,
-        publicHost.admission.fields.grant, absentHost.fields.room, absentHost.fields.grant]) {
+        publicHost.admission.fields.grant, publicHost.admission.fields.control, absentHost.fields.room, absentHost.fields.grant]) {
         assert.ok(!response.text.includes(secret));
       }
       assert.equal(response.headers['cache-control'], 'no-store');

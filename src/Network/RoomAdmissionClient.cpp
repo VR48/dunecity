@@ -66,7 +66,16 @@ std::string buildFormBody(const AdmissionRequest& request) {
     body += "&gameProtocol=" + std::to_string(static_cast<unsigned>(request.gameProtocol));
     body += "&contentHash=" + RoomAdmission::encodeFormValue(request.contentHash);
     body += "&runtime=" + RoomAdmission::encodeFormValue(request.runtime);
-    if(request.listing) {
+    if(request.operation == AdmissionOperation::Visibility) {
+        body += "&room=" + RoomAdmission::encodeFormValue(request.roomCode);
+        body += "&control=" + RoomAdmission::encodeFormValue(request.controlToken);
+        body += request.publicRoom ? "&visibility=public" : "&visibility=private";
+    } else if(request.operation != AdmissionOperation::Room) {
+        body += "&session=" + RoomAdmission::encodeFormValue(request.chatSession);
+        body += "&name=" + RoomAdmission::hexText(request.displayName);
+        body += "&text=" + RoomAdmission::hexText(request.chatText);
+        body += "&cursor=" + std::to_string(request.chatCursor);
+    } else if(request.listing) {
         body += "&offset=" + std::to_string(request.listOffset);
     } else if(request.hosting) {
         body += "&maxPeers=" + std::to_string(static_cast<unsigned>(request.maxPeers));
@@ -74,6 +83,7 @@ std::string buildFormBody(const AdmissionRequest& request) {
         body += request.publicRoom ? "&visibility=public" : "&visibility=private";
     } else {
         body += "&room=" + RoomAdmission::encodeFormValue(request.roomCode);
+        body += request.publicOnly ? "&publicOnly=1" : "&publicOnly=0";
     }
     return body;
 }
@@ -82,6 +92,13 @@ std::string buildEndpointUrl(const AdmissionRequest& request) {
     std::string base = request.baseUrl;
     while(!base.empty() && base.back() == '/') {
         base.pop_back();
+    }
+    switch(request.operation) {
+        case AdmissionOperation::Visibility: return base + "/v1/admission/visibility";
+        case AdmissionOperation::ChatEnter: return base + "/v1/lobby/enter";
+        case AdmissionOperation::ChatPoll: return base + "/v1/lobby/poll";
+        case AdmissionOperation::ChatSay: return base + "/v1/lobby/say";
+        default: break;
     }
     return base + (request.listing ? "/v1/admission/list"
         : request.hosting ? "/v1/admission/host" : "/v1/admission/join");
@@ -259,7 +276,7 @@ void RoomAdmissionClient::finishWithBody(long httpStatus, const std::string& bod
 
     AdmissionResponse parsed;
     std::string error;
-    if(!RoomAdmission::parseAdmissionResponse(body, parsed, error, listing_)) {
+    if(!RoomAdmission::parseAdmissionResponse(body, parsed, error, listing_, operation_)) {
         finishWithError(error);
         return;
     }
@@ -285,6 +302,7 @@ void RoomAdmissionClient::begin(const AdmissionRequest& request) {
     response_ = AdmissionResponse();
     errorMessage_.clear();
     listing_ = request.listing;
+    operation_ = request.operation;
 
     std::string error;
     if(!isAcceptableAdmissionBaseUrl(request.baseUrl, request.allowLoopbackPlaintext, error)) {
@@ -295,21 +313,21 @@ void RoomAdmissionClient::begin(const AdmissionRequest& request) {
         finishWithError("The game could not describe itself to the game service.");
         return;
     }
-    if(!request.hosting && !request.listing) {
+    if(request.operation == AdmissionOperation::Room && !request.hosting && !request.listing) {
         std::string normalized;
         if(!RoomRelay::normalizeRoomCode(request.roomCode, normalized)) {
             finishWithError("That game code is not valid. Codes look like ABCD-EFGH-JKMN.");
             return;
         }
     }
-    if(request.hosting && !request.listing
+    if(request.operation == AdmissionOperation::Room && request.hosting && !request.listing
        && (request.maxPeers < 2 || request.maxPeers > RoomRelay::Limits::kMaxPeersPerRoom)) {
         finishWithError("That number of players is not supported online.");
         return;
     }
 
     AdmissionRequest normalizedRequest = request;
-    if(!request.hosting && !request.listing) {
+    if(request.operation == AdmissionOperation::Room && !request.hosting && !request.listing) {
         RoomRelay::normalizeRoomCode(request.roomCode, normalizedRequest.roomCode);
     }
 

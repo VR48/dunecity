@@ -793,6 +793,30 @@ void testStateDigest() {
           "a digest describes itself for the log");
 }
 
+void testLobbyChatParsing() {
+    AdmissionResponse response;
+    std::string error;
+    const std::string header = "status=ok\nprotocol=1\n";
+    auto parse = [&](const std::string& body, AdmissionOperation operation) {
+        return RoomAdmission::parseAdmissionResponse(body, response, error, false, operation);
+    };
+    const std::string token(64, 'a');
+    check(parse(header + "session=" + token + "\ncursor=0\n", AdmissionOperation::ChatEnter), "chat confirmation accepts bounded token");
+    check(!parse(header + "cursor=0\n", AdmissionOperation::ChatEnter), "chat confirmation requires token");
+    check(parse(header + "cursor=1\nchat=1|c3816c696365|68656c6c6f\n", AdmissionOperation::ChatPoll)
+          && response.messages[0].name == "\xc3\x81lice", "chat preserves UTF-8 bytes");
+    check(!parse(header + "cursor=1\nchat=2|41|42\n", AdmissionOperation::ChatPoll), "chat cursor cannot precede messages");
+    check(!parse(header + "cursor=1\nchat=1|41|420a\n", AdmissionOperation::ChatPoll), "chat refuses control injection");
+    check(!parse(header + "cursor=1\nchat=1|41|42\nchat=1|41|42\n", AdmissionOperation::ChatPoll), "chat refuses repeated ids");
+    check(!parse(header + "cursor=1\ncursor=2\n", AdmissionOperation::ChatPoll), "chat refuses duplicate cursor");
+    check(!parse(header + "cursor=1000000000000000\n", AdmissionOperation::ChatPoll), "chat cursor is bounded on wasm32");
+    check(!parse(header + "cursor=1\nchat=1|41|42\n", AdmissionOperation::ChatSay), "send cannot masquerade as poll");
+    check(parse(header + "visibility=private\n", AdmissionOperation::Visibility) && response.visibility == "private", "host control acknowledges private visibility");
+    check(!parse(header, AdmissionOperation::Visibility), "host control requires visibility acknowledgement");
+    check(!parse(header + "visibility=public\nvisibility=private\n", AdmissionOperation::Visibility), "host control refuses ambiguous acknowledgement");
+    check(!parse(header + "visibility=private\n", AdmissionOperation::Room), "control response cannot replace admission grant");
+}
+
 } // namespace
 
 int main() {
@@ -806,6 +830,7 @@ int main() {
     testEndpointValidation();
     testRoomCodes();
     testAdmissionParsing();
+    testLobbyChatParsing();
     testWireFixtures();
     testStateDigest();
 
