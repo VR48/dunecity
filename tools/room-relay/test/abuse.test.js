@@ -7,6 +7,7 @@ const protocol = require('../src/protocol');
 const { S2C, GAME, CLOSE, PHASE, LIMITS, LEAVE_REASON } = require('../src/constants');
 const {
   startRelay, joinAsHost, joinAsClient, admitHost, admitJoin, TestClient, delay, GAME_PROTOCOL,
+  CONTENT_HASH,
 } = require('./helpers');
 
 test('a replayed grant is refused', async (t) => {
@@ -15,11 +16,15 @@ test('a replayed grant is refused', async (t) => {
 
   const admission = await admitHost(relay);
   const first = await TestClient.connect(relay.socketUrl);
-  first.send(protocol.encodeHello({ grant: admission.fields.grant, gameProtocol: GAME_PROTOCOL }));
+  first.send(protocol.encodeHello({ grant: admission.fields.grant, gameProtocol: GAME_PROTOCOL,
+    contentHash: CONTENT_HASH,
+  }));
   await first.expect(S2C.WELCOME);
 
   const replay = await TestClient.connect(relay.socketUrl);
-  replay.send(protocol.encodeHello({ grant: admission.fields.grant, gameProtocol: GAME_PROTOCOL }));
+  replay.send(protocol.encodeHello({ grant: admission.fields.grant, gameProtocol: GAME_PROTOCOL,
+    contentHash: CONTENT_HASH,
+  }));
   const err = await replay.expect(S2C.ERROR);
   assert.equal(err.code, CLOSE.UNAUTHORIZED);
   assert.equal((await replay.waitForClose()).code, CLOSE.UNAUTHORIZED);
@@ -34,7 +39,9 @@ test('two connections racing with the same grant admit at most one', async (t) =
   const admission = await admitHost(relay);
   const a = await TestClient.connect(relay.socketUrl);
   const b = await TestClient.connect(relay.socketUrl);
-  const hello = protocol.encodeHello({ grant: admission.fields.grant, gameProtocol: GAME_PROTOCOL });
+  const hello = protocol.encodeHello({ grant: admission.fields.grant, gameProtocol: GAME_PROTOCOL,
+    contentHash: CONTENT_HASH,
+  });
   a.send(hello);
   b.send(hello);
 
@@ -90,7 +97,9 @@ test('a foreign browser origin cannot even open the socket', async (t) => {
   const allowed = await TestClient.connect(relay.socketUrl, {
     headers: { origin: 'https://dunecity.example' },
   });
-  allowed.send(protocol.encodeHello({ grant: admission.fields.grant, gameProtocol: GAME_PROTOCOL }));
+  allowed.send(protocol.encodeHello({ grant: admission.fields.grant, gameProtocol: GAME_PROTOCOL,
+    contentHash: CONTENT_HASH,
+  }));
   await allowed.expect(S2C.WELCOME);
   allowed.close();
 });
@@ -506,6 +515,7 @@ test('hosting and joining races do not leave a room without a host record', asyn
   const guest = await TestClient.connect(relay.socketUrl);
   guest.send(protocol.encodeHello({
     grant: join.fields.grant, gameProtocol: GAME_PROTOCOL, displayName: 'early',
+    contentHash: CONTENT_HASH, runtime: 'browser',
   }));
   const guestWelcome = await guest.expect(S2C.WELCOME);
   assert.equal(guestWelcome.role, 2);
@@ -513,6 +523,7 @@ test('hosting and joining races do not leave a room without a host record', asyn
   const host = await TestClient.connect(relay.socketUrl);
   host.send(protocol.encodeHello({
     grant: admission.fields.grant, gameProtocol: GAME_PROTOCOL, displayName: 'late-host',
+    contentHash: CONTENT_HASH,
   }));
   const hostWelcome = await host.expect(S2C.WELCOME);
   assert.equal(hostWelcome.role, 1);

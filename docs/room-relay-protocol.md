@@ -112,6 +112,13 @@ length- and charset-checking it (§3.4).
   anyway. Codes are matched case-insensitively and dashes are optional on input.
 - The *only* thing a room code grants is the right to ask for a client grant. It is never sent
   over the WebSocket.
+- A grant records the answers admission was given: `gameProtocol`, `contentHash`, `appVersion`
+  and `runtime`. The `HELLO` that redeems it must repeat them exactly, or the socket is closed
+  (`4450` for protocol or content, `4401` for version or runtime). Admission decided real things
+  from those answers — which room the code matched, whether the content agreed — so a handshake
+  that says something else is either a grant taken by a different client or one client telling
+  two stories. This is **consistency, not authentication**: `runtime` in particular stays a
+  client claim, and a peer that lies consistently is still believed.
 - A grant is bound to the room phase it was issued in. A phase change invalidates every
   outstanding grant, and redeeming one afterwards consumes it and fails with `4401`, whichever
   order the start and the handshake arrive in.
@@ -244,10 +251,12 @@ u8   nameLen                   ; 1..64
 The room and the role come from the grant, not from this frame. A client cannot ask to be the
 host, cannot pick its room and cannot pick its peer id.
 
-Failure modes: `4450` on relay version mismatch or a game protocol that differs from the room's,
-`4401` on an unknown/expired/consumed grant, `4409` if the room filled while the grant was
-outstanding, `4403` if the room already has a host or if `displayName` is already used in that
-room, `4400` on a malformed frame.
+Failure modes: `4450` on relay version mismatch, on a game protocol that differs from the room's,
+or on a `contentHash` that differs from the one the grant was issued for; `4401` on an
+unknown/expired/consumed grant, on a grant invalidated by a phase change, or on an `appVersion`
+or `runtime` that differs from the one the grant was issued for; `4409` if the room filled while
+the grant was outstanding; `4403` if the room already has a host or if `displayName` is already
+used in that room; `4400` on a malformed frame.
 
 The display-name check matters because the game resolves a command list to a player by name;
 two players in one room sharing a name would let one take over the other's commands. The relay

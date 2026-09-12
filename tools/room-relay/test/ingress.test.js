@@ -97,7 +97,14 @@ describe('HTTP ingress bounds', () => {
   });
 
   it('caps how many admission sockets can be open at once, and recovers', async () => {
-    const relay = await startRelay(TIGHT);
+    // A longer headers deadline than the other cases: the four sockets have to still be open
+    // together when the fifth arrives, even on a loaded machine running every suite at once.
+    const relay = await startRelay({
+      ...TIGHT,
+      httpHeadersTimeoutMs: 1000,
+      httpRequestTimeoutMs: 1500,
+      httpIdleSocketTimeoutMs: 1500,
+    });
     const idle = [];
     try {
       for (let i = 0; i < TIGHT.maxHttpSockets; i += 1) {
@@ -115,7 +122,7 @@ describe('HTTP ingress bounds', () => {
       assert.equal(relay.httpSocketCount, TIGHT.maxHttpSockets);
 
       // The idle sockets are reaped by the headers deadline, and capacity comes back.
-      await waitFor(() => relay.httpSocketCount === 0, 3000);
+      await waitFor(() => relay.httpSocketCount === 0, 6000);
       for (const client of idle) assert.equal(client.closed, true);
       const ok = await admitHost(relay);
       assert.equal(ok.fields.status, 'ok');

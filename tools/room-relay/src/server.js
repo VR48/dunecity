@@ -386,6 +386,27 @@ function createRelay(userConfig = {}) {
       }
     }
 
+    // The handshake has to give the same answers the grant was issued for. Admission decided
+    // room membership from these values - which room the code matched, whether the content
+    // agreed - so a handshake that says something else is either a grant used by a different
+    // client or one client telling two stories. This is consistency, not authentication:
+    // runtime and version remain claims, and a peer can still lie about them consistently.
+    const claims = admitted.claims;
+    if (msg.gameProtocol !== claims.gameProtocol || msg.contentHash !== claims.contentHash) {
+      closeConnection(conn, CLOSE.VERSION_MISMATCH,
+        'This game needs the same version and content as the invitation was issued for.');
+      return;
+    }
+    if (msg.appVersion !== claims.appVersion || msg.runtime !== claims.runtime) {
+      log.emit('connection_denied', {
+        code: CLOSE.UNAUTHORIZED,
+        reason: 'grant_claims',
+        addressTag: log.addressTag(conn.address),
+      });
+      closeConnection(conn, CLOSE.UNAUTHORIZED, 'That invitation was issued to another client.');
+      return;
+    }
+
     conn.authenticated = true;
     conn.role = admitted.role;
     conn.room = room;

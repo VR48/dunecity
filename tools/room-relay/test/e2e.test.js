@@ -7,6 +7,7 @@ const protocol = require('../src/protocol');
 const { S2C, ROLE, PHASE, GAME, CLOSE, DIAGNOSTIC_KIND } = require('../src/constants');
 const {
   startRelay, joinAsHost, joinAsClient, admitHost, admitJoin, TestClient, delay, GAME_PROTOCOL,
+  CONTENT_HASH,
 } = require('./helpers');
 
 test('a host and a browser client meet in a room and exchange game payloads', async (t) => {
@@ -370,6 +371,7 @@ test('a room reports the correct code back to the host so it can be shown to a f
   const client = await TestClient.connect(relay.socketUrl);
   client.send(protocol.encodeHello({
     grant: admission.fields.grant, gameProtocol: GAME_PROTOCOL, displayName: 'host',
+    contentHash: CONTENT_HASH,
   }));
   const welcome = await client.expect(S2C.WELCOME);
   assert.equal(welcome.roomCode, admission.fields.room);

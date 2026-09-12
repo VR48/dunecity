@@ -343,7 +343,9 @@ function createAdmissionHandler(ctx) {
         const mode = optionalField(form, 'mode', 'custom');
         const maxPeersRequested = requireInteger(form, 'maxPeers', 2, LIMITS.MAX_PEERS_PER_ROOM);
         const maxPeers = mode === 'coop' ? 2 : maxPeersRequested;
-        result = ctx.store.createRoom({ maxPeers, mode, gameProtocol, contentHash, appVersion });
+        result = ctx.store.createRoom({
+          maxPeers, mode, gameProtocol, contentHash, appVersion, runtime,
+        });
         role = ROLE.HOST;
         ctx.log.emit('room_created', {
           room: result.room.logId,
@@ -359,7 +361,9 @@ function createAdmissionHandler(ctx) {
         ctx.lifecycle.roomCreated({ roomLogId: result.room.logId });
       } else {
         const roomCode = requireField(form, 'room');
-        result = ctx.store.joinRoom(roomCode, { gameProtocol, contentHash });
+        result = ctx.store.joinRoom(roomCode, {
+          gameProtocol, contentHash, appVersion, runtime,
+        });
         role = ROLE.CLIENT;
       }
 

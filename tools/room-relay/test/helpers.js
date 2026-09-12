@@ -184,7 +184,9 @@ class TestClient {
 
 /** Admission + connect + HELLO + WELCOME, i.e. a peer that is ready to play. */
 async function joinAsHost(relay, opts = {}) {
-  const admission = await admitHost(relay, opts.admission || {});
+  // Admission and the handshake are the same client, so they say the same things about it.
+  const runtime = opts.runtime || 'native';
+  const admission = await admitHost(relay, { runtime, ...(opts.admission || {}) });
   if (admission.fields.status !== 'ok') {
     throw new Error(`host admission failed: ${admission.text}`);
   }
@@ -192,7 +194,7 @@ async function joinAsHost(relay, opts = {}) {
   client.send(protocol.encodeHello({
     grant: admission.fields.grant,
     gameProtocol: GAME_PROTOCOL,
-    runtime: opts.runtime || 'native',
+    runtime,
     displayName: opts.name || 'host',
     contentHash: CONTENT_HASH,
   }));
@@ -201,7 +203,8 @@ async function joinAsHost(relay, opts = {}) {
 }
 
 async function joinAsClient(relay, room, opts = {}) {
-  const admission = await admitJoin(relay, room, opts.admission || {});
+  const runtime = opts.runtime || 'browser';
+  const admission = await admitJoin(relay, room, { runtime, ...(opts.admission || {}) });
   if (admission.fields.status !== 'ok') {
     throw new Error(`join admission failed: ${admission.text}`);
   }
@@ -209,7 +212,7 @@ async function joinAsClient(relay, room, opts = {}) {
   client.send(protocol.encodeHello({
     grant: admission.fields.grant,
     gameProtocol: GAME_PROTOCOL,
-    runtime: opts.runtime || 'browser',
+    runtime,
     displayName: opts.name || 'guest',
     contentHash: CONTENT_HASH,
   }));

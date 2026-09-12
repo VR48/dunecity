@@ -165,16 +165,27 @@ class RoomStore {
 
     const room = new Room(this.nextRoomId++, code, { ...spec, now: this.now() });
     this.rooms.set(code, room);
-    const grant = this.issueGrant(room, ROLE.HOST);
+    const grant = this.issueGrant(room, ROLE.HOST, spec);
     return { room, grant };
   }
 
-  issueGrant(room, role) {
+  /**
+   * @param {object} claims what the caller told admission about itself. These are recorded so
+   *   the handshake can be held to the same answers; they are not authentication, and
+   *   `runtime` in particular stays a client claim from beginning to end.
+   */
+  issueGrant(room, role, claims = {}) {
     const token = crypto.randomBytes(32).toString('hex');
     this.grants.set(token, {
       roomCode: room.code,
       role,
       phaseEpoch: room.phaseEpoch,
+      claims: {
+        gameProtocol: claims.gameProtocol === undefined ? room.gameProtocol : claims.gameProtocol,
+        contentHash: claims.contentHash === undefined ? room.contentHash : claims.contentHash,
+        appVersion: claims.appVersion === undefined ? room.appVersion : claims.appVersion,
+        runtime: typeof claims.runtime === 'string' ? claims.runtime : '',
+      },
       expiresAt: this.now() + this.grantTtlMs,
     });
     room.outstandingGrants += 1;
@@ -226,7 +237,7 @@ class RoomStore {
       throw new AdmissionError(503, 'capacity', 'The relay is busy. Try again shortly.');
     }
 
-    const grant = this.issueGrant(room, ROLE.CLIENT);
+    const grant = this.issueGrant(room, ROLE.CLIENT, spec);
     return { room, grant };
   }
 
@@ -252,7 +263,7 @@ class RoomStore {
     // handshake must lose, whichever order the two arrive in.
     if (room.phaseEpoch !== grant.phaseEpoch) return null;
 
-    return { room, role: grant.role };
+    return { room, role: grant.role, claims: grant.claims };
   }
 
   /** @param {string} reason fixed code: 'host_left' | 'shutdown' | 'lifetime' | 'empty' */

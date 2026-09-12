@@ -189,6 +189,100 @@ describe('room phase and admission', () => {
   });
 });
 
+// A grant is issued on the strength of what a client said about itself at admission, and
+// admission decided real things from those answers: which room the code matched and whether the
+// content agreed. The handshake has to give the same answers. This is consistency, not
+// authentication - a peer can still lie about its runtime, as long as it lies consistently.
+
+describe('grant claims bound at admission', () => {
+  async function helloWith(relay, grant, overrides) {
+    const client = await TestClient.connect(relay.socketUrl);
+    client.send(protocol.encodeHello({
+      grant,
+      gameProtocol: GAME_PROTOCOL,
+      runtime: 'browser',
+      appVersion: '1.0.655',
+      contentHash: CONTENT_HASH,
+      displayName: 'guest',
+      ...overrides,
+    }));
+    return client;
+  }
+
+  it('refuses a handshake that changes the runtime it was admitted with', async () => {
+    const relay = await startRelay();
+    try {
+      const host = await joinAsHost(relay, CUSTOM_ROOM);
+      const admission = await admitJoin(relay, host.room, { runtime: 'browser' });
+      const client = await helloWith(relay, admission.fields.grant, { runtime: 'native' });
+      assert.equal((await client.expect(S2C.ERROR)).code, CLOSE.UNAUTHORIZED);
+      assert.equal((await client.waitForClose()).code, CLOSE.UNAUTHORIZED);
+      assert.equal([...relay.store.rooms.values()][0].peers.size, 1);
+      host.client.close();
+    } finally {
+      await relay.stop();
+    }
+  });
+
+  it('refuses a handshake that changes the version or the content fingerprint', async () => {
+    const relay = await startRelay();
+    try {
+      const host = await joinAsHost(relay, CUSTOM_ROOM);
+
+      const a = await admitJoin(relay, host.room);
+      const versionSwap = await helloWith(relay, a.fields.grant, { appVersion: '9.9.9' });
+      assert.equal((await versionSwap.expect(S2C.ERROR)).code, CLOSE.UNAUTHORIZED);
+
+      const b = await admitJoin(relay, host.room);
+      const contentSwap = await helloWith(relay, b.fields.grant, { contentHash: 'b'.repeat(16) });
+      assert.equal((await contentSwap.expect(S2C.ERROR)).code, CLOSE.VERSION_MISMATCH);
+
+      const c = await admitJoin(relay, host.room);
+      const empty = await helloWith(relay, c.fields.grant, { contentHash: '' });
+      assert.equal((await empty.expect(S2C.ERROR)).code, CLOSE.VERSION_MISMATCH,
+        'an omitted fingerprint is a different answer, not a pass');
+
+      assert.equal([...relay.store.rooms.values()][0].peers.size, 1);
+      host.client.close();
+    } finally {
+      await relay.stop();
+    }
+  });
+
+  it('admits a handshake that repeats what admission was told', async () => {
+    const relay = await startRelay();
+    try {
+      const host = await joinAsHost(relay, CUSTOM_ROOM);
+      const admission = await admitJoin(relay, host.room, { runtime: 'browser' });
+      const client = await helloWith(relay, admission.fields.grant, {});
+      const welcome = await client.expect(S2C.WELCOME);
+      assert.equal(welcome.role, 2);
+      client.close();
+      host.client.close();
+    } finally {
+      await relay.stop();
+    }
+  });
+
+  it('records the claims on the grant, not on the connection that redeems it', () => {
+    const store = new RoomStore({});
+    const { room, grant } = store.createRoom({
+      maxPeers: 4, mode: 'custom', gameProtocol: 5, contentHash: 'abc',
+      appVersion: '1.0.655', runtime: 'native',
+    });
+    assert.deepEqual(store.grants.get(grant).claims, {
+      gameProtocol: 5, contentHash: 'abc', appVersion: '1.0.655', runtime: 'native',
+    });
+    const joinGrant = store.joinRoom(room.code, {
+      gameProtocol: 5, contentHash: 'abc', appVersion: '1.0.655', runtime: 'browser',
+    }).grant;
+    assert.equal(store.grants.get(joinGrant).claims.runtime, 'browser');
+    assert.deepEqual(store.consumeGrant(joinGrant).claims, {
+      gameProtocol: 5, contentHash: 'abc', appVersion: '1.0.655', runtime: 'browser',
+    });
+  });
+});
+
 describe('RoomStore phase bookkeeping', () => {
   function makeRoom() {
     const store = new RoomStore({});
