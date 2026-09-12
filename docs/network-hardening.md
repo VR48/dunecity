@@ -54,18 +54,59 @@ commands. Names must be non-empty, at most 64 bytes and free of control characte
 The path-budget client id is now a stable per-connection id rather than
 `peer->address.host ^ peer->address.port`, which collides behind NAT and is trivially spoofable.
 
-## Commands
+## Command authorization
 
-`CommandManager::addCommandList()` drops (not just logs) anything that is not the sending
-peer's own command, anything whose command id or parameter count would make
-`Command::executeCommand()` throw out of the simulation loop, and any cycle outside the
-acceptable window - checked *before* `addCommand()` resizes its timeslot vector.
+`Command::executeCommand()` resolves the issuing player once per object action and refuses the
+command unless the acting object - parameter 0, after the command's own `dynamic_cast` - belongs
+to the issuer's house. The decision is `CommandAuthorization::authorizeActor()`, which sees only
+simulation state, so every peer reaches the same verdict and a refusal is a deterministic no-op.
+
+Preserved on purpose: co-op partners share a house and therefore both keep control; deviated
+units follow their temporary owner because `UnitBase::deviate()` reassigns the owner; targets are
+not constrained, because attacking, capturing and healing another house's object is the game.
+
+Enum and boolean parameters are validated exactly (attack mode, the move/attack/produce/cancel/
+hold booleans). City commands require a real issuing player with a house, validate the zone and
+tool enums, re-apply the tile preconditions the local UI applies, and bound the tax rate and
+police funding percentage. `CMD_CITY_PLACE_ZONE` is *not* dormant - the zone placement click
+sends it - so it is constrained rather than refused.
+
+Note on the city model: police funding is per house, but the city tax is a single shared value.
+With more than one human house any of them can change it, inside the valid range. That is a
+game-design question about shared city state, not something the network boundary can decide.
+
+## Lobby authorization
+
+The host owns the lobby. A client sends *requests*, and `LobbyAuthorization` accepts exactly what
+the client's own widgets can produce: a seat claim carrying its own name for a seat that exists
+and is not closed, and house/team/colour/partner-slot changes for a house where it already holds
+a seat. One seat claim per transaction; the whole transaction is judged before anything is
+applied, so a list mixing a legal and an illegal event changes nothing and is not rebroadcast.
+The sender is the connection's bound peer name, which the ENet transport does not prove
+cryptographically - this is authorization, not authentication.
+
+## Command batches
+
+`CommandManager::addCommandList()` runs in two passes. The first validates everything the batch
+would add - cycle window, commands per cycle, commands per packet, ownership, well-formedness -
+and drops the whole batch on any content fault without queueing anything or moving the
+watermark. The second applies only the contiguous run starting at the cycle the receiver is
+waiting for and stops at the first gap, so an unsorted, gapped or duplicated list can never
+advance `nextExpectedCommandsCycle` past a cycle that was never received.
 
 Cycles in the past stay acceptable: that is how the rolling 2.5 s history and its
-retransmissions work, and `nextExpectedCommandsCycle` still filters what was already applied.
-Players who share a house each have their own player id, so co-op control is unaffected.
-Replays and savegames load through `CommandManager::load()`, which does not apply the network
-window.
+retransmissions work. Ordinary packet loss on the unsequenced command channel recovers from the
+overlapping history in the next packet, which is why a gap truncates the batch instead of
+rejecting it. Players who share a house each have their own player id, so co-op control is
+unaffected.
+
+A packet may carry at most 512 cycle entries, 512 commands per entry and 4096 commands in
+total; the first two bounds alone multiplied out to roughly a quarter of a million commands.
+Selection lists are bounded at 2048 ids.
+
+Replays and savegames load through `CommandManager::load()`, which applies its own file bounds
+(cycle and total command count) and the same command well-formedness rule, but not the network
+cycle window.
 
 ## Wire decoding
 
@@ -148,12 +189,38 @@ tests/wasm/run-network-wire-harness.sh wasm     # emcc + node
 tests/wasm/run-network-wire-harness.sh native   # host compiler, ASan/UBSan
 ```
 
+## Received game info
+
+`SENDGAMEINFO` is decoded into temporaries and validated as a whole before membership changes or
+the callback runs, so a malformed packet leaves the client exactly as it was.
+`GameInitSettingsPolicy` bounds the game type and house enums, the house count, players per
+house, team numbers, the filename, the map payload, the mod name and the player strings, and the
+game speed. A map that cannot be stored safely rejects the whole packet rather than being played
+from memory. The same validation runs on `COOP_MISSION`. None of it applies to local savegame or
+map loading.
+
 ## Known gaps
 
 - There is no desync detection or state hash, so a divergence between peers still surfaces as
   unexplained disagreement rather than an error.
 - Lockstep still has no timeout: a peer that stops sending commands stalls the match
   indefinitely.
-- `CONNECT` still points a client at an address chosen by the host; only obviously implausible
-  destinations are refused. A relay transport removes the packet entirely.
+- **The native mesh is not authenticated.** Peer identity is "the name this connection bound
+  first". Every peer now refuses a duplicate name, and a joining client only accepts inbound mesh
+  connections during its join window and only in the lobby, but a peer that reaches a joining
+  client inside that window is still admitted on the strength of its address and a free name.
+  Closing this needs a host-issued, single-use introduction token per peer pair, carried in
+  `CONNECT` and presented by the connecting peer, plus an expected-roster check before any
+  gameplay state is allocated. That is a protocol change (new fields, new rejection cause) and is
+  deliberately *not* improvised here: a 32-bit nonce in the existing packet would look like
+  authentication without being any. Note that the protocol already requires an exact game-version
+  match, so a protocol change does not break a compatibility that exists today.
+- `CONNECT` still points a client at an address chosen by the host; ports below 1024 and
+  non-unicast destinations are refused, but any other host:port is still reachable. A relay
+  transport removes the packet entirely, and that is the secure path for Internet play.
 - The metaserver list parser still stops at the first row it does not understand.
+- Mod delivery still installs host-announced content after a checksum the same host supplied.
+  The pre-install verification is an integrity and ordering guarantee only; for browser and
+  crossplay rooms the intended answer is bundled content, not peer mod delivery.
+- Lockstep still has no stall timeout, and client performance reports remain advisory input to
+  the host's path-budget decision.
