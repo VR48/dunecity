@@ -37,6 +37,12 @@ if [ ! -x "${HARNESS}" ]; then
 fi
 
 cleanup() {
+    for pid in "${GUEST_PID:-}" "${HOST_PID:-}"; do
+        if [ -n "${pid}" ]; then
+            kill "${pid}" 2>/dev/null || true
+            wait "${pid}" 2>/dev/null || true
+        fi
+    done
     if [ -n "${RELAY_PID:-}" ]; then
         kill "${RELAY_PID}" 2>/dev/null || true
         wait "${RELAY_PID}" 2>/dev/null || true
@@ -48,17 +54,23 @@ trap cleanup EXIT
 echo "== starting the relay on ${ENDPOINT}"
 (
     cd "${ROOT}/tools/room-relay"
-    RELAY_PORT="${PORT}" node src/index.js --dev
+    export RELAY_PORT="${PORT}"
+    exec node src/index.js --dev
 ) > "${WORK}/relay.log" 2>&1 &
 RELAY_PID=$!
 
 for _ in $(seq 1 50); do
+    if ! kill -0 "${RELAY_PID}" 2>/dev/null; then
+        cat "${WORK}/relay.log" >&2
+        exit 1
+    fi
     if curl -fsS "${ENDPOINT}/v1/health" > /dev/null 2>&1; then
         break
     fi
     sleep 0.2
 done
 curl -fsS "${ENDPOINT}/v1/health" > /dev/null
+kill -0 "${RELAY_PID}"
 
 echo "== hosting"
 "${HARNESS}" --endpoint="${ENDPOINT}" --dev --host --name=desktop --seconds=20 \
@@ -89,7 +101,7 @@ fi
 
 echo "== joining"
 "${HARNESS}" --endpoint="${ENDPOINT}" --dev --join="${ROOM}" --name=guest --seconds=18 \
-    "${GUEST_FLAGS[@]}" > "${WORK}/guest.log" 2>&1 &
+    ${GUEST_FLAGS[@]+"${GUEST_FLAGS[@]}"} > "${WORK}/guest.log" 2>&1 &
 GUEST_PID=$!
 
 GUEST_STATUS=0
