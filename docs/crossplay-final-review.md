@@ -32,11 +32,19 @@ Sampled logs showed no digest mismatch or premature disconnect; digests at cycle
 rolling samples near 92; the cause remains unproven and is a follow-up, not a fixed issue.
 A subsequent 1.0.657 browser-host/native-client match joined through the public list
 without an invitation code. Actual digests agree at cycles 8,400, 8,600 and 8,800.
+Matching samples continued through cycle 19,600 while the browser game menu was
+open and through cycle 40,600 afterward. The native client reported around 60 FPS.
 That live test remains in progress; later lobby-only fixes are not loaded into it.
+The native process survived SIGTERM, so copying a rebuilt executable did not update
+that running process; the evidence must not be attributed to the later executable.
 
 Actual Hermes reviewed the production bootstrap and identified activation/retry,
-artifact identity and rollback gaps. That installer is being revised and has not been
-executed. The restricted metaserver account cannot administer services; administrator
+artifact identity and rollback gaps. Actual Opus implemented the revisions in session
+`c0fefbb0-3af3-4482-b3a4-be01e0033867`; Codex reviewed them and independently ran the
+53 isolated helper checks successfully. The installer now binds the revision to its
+manifest, checks exact cached inventories including symlink targets, installs files
+atomically, validates service identity and local/public HTTPS, and reports rollback
+failures explicitly. It has not been executed on the production host. The restricted metaserver account cannot administer services; administrator
 access remains unknown. No production relay, main merge or stable tag is claimed.
 Candidate package CI: https://github.com/VR48/dunecity/actions/runs/34693670790
 (the `4940aef` candidate, before the follow-up lobby presentation changes).

@@ -1,3 +1,30 @@
+## Crossplay candidate — 12 September 2026
+
+Branch `fix/network-hardening` is published for candidate packaging as
+`release-1.0.657`; current main `8879732` is incorporated. Production main and the
+stable tag are deliberately not advanced: the restricted metaserver SSH account
+cannot install services/Apache configuration and no administrator access is known.
+The configured production crossplay endpoint is `https://dunelegacy.com/relay`.
+
+Native 5/5 CTest, 185 relay tests, 173 wasm32 wire checks, secure-WebSocket feature
+checks and browser package policy/hash checks pass. Forced libcurl partial-write
+fixture passes. Actual Claude and Hermes findings and scope are recorded in
+`docs/crossplay-final-review.md`. Opus implemented the administrator bootstrap
+hardening; Codex reviewed it and ran its 53 isolated helper checks. Public TLS/WSS,
+proxy behavior and signed SQLite delivery still need on-host verification.
+
+Stefan joined a browser-hosted match from the native app through the public list.
+Actual browser/native digest samples agree through cycle 40,600, including a browser
+menu interval; these are samples, not proof of complete determinism. Current running
+clients predate the latest lobby presentation changes. The public join button is now
+full-width immediately below the game list; private joining says “Join with invite
+code”. These changes are committed and built for preview separately from the match.
+
+The initial test-app launch failure was macOS CODESIGNING/Invalid Signature after
+copying a binary; its bundle was re-signed. A pre-existing native test process survived
+SIGTERM and remained on its earlier executable. Do not mistake copying a binary or a
+new launch command for replacement of that process. Avoid interrupting Stefan's match.
+
 # Browser match logging — 1.0.655
 
 Extends the Play Online display hotfix below. Both start/end summaries carry an
