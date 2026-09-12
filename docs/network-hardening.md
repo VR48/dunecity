@@ -29,7 +29,7 @@ guarantees below as "the protocol's own rules are now enforced", not as anti-che
 | --- | --- | --- |
 | `KEEPALIVE` | any identified connection | any |
 | `SENDNAME`, `CONFIG_HASH` | any identified connection, including during admission | lobby |
-| `SENDGAMEINFO`, `CONNECT`, `DISCONNECT`, `STARTGAME`, `COOP_MISSION`, `MOD_INFO`, `MOD_CHUNK`, `MOD_COMPLETE` | client, host connection only | lobby (`DISCONNECT`: any) |
+| `SENDGAMEINFO`, `CONNECT`, `DISCONNECT`, `STARTGAME`, `COOP_MISSION`, `MOD_INFO`, `MOD_CHUNK`, `MOD_COMPLETE` | client, host connection only | lobby (`DISCONNECT`, `COOP_MISSION`: any; campaign continuation follows the previous match) |
 | `CHANGEEVENTLIST` | host: established client; client: host connection | lobby |
 | `PEER_CONNECTED` | host: established client; client: host connection | lobby |
 | `CHATMESSAGE` | established peer | any |

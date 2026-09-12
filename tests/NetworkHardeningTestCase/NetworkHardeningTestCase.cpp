@@ -211,7 +211,7 @@ TEST_CASE("Admission: lobby-only packets stop being accepted once the match runs
           "[network][security][admission][phase]") {
     const Uint32 lobbyOnly[] = {
         NETWORKPACKET_SENDNAME, NETWORKPACKET_CONFIG_HASH, NETWORKPACKET_CHANGEEVENTLIST,
-        NETWORKPACKET_STARTGAME, NETWORKPACKET_COOP_MISSION, NETWORKPACKET_SENDGAMEINFO,
+        NETWORKPACKET_STARTGAME, NETWORKPACKET_SENDGAMEINFO,
         NETWORKPACKET_CONNECT, NETWORKPACKET_MOD_INFO, NETWORKPACKET_MOD_CHUNK,
         NETWORKPACKET_MOD_COMPLETE
     };
@@ -230,6 +230,19 @@ TEST_CASE("Admission: lobby-only packets stop being accepted once the match runs
     REQUIRE(NetworkPacketPolicy::classifyPacket(
                 context(NETWORKPACKET_SENDNAME, LocalRole::Host, SessionPhase::InGame,
                         PeerAdmission::Established, false)) == PacketVerdict::RejectWrongPhase);
+}
+
+TEST_CASE("Admission: co-op continuation is accepted from the established host after a match",
+          "[network][security][admission][phase][compatibility]") {
+    REQUIRE(NetworkPacketPolicy::classifyPacket(
+                context(NETWORKPACKET_COOP_MISSION, LocalRole::Client, SessionPhase::InGame,
+                        PeerAdmission::Established, true)) == PacketVerdict::Accept);
+    REQUIRE(NetworkPacketPolicy::classifyPacket(
+                context(NETWORKPACKET_COOP_MISSION, LocalRole::Client, SessionPhase::InGame,
+                        PeerAdmission::Established, false)) == PacketVerdict::RejectNotHostPeer);
+    REQUIRE(NetworkPacketPolicy::classifyPacket(
+                context(NETWORKPACKET_COOP_MISSION, LocalRole::Host, SessionPhase::InGame,
+                        PeerAdmission::Established, false)) == PacketVerdict::RejectWrongRole);
 }
 
 TEST_CASE("Admission: in-game traffic is refused while still in the lobby",
@@ -392,6 +405,18 @@ TEST_CASE("Client stat values must be finite and non-negative",
     REQUIRE_FALSE(NetworkPacketPolicy::isUsableStatValue(std::numeric_limits<float>::quiet_NaN()));
     REQUIRE_FALSE(NetworkPacketPolicy::isUsableStatValue(std::numeric_limits<float>::infinity()));
     REQUIRE_FALSE(NetworkPacketPolicy::isUsableStatValue(-1.0f));
+}
+
+TEST_CASE_METHOD(ENetRuntime, "Wire: runtime non-finite stats are refused in fast-math builds",
+                 "[network][security][wire][pathbudget]") {
+    // Volatile runtime input prevents constant folding from hiding -ffast-math assumptions.
+    volatile Uint32 encoded[] = {0x7f800000u, 0xff800000u, 0x7fc00001u, 0x7f800001u};
+    for(unsigned i = 0; i < 4; ++i) {
+        ENetPacketOStream output(ENET_PACKET_FLAG_RELIABLE);
+        output.writeUint32(encoded[i]);
+        ENetPacketIStream input(output.getPacket());
+        REQUIRE_FALSE(NetworkPacketPolicy::isUsableStatValue(input.readFloat()));
+    }
 }
 
 // =============================================================================

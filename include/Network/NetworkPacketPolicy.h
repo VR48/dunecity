@@ -25,6 +25,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include <cstring>
 #include <string>
 
 /**
@@ -162,6 +163,14 @@ inline PacketVerdict classifyPacket(const PacketContext& context) {
             return fromHost ? PacketVerdict::Accept : PacketVerdict::RejectNotHostPeer;
 
         case NETWORKPACKET_COOP_MISSION:
+            // Campaign continuation (including the empty settings used to exit) arrives
+            // after the previous simulation, while the session is still marked InGame.
+            if(!identified)  return PacketVerdict::RejectUnidentifiedPeer;
+            if(isHost)       return PacketVerdict::RejectWrongRole;
+            if(!fromHost)    return PacketVerdict::RejectNotHostPeer;
+            if(!established) return PacketVerdict::RejectPreHandshake;
+            return PacketVerdict::Accept;
+
         case NETWORKPACKET_STARTGAME:
             if(!identified)  return PacketVerdict::RejectUnidentifiedPeer;
             if(isHost)       return PacketVerdict::RejectWrongRole;
@@ -324,7 +333,14 @@ inline bool sanitizeReceivedMapFilename(const std::string& filename, std::string
     \return true if the value can be used
 */
 inline bool isUsableStatValue(float value) {
-    return std::isfinite(value) && value >= 0.0f;
+    // Release builds on macOS use -ffast-math, which permits the compiler to
+    // assume floating-point inputs are finite. Inspect the wire representation
+    // before doing floating-point comparisons; literal-only tests miss this.
+    static_assert(sizeof(float) == sizeof(Uint32), "Network stats require binary32 floats");
+    Uint32 bits;
+    std::memcpy(&bits, &value, sizeof(bits));
+    const Uint32 magnitude = bits & 0x7fffffffu;
+    return magnitude < 0x7f800000u && ((bits & 0x80000000u) == 0 || magnitude == 0);
 }
 
 } // namespace NetworkPacketPolicy
