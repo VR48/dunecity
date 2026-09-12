@@ -22,6 +22,7 @@
 #include <misc/OutputStream.h>
 #include <misc/SDL2pp.h>
 
+#include <cstddef>
 #include <map>
 
 // forward declarations
@@ -87,6 +88,23 @@ public:
     bool removeObject(Uint32 objectID) {
         return (objectMap.erase(objectID) != 0);
     }
+
+    /**
+        Visits every object in ascending object-id order.
+
+        The order is a property of the container, not an accident: the deterministic state digest
+        depends on visiting the same objects in the same order on every peer.
+        \param  visitor     called with (objectID, pObject) for every live object
+    */
+    template<typename Visitor>
+    void forEachObject(Visitor&& visitor) const {
+        for(const auto& entry : objectMap) {
+            visitor(entry.first, entry.second);
+        }
+    }
+
+    /// Number of live objects.
+    std::size_t getObjectCount() const { return objectMap.size(); }
 
 private:
     Uint32 nextFreeObjectID;

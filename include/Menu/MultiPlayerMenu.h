@@ -45,6 +45,7 @@ private:
 
     void onCreateLANGame();
     void onCreateInternetGame();
+    void onPlayOnline();
     void onHostCampaignCoop();
     void onConnect();
     void onJoin();
@@ -87,6 +88,7 @@ private:
     VBox            leftVBox;
     TextButton      createLANGameButton;
     TextButton      createInternetGameButton;
+    TextButton      playOnlineButton;
     TextButton hostCampaignCoopButton;
 
     // right VBox with game list

@@ -91,6 +91,34 @@
 #include <misc/MacFunctions.h>
 #endif
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten/em_js.h>
+
+// The browser build has no command line, so the page URL is how a tester names a relay. Both
+// helpers only read the query string; the value is validated by the admission client before it
+// is used, and a plain loopback address still needs the explicit development opt-in.
+EM_JS(void, dunecityReadRelayUrlParameter, (char* out, int maxLength), {
+    var value = '';
+    try {
+        value = new URLSearchParams(location.search).get('relay') || '';
+    } catch (error) {
+        value = '';
+    }
+    if (value.length > maxLength - 1) {
+        value = '';
+    }
+    stringToUTF8(value, out, maxLength);
+});
+
+EM_JS(int, dunecityReadRelayDevelopmentParameter, (), {
+    try {
+        return new URLSearchParams(location.search).get('relaydev') === '1' ? 1 : 0;
+    } catch (error) {
+        return 0;
+    }
+});
+#endif
+
 #if !defined(__GNUG__) || (defined(_GLIBCXX_HAS_GTHREADS) && defined(_GLIBCXX_USE_C99_STDINT_TR1) && (ATOMIC_INT_LOCK_FREE > 1) && !defined(_GLIBCXX_HAS_GTHREADS))
 // g++ does not provide std::async on all platforms
 #define HAS_ASYNC
@@ -1105,6 +1133,33 @@ int main(int argc, char *argv[]) {
             
             settings.network.debugNetwork = myINIFile.getBoolValue("Network","Debug Network",false);
 
+            // Crossplay room relay. The production endpoint is configuration only; nothing here
+            // deploys one, and an empty value simply means crossplay is not offered.
+            settings.network.relayEndpoint =
+                myINIFile.getStringValue("Network","Relay Endpoint",DEFAULT_RELAY_ENDPOINT);
+            settings.network.relayDevelopmentEndpoint =
+                myINIFile.getStringValue("Network","Relay Development Endpoint",
+                                         DEVELOPMENT_RELAY_ENDPOINT);
+            settings.network.relayUseDevelopmentEndpoint =
+                myINIFile.getBoolValue("Network","Use Relay Development Endpoint",false);
+
+#ifdef __EMSCRIPTEN__
+            // The browser build has no command line, so the page URL may name the relay. The
+            // value goes through exactly the same validation as any other endpoint, and a plain
+            // loopback address is still only accepted with the explicit development opt-in.
+            {
+                char relayFromPage[256] = {0};
+                dunecityReadRelayUrlParameter(relayFromPage, static_cast<int>(sizeof(relayFromPage)));
+                if(relayFromPage[0] != '\0') {
+                    settings.network.relayEndpoint = relayFromPage;
+                    settings.network.relayDevelopmentEndpoint = relayFromPage;
+                }
+                if(dunecityReadRelayDevelopmentParameter() != 0) {
+                    settings.network.relayUseDevelopmentEndpoint = true;
+                }
+            }
+#endif
+
             settings.ai.campaignAI = myINIFile.getStringValue("AI","Campaign AI",DEFAULTAIPLAYERCLASS);
 
             settings.gameOptions.gameSpeed = myINIFile.getIntValue("Game Options","Game Speed",GAMESPEED_DEFAULT);
@@ -1156,6 +1211,16 @@ int main(int argc, char *argv[]) {
                     settings.general.playerName = parameter.substr(strlen("--PlayerName="));
                 } else if(parameter.compare(0, 13, "--ServerPort=") == 0) {
                     settings.network.serverPort = atol(argv[i] + strlen("--ServerPort="));
+                } else if(parameter.compare(0, 16, "--RelayEndpoint=") == 0) {
+                    settings.network.relayEndpoint = parameter.substr(strlen("--RelayEndpoint="));
+                } else if(parameter.compare(0, 19, "--RelayDevEndpoint=") == 0) {
+                    settings.network.relayDevelopmentEndpoint =
+                        parameter.substr(strlen("--RelayDevEndpoint="));
+                    settings.network.relayUseDevelopmentEndpoint = true;
+                } else if(parameter == "--RelayDev") {
+                    // Explicit opt-in: this is the only way a plain ws:// loopback endpoint
+                    // becomes acceptable.
+                    settings.network.relayUseDevelopmentEndpoint = true;
                 }
             }
 

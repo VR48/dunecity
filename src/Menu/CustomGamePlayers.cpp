@@ -589,6 +589,17 @@ CustomGamePlayers::CustomGamePlayers(const GameInitSettings& newGameInitSettings
         
         // Update Discord Rich Presence for multiplayer lobby
         updateDiscordLobbyPresence();
+
+        // A crossplay room is joined with a code rather than an address, so the code has to be
+        // on screen for as long as the lobby is open.
+        const std::string roomCode = pNetworkManager->getRoomCode();
+        if(!roomCode.empty()) {
+            captionLabel.setText(captionLabel.getText() + "   [" + roomCode + "]");
+            addInfoMessage(_("Game code: ") + roomCode);
+            if(bServer) {
+                addInfoMessage(_("Give that code to a friend so they can join."));
+            }
+        }
     }
 }
 
@@ -1429,20 +1440,31 @@ void CustomGamePlayers::onNext()
             
             // Send version and config hashes to all players for verification
             pNetworkManager->sendConfigHash(quantBotHash, objectDataHash, VERSIONSTRING);
-            
-            // Send mod info for mod sync
-            std::string modName = ModManager::instance().getActiveModName();
-            std::string modChecksum = ModManager::instance().getEffectiveChecksums().combined;
-            SDL_Log("HOST: Sending mod info: mod='%s', checksum=%s", modName.c_str(), modChecksum.c_str());
-            pNetworkManager->sendModInfo(modName, modChecksum);
-            
-            // Wait for all clients to acknowledge mod sync before starting
-            // The actual game start will happen in checkAllClientsReady() after all ACKs
+
             clientsAckedMod.clear();
             bWaitingForModAcks = true;
-            addInfoMessage("Waiting for clients to sync mod...");
-            SDL_Log("HOST: Waiting for mod ACKs from clients before starting game");
-            
+
+            if(pNetworkManager->supportsModTransfer()) {
+                // Send mod info for mod sync
+                std::string modName = ModManager::instance().getActiveModName();
+                std::string modChecksum = ModManager::instance().getEffectiveChecksums().combined;
+                SDL_Log("HOST: Sending mod info: mod='%s', checksum=%s", modName.c_str(), modChecksum.c_str());
+                pNetworkManager->sendModInfo(modName, modChecksum);
+
+                // Wait for all clients to acknowledge mod sync before starting
+                // The actual game start will happen in checkAllClientsReady() after all ACKs
+                addInfoMessage("Waiting for clients to sync mod...");
+                SDL_Log("HOST: Waiting for mod ACKs from clients before starting game");
+            } else {
+                // Crossplay carries bundled content only: there is nothing to transfer and so
+                // nothing to acknowledge. Matching content was already required to join, and the
+                // config hashes just sent are still checked on both sides.
+                for(const std::string& peerName : pNetworkManager->getConnectedPeers()) {
+                    clientsAckedMod.insert(peerName);
+                }
+                addInfoMessage(_("Everyone is using the same game content."));
+            }
+
             // Don't start game yet - will be started when all clients ACK
             // For single-player or if no other clients, check immediately
             checkAllClientsReady();

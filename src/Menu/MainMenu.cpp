@@ -26,6 +26,7 @@
 #include <MapEditor/MapEditor.h>
 
 #include <Menu/SinglePlayerMenu.h>
+#include <Menu/CrossplayMenu.h>
 #include <Menu/MultiPlayerMenu.h>
 #include <Menu/OptionsMenu.h>
 #include <Menu/DisplayMenu.h>
@@ -86,8 +87,15 @@ public:
         singlePlayerButton.setText(_("SINGLE PLAYER"));
         singlePlayerButton.setOnClick([this]() { SinglePlayerMenu().showMenu(); });
         singlePlayerButton.setActive();
+#ifdef __EMSCRIPTEN__
+        // A browser has no UDP socket, so the LAN and direct-Internet choices in the mesh menu
+        // could never work there. Offer only the thing that does: the crossplay room.
+        multiPlayerButton.setText(_("PLAY ONLINE"));
+        multiPlayerButton.setOnClick([this]() { CrossplayMenu().showMenu(); });
+#else
         multiPlayerButton.setText(_("MULTIPLAYER"));
         multiPlayerButton.setOnClick([this]() { MultiPlayerMenu().showMenu(); });
+#endif
         mapEditorButton.setText(_("MAP EDITOR"));
         mapEditorButton.setOnClick([this]() { MapEditor().RunEditor(); });
         modsButton.setText(_("MODS"));

@@ -3397,7 +3397,12 @@ void Game::updateGameState() {
     if(takePeriodicalScreenshots && ((gameCycleCount % (MILLI2CYCLES(10*1000))) == 0)) {
         takeScreenshot();
     }
-    
+
+    // Taken here, at a precise point in the simulation: cycle gameCycleCount-1 is fully applied
+    // and the counter has just become gameCycleCount. Every peer reaches this same point for
+    // the same cycle, which is what makes two digests comparable at all.
+    updateStateDigests();
+
     musicPlayer->musicCheck();
 }
 
@@ -3446,7 +3451,30 @@ void Game::initializeNetwork() {
         pNetworkManager->setOnReceiveSetPathBudget(
             std::bind(&Game::handleSetPathBudget, this,
             std::placeholders::_1, std::placeholders::_2));
-        
+
+        // Deterministic state digests travel in the relay diagnostic envelope, not as a game
+        // packet, so the ENet wire format and NETWORK_PROTOCOL_VERSION are untouched.
+        pNetworkManager->setOnReceiveRelayDiagnostic(
+            [this](const std::string& peerName, std::uint8_t kind, const std::uint8_t* payload,
+                   std::size_t length) {
+                if(kind != static_cast<std::uint8_t>(RoomRelay::DiagnosticKind::StateDigest)) {
+                    return;
+                }
+                GameStateDigest::Digest digest;
+                if(!GameStateDigest::decode(payload, length, digest)) {
+                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                                "Game: unusable state digest from '%s'", peerName.c_str());
+                    return;
+                }
+                onRemoteStateDigest(peerName, digest);
+            });
+
+        localStateDigests.clear();
+        pendingRemoteDigests.clear();
+        stateDivergenceReported = false;
+        lockstepStallReported = false;
+        lastStateDigestCycle = 0;
+
         // Network buffer: RTT-based + 5 cycles padding
         // LAN games: Use RTT-based (typically 5 cycles = 100ms)
         // Internet games: Use minimum of 10 cycles (200ms) to handle jitter
@@ -5870,10 +5898,10 @@ bool Game::handleNetworkUpdates() {
     if(pNetworkManager == nullptr) {
         return false;
     }
-    
+
     pNetworkManager->update();
     bool bWaitForNetwork = false;
-    
+
     // Check for network delays
     for(const std::string& playername : pNetworkManager->getConnectedPeers()) {
         HumanPlayer* pPlayer = dynamic_cast<HumanPlayer*>(getPlayerByName(playername));
@@ -5882,14 +5910,34 @@ bool Game::handleNetworkUpdates() {
             break;
         }
     }
-    
+
     if(bWaitForNetwork) {
         if(startWaitingForOtherPlayersTime == 0) {
             startWaitingForOtherPlayersTime = SDL_GetTicks();
-        } else if(SDL_GetTicks() - startWaitingForOtherPlayersTime > 1000) {
-            if(pWaitingForOtherPlayers == nullptr) {
-                pWaitingForOtherPlayers = std::make_unique<WaitingForOtherPlayers>();
-                bMenu = true;
+        } else {
+            const Uint32 waitedMs = SDL_GetTicks() - startWaitingForOtherPlayersTime;
+            if(waitedMs > 1000) {
+                if(pWaitingForOtherPlayers == nullptr) {
+                    pWaitingForOtherPlayers = std::make_unique<WaitingForOtherPlayers>();
+                    bMenu = true;
+                }
+            }
+
+            // Lockstep has to end somewhere. Without this the match waits forever for a player
+            // whose tab was suspended or whose connection died quietly, with nothing on screen
+            // but "waiting for other players". Ending it visibly is the honest outcome; a
+            // player's commands are never skipped to keep the match moving, because that is a
+            // silent desynchronisation.
+            if(waitedMs > LOCKSTEP_STALL_TIMEOUT_MS && !lockstepStallReported) {
+                lockstepStallReported = true;
+                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                             "Game: no commands from another player for %u ms at cycle %u - "
+                             "ending the match", static_cast<unsigned>(waitedMs),
+                             static_cast<unsigned>(gameCycleCount));
+                addUrgentMessageToNewsTicker(
+                    _("Another player stopped responding. The game has ended."));
+                pNetworkManager->disconnect();
+                quitGame();
             }
         }
         SDL_Delay(1);  // Reduced from 10ms to 1ms to improve host performance
@@ -5902,8 +5950,120 @@ bool Game::handleNetworkUpdates() {
             }
         }
     }
-    
+
     return bWaitForNetwork;
+}
+
+GameStateDigest::Digest Game::computeStateDigest() const {
+    GameStateDigest::Digest digest;
+    digest.gameCycle  = gameCycleCount;
+    digest.randomSeed = randomGen.getSeed();
+
+    GameStateDigest::Hasher houses;
+    for(int houseID = 0; houseID < NUM_HOUSES; houseID++) {
+        const House* pHouse = house[houseID].get();
+        houses.mixUint8(static_cast<Uint8>(houseID));
+        houses.mixUint8(pHouse != nullptr ? 1 : 0);
+        if(pHouse == nullptr) {
+            continue;
+        }
+        houses.mixInt32(pHouse->getCredits());
+        houses.mixInt32(pHouse->getNumStructures());
+        houses.mixInt32(pHouse->getNumUnits());
+    }
+    digest.houseHash = houses.value();
+
+    GameStateDigest::Hasher objects;
+    Uint32 objectCount = 0;
+    objectManager.forEachObject([&](Uint32 objectID, const ObjectBase* pObject) {
+        if(pObject == nullptr) {
+            return;
+        }
+        objectCount++;
+        objects.mixUint32(objectID);
+        objects.mixInt32(pObject->getItemID());
+        objects.mixInt32(pObject->getOriginalHouseID());
+        const House* pOwner = pObject->getOwner();
+        objects.mixInt32(pOwner != nullptr ? pOwner->getHouseID() : -1);
+        objects.mixInt64(static_cast<std::int64_t>(pObject->getHealth().getRawValue()));
+        objects.mixInt32(pObject->getLocation().x);
+        objects.mixInt32(pObject->getLocation().y);
+    });
+    digest.objectHash  = objects.value();
+    digest.objectCount = objectCount;
+
+    return digest;
+}
+
+void Game::updateStateDigests() {
+    if(pNetworkManager == nullptr || !pNetworkManager->isRelaySession()) {
+        return;
+    }
+    if(gameCycleCount == 0 || (gameCycleCount % GameStateDigest::kDigestIntervalCycles) != 0) {
+        return;
+    }
+    if(gameCycleCount == lastStateDigestCycle) {
+        return;
+    }
+    lastStateDigestCycle = gameCycleCount;
+
+    const GameStateDigest::Digest digest = computeStateDigest();
+
+    localStateDigests.push_back(digest);
+    while(localStateDigests.size() > GameStateDigest::kDigestHistory) {
+        localStateDigests.pop_front();
+    }
+
+    Uint8 encoded[GameStateDigest::kEncodedSize];
+    GameStateDigest::encode(digest, encoded);
+    pNetworkManager->sendRelayDiagnostic(RoomRelay::DiagnosticKind::StateDigest, encoded,
+                                         sizeof(encoded));
+
+    // Anything a peer sent for this cycle before we reached it can be resolved now.
+    for(auto iterator = pendingRemoteDigests.begin(); iterator != pendingRemoteDigests.end();) {
+        if(iterator->second.gameCycle == digest.gameCycle) {
+            if(digest.divergesFrom(iterator->second)) {
+                reportStateDivergence(iterator->first, digest, iterator->second);
+            }
+            iterator = pendingRemoteDigests.erase(iterator);
+        } else {
+            ++iterator;
+        }
+    }
+}
+
+void Game::onRemoteStateDigest(const std::string& peerName,
+                               const GameStateDigest::Digest& digest) {
+    for(const GameStateDigest::Digest& ours : localStateDigests) {
+        if(ours.gameCycle == digest.gameCycle) {
+            if(ours.divergesFrom(digest)) {
+                reportStateDivergence(peerName, ours, digest);
+            }
+            return;
+        }
+    }
+
+    // Their cycle is one we have not produced yet: keep it, bounded, until we do.
+    pendingRemoteDigests.emplace_back(peerName, digest);
+    while(pendingRemoteDigests.size() > GameStateDigest::kDigestHistory) {
+        pendingRemoteDigests.pop_front();
+    }
+}
+
+void Game::reportStateDivergence(const std::string& peerName,
+                                 const GameStateDigest::Digest& ours,
+                                 const GameStateDigest::Digest& theirs) {
+    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                 "Game: state digest mismatch with '%s' - local %s, remote %s",
+                 peerName.c_str(), GameStateDigest::describe(ours).c_str(),
+                 GameStateDigest::describe(theirs).c_str());
+
+    if(stateDivergenceReported) {
+        return;
+    }
+    stateDivergenceReported = true;
+    addUrgentMessageToNewsTicker(
+        _("This game is no longer identical for every player. Results may differ."));
 }
 
 void Game::dumpCombatStats() {

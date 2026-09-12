@@ -221,6 +221,17 @@ public:
         int         serverPort;
         std::string metaServer;
         bool        debugNetwork;
+        /// Base URL of the crossplay room relay; empty means crossplay is not configured.
+        std::string relayEndpoint;
+        /// Loopback relay used for local testing; only reachable when the option below is on.
+        std::string relayDevelopmentEndpoint;
+        /// When set, the loopback relay is used and plain ws:// to loopback becomes acceptable.
+        bool        relayUseDevelopmentEndpoint = false;
+
+        /// The relay address this session should use, honouring the development option.
+        std::string activeRelayEndpoint() const {
+            return relayUseDevelopmentEndpoint ? relayDevelopmentEndpoint : relayEndpoint;
+        }
     } network;
 
     class DiscordClass {

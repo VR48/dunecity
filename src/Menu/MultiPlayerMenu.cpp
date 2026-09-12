@@ -1,5 +1,6 @@
 
 #include <Menu/MultiPlayerMenu.h>
+#include <Menu/CrossplayMenu.h>
 #include <Menu/CustomGameMenu.h>
 #include <Menu/CustomGamePlayers.h>
 #include <Menu/SinglePlayerSkirmishMenu.h>
@@ -77,10 +78,19 @@ MultiPlayerMenu::MultiPlayerMenu() : MenuBase() {
     leftVBox.addWidget(&createInternetGameButton, 0.1);
 
     leftVBox.addWidget(VSpacer::create(8));
+
+    // Crossplay: one outbound connection to the game service, no port forwarding, and desktop
+    // and browser players can share a game. The legacy LAN and direct-Internet buttons above
+    // keep working exactly as they did.
+    playOnlineButton.setText(_("Play Online (Crossplay)"));
+    playOnlineButton.setOnClick(std::bind(&MultiPlayerMenu::onPlayOnline, this));
+    leftVBox.addWidget(&playOnlineButton, 0.1);
+
+    leftVBox.addWidget(VSpacer::create(8));
     hostCampaignCoopButton.setText(_("Host Campaign Co-op"));
     hostCampaignCoopButton.setOnClick(std::bind(&MultiPlayerMenu::onHostCampaignCoop, this));
     leftVBox.addWidget(&hostCampaignCoopButton, 0.1);
-    leftVBox.addWidget(Spacer::create(), 0.7);
+    leftVBox.addWidget(Spacer::create(), 0.6);
 
     rightVBox.addWidget(&gameTypeButtonsHBox, 24);
 
@@ -222,6 +232,25 @@ void MultiPlayerMenu::onCreateInternetGame() {
     CustomGameMenu(true, false).showMenu();
 }
 
+
+void MultiPlayerMenu::onPlayOnline() {
+    if(!validateAndSavePlayerName()) {
+        return;
+    }
+
+    // The crossplay menu owns its own session, so the mesh one must be out of the way first:
+    // two NetworkManagers would fight over the global the whole game reads.
+    std::unique_ptr<NetworkManager> meshSession = std::move(pNetworkManager);
+    pNetworkManager.reset();
+
+    const int result = CrossplayMenu().showMenu();
+
+    pNetworkManager = std::move(meshSession);
+
+    if(result == MENU_QUIT_GAME_FINISHED) {
+        quit(MENU_QUIT_GAME_FINISHED);
+    }
+}
 
 void MultiPlayerMenu::onHostCampaignCoop() {
     if(validateAndSavePlayerName()) SinglePlayerSkirmishMenu(true).showMenu();

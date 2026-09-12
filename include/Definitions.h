@@ -29,6 +29,18 @@
 #define DEFAULT_PORT        28747
 #define DEFAULT_METASERVER  "https://dunelegacy.com/metaserver/metaserver.php"
 
+/**
+    Base URL of the room relay that carries crossplay games (see docs/room-relay-protocol.md).
+
+    Empty by default on purpose: nothing in this repository deploys a relay, and the game must
+    not invent an endpoint. An operator sets "Relay Endpoint" in the Network section of the
+    configuration file, or passes --RelayEndpoint= on the command line.
+*/
+#define DEFAULT_RELAY_ENDPOINT  ""
+
+/// The loopback relay used for development and testing. Only ever plain http/ws, only loopback.
+#define DEVELOPMENT_RELAY_ENDPOINT "http://127.0.0.1:8787"
+
 #define SAVEMAGIC           8675309
 // 9822: Worfinery persists its progressive harvester extraction state.
 // 9820: CitySimulation persists every house's R/C/I and budget state.

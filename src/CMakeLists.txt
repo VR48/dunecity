@@ -207,6 +207,7 @@ target_sources(dunecity
         Menu/HouseChoiceMenu.cpp
         Menu/MentatMenu.cpp
         Menu/MultiPlayerMenu.cpp
+        Menu/CrossplayMenu.cpp
         Menu/BriefingMenu.cpp
         Menu/HouseChoiceInfoMenu.cpp
         Menu/MentatHelp.cpp
@@ -222,10 +223,8 @@ target_sources(dunecity
         Network/LANGameFinderAndAnnouncer.cpp
         Network/NetworkManager.cpp
         Network/GamePayloadRouter.cpp
-        Network/RelayWebSocketCurl.cpp
-        Network/RelayWebSocketEmscripten.cpp
-        Network/RoomAdmissionClient.cpp
         Network/RoomRelayClient.cpp
+        Network/RoomAdmissionClient.cpp
         Network/ENetHttp.cpp
         Network/MetaServerClient.cpp
         Network/VersionChecker.cpp
@@ -458,6 +457,27 @@ if(NOT EMSCRIPTEN)
     endif()
 endif()
 
+# The crossplay relay transport has one implementation per platform. Only the matching one is
+# compiled: each file is also guarded internally, but listing them conditionally keeps the other
+# platform's headers (libcurl, emscripten/websocket.h) out of the build entirely.
+if(EMSCRIPTEN)
+    target_sources(dunecity PRIVATE Network/RelayWebSocketEmscripten.cpp)
+else()
+    target_sources(dunecity PRIVATE Network/RelayWebSocketCurl.cpp)
+
+    # libcurl gained its WebSocket API in 7.86. Older libcurl still builds - the transport
+    # compiles out and the game says online play is unavailable - but it is worth being loud
+    # about, because the macOS system libcurl is also built without the ws/wss handlers even
+    # when its headers are new enough. Configure with -DCURL_ROOT=/opt/homebrew/opt/curl on
+    # macOS to pick up a libcurl that has them.
+    if(CURL_VERSION_STRING AND CURL_VERSION_STRING VERSION_LESS "7.86.0")
+        message(STATUS "libcurl ${CURL_VERSION_STRING} has no WebSocket API; "
+                       "crossplay will be unavailable in this build")
+    else()
+        message(STATUS "libcurl ${CURL_VERSION_STRING} provides the WebSocket API used by crossplay")
+    endif()
+endif()
+
 # Link libraries
 if(EMSCRIPTEN)
     set_target_properties(dunecity PROPERTIES SUFFIX ".html")
@@ -481,6 +501,8 @@ if(EMSCRIPTEN)
         "SHELL:-sEXIT_RUNTIME=0"
         "SHELL:-sEXPORTED_RUNTIME_METHODS=['FS']"
         "SHELL:-lidbfs.js"
+        # Crossplay in the browser: the WebSocket API for the gameplay connection and the Fetch
+        # API for room admission. Both are asynchronous; no synchronous request is used.
         "SHELL:-lwebsocket.js"
         "SHELL:-sFETCH=1"
         "SHELL:--shell-file ${CMAKE_SOURCE_DIR}/web/shell.html"
