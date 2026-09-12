@@ -79,7 +79,7 @@ struct SeatSnapshot {
         \return true if that player holds any seat
     */
     bool isSeated(const std::string& name) const {
-        for(int slot = 0; slot < slotCount(); slot++) {
+        for(int slot = 0; slot < slotCount(); slot += multiplePlayersPerHouse ? 1 : 2) {
             if(slots[static_cast<std::size_t>(slot)].kind == SlotKind::Human
                && slots[static_cast<std::size_t>(slot)].name == name) {
                 return true;
@@ -97,7 +97,7 @@ struct SeatSnapshot {
         if(houseIndex < 0 || houseIndex >= numHouses) {
             return false;
         }
-        for(int offset = 0; offset < 2; offset++) {
+        for(int offset = 0; offset < (multiplePlayersPerHouse ? 2 : 1); offset++) {
             const std::size_t slot = static_cast<std::size_t>(houseIndex * 2 + offset);
             if(slots[slot].kind == SlotKind::Human && slots[slot].name == name) {
                 return true;
@@ -131,7 +131,7 @@ inline bool mayConfigurePlayerSlot(const SeatSnapshot& snapshot, const std::stri
     const int house = static_cast<int>(slot / 2);
     if(snapshot.occupiesHouse(name, house)) return true;
     return isHost && snapshot.slots[house * 2].kind != SlotKind::Human
-                  && snapshot.slots[house * 2 + 1].kind != SlotKind::Human;
+                  && (!snapshot.multiplePlayersPerHouse || snapshot.slots[house * 2 + 1].kind != SlotKind::Human);
 }
 
 /**

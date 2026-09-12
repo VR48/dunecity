@@ -325,3 +325,20 @@ Stefan clarified that playing strangers must not require exchanging codes. The n
 feature should offer public games with direct Join buttons through the centralized metaserver;
 codes should remain optional invitations for private games. Public discovery is not implemented
 by the current room-code flow.
+
+## 13. Player-owned support controls (September 2026)
+
+A human player controls the non-human partner/support slot in their own house. The host can
+configure unoccupied AI houses but cannot use ordinary lobby controls to change another human's
+support. Human occupants cannot be replaced through AI selectors or displaced by a seat claim.
+An open partner seat still permits joining as a human co-op player; an unowned AI house still
+permits a player to move there.
+
+`LobbyAuthorization::mayConfigurePlayerSlot` supplies the shared policy for widgets and
+remote ChangePlayer requests. `checkPlayerBoxes` protects both the dropdown and its separate
+click-to-claim action; callbacks recheck ownership against pre-edit state. The host validates
+remote change transactions before applying any event. This does not make a modified hostile
+host trustworthy: the game host remains authoritative for snapshots and simulation.
+
+Run `ctest --test-dir build -R lobby_authorization_tests --output-on-failure` for seat claims,
+support ownership, host UI policy, human replacement, inactive slots and transaction atomicity.

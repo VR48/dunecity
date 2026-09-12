@@ -1652,3 +1652,20 @@ TEST_CASE("Lobby authorization: support AI belongs to its human, including again
     REQUIRE(judge(lobby, "stefan", houseChange(EventType::ChangePlayer, 3, 1))
             == LobbyDecision::RejectSlotOutOfRange);
 }
+
+TEST_CASE("Lobby authorization: inactive partner seats cannot grant ownership",
+          "[lobby][security][authorization]") {
+    SeatSnapshot lobby = exampleLobby();
+    lobby.multiplePlayersPerHouse = false;
+    using EventType = ChangeEventList::ChangeEvent::EventType;
+    REQUIRE_FALSE(lobby.isSeated("quix"));
+    REQUIRE_FALSE(lobby.occupiesHouse("quix", 1));
+    REQUIRE(judge(lobby, "quix", houseChange(EventType::ChangeHouse, 1, HOUSE_ORDOS))
+            == LobbyDecision::RejectUnknownSender);
+    REQUIRE(judge(lobby, "quix", houseChange(EventType::ChangeTeam, 1, 2))
+            == LobbyDecision::RejectUnknownSender);
+    REQUIRE(judge(lobby, "quix", houseChange(EventType::ChangeColor, 1, 3))
+            == LobbyDecision::RejectUnknownSender);
+    lobby.slots[2] = {SlotKind::AI, {}};
+    REQUIRE(LobbyAuthorization::mayConfigurePlayerSlot(lobby, "host", 2, true));
+}
