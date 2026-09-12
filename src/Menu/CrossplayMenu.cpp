@@ -346,7 +346,11 @@ void CrossplayMenu::openRelaySession() {
     refreshControls();
 }
 
-void CrossplayMenu::teardownSession(const std::string& reason) {
+void CrossplayMenu::teardownSession(std::string reason) {
+    // Own the reason before releasing the relay whose status may contain it.
+    pendingGameInfo.reset();
+    pendingLobbyChanges = ChangeEventList();
+    pendingDisconnectReason.clear();
     admission.cancel();
     if(pNetworkManager != nullptr && pNetworkManager->isRelaySession()) {
         pNetworkManager->setOnReceiveGameInfo(
@@ -370,6 +374,18 @@ void CrossplayMenu::teardownSession(const std::string& reason) {
 }
 
 void CrossplayMenu::update() {
+    // Network callbacks run inside NetworkManager::update(). Defer menu loops and
+    // manager destruction until that dispatch has returned to MenuBase.
+    if(!pendingDisconnectReason.empty()) {
+        teardownSession(pendingDisconnectReason);
+        return;
+    }
+    if(pendingGameInfo) {
+        auto gameInfo = std::move(pendingGameInfo);
+        auto changes = std::move(pendingLobbyChanges);
+        enterReceivedLobby(*gameInfo, changes);
+        return;
+    }
     admission.update();
 
     if(stage == Stage::Requesting) {
@@ -424,9 +440,16 @@ void CrossplayMenu::update() {
 
 void CrossplayMenu::onReceiveGameInfo(const GameInitSettings& gameInitSettings,
                                       const ChangeEventList& changeEventList) {
-    if(pendingHosting) {
+    if(pendingHosting || pendingGameInfo || !pendingDisconnectReason.empty()) {
         return;     // a host does not take a lobby from anybody
     }
+
+    pendingGameInfo = std::make_unique<GameInitSettings>(gameInitSettings);
+    pendingLobbyChanges = changeEventList;
+}
+
+void CrossplayMenu::enterReceivedLobby(const GameInitSettings& gameInitSettings,
+                                       const ChangeEventList& changeEventList) {
 
     setStatus(_("Joining the game..."));
 
@@ -469,5 +492,5 @@ void CrossplayMenu::onPeerDisconnected(const std::string& playerName, bool isHos
                                          : (playerName + _(" left the game."));
             break;
     }
-    teardownSession(message);
+    pendingDisconnectReason = std::move(message);
 }

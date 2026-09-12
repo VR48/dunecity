@@ -377,6 +377,7 @@ Game::~Game() {
         pNetworkManager->setOnPeerDisconnected(std::function<void (const std::string&, bool, int)>());
         pNetworkManager->setOnReceiveClientStats({});
         pNetworkManager->setOnReceiveSetPathBudget({});
+        pNetworkManager->setOnReceiveRelayDiagnostic({});
     }
 
     for(StructureBase* pStructure : structureList) {
@@ -6053,15 +6054,15 @@ void Game::onRemoteStateDigest(const std::string& peerName,
 void Game::reportStateDivergence(const std::string& peerName,
                                  const GameStateDigest::Digest& ours,
                                  const GameStateDigest::Digest& theirs) {
+    if(stateDivergenceReported) {
+        return;
+    }
+    stateDivergenceReported = true;
     SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                  "Game: state digest mismatch with '%s' - local %s, remote %s",
                  peerName.c_str(), GameStateDigest::describe(ours).c_str(),
                  GameStateDigest::describe(theirs).c_str());
 
-    if(stateDivergenceReported) {
-        return;
-    }
-    stateDivergenceReported = true;
     addUrgentMessageToNewsTicker(
         _("This game is no longer identical for every player. Results may differ."));
 }

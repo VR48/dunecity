@@ -70,7 +70,9 @@ private:
 
     void beginAdmission(bool hosting);
     void openRelaySession();
-    void teardownSession(const std::string& reason);
+    void teardownSession(std::string reason);
+    void enterReceivedLobby(const GameInitSettings& gameInitSettings,
+                            const ChangeEventList& changeEventList);
     void setStatus(const std::string& message);
     void refreshControls();
 
@@ -88,6 +90,9 @@ private:
     bool        pendingHosting = false;
     std::string roomCode;
     std::string statusText;
+    std::unique_ptr<GameInitSettings> pendingGameInfo;
+    ChangeEventList pendingLobbyChanges;
+    std::string pendingDisconnectReason;
 
     RoomAdmissionClient admission;
     AdmissionResponse   grantedRoom;
