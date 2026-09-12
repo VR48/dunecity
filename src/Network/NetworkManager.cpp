@@ -97,9 +97,13 @@ NetworkManager::~NetworkManager() {
 }
 
 void NetworkManager::startServer(bool bLANServer, const std::string& serverName, const std::string& playerName, GameInitSettings* pGameInitSettings, int numPlayers, int maxPlayers) {
-    // Reset game-in-progress flag for new game
+    // Reset game-in-progress flag for new game. The same NetworkManager instance is reused
+    // when a player returns from a match and hosts another one, so the previous match's phase
+    // and seed must not leak into this session.
     bGameInProgress = false;
-    
+    simulationSeed = 0;
+
+
     if(bLANServer == true) {
         if(pLANGameFinderAndAnnouncer != nullptr) {
             pLANGameFinderAndAnnouncer->startAnnounce(serverName, host->address.port, pGameInitSettings->getFilename(), numPlayers, maxPlayers);
@@ -321,6 +325,13 @@ void NetworkManager::connect(const std::string& hostname, int port, const std::s
 
 void NetworkManager::connect(ENetAddress address, const std::string& playerName) {
     debugNetwork("Connecting to %s:%d\n", Address2String(address).c_str(), address.port);
+
+    // A new client session starts in the lobby again. The same NetworkManager instance is
+    // reused when a player returns from a match and joins another game, so the phase and the
+    // simulation seed of the previous match must not leak into this one.
+    bGameInProgress = false;
+    simulationSeed = 0;
+    modTransferState = ModTransferState();
 
     connectPeer = enet_host_connect(host, &address, 2, 0);
     if(connectPeer == nullptr) {
@@ -1531,7 +1542,7 @@ void NetworkManager::handlePacket(ENetPeer* peer, ENetPacketIStream& packetStrea
                     break;
                 }
 
-                if(chunkData.size() > MOD_CHUNK_SIZE) {
+                if(chunkData.size() > static_cast<std::size_t>(MOD_CHUNK_SIZE)) {
                     noteRejectedPacket(peer, "mod chunk exceeds the chunk size limit");
                     abortModTransfer("Invalid chunk size");
                     break;

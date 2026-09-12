@@ -83,7 +83,8 @@ public:
 
         // Subtraction form: currentPos is never allowed past dataLength, so this cannot wrap.
         // The additive form (currentPos + length) overflows on 32-bit size_t targets (wasm32).
-        if(length > ENETPACKET_MAX_STRING_LENGTH || length > getRemainingLength()) {
+        if(length > static_cast<Uint32>(ENETPACKET_MAX_STRING_LENGTH)
+           || static_cast<size_t>(length) > getRemainingLength()) {
             THROW(InputStream::eof, "ENetPacketIStream::readString(): End-of-File reached!");
         }
 
