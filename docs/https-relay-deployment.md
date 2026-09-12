@@ -108,3 +108,29 @@ separate, spaced button. Production Apache load, final immutable-artifact securi
 review, native/browser gameplay over public TLS and watchdog acceptance remain
 release gates. The current launcher only restarts an exited process; it does not
 yet detect and recover a live but wedged process. Do not call this a deployed release.
+
+## Production acceptance in progress — 13 September 2026
+
+The public gateway and schema-2 receiver are installed for acceptance, while the
+ordinary Play client is unchanged. The receiver is restricted to the server's
+own addresses in Apache and still requires its independent HMAC. The gateway
+is now also tracked in the website repository, so ordinary rsync deployments
+will preserve it. SQLite's online backup is at
+`~/dunecity-relay/backups/pre-http-abe9901/games.sqlite`; migration and relay-only
+rollback were verified on that copy with every legacy row preserved. The live
+database passed integrity_check after adding the relay objects.
+
+Two native transport clients passed through public TLS with 17 matching digest
+comparisons each. Their created/joined/started/left/closed records reached actual
+SQLite as https-poll/native. A four-worker, 24-request bounded test kept the
+website responsive, both from the Mac and on the server. One incomplete upload
+was rejected with HTTP400 after about10 seconds while the ordinary page remained
+responsive. This is not a capacity or DDoS benchmark. Browser/native gameplay,
+actual watchdog recovery and release publication are still being verified.
+
+The supervisor and manifest gates are now implemented. Linux fixture checks
+cover healthy/exited/hung children, abrupt supervisor death, duplicate cron
+launches and modified artifacts: 34 manifest and42 supervisor checks pass.
+The supervisor installs a Linux parent-death signal so SIGKILL/OOM cannot leave
+an orphan child occupying the port. Neither manifest drift checks nor Landlock
+protect against compromise of the deployment account itself.

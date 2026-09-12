@@ -7,6 +7,131 @@ file is `relay/http-gateway.php` alongside `http-gateway.htaccess` installed as
 The administrator bootstrap below is a separate, optional WebSocket deployment.
 Do not run it or mix its8787/WSS settings into the polling deployment.
 
+# Startup gates and the watchdog for the user-owned polling relay
+
+These apply to the unprivileged HTTPS-polling deployment under
+`/home/dunelegacy-deploy/dunecity-relay` (`$base` below), which is started by
+`deploy/run-user-relay.sh` from the deployment account's own crontab. They are
+independent of the administrator bootstrap in the next section.
+
+## Frozen release and pinned runtime
+
+`deploy/artifact-manifest.py` records and re-checks one directory tree exactly:
+every entry's type, mode and owner, each symlink's target, and each regular
+file's size and SHA256. Verification is set equality, so a missing entry, an
+extra entry, a retargeted symlink, a type change, a mode change and edited
+content are all refused; unexpected file types (sockets, fifos, devices) and
+group/other-writable entries are refused too. Symlinked directories are
+recorded as links and never traversed, so nothing outside the tree can be
+pulled into - or quietly out of - coverage, and a manifest entry naming `..` or
+an absolute path is rejected on sight. Two trees are covered, with nothing
+excluded from either: the pinned runtime (`$base/runtime`, i.e. the Node
+binary, its libraries and npm) and the frozen release (`$base/releases/<rev>`,
+i.e. `src/`, `deploy/`, `package.json`, `package-lock.json`, `REVISION` and the
+installed `node_modules`). There are no transient files inside either tree -
+the service log, the lock and the manifests all live in `$base` itself - and
+the tool deliberately supports no exclusions.
+
+Freeze both after installing or updating a release, from the deployment account:
+
+```sh
+base=/home/dunelegacy-deploy/dunecity-relay
+release=$(readlink -f "$base/current")
+chmod -R go-w "$base/runtime" "$release"
+python3 "$release/deploy/artifact-manifest.py" write \
+  --root "$base/runtime"  --manifest "$base/state/runtime.manifest"
+python3 "$release/deploy/artifact-manifest.py" write \
+  --root "$release" --manifest "$base/state/release.manifest"
+```
+
+The manifests live in `$base/state/`, outside both covered trees. Each records
+the covered root as an absolute path, so `$base/current` re-pointed at a
+different release is refused even if that release's contents are identical: an
+upgrade means installing the new release, re-freezing, and letting the next
+minute's cron run pick it up.
+
+`run-user-relay.sh` verifies both manifests before it starts anything and the
+supervisor verifies them again before every (re)start, so a release that drifts
+while running is not restarted from.
+
+**What this is not.** It is drift and damage detection, not tamper resistance
+against the account that owns the files: that account can rewrite a manifest as
+easily as the tree it covers, and the wrapper that performs the check is itself
+part of the release. Root-owned integrity is `bootstrap.sh`'s job. Hard links
+are not distinguished from ordinary files (content is hashed either way).
+
+## Watchdog
+
+`deploy/run-user-relay.sh` has two roles:
+
+* with no argument it is the cron entry point. It trims the service log, takes
+  the single exclusive `flock` on `$base/run.lock` (fd 9), redirects to
+  `$base/service.log`, verifies the two manifests and `exec`s the supervisor,
+  which inherits the held descriptor. Trimming happens before the lock because
+  the supervisor holds that lock for its whole life.
+* with `--exec-child` it is the launcher the supervisor spawns: no lock at all
+  (so there is no nested lock to deadlock on), and the unchanged clean-env
+  `sandbox.py` Landlock chain. Every step is an `exec`, so the PID the
+  supervisor holds is the Node process itself.
+
+```
+@reboot     /bin/bash /home/dunelegacy-deploy/dunecity-relay/current/deploy/run-user-relay.sh
+* * * * *   /bin/bash /home/dunelegacy-deploy/dunecity-relay/current/deploy/run-user-relay.sh
+```
+
+The minute line only ever restores a supervisor that is gone: while one is
+alive, `flock -n` fails and the wrapper exits 0. Neither line needs a login
+shell, and the supervisor detaches from any controlling terminal, so closing an
+SSH session does not take the relay down.
+
+`deploy/relay-supervisor.py` then, in a loop: probes
+`http://127.0.0.1:18787/v1/health` with the gateway key read from
+`/var/www/data/dunecity-relay/gateway.key` and sent as the `x-dune-gateway`
+header the relay already requires - never an argument, never logged - and
+requires a `status=ok` line in the `text/plain` body (a 2xx alone is not
+health). Probing starts only after a launch grace period, and it takes
+`RELAY_WATCHDOG_FAILURES` consecutive failures, each with a bounded
+per-operation timeout, to declare the relay hung. Termination is always of its
+own child handle: a pidfd where the kernel and Python provide one, otherwise a
+signal to its own unreaped child PID, which cannot have been reused while this
+process has not waited on it. `SIGTERM`, then `SIGKILL` after a bounded grace.
+No pattern matching, no `pkill`, no PID file read back from disk. Restarts use
+bounded exponential backoff; after `RELAY_WATCHDOG_MAX_BAD_STARTS` starts that
+never reached health it gives up and exits non-zero, releasing the lock so the
+next minute's cron run retries - a bounded, once-a-minute retry rate instead of
+a hot loop. If it is signalled, it terminates its child before exiting. Linux also installs a
+parent-death SIGKILL before exec, so abrupt supervisor death or OOM cannot leave
+an orphan relay holding the port while the next supervisor starts.
+
+Defaults (grace 25s, interval 15s, timeout 5s, 3 failures, 10s termination
+grace, backoff 2s doubling to 60s, 5 bad starts) are overridable through the
+`RELAY_WATCHDOG_*` variables, which exist so the tests can compress timings.
+
+`$base/state/supervisor-status` (0600) carries the supervisor PID, the child
+PID, the release path, the revision, start/restart counters and the last health
+outcome. It contains no secret.
+
+A gateway key file that is missing or malformed is reported and does **not**
+count as a failed probe: the relay cannot start without one, so restarting
+could not fix it. That means a relay whose key file disappeared after startup
+is not watchdogged until the key is restored.
+
+## Tests
+
+Both suites use fixtures in a private temporary directory, need no privileges,
+and touch no production path, port, key or service:
+
+```sh
+python3 deploy/test-artifact-manifest.py
+python3 deploy/test-relay-supervisor.py
+```
+
+The second builds a fake release, a fake gateway key and a fake relay that
+answers health only when the request carries that key, then drives the real
+supervisor through healthy, exited, hung, bad-start and changed-artifact
+scenarios (including a decoy process with the same command line, which must
+survive).
+
 # Production relay on the existing website host
 
 The application uses `https://dunelegacy.com/relay`; Apache terminates the existing
