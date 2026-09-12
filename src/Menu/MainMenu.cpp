@@ -339,9 +339,11 @@ void MainMenu::update()
     refreshContextButtons();
 
     // Process version check results
+#ifndef __EMSCRIPTEN__
     if(pVersionChecker) {
         pVersionChecker->update();
     }
+#endif
 
     // Show update dialog if new version available and not already shown
     if(!latestVersion.empty() && !bUpdateDialogShown && !pChildWindow) {

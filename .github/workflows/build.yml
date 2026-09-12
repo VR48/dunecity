@@ -81,6 +81,39 @@ jobs:
           DUNECITY_DATADIR=${{ github.workspace }}/data \
           ./build/bin/dunelegacy_tests
 
+  build-emscripten:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    needs: [verify-version]
+    if: always() && (needs.verify-version.result == 'success' || needs.verify-version.result == 'skipped')
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git python3
+
+      - name: Check browser build safety
+        run: python3 -m unittest discover -s scripts/tests -p 'test_web_build.py'
+
+      - name: Build browser target
+        run: ./tools/web/build-emscripten.sh
+
+      - name: Upload browser artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: DuneCity-Emscripten
+          path: |
+            build/emscripten/bin/dunecity.html
+            build/emscripten/bin/dunecity.js
+            build/emscripten/bin/dunecity.wasm
+            build/emscripten/bin/dunecity.data
+
   build-windows:
     runs-on: windows-latest
     # Wait for version check on tag builds; run unconditionally otherwise

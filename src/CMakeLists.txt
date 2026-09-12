@@ -497,11 +497,15 @@ if(EMSCRIPTEN)
         "SHELL:-sUSE_SDL=2"
         "SHELL:-sUSE_SDL_MIXER=2"
         "SHELL:-sUSE_SDL_TTF=2"
+        "SHELL:-fexceptions"
+        "SHELL:-sDISABLE_EXCEPTION_CATCHING=0"
     )
     target_link_options(dunecity PRIVATE
         "SHELL:-sUSE_SDL=2"
         "SHELL:-sUSE_SDL_MIXER=2"
         "SHELL:-sUSE_SDL_TTF=2"
+        "SHELL:-fexceptions"
+        "SHELL:-sDISABLE_EXCEPTION_CATCHING=0"
         "SHELL:-sASYNCIFY=1"
         "SHELL:-sALLOW_MEMORY_GROWTH=1"
         "SHELL:-sINITIAL_MEMORY=268435456"
