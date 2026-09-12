@@ -195,7 +195,10 @@ tests/wasm/run-network-wire-harness.sh native   # host compiler, ASan/UBSan
 the callback runs, so a malformed packet leaves the client exactly as it was.
 `GameInitSettingsPolicy` bounds the game type and house enums, the house count, players per
 house, team numbers, the filename, the map payload, the mod name and the player strings, and the
-game speed. A map that cannot be stored safely rejects the whole packet rather than being played
+game speed. Only network session types may be received: a peer cannot select a local-file
+loader. The empty campaign-end marker is allowed only on `COOP_MISSION`. Map payloads are
+limited to 1 MiB; transmitted saves may use the existing 4 MiB packet budget, and closed
+house rows in saved lobbies remain valid. A map that cannot be stored safely rejects the whole packet rather than being played
 from memory. The same validation runs on `COOP_MISSION`. None of it applies to local savegame or
 map loading.
 
@@ -224,3 +227,24 @@ map loading.
   crossplay rooms the intended answer is bundled content, not peer mod delivery.
 - Lockstep still has no stall timeout, and client performance reports remain advisory input to
   the host's path-budget decision.
+
+
+## Real game command execution check
+
+On the macOS Ninja build with bundled assets, run:
+
+```sh
+python3 tests/network/run-command-execution-probe.py
+```
+
+The probe compiles a separate main against the actual game objects, loads the bundled two-player
+map with a co-op partner, and uses an isolated profile with dummy SDL drivers. It verifies enemy
+commands are rejected, owner and shared-house commands work, unknown issuers and invalid enum
+values are no-ops, a malformed batch applies nothing, and a missing cycle is recovered by a
+contiguous retransmission. It also checks Ninja dependency records before and after. The test
+prints its retained logs directory. It does not contact a live metaserver.
+
+The same real-object ownership probe against the pre-authorization `Command.cpp` at `5c9fb58`
+failed because an enemy's command changed the unit's attack mode. The fixed implementation and
+batch recovery probe pass. The native CTest suite and the standalone wasm wire harness also
+pass; this evidence does not constitute browser/native crossplay match verification.
