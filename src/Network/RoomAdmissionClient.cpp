@@ -149,9 +149,9 @@ public:
     }
 
     static void onSucceeded(emscripten_fetch_t* fetch) {
-        auto* holder = static_cast<std::shared_ptr<SharedState>*>(fetch->userData);
-        if(holder != nullptr) {
-            SharedState& shared = **holder;
+        auto* state = static_cast<SharedState*>(fetch->userData);
+        if(state != nullptr) {
+            SharedState& shared = *state;
             if(!shared.cancelled) {
                 shared.httpStatus = fetch->status;
                 const std::size_t length = static_cast<std::size_t>(fetch->numBytes);
@@ -160,24 +160,20 @@ public:
                 }
                 shared.finished = true;
             }
-            delete holder;
         }
-        fetch->userData = nullptr;
-        emscripten_fetch_close(fetch);
+        // Impl owns the fetch. Closing here would leave Impl::fetch dangling and
+        // close it twice when the game loop consumes the result or cancels.
     }
 
     static void onFailed(emscripten_fetch_t* fetch) {
-        auto* holder = static_cast<std::shared_ptr<SharedState>*>(fetch->userData);
-        if(holder != nullptr) {
-            SharedState& shared = **holder;
+        auto* state = static_cast<SharedState*>(fetch->userData);
+        if(state != nullptr) {
+            SharedState& shared = *state;
             if(!shared.cancelled) {
                 shared.httpStatus = fetch->status;
                 shared.finished = true;
             }
-            delete holder;
         }
-        fetch->userData = nullptr;
-        emscripten_fetch_close(fetch);
     }
 
     std::string url;
@@ -329,19 +325,17 @@ void RoomAdmissionClient::begin(const AdmissionRequest& request) {
     emscripten_fetch_attr_init(&attr);
     std::strcpy(attr.requestMethod, "POST");
     // LOAD_TO_MEMORY without EMSCRIPTEN_FETCH_SYNCHRONOUS: the browser must never be blocked.
-    attr.attributes = EMSCRIPTEN_FETCH_LOAD_TO_MEMORY;
+    attr.attributes = EMSCRIPTEN_FETCH_LOAD_TO_MEMORY | EMSCRIPTEN_FETCH_REPLACE;
     attr.timeoutMSecs = static_cast<unsigned long>(kAdmissionTimeoutSeconds * 1000);
     attr.requestHeaders = impl_->headers;
     attr.requestData = impl_->body.c_str();
     attr.requestDataSize = impl_->body.size();
     attr.onsuccess = &Impl::onSucceeded;
     attr.onerror = &Impl::onFailed;
-    auto* holder = new std::shared_ptr<Impl::SharedState>(impl_->state);
-    attr.userData = holder;
+    attr.userData = impl_->state.get();
 
     impl_->fetch = emscripten_fetch(&attr, impl_->url.c_str());
     if(impl_->fetch == nullptr) {
-        delete holder;
         finishWithError("The game service could not be reached.");
     }
 #else
