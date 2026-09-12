@@ -4,18 +4,16 @@
 #
 #   tests/relay/run-relay-transport-harness.sh             # both peers native
 #   tests/relay/run-relay-transport-harness.sh diverge     # one peer's state is perturbed
-#   tests/relay/run-relay-transport-harness.sh bulk        # large messages, partial writes
+#   tests/relay/run-relay-transport-harness.sh bulk        # large messages, integrity and order
 #
 # What this proves: HTTPS admission, the WebSocket handshake, the relay handshake, membership,
 # routing, the host-driven phase change and the diagnostic channel, through the production code
 # paths rather than through a mock. In "diverge" mode the perturbed peer's digest must be
 # detected as a mismatch by both sides - a divergence test that fails if the detection is broken.
 #
-# "bulk" mode is about the transport rather than the protocol. It pushes messages far larger than
-# a socket buffer as fast as the socket accepts them, so curl_ws_send() consumes part of a frame
-# and the remainder has to be offered again as a continuation. Every byte of every message is
-# checked on the receiving side: a continuation that resumes at the wrong offset still produces a
-# message of exactly the right length, so a length check would not notice.
+# "bulk" mode checks every byte and the sequence of large messages, paced below the production
+# rate limit. This can expose corruption in frame continuations, but does not force partial
+# socket writes. A successful run alone therefore does not verify that continuation path.
 #
 # Prerequisites:
 #   * the relay's dependencies installed:  (cd tools/room-relay && npm ci)
@@ -81,7 +79,7 @@ done
 curl -fsS "${ENDPOINT}/v1/health" > /dev/null
 kill -0 "${RELAY_PID}"
 
-# Fewer than 256 messages, so the index each message carries is unambiguous on arrival.
+# At most 256 messages, so indices 0 through 255 are unambiguous on arrival.
 BULK_COUNT="${RELAY_BULK_COUNT:-48}"
 BULK_BYTES="${RELAY_BULK_BYTES:-200000}"
 

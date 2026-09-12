@@ -64,8 +64,8 @@ void usage() {
         "  --corrupt            perturb this peer's synthetic state to force a divergence\n"
         "  --expect-mismatch    succeed only if a divergence is detected\n"
         "  --seconds=N          how long to stay in the room (default 25)\n"
-        "  --bulk=N             send N large messages as fast as the socket accepts them\n"
-        "  --expect-bulk=N      require N large messages to arrive, each byte-exact\n"
+        "  --bulk=N             send up to 256 large messages below the relay rate limit\n"
+        "  --expect-bulk=N      require N byte-exact messages in order, with no duplicates\n"
         "  --bulk-bytes=N       body size of a bulk message (default 200000)\n");
 }
 
@@ -401,6 +401,12 @@ int main(int argc, char** argv) {
                             if(index < 0) {
                                 bulkCorrupt++;
                                 std::printf("BULK corrupt bytes=%zu\n", event.payload.size());
+                            } else if(index != bulkReceived || index >= options.expectBulk) {
+                                // Ordered reliable delivery must contain each expected index once.
+                                // Count-only validation could accept a duplicate replacing a loss.
+                                bulkCorrupt++;
+                                std::printf("BULK unexpected index=%d expected=%d\n",
+                                            index, bulkReceived);
                             } else {
                                 bulkReceived++;
                                 if((bulkReceived % 8) == 0 || bulkReceived == options.expectBulk) {

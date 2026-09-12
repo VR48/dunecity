@@ -231,7 +231,14 @@ describe('grant claims bound at admission', () => {
       const host = await joinAsHost(relay, CUSTOM_ROOM);
 
       const a = await admitJoin(relay, host.room);
-      const versionSwap = await helloWith(relay, a.fields.grant, { appVersion: '9.9.9' });
+      const protocolSwap = await helloWith(relay, a.fields.grant, { gameProtocol: GAME_PROTOCOL + 1 });
+      assert.equal((await protocolSwap.expect(S2C.ERROR)).code, CLOSE.VERSION_MISMATCH);
+      const protocolDenial = relay.log.events('connection_denied').at(-1);
+      assert.equal(protocolDenial.code, CLOSE.VERSION_MISMATCH);
+      assert.deepEqual(Object.keys(protocolDenial).sort(), ['addressTag', 'code', 'event', 'ts']);
+
+      const versionAdmission = await admitJoin(relay, host.room);
+      const versionSwap = await helloWith(relay, versionAdmission.fields.grant, { appVersion: '9.9.9' });
       assert.equal((await versionSwap.expect(S2C.ERROR)).code, CLOSE.UNAUTHORIZED);
 
       const b = await admitJoin(relay, host.room);

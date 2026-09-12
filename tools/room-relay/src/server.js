@@ -374,6 +374,10 @@ function createRelay(userConfig = {}) {
       return;
     }
     if (msg.gameProtocol !== room.gameProtocol) {
+      log.emit('connection_denied', {
+        code: CLOSE.VERSION_MISMATCH,
+        addressTag: log.addressTag(conn.address),
+      });
       closeConnection(conn, CLOSE.VERSION_MISMATCH, 'This room expects another game version.');
       return;
     }
