@@ -82,6 +82,8 @@ class RoomStore {
     this.now = options.now || (() => Date.now());
     /** Called once per room, whichever path closed it, including the reaper. */
     this.onRoomClosed = options.onRoomClosed || (() => {});
+    /** Called by the reaper before the room is closed, so the owner can tear its peers down. */
+    this.onRoomExpired = options.onRoomExpired || (() => {});
     this.maxRooms = options.maxRooms || LIMITS.MAX_ROOMS;
     this.grantTtlMs = options.grantTtlMs === undefined ? LIMITS.GRANT_TTL_MS : options.grantTtlMs;
     /** @type {Map<string, Room>} room code -> room */
@@ -106,12 +108,22 @@ class RoomStore {
     for (const room of [...this.rooms.values()]) {
       if (room.closed) continue;
       if (now - room.createdAt > LIMITS.ROOM_LIFETIME_MS) {
-        this.closeRoom(room, 'lifetime');
+        this.expire(room, 'lifetime');
       } else if (room.peers.size === 0 && room.outstandingGrants === 0
                  && now - room.emptySince > LIMITS.EMPTY_ROOM_TTL_MS) {
-        this.closeRoom(room, 'empty');
+        this.expire(room, 'empty');
       }
     }
+  }
+
+  /**
+   * Hands an expired room to the owner so that it can disconnect the peers still in it, rather
+   * than dropping the room out of the map and leaving their sockets attached to nothing.
+   * The room is closed here regardless, so a handler that does nothing cannot leak it.
+   */
+  expire(room, reason) {
+    this.onRoomExpired(room, reason);
+    if (!room.closed) this.closeRoom(room, reason);
   }
 
   allocatePeerId() {

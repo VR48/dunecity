@@ -90,6 +90,15 @@ function createRelay(userConfig = {}) {
     grantTtlMs: config.grantTtlMs,
     // Fires once per room whether the host left, the relay stopped, or the reaper collected it.
     onRoomClosed: (room, reason) => lifecycle.roomClosed({ roomLogId: room.logId, reason }),
+    // The reaper defers to the full close below, so an expired room disconnects the peers that
+    // are still in it instead of silently disappearing from the room table underneath them.
+    onRoomExpired: (room, reason) => {
+      if (reason === 'lifetime') {
+        closeRoom(room, CLOSE.TIMEOUT, 'This room reached its time limit.', 'lifetime');
+      } else {
+        closeRoom(room, CLOSE.NORMAL, 'This room expired.', 'empty');
+      }
+    },
   });
 
   /** @type {Set<Connection>} */

@@ -18,13 +18,18 @@ the schema cannot drift silently (`ALLOWED_EVENTS` in `src/logging.js`).
 | `room_created` | host admission succeeds | `room`, `mode`, `maxPeers`, `gameProtocol`, `appVersion`, `hostRuntime`, `transport`, `addressTag` |
 | `participant_joined` | a peer completes the handshake | `room`, `peerId`, `role`, `runtime`, `appVersion`, `transport`, `addressTag` |
 | `room_phase` | the host declares lobby/match | `room`, `phase`, `byPeerId` |
-| `participant_left` | a peer leaves for any reason | `room`, `peerId`, `role`, `runtime`, `appVersion`, `reason`, `transport`, `runtimeMs` |
-| `room_closed` | room terminated | `room`, `code`, `reason`, `peers` |
+| `participant_left` | a peer leaves for any reason | `room`, `peerId`, `role`, `runtime`, `appVersion`, `reasonCode`, `transport`, `runtimeMs` |
+| `room_closed` | room terminated, including by the reaper | `room`, `code`, `reasonCode`, `peers` |
 | `admission_denied` | an HTTPS admission request is refused | `endpoint`, `code`, `addressTag` |
 | `connection_denied` | a socket is refused before or during the handshake | `code`, `reason`, `addressTag` |
 | `message_refused` | a message fails authorisation | `room`, `peerId`, `code`, `detail` |
 
-Every event carries `ts` (ISO 8601) and `event`.
+Two aggregate events, `analytics_status` and `analytics_delivery`, belong to the optional
+delivery integration and are described in [`room-relay-analytics.md`](room-relay-analytics.md).
+
+Every event carries `ts` (ISO 8601) and `event`. `reasonCode` is a numeric `LEAVE_REASON` or one
+of the fixed strings `host_left`, `shutdown`, `lifetime`, `empty`; anything else is dropped by
+the emitter rather than logged as free text.
 
 ## 2. What is never logged
 

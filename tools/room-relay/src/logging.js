@@ -81,7 +81,11 @@ class LifecycleLog {
     for (const key of FIELDS[event]) {
       const value = fields[key];
       if (value === undefined || value === null) continue;
-      if (key === 'reasonCode' && ![0, 1, 2, 3, 4, 5, 'host_left', 'shutdown'].includes(value)) continue;
+      // Numeric LEAVE_REASON values, or one of the fixed room-close codes. Never free text.
+      if (key === 'reasonCode'
+          && ![0, 1, 2, 3, 4, 5, 'host_left', 'shutdown', 'lifetime', 'empty'].includes(value)) {
+        continue;
+      }
       if (key === 'room' && (typeof value !== 'string' || !/^[A-Za-z0-9_-]{22}$/.test(value))) continue;
       if (typeof value === 'number') {
         record[key] = Number.isFinite(value) ? value : 0;

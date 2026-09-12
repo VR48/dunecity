@@ -26,7 +26,7 @@ const { LifecycleLog } = require('../src/logging');
 const protocol = require('../src/protocol');
 const { GAME, PHASE, S2C } = require('../src/constants');
 const {
-  GAME_PROTOCOL,
+  admitHost,
   startRelay,
   joinAsHost,
   joinAsClient,
@@ -835,24 +835,110 @@ describe('relay lifecycle delivery', () => {
     }
   });
 
-  it('reports a room the reaper collected', async () => {
-    const receiver = await startReceiver();
-    const publisher = makePublisher(receiver.url);
-    const relay = await startRelay({
-      observedTransport: 'wss', lifecycle: publisher, grantTtlMs: 1,
+});
+
+// --- expired rooms ------------------------------------------------------------------------------
+//
+// The reaper used to drop an expired room out of the room table without telling anybody: no
+// room_closed, no participant teardown, and sockets left attached to a room that no longer
+// existed. It now defers to the same close path as every other reason, on an injected clock.
+
+describe('expired rooms', () => {
+  const ROOM_LIFETIME_MS = 6 * 60 * 60 * 1000;
+
+  async function startExpiringRelay(receiver, clock) {
+    return startRelay({
+      observedTransport: 'wss',
+      lifecycle: makePublisher(receiver.url),
+      now: () => clock.value,
+      // Longer than the jumps below, so the liveness sweep cannot pre-empt the reaper.
+      livenessTimeoutMs: 7 * 60 * 60 * 1000,
     });
+  }
+
+  it('disconnects the peers of a room that reached its lifetime, once', async () => {
+    const receiver = await startReceiver();
+    const clock = { value: Date.now() };
+    const relay = await startExpiringRelay(receiver, clock);
     try {
-      const room = relay.store.createRoom({
-        maxPeers: 2, mode: 'coop', gameProtocol: GAME_PROTOCOL, contentHash: '', appVersion: '1.0.655',
-      }).room;
-      room.createdAt = 0;
-      room.emptySince = 0;
+      const host = await joinAsHost(relay, { runtime: 'native' });
+      const guest = await joinAsClient(relay, host.room, { runtime: 'browser' });
+      await host.client.expect(S2C.PEER_JOINED);
+      await guest.client.expect(S2C.PEER_JOINED);
+      const room = [...relay.store.rooms.values()][0];
+
+      clock.value += ROOM_LIFETIME_MS + 1000;
       relay.store.sweep();
-      await waitFor(() => receiver.requests.length >= 1);
-      const [event] = receiver.events();
-      assert.equal(event.kind, 'closed');
-      assert.equal(event.room_id, room.logId);
-      assert.ok(['lifetime', 'empty'].includes(event.reason));
+      relay.store.sweep(); // a second pass must not repeat anything
+
+      const hostClose = await host.client.waitForClose();
+      const guestClose = await guest.client.waitForClose();
+      assert.equal(hostClose.code, 4408);
+      assert.equal(guestClose.code, 4408);
+      assert.equal(room.peers.size, 0, 'the room releases its peers');
+      assert.equal(relay.store.rooms.has(room.code), false);
+
+      const closedLogs = relay.log.events('room_closed');
+      assert.equal(closedLogs.length, 1);
+      assert.equal(closedLogs[0].reasonCode, 'lifetime');
+      assert.equal(closedLogs[0].peers, 2);
+      assert.equal(closedLogs[0].room, room.logId);
+      assert.equal(relay.log.events('participant_left').length, 2);
+
+      await waitFor(() => relay.lifecycle.stats.delivered >= 6, 8000);
+      const kinds = receiver.events().map((e) => e.kind);
+      assert.equal(kinds.filter((k) => k === 'closed').length, 1, 'closed is reported once');
+      assert.equal(kinds.filter((k) => k === 'left').length, 2);
+      const closed = receiver.events().find((e) => e.kind === 'closed');
+      assert.equal(closed.reason, 'lifetime');
+      assert.equal(closed.room_id, room.logId);
+      for (const left of receiver.events().filter((e) => e.kind === 'left')) {
+        assert.equal(left.reason, 'lifetime');
+        assert.ok(left.participant_id > 0);
+      }
+    } finally {
+      await relay.stop();
+      await receiver.close();
+    }
+  });
+
+  it('reaps an empty room after its grant expires, and the grant no longer admits', async () => {
+    const receiver = await startReceiver();
+    const clock = { value: Date.now() };
+    const relay = await startExpiringRelay(receiver, clock);
+    try {
+      const admission = await admitHost(relay);
+      assert.equal(admission.fields.status, 'ok');
+      const room = [...relay.store.rooms.values()][0];
+      assert.equal(room.outstandingGrants, 1);
+
+      // Not yet: an outstanding grant holds the seat open for a host that is still connecting.
+      clock.value += 10000;
+      relay.store.sweep();
+      assert.equal(room.closed, false);
+
+      clock.value += 120000;
+      relay.store.sweep();
+      relay.store.sweep();
+
+      assert.equal(room.closed, true);
+      assert.equal(room.outstandingGrants, 0);
+      assert.equal(relay.store.consumeGrant(admission.fields.grant), null,
+        'an expired grant admits nobody');
+
+      const closedLogs = relay.log.events('room_closed');
+      assert.equal(closedLogs.length, 1);
+      assert.equal(closedLogs[0].reasonCode, 'empty');
+      assert.equal(closedLogs[0].peers, 0);
+      assert.equal(relay.log.events('participant_left').length, 0);
+
+      await waitFor(() => relay.lifecycle.stats.delivered >= 2);
+      const kinds = receiver.events().map((e) => e.kind);
+      assert.deepEqual(kinds, ['created', 'closed']);
+      assert.equal(receiver.events()[1].reason, 'empty');
+      assert.equal(receiver.events()[1].participant_id, 0);
+      assert.ok(!receiver.bodies().join('').includes(admission.fields.grant));
+      assert.ok(!receiver.bodies().join('').includes(admission.fields.room));
     } finally {
       await relay.stop();
       await receiver.close();

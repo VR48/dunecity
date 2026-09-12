@@ -57,6 +57,12 @@ connection, or log record is ever forwarded, and the object has exactly these ke
 | `left` | a peer leaves for any reason | peer id | client reported |
 | `closed` | the room ends: host left, relay shutdown, or the reaper | 0 | `unknown` / empty version |
 
+An expired room goes through the same close path as any other: the reaper hands it to the server
+(`RoomStore.onRoomExpired`), which disconnects the peers still in it, emits their `left` events
+with reason `lifetime`, and then closes the room exactly once. Before this, `sweep()` dropped the
+room out of the table with no `room_closed`, no participant teardown and live sockets attached to
+a room that no longer existed.
+
 `reason` comes from a fixed table, never from free text: `room_created`, `peer_joined`,
 `match_started`, `normal`, `timeout`, `protocol_error`, `rate_limited`, `slow_consumer`,
 `host_left`, `shutdown`, `lifetime`, `empty`, `unspecified`.
