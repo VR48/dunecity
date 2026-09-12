@@ -1,14 +1,24 @@
 ## Public HTTPS polling acceptance — 13 September 2026
 
-**1.0.661 is on main and tagged; publication is in progress.** Source is 43ec1dc.
-Candidate CI 34707717946 passed all platforms and produced all six packages. Stable
-run 34708449665 is building; browser deployment and SourceForge verification remain.
+**1.0.661 is published on the normal website and desktop release channels.** Source
+and stable tag are 43ec1dc. Candidate CI 34707717946 and stable run 34708449665 passed.
+All six published GitHub packages match their API checksums. SourceForge run
+34708945092 passed all uploaded checksums and verified Windows/macOS/Linux defaults;
+an independent HTTPS git read confirms its source branch and tag point to 43ec1dc.
+Browser publication 34708945094 and website deployment 34709214712 succeeded at
+website commit 8f348f4. The live `/play/build.json` identifies 1.0.661 / 43ec1dc;
+all six browser asset hashes, relay origins, CSP and WASM MIME type were checked.
+Fresh production UI startup displayed 1.0.661 and opened the online lobby without
+the previous crash. Relay health remained OK with zero rooms/connections after
+deployment. Evidence: `../outputs/network-hardening/public-661-deployed-hashes.json`
+and `../outputs/network-hardening/release-661-github-verification.json`.
 
 Public 1.0.659 matches overflowed the polling queue (close 4431). 1.0.660 at 52ac12e
 paces relay command history every 100 ms with a retention guard and removes two
 redundant browser waits. Public browser/native and browser/browser matches then ran
 approximately 22 and 19 minutes and ended intentionally, but simulation advanced
-only about 37–42 cycles/s against 62.5 configured despite 60Hz rendering.
+only about 37–42 cycles/s against 62.5 configured despite 60Hz browser RAF callbacks
+(these callbacks are not direct SDL render-frame instrumentation).
 
 Actual Claude Opus implemented a bounded startup allowance; Codex narrowed it to
 HTTP polling, preserving ENet/WSS sizing and CommandValidation's existing bounds.
