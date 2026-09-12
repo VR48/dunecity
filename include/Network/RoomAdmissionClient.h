@@ -383,6 +383,7 @@ inline bool parseAdmissionResponse(const std::string& body, AdmissionResponse& o
     }
     if(operation != AdmissionOperation::Room) {
         const bool valid = operation == AdmissionOperation::Visibility ? sawVisibility
+            && (out.roomCode.empty() || RoomRelay::isAcceptableRoomCode(out.roomCode))
             : sawCursor && (operation != AdmissionOperation::ChatEnter || sawSession)
               && (out.messages.empty() || out.messages.back().id <= out.chatCursor);
         if(!valid) { error = "The game service sent an incomplete answer."; return false; }

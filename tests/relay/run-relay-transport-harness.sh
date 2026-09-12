@@ -29,7 +29,7 @@ set -euo pipefail
 
 MODE="${1:-agree}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-HARNESS="${ROOT}/build/tests/relay_transport_harness"
+HARNESS="${RELAY_TRANSPORT_HARNESS:-${ROOT}/build/tests/relay_transport_harness}"
 PORT="${RELAY_PORT:-8787}"
 ENDPOINT="http://127.0.0.1:${PORT}"
 WORK="$(mktemp -d)"

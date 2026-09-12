@@ -13,6 +13,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  relay-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: tools/room-relay/package-lock.json
+      - run: npm ci --ignore-scripts && npm test
+        working-directory: tools/room-relay
   # Gate: on v* tag builds, verify that the source-controlled version metadata
   # (CMakeLists.txt, include/config.h, vcpkg.json) already matches the tag.
   # This catches missing bump commits BEFORE any build/release/upload runs.
@@ -87,6 +98,13 @@ jobs:
 
       - name: Build
         run: cmake --build build --config Release --parallel
+
+      - name: Verify secure relay support
+        run: |
+          $game = Get-ChildItem build -Recurse -Filter dunecity.exe | Select-Object -First 1
+          if (-not $game) { throw "Game binary missing" }
+          & $game.FullName --check-relay-support
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Create Installer Package
         run: |
@@ -204,6 +222,9 @@ jobs:
       - name: Build
         run: cmake --build build --config Release --parallel "$CMAKE_BUILD_PARALLEL_LEVEL"
 
+      - name: Verify secure relay support
+        run: build/bin/dunecity.app/Contents/MacOS/dunecity --check-relay-support
+
       - name: Create DMG Installer
         run: |
           cd build
@@ -298,6 +319,9 @@ jobs:
         # Limit to 2 parallel jobs — ubuntu-latest has 4 cores but only 7GB
         # RAM, and 4 concurrent g++ -O2 processes on large TUs exceed that.
         run: cmake --build build --config Release --parallel 2
+
+      - name: Verify secure relay support
+        run: build/bin/dunecity --check-relay-support
 
       - name: Create Linux Packages
         run: |
@@ -418,7 +442,7 @@ jobs:
   # Rolling dev build: update a "latest-dev" pre-release on every main push
   # so builds are always downloadable from the releases page.
   dev-release:
-    needs: [build-windows, build-linux, build-macos]
+    needs: [test-linux, relay-tests, build-windows, build-linux, build-macos]
     if: |
       always() &&
       github.ref == 'refs/heads/main' &&
@@ -478,7 +502,7 @@ jobs:
   # so creating a release here automatically flips every existing
   # install's "update available" flag the next time they launch.
   release:
-    needs: [verify-version, test-linux, build-windows, build-linux, build-macos]
+    needs: [verify-version, test-linux, relay-tests, build-windows, build-linux, build-macos]
     # The website advertises all desktop platforms at this version. Publish only
     # after tests and every desktop package have actually succeeded.
     if: success() && startsWith(github.ref, 'refs/tags/v')

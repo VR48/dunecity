@@ -146,10 +146,13 @@ class RoomStore {
 
   setVisibility(rawCode, token, visibility) {
     this.sweep();
-    const room = this.rooms.get(normalizeRoomCode(rawCode));
-    if (!room || room.closed || !room.host || typeof token !== 'string'
-        || !/^[0-9a-f]{64}$/.test(token)
-        || !crypto.timingSafeEqual(Buffer.from(token, 'hex'), Buffer.from(room.controlToken, 'hex'))) {
+    const validToken = typeof token === 'string' && /^[0-9a-f]{64}$/.test(token);
+    // The host control token remains stable when an invitation rotates. This also allows
+    // retry after a lost HTTP answer, using the old (now unusable for joining) code.
+    const room = validToken && normalizeRoomCode(rawCode)
+      ? [...this.rooms.values()].find(candidate => crypto.timingSafeEqual(
+        Buffer.from(token, 'hex'), Buffer.from(candidate.controlToken, 'hex'))) : undefined;
+    if (!room || room.closed || !room.host) {
       throw new AdmissionError(403, 'forbidden', 'Only the host can change visibility.');
     }
     if (room.everStarted || room.phase !== PHASE.LOBBY) {
@@ -157,6 +160,19 @@ class RoomStore {
     }
     if (visibility !== 'public' && visibility !== 'private') {
       throw new AdmissionError(400, 'bad_request', 'Choose Public or Private.');
+    }
+    if (room.visibility === 'public' && visibility === 'private') {
+      const oldCode = room.code;
+      let code = generateRoomCode();
+      while (this.rooms.has(code)) code = generateRoomCode();
+      // Revoke admissions issued while public; already connected players stay connected.
+      for (const [grantToken, grant] of this.grants) {
+        if (grant.roomCode === oldCode) this.grants.delete(grantToken);
+      }
+      room.outstandingGrants = 0;
+      this.rooms.delete(oldCode);
+      room.code = code;
+      this.rooms.set(code, room);
     }
     room.visibility = visibility;
     return room;

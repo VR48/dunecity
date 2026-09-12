@@ -16,6 +16,7 @@
  */
 
 #include <main.h>
+#include <Network/RelayWebSocket.h>
 
 #include <algorithm>
 #include <cmath>
@@ -860,6 +861,18 @@ std::string getUserLanguage() {
 
 
 int main(int argc, char *argv[]) {
+#ifndef __EMSCRIPTEN__
+    // Packaging check: no SDL window, profile, or game session is created.
+    for(int index = 1; index < argc; ++index) {
+        if(std::strcmp(argv[index], "--check-relay-support") == 0) {
+            const auto support = relayWebSocketSupport();
+            const bool secure = support.available && support.reason.empty();
+            std::fprintf(secure ? stdout : stderr, "%s\n", secure
+                ? "Secure relay WebSocket support available" : support.reason.c_str());
+            return secure ? EXIT_SUCCESS : EXIT_FAILURE;
+        }
+    }
+#endif
     SDL_LogSetOutputFunction(logOutputFunction, nullptr);
     SDL_LogSetAllPriority(SDL_LOG_PRIORITY_WARN);
     SDL_LogSetPriority(SDL_LOG_CATEGORY_APPLICATION, SDL_LOG_PRIORITY_VERBOSE);

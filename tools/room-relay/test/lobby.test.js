@@ -126,15 +126,22 @@ describe('host visibility control' , () => {
       const change = (token, visibility) => postForm(relay, '/v1/admission/visibility',
         { ...fields, room: host.room, control: token, visibility });
       assert.equal((await change('0'.repeat(64), 'private')).status, 403);
-      assert.equal((await change(control, 'private')).fields.visibility, 'private');
+      const pending = await admitJoin(relay, host.room);
+      const changed = await change(control, 'private');
+      assert.equal(changed.fields.visibility, 'private');
+      const privateCode = changed.fields.room;
+      assert.notEqual(privateCode, host.room);
+      assert.equal(relay.store.consumeGrant(pending.fields.grant), null);
+      assert.equal((await change(control, 'private')).fields.room, privateCode); // lost-response retry
+      assert.equal((await admitJoin(relay, host.room)).status, 404);
       assert.equal(relay.store.listPublicRooms(fields).games.length, 0);
       assert.equal((await admitJoin(relay, host.room, { publicOnly: '1' })).status, 404);
-      const invitation = await admitJoin(relay, host.room);
+      const invitation = await admitJoin(relay, privateCode);
       assert.equal(invitation.status, 200);
       assert.equal(invitation.fields.control, undefined);
       assert.equal((await change(control, 'public')).fields.visibility, 'public');
       assert.equal(relay.store.listPublicRooms(fields).games.length, 1);
-      relay.store.setRoomPhase(relay.store.rooms.get(host.room), PHASE.MATCH);
+      relay.store.setRoomPhase(relay.store.rooms.get(privateCode), PHASE.MATCH);
       assert.equal((await change(control, 'private')).status, 409);
       host.client.close();
     } finally { await relay.stop(); }

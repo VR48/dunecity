@@ -1,0 +1,32 @@
+[Unit]
+Description=DuneCity secure multiplayer relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dune-relay
+Group=dune-relay
+WorkingDirectory=/opt/dunecity-relay/current
+ExecStart=@NODE@ /opt/dunecity-relay/current/src/index.js
+EnvironmentFile=/etc/dunecity-relay/environment
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+UMask=0077
+LimitNOFILE=4096
+TasksMax=64
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target

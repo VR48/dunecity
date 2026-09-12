@@ -195,7 +195,7 @@ function requireInteger(form, name, min, max) {
 
 function renderResponse(lines) {
   const text = lines.map(([k, v]) => `${k}=${v}`).join('\n');
-  if (lines.length > 16 || text.length > 8192) {
+  if (lines.length > 16 || Buffer.byteLength(text, 'utf8') + 1 > 8192) {
     throw new Error('admission response exceeds its own documented bounds');
   }
   return `${text}\n`;
@@ -365,7 +365,7 @@ function createAdmissionHandler(ctx) {
         const room = ctx.store.setVisibility(requireField(form, 'room'), requireField(form, 'control'),
           requireField(form, 'visibility'));
         sendText(res, 200, [['status', 'ok'], ['protocol', String(RELAY_PROTOCOL_VERSION)],
-          ['visibility', room.visibility]], false, cors);
+          ['visibility', room.visibility], ['room', room.code]], false, cors);
         return;
       }
       let result;

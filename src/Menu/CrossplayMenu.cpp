@@ -248,7 +248,7 @@ void CrossplayMenu::refreshControls() {
     privateInviteButton.setVisible(idle);
     privateInviteButton.setText(showPrivateJoin ? _("Hide private invite") : _("Join private game"));
     joinButton.setEnabled(invite);
-    joinCodeTextBox.setEnabled(idle);
+    joinCodeTextBox.setEnabled(invite);
     playerNameTextBox.setEnabled(idle && chatSession.empty() && !chatPending);
     confirmNameButton.setEnabled(chatSession.empty() && !chatPending
         && (idle || stage == Stage::HostReady || stage == Stage::ClientWaiting));
@@ -637,6 +637,12 @@ void CrossplayMenu::update() {
         visibilityPending = false;
         if(visibilityUpdate.status() == RoomAdmissionClient::Status::Succeeded) {
             publicRoom = visibilityUpdate.response().visibility == "public";
+            if(!visibilityUpdate.response().roomCode.empty()) {
+                roomCode = visibilityUpdate.response().roomCode;
+                grantedRoom.roomCode = roomCode;
+                if(pNetworkManager && pNetworkManager->getRelayClient())
+                    pNetworkManager->getRelayClient()->updateInvitationCode(roomCode);
+            }
             if(pNetworkManager) pNetworkManager->setPublicRelayRoom(publicRoom);
             setStatus(publicRoom ? _("Your public game is listed. Players can join from the lobby.")
                                  : _("Your private game is unlisted. Share its invitation code."));

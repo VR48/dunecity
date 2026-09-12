@@ -36,7 +36,7 @@
     not invent an endpoint. An operator sets "Relay Endpoint" in the Network section of the
     configuration file, or passes --RelayEndpoint= on the command line.
 */
-#define DEFAULT_RELAY_ENDPOINT  ""
+#define DEFAULT_RELAY_ENDPOINT  "https://dunelegacy.com/relay"
 
 /// The loopback relay used for development and testing. Only ever plain http/ws, only loopback.
 #define DEVELOPMENT_RELAY_ENDPOINT "http://127.0.0.1:8787"

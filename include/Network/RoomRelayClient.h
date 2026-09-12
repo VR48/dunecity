@@ -138,6 +138,10 @@ public:
     bool   isJoined() const { return status_ == Status::Joined; }
     bool   isHost() const { return localRole_ == RoomRelay::Role::Host; }
     const std::string& roomCode() const { return roomCode_; }
+    /// Host-only admission response can rotate the invitation without reconnecting peers.
+    void updateInvitationCode(const std::string& code) {
+        if(RoomRelay::isAcceptableRoomCode(code)) roomCode_ = code;
+    }
     std::uint32_t localPeerId() const { return localPeerId_; }
     std::uint8_t  maxPeers() const { return maxPeers_; }
     RoomRelay::Phase phase() const { return phase_; }

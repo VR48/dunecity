@@ -46,6 +46,13 @@ function configFromEnv(argv) {
     throw new Error('RELAY_PUBLIC_URL must be a wss:// URL outside development mode');
   }
 
+  const allowedOrigins = parseOrigins(process.env.RELAY_ALLOWED_ORIGINS);
+  if (!dev && allowedOrigins.length === 0) {
+    throw new Error('RELAY_ALLOWED_ORIGINS must name the production browser origins');
+  }
+  if (!dev && !['0', '1'].includes(process.env.RELAY_TRUST_FORWARDED_FOR)) {
+    throw new Error('Set RELAY_TRUST_FORWARDED_FOR explicitly to 1 behind a trusted proxy or 0 for direct connections');
+  }
   return {
     host,
     port,
@@ -53,7 +60,7 @@ function configFromEnv(argv) {
     socketPath: process.env.RELAY_SOCKET_PATH || '/v1/socket',
     publicSocketUrl,
     observedTransport,
-    allowedOrigins: parseOrigins(process.env.RELAY_ALLOWED_ORIGINS),
+    allowedOrigins,
     trustForwardedFor: boolEnv('RELAY_TRUST_FORWARDED_FOR', false),
     requiredGameProtocol: intEnv('RELAY_GAME_PROTOCOL', 0),
     maxConnections: intEnv('RELAY_MAX_CONNECTIONS', undefined),
