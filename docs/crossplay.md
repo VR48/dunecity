@@ -291,3 +291,24 @@ CSP permissions and must not be used as the production package.
 
 See [the final review record](crossplay-final-review.md) for reviewed source versions, findings,
 test evidence and the remaining release gates.
+
+### Interactive retest and invitations
+
+Later on 12 September, Stefan hosted a fresh browser room and Codex joined from the other
+in-app browser. Both clients entered the Habbanya-Penny match. Captured 28-byte digests agreed
+at cycles 1,000, 1,200, 7,200 and 7,400 while gameplay commands flowed. The capture buffer was
+sampled and truncated, so this is not an uninterrupted determinism trace. Stefan also reported
+that gameplay appeared to work. This retest used the existing 073e315 browser executable over
+loopback; native-to-browser and public WSS verification remain outstanding.
+
+Commit 9b23b84 adds Copy code buttons to the invitation screen and custom-game lobby. Native
+and wasm builds pass; native dependency records were checked before and after. The browser
+invitation button visibly reached Copied after the Clipboard API resolved. Exact OS clipboard
+readback was not verified: Browser Use has a separate virtual clipboard, and page clipboard
+read permission was denied. The new package is served locally for the next reload; existing
+matches were left running. The lobby button was compiled but not separately exercised in UI.
+
+Stefan clarified that playing strangers must not require exchanging codes. The next discovery
+feature should offer public games with direct Join buttons through the centralized metaserver;
+codes should remain optional invitations for private games. Public discovery is not implemented
+by the current room-code flow.
