@@ -1,27 +1,40 @@
 ## Public HTTPS polling acceptance — 13 September 2026
 
-**Release remains held for public gameplay acceptance of 1.0.661.** Public 1.0.659
-matches overflowed the polling consumer queue (close 4431). Candidate 1.0.660 at
-52ac12e paces relay command history every 100 ms with a retention guard and removes
-two redundant browser waits. Public browser/native and browser/browser matches then
-ran approximately 22 and 19 minutes and ended intentionally. Sampled state digests
-matched (84 crossplay and over 90 browser pairs); 20-second RAF captures averaged
-16.66 ms. This is sampled agreement, not complete determinism proof.
+**1.0.661 is on main and tagged; publication is in progress.** Source is 43ec1dc.
+Candidate CI 34707717946 passed all platforms and produced all six packages. Stable
+run 34708449665 is building; browser deployment and SourceForge verification remain.
 
-However, simulation still advanced only about 37–42 cycles/s against 62.5 configured.
-The old startup buffer used only the local relay heartbeat RTT and omitted polling
-waits. Actual Claude Opus implemented a bounded startup allowance; Codex narrowed it
-to HTTP polling, preserving ENet/WSS sizing and CommandValidation's existing bounds.
-Candidate 1.0.661 budgets 700–1120 ms, capped at 70 cycles, fixed for the match. It
-requests a heartbeat at join and has a fallback before an answer arrives. The tradeoff
-is additional input delay. Arbitrary jitter/asymmetry can still stall lockstep; actual
-public simulation-rate and command-response tests remain required.
+Public 1.0.659 matches overflowed the polling queue (close 4431). 1.0.660 at 52ac12e
+paces relay command history every 100 ms with a retention guard and removes two
+redundant browser waits. Public browser/native and browser/browser matches then ran
+approximately 22 and 19 minutes and ended intentionally, but simulation advanced
+only about 37–42 cycles/s against 62.5 configured despite 60Hz rendering.
 
-Actual Hermes's first review flagged transport scope and insufficient evidence for
-claims of eliminating stutter. Final narrowed-source reviews are pending. Native
-CTest 6/6 and dependency audits pass. Evidence is under
-`../outputs/network-hardening/poll-latency-review/` and
-`../outputs/network-hardening/public-660-interim-evidence.json`.
+Actual Claude Opus implemented a bounded startup allowance; Codex narrowed it to
+HTTP polling, preserving ENet/WSS sizing and CommandValidation's existing bounds.
+1.0.661 budgets 700–1120 ms, capped at 70 cycles, fixed for the match. It requests a
+heartbeat at join and has a fallback before an answer arrives. More allowance adds
+input delay; arbitrary jitter/asymmetry and faster game settings can still stall
+lockstep. This is a bounded improvement, not elimination of network latency.
+
+Actual Hermes and Opus found no code/security blocker in the final narrowed source.
+Native CTest 6/6, dependency audits, generated-fetch regression and wasm32 network
+wire 80 checks pass. Public crossplay ran over ten minutes and browser/browser over
+seven, with movement, MCV deployment and Windtrap construction. Final retained digest
+samples matched (148 crossplay and 124 per browser client), with no captured premature
+close. Hosts exited normally and health returned to zero rooms/connections. Twenty-
+second RAF captures averaged 16.66 ms; simulation was roughly 56–57 cycles/s. These
+samples do not prove complete determinism or performance on every connection.
+Evidence: `../outputs/network-hardening/public-661-evidence.json` and
+`../outputs/network-hardening/poll-latency-review/`.
+
+The website's scheduled download-count deployment removed the previously manual
+relay gateway during test startup. Website main now includes the companion gateway
+and analytics source at 9a85d48; deployment 34707911135, web security 34707911134 and
+analytics compatibility 34707911193 passed. Relay health recovered and both actual
+matches ran through this tracked gateway. Keep these files in website main: routine
+rsync --delete removes anything merely uploaded to the webroot. Preview directories
+also disappear on website deploy, so restore a preview only after that deploy ends.
 
 The existing server now runs the restricted-account Apache/PHP HTTPS gateway at
 `https://dunelegacy.com/relay`, with Node bound only to loopback. Deployment revision
@@ -38,14 +51,6 @@ readiness inference. SQLite schema-2 migration preserved the backed-up legacy ro
 signed relay lifecycle records arrived over local HTTPS. External event submissions
 return 403. Bounded concurrent gateway requests and a short-body timeout test passed.
 The limited test was not a capacity or DDoS certification.
-
-Candidate CI 34704561806 built all six desktop artifacts for 1.0.660 successfully.
-Native CTest 6/6, dependency audits and the browser build also passed. Main remains
-8879732, no stable tag was advanced, and the normal `/play/` page remains the previous
-release. Website companion branch `fix/relay-analytics` tracks the gateway and receiver
-so its deploy does not erase them. Its rsync deployment removes untracked preview
-paths (`play-test-658/659`); finish tests before publishing it. The dated entries below
-are historical and their administrator-access blockers have been superseded.
 
 ## Crossplay candidate — 12 September 2026
 

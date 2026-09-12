@@ -138,3 +138,14 @@ or replacing the browser site. Hold stable publication until actual public
 browser/browser and browser/native gameplay, bounded gateway behavior, signed
 SQLite delivery, artifact checks and watchdog recovery have passed. Successful
 localhost tests or desktop CI alone do not establish public gameplay readiness.
+
+### Gateway persistence during website deployments
+
+The website deploy uses rsync --delete and runs after scheduled download-stat updates
+as well as release pushes. Relay PHP/.htaccess and analytics receiver files must be
+committed to website main before relying on them in a public test or release. A manual
+webroot upload alone is temporary: the 13 September 2026 test lost its gateway to the
+next scheduled deploy. Website main 9a85d48 contains the gateway and additive receiver.
+Untracked play-test-* previews are also removed; restore previews after deployment,
+or finish their tests before publishing. The private loopback relay and SQLite data
+live outside the deployed webroot and are preserved.
