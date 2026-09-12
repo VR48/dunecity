@@ -274,7 +274,8 @@ digests matched at cycles 3,600, 3,800, 5,600 and 5,800. Closing the menu return
 
 The retest also found that a guest joining before map selection received an empty seat snapshot.
 Commit c5db43d registers the seat-assignment callback before starting the lobby. This ordering fix
-is built but still needs a fresh early-join UI regression run.
+passed a fresh two-browser UI regression on build 073e315: the guest joined before map selection,
+both lobbies then showed the host and guest in their correct slots, and both entered gameplay.
 
 Native CTest's four targets pass, the standalone wasm32 wire harness passes 140 checks, and the
 real native transport harness passes agreement, injected-divergence detection and all 48 large
@@ -284,6 +285,9 @@ The Node lifecycle publisher also delivered seven signed fixture events through 
 to isolated SQLite successfully.
 
 These are local development results, not public WSS deployment or security approval. Actual
-browser-to-native gameplay, final review reconciliation, public TLS/proxy verification and tests
+browser-to-native gameplay, Claude's final review, public TLS/proxy verification and tests
 under real latency/loss remain outstanding. The running local test page has explicit loopback
 CSP permissions and must not be used as the production package.
+
+See [the final review record](crossplay-final-review.md) for reviewed source versions, findings,
+test evidence and the remaining release gates.
