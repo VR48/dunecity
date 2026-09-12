@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const http = require('node:http');
 const https = require('node:https');
+const { isIP } = require('node:net');
 
 const { LEAVE_REASON } = require('./constants');
 
@@ -508,7 +509,7 @@ class LifecyclePublisher {
       const secure = url.protocol === 'https:';
       const requestOptions = {
         protocol: url.protocol,
-        hostname: url.hostname,
+        hostname: url.hostname.replace(/^\[|\]$/g, ''),
         port: url.port === '' ? (secure ? 443 : 80) : Number(url.port),
         path: `${url.pathname}${url.search}`,
         method: 'POST',
@@ -526,7 +527,8 @@ class LifecyclePublisher {
       if (secure) {
         requestOptions.rejectUnauthorized = true;
         requestOptions.minVersion = 'TLSv1.2';
-        requestOptions.servername = url.hostname;
+        // SNI carries DNS names only; IP certificates are still verified against hostname.
+        if (!isIP(requestOptions.hostname)) requestOptions.servername = requestOptions.hostname;
         if (this.ca !== undefined) requestOptions.ca = this.ca;
       }
 
