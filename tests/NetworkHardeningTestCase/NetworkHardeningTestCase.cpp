@@ -1590,3 +1590,36 @@ TEST_CASE("Mesh introductions: privileged and non-unicast destinations are refus
     REQUIRE_FALSE(NetworkPacketPolicy::isPlausibleMeshTarget(privateLan,
                                                              NetworkPacketPolicy::kMinMeshTargetPort - 1));
 }
+
+TEST_CASE("Received game info cannot select local file loaders", "[network][security][gameinfo]") {
+    ENetRuntime runtime;
+    std::string reason;
+    for(auto type : {GameType::LoadSavegame, GameType::Campaign, GameType::Skirmish,
+                     GameType::CustomGame, GameType::Invalid}) {
+        ENetPacketOStream out(ENET_PACKET_FLAG_RELIABLE);
+        plausibleReceivedSettings().save(out);
+        ENetPacket* packet = out.getPacket();
+        packet->data[0] = static_cast<Uint8>(type);
+        ENetPacketIStream in(packet);
+        const GameInitSettings received(in);
+        INFO("wire game type=" << static_cast<int>(type));
+        REQUIRE_FALSE(accepts(received, reason));
+    }
+    const GameInitSettings endCampaign;
+    REQUIRE_FALSE(accepts(endCampaign, reason));
+    REQUIRE(GameInitSettingsPolicy::isAcceptableReceivedGameInitSettings(endCampaign, reason, true));
+}
+
+TEST_CASE("Received save settings preserve larger snapshots and closed house rows", "[network][gameinfo][compatibility]") {
+    ENetRuntime runtime;
+    std::string reason;
+    auto settings = plausibleReceivedSettings("network.dls", std::string(1024 * 1024 + 1, 'x'));
+    settings.addHouseInfo(GameInitSettings::HouseInfo(HOUSE_UNUSED, 0));
+    ENetPacketOStream out(ENET_PACKET_FLAG_RELIABLE);
+    settings.save(out);
+    ENetPacket* packet = out.getPacket();
+    packet->data[0] = static_cast<Uint8>(GameType::LoadMultiplayer);
+    ENetPacketIStream in(packet);
+    const GameInitSettings received(in);
+    REQUIRE(accepts(received, reason));
+}

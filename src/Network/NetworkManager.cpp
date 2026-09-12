@@ -1506,7 +1506,7 @@ void NetworkManager::handlePacket(ENetPeer* peer, ENetPacketIStream& packetStrea
 
                     std::string coopRejectionReason;
                     if(!GameInitSettingsPolicy::isAcceptableReceivedGameInitSettings(
-                           *next, coopRejectionReason)) {
+                           *next, coopRejectionReason, true)) {
                         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                                     "NetworkManager: refusing co-op mission from the host: %s",
                                     coopRejectionReason.c_str());

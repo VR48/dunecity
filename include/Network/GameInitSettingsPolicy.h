@@ -41,6 +41,9 @@ namespace GameInitSettingsPolicy {
 
 /// Largest map payload accepted inside a received game info packet.
 constexpr std::size_t kMaxMapFileSize = 1024 * 1024;
+// Saves include simulation state, so they may be larger than map INIs. ENet additionally
+// bounds the complete packet to 4 MiB before reassembly.
+constexpr std::size_t kMaxSaveFileSize = 4 * 1024 * 1024;
 /// Largest filename accepted for a received map.
 constexpr std::size_t kMaxFilenameLength = 128;
 /// Largest mod name accepted in a received game info packet.
@@ -89,9 +92,16 @@ inline bool isKnownHouse(HOUSETYPE houseID) {
     \return true if the settings may be used
 */
 inline bool isAcceptableReceivedGameInitSettings(const GameInitSettings& settings,
-                                                 std::string& reason) {
+                                                 std::string& reason, bool allowCampaignEnd = false) {
     if(!isKnownGameType(settings.getGameType())) {
         reason = "unknown game type";
+        return false;
+    }
+    // Recognising an enum is not permission to invoke its local-file loader. Network
+    // sessions carry their content in the packet; only COOP_MISSION may carry an end marker.
+    if(!isNetworkGameType(settings.getGameType())
+       && !(allowCampaignEnd && settings.getGameType() == GameType::Invalid)) {
+        reason = "game type is not a network session";
         return false;
     }
     if(!isKnownHouse(settings.getHouseID())) {
@@ -102,8 +112,10 @@ inline bool isAcceptableReceivedGameInitSettings(const GameInitSettings& setting
         reason = "filename too long";
         return false;
     }
-    if(settings.getFiledata().size() > kMaxMapFileSize) {
-        reason = "map payload too large";
+    const bool savedGame = settings.getGameType() == GameType::LoadMultiplayer
+        || settings.getGameType() == GameType::LoadCoop;
+    if(settings.getFiledata().size() > (savedGame ? kMaxSaveFileSize : kMaxMapFileSize)) {
+        reason = savedGame ? "save payload too large" : "map payload too large";
         return false;
     }
     if(settings.getModName().size() > kMaxModNameLength) {
@@ -118,6 +130,8 @@ inline bool isAcceptableReceivedGameInitSettings(const GameInitSettings& setting
     }
 
     for(const GameInitSettings::HouseInfo& houseInfo : houses) {
+        // Saved multiplayer lobbies retain explicitly closed rows.
+        if(houseInfo.houseID == HOUSE_UNUSED && houseInfo.playerInfoList.empty()) continue;
         if(!isKnownHouse(houseInfo.houseID)) {
             reason = "unknown house in house list";
             return false;
