@@ -8,9 +8,44 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+from urllib.parse import urlsplit
 
 
-def package(build_root, play_root):
+def relay_sources(origin, allow_loopback=False):
+    """Return exact HTTP/WS CSP sources; never accept a CSP expression as input."""
+    parsed = urlsplit(origin)
+    host = parsed.hostname or ''
+    if (parsed.scheme not in ('http', 'https') or not host
+            or parsed.username is not None or parsed.password is not None
+            or parsed.path not in ('', '/') or parsed.query or parsed.fragment
+            or not re.fullmatch(r'[A-Za-z0-9.:-]+', host)
+            or any(char.isspace() for char in origin)):
+        raise ValueError('Relay must be an exact HTTP(S) origin without credentials or a path')
+    port = parsed.port  # validates the port, including its range
+    if parsed.scheme == 'http' and not (
+            allow_loopback and host in ('127.0.0.1', 'localhost', '::1')):
+        raise ValueError('Plain HTTP relay requires explicit loopback development opt-in')
+    authority = f'[{host}]' if ':' in host else host
+    if port is not None:
+        authority += ':' + str(port)
+    canonical = parsed.scheme + '://' + authority
+    if origin.rstrip('/') != canonical:
+        raise ValueError('Relay must be a canonical origin')
+    return [canonical, ('wss' if parsed.scheme == 'https' else 'ws') + '://' + authority]
+
+
+def allow_relay_connections(text, sources):
+    if not sources:
+        return text
+    text, count = re.subn(r'connect-src ([^;"<>]+);',
+                         lambda match: 'connect-src ' + match[1] + ' ' + ' '.join(sources) + ';', text)
+    if count != 1:
+        raise RuntimeError('Expected exactly one connect-src policy')
+    return text
+
+
+def package(build_root, play_root, relay_origin=None, allow_loopback_relay=False):
+    sources = relay_sources(relay_origin, allow_loopback_relay) if relay_origin else []
     repo = Path(__file__).resolve().parents[1]
     version = re.search(r'project\(DuneCity VERSION ([0-9.]+)', (repo / 'CMakeLists.txt').read_text())[1]
     output = build_root / 'bin'
@@ -33,13 +68,20 @@ def package(build_root, play_root):
                               lambda match: match[1] + '="' + name + '?v=' + token + '"', html)
         if count != 1:
             raise RuntimeError(f'Expected exactly one HTML reference to {name}, found {count}')
-    index.write_text(html)
+    index.write_text(allow_relay_connections(html, sources))
+    headers = play_root / '.htaccess'
+    header_text = allow_relay_connections(headers.read_text(), sources)
+    if sources and sources[0].startswith('http:'):
+        # This opt-in artifact is only for a loopback development server.
+        header_text = header_text.replace('; upgrade-insecure-requests', '')
+    headers.write_text(header_text)
     names = [name for name in files if name != '.htaccess']
     manifest = {
         'version': version,
         'sourceCommit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=repo, text=True).strip(),
         'builtAtUtc': datetime.datetime.now(datetime.timezone.utc).isoformat(),
         'artifacts': names,
+        'relayOrigins': sources,
         'sha256': {name: hashlib.sha256((play_root / name).read_bytes()).hexdigest() for name in names},
     }
     (play_root / 'build.json').write_text(json.dumps(manifest, indent=2) + '\n')
@@ -50,5 +92,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--build-root', type=Path, required=True)
     parser.add_argument('--play-root', type=Path, required=True)
+    parser.add_argument('--relay-origin', help='Exact HTTPS origin allowed for admission and WSS')
+    parser.add_argument('--allow-loopback-relay', action='store_true',
+                        help='Allow an explicit HTTP/WS loopback relay in a development package')
     args = parser.parse_args()
-    package(args.build_root, args.play_root)
+    package(args.build_root, args.play_root, args.relay_origin, args.allow_loopback_relay)

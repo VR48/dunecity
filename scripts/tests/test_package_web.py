@@ -12,6 +12,28 @@ spec.loader.exec_module(packager)
 
 
 class PackageTests(unittest.TestCase):
+    def test_relay_sources_are_exact_and_plaintext_is_explicit_loopback_only(self):
+        self.assertEqual(packager.relay_sources('https://relay.example:443'),
+                         ['https://relay.example:443', 'wss://relay.example:443'])
+        self.assertEqual(packager.relay_sources('http://127.0.0.1:8787', True),
+                         ['http://127.0.0.1:8787', 'ws://127.0.0.1:8787'])
+        for origin in ('http://relay.example', 'https://relay.example/path',
+                       'https://user:pass@relay.example', 'https://relay.example?x=1',
+                       'https://relay.example#x', "https://relay.example; script-src *",
+                       'https://relay.example:99999', 'null', 'https://*'):
+            with self.subTest(origin=origin), self.assertRaises(ValueError):
+                packager.relay_sources(origin, True)
+        with self.assertRaises(ValueError):
+            packager.relay_sources('http://127.0.0.1:8787')
+
+    def test_relay_csp_preserves_other_directives(self):
+        policy = "default-src 'none'; connect-src 'self'; script-src 'self'"
+        sources = packager.relay_sources('https://relay.example')
+        actual = packager.allow_relay_connections(policy, sources)
+        self.assertEqual(actual, "default-src 'none'; connect-src 'self' https://relay.example wss://relay.example; script-src 'self'")
+        with self.assertRaises(RuntimeError):
+            packager.allow_relay_connections("default-src 'none'", sources)
+
     def test_versions_minified_and_quoted_html_and_hashes_final_files(self):
         for quote in ('', '"', "'"):
             with self.subTest(quote=quote), tempfile.TemporaryDirectory() as temp:

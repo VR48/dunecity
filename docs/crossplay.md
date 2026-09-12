@@ -1,7 +1,8 @@
 # Crossplay: desktop and browser in one game
 
-Status: implemented, not deployed. The relay endpoint is configuration; nothing in this
-repository stands one up, and the game offers online play only when one is configured.
+Status: integration and browser testing in progress; not deployed. A successful build or
+transport harness is not evidence of a synchronized browser match. The relay endpoint is
+configuration, and the game offers online play only when one is configured.
 
 Three documents describe this feature:
 
@@ -10,9 +11,8 @@ Three documents describe this feature:
 - [docs/room-relay-logging.md](room-relay-logging.md) — the lifecycle events and what the website
   metaserver has to do to ingest them.
 
-The existing ENet transport is untouched. [docs/network-hardening.md](network-hardening.md)
-still describes it, and old desktop clients keep playing LAN and direct-Internet games exactly as
-before.
+The existing ENet transport remains available for LAN and direct-Internet games. Its packet
+validation and authorization have been hardened; see [network-hardening.md](network-hardening.md).
 
 ## 1. Why a relay at all
 
@@ -47,7 +47,7 @@ Nothing extra is needed for a normal desktop build beyond a libcurl that has the
 protocol handlers.
 
 ```bash
-cmake --build build --target dunelegacy
+cmake --build build --target dunecity
 ```
 
 libcurl gained `curl_ws_send`/`curl_ws_recv` in **7.86**. Older libcurl still builds: the
@@ -64,21 +64,36 @@ cmake -S . -B build -DCURL_ROOT=/opt/homebrew/opt/curl
 
 Browser build: the link options `-lwebsocket.js` and `-sFETCH=1` are already in
 `src/CMakeLists.txt`. The browser needs its Content-Security-Policy to allow the relay origin in
-`connect-src`. That policy lives in the website repository (`web/.htaccess` and the meta tag in
-`web/shell.html`), which is not part of this repository — it has to be updated there, in both
-places, with the exact `wss://` origin.
+`connect-src`. Package with `scripts/package-web.py --relay-origin https://relay.example`
+(plus the required `--build-root` and `--play-root` arguments) to add the exact HTTPS and WSS
+origins to both the HTML meta policy and the packaged `web/.htaccess` policy. Without that
+argument the existing policy stays in effect. Cross-origin admission also requires the relay
+to allow the browser page's exact Origin and return matching CORS headers.
+
+For a loopback test package, use `--relay-origin http://127.0.0.1:8787
+--allow-loopback-relay`. This explicit development package permits HTTP/WS loopback and removes
+the HTTPS upgrade directive from its Apache policy. Do not publish a development package.
 
 ## 4. Running a relay for testing
 
 ```bash
 cd tools/room-relay
 npm ci
-npm test          # 88 tests: protocol, rooms, admission, end-to-end, abuse
-npm run dev       # listens on 127.0.0.1:8787, plain ws, development only
+npm test
+RELAY_ALLOWED_ORIGINS=http://127.0.0.1:8766 npm run dev
 ```
 
 Production shape (TLS at a reverse proxy, relay on loopback) is in
 [`tools/room-relay/README.md`](../tools/room-relay/README.md).
+
+The real producer/PHP/SQLite contract can be checked independently, with disposable data:
+
+```bash
+python3 tools/room-relay/test/verify-php-delivery.py --metaserver-dir /path/to/website/metaserver
+```
+
+This sends seven synthetic lifecycle events through HMAC validation and checks stored runtime
+markers. It does not attest an actual WSS match.
 
 ## 5. Pointing the game at it
 
