@@ -67,6 +67,7 @@ class Connection {
     this.joinedAt = 0;
     this.connectedAt = now;
     this.lastSeen = now;
+    this.lastPingSent = now;
     this.softErrors = 0;
     /** Peers this connection has been told about, so PEER_LEFT is emitted exactly once. */
     this.announced = new Set();
@@ -664,7 +665,11 @@ function createRelay(userConfig = {}) {
       if (at - conn.lastSeen > config.livenessTimeoutMs) {
         closeConnection(conn, CLOSE.TIMEOUT, 'This player stopped responding.',
           LEAVE_REASON.TIMEOUT);
-      } else if (conn.ws.readyState === WebSocket.OPEN) {
+      } else if (conn.ws.readyState === WebSocket.OPEN
+                 && at - conn.lastPingSent >= LIMITS.SERVER_PING_INTERVAL_MS) {
+        // The sweep runs far more often than this, because it also enforces the much shorter
+        // handshake deadline; pings keep to their own documented interval.
+        conn.lastPingSent = at;
         conn.ws.ping();
       }
     }

@@ -372,7 +372,7 @@ test('the handshake deadline closes a silent connection', async (t) => {
 });
 
 test('the liveness deadline closes a stalled player instead of stalling the match', async (t) => {
-  const relay = await startRelay({ handshakeTimeoutMs: 400, livenessTimeoutMs: 300 });
+  const relay = await startRelay({ handshakeTimeoutMs: 900, livenessTimeoutMs: 800 });
   t.after(() => relay.stop());
 
   const host = await joinAsHost(relay);
@@ -380,12 +380,27 @@ test('the liveness deadline closes a stalled player instead of stalling the matc
   await host.client.expect(S2C.PEER_JOINED);
   await guest.client.expect(S2C.PEER_JOINED);
 
-  // The guest stops answering: the ws client answers pings automatically, so suppress that to
-  // model a genuinely wedged tab.
+  // The host keeps heartbeating, the way a running game does. The guest goes silent, which is
+  // what a suspended browser tab looks like: the ws client answers pings by itself, so that has
+  // to be suppressed too for it to be genuinely wedged.
   guest.client.ws.pong = () => {};
   guest.client.ws._receiver.removeAllListeners('ping');
 
-  const closed = await host.client.expect(S2C.PEER_LEFT, 5000);
+  const heartbeat = setInterval(() => {
+    if (host.client.closeInfo === null) {
+      try { host.client.send(protocol.encodeClientHeartbeat(Date.now() >>> 0)); } catch { /* gone */ }
+    }
+  }, 150);
+  t.after(() => clearInterval(heartbeat));
+
+  let closed = null;
+  while (closed === null) {
+    const msg = await host.client.next(6000);
+    if (msg.type !== S2C.HEARTBEAT_ACK) {
+      assert.equal(msg.type, S2C.PEER_LEFT);
+      closed = msg;
+    }
+  }
   assert.equal(closed.peerId, guest.welcome.peerId);
   assert.equal(closed.reason, LEAVE_REASON.TIMEOUT);
   assert.equal((await guest.client.waitForClose(5000)).code, CLOSE.TIMEOUT);

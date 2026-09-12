@@ -294,11 +294,12 @@ private:
             return;
         }
 
-        if(running == 0 && state_ == State::Connecting) {
-            // The transfer finished without a completion message we recognised.
-            fail("The game could not reach the game service.");
-            return;
-        }
+        // A finished handle always leaves a completion message behind, and the loop above acts
+        // on it. Anything else - including a handle that reports nothing still running without
+        // having said why - is left to the deadline rather than guessed at, because a false
+        // failure here would look to the player like the relay is down.
+        (void)running;
+
         if(SDL_TICKS_PASSED(SDL_GetTicks(), deadline_)) {
             closeCode_ = RoomRelay::Close::Timeout;
             fail("The game service did not answer in time.");
