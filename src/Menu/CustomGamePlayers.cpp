@@ -1232,12 +1232,14 @@ void CustomGamePlayers::updateDiscordGameStarting() {
     DiscordManager::instance().setGameStarting(mapName, modName, playerDetails, playerCount);
     
     // Send game start notification to metaserver (which sends Discord webhook)
+#ifndef __EMSCRIPTEN__
     if(pNetworkManager != nullptr) {
         MetaServerClient* metaServer = pNetworkManager->getMetaServerClient();
         if(metaServer != nullptr) {
             metaServer->announceGameStart(mapName, modName, playerDetails);
         }
     }
+#endif
 }
 
 void CustomGamePlayers::onNext()

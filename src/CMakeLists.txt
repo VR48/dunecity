@@ -395,6 +395,16 @@ target_sources(dunecity
         fixmath/fix32_trig.c
 )
 
+if(EMSCRIPTEN)
+    # ENetHttp.cpp requires libcurl, which has no Emscripten port, so the
+    # browser build skips it and provides the symbols referenced by
+    # MetaServerClient/VersionChecker/Dune2RAssetManager via ENetHttpStub.cpp.
+    # All other Network sources and enet itself build unchanged from the
+    # shared list above.
+    set_source_files_properties(Network/ENetHttp.cpp PROPERTIES HEADER_FILE_ONLY TRUE)
+    target_sources(dunecity PRIVATE Network/ENetHttpStub.cpp)
+endif()
+
 # Platform-specific source files
 if(APPLE)
     target_sources(dunecity
@@ -425,40 +435,95 @@ if(APPLE)
     )
 endif()
 
-# Find miniupnpc for UPnP support
-find_package(miniupnpc CONFIG QUIET)
-if(NOT miniupnpc_FOUND)
-    find_library(MINIUPNPC_LIBRARY miniupnpc PATHS ${CMAKE_PREFIX_PATH}/lib)
-    find_path(MINIUPNPC_INCLUDE_DIR miniupnpc/miniupnpc.h PATHS ${CMAKE_PREFIX_PATH}/include)
-    if(MINIUPNPC_LIBRARY AND MINIUPNPC_INCLUDE_DIR)
-        add_library(miniupnpc::miniupnpc UNKNOWN IMPORTED)
-        set_target_properties(miniupnpc::miniupnpc PROPERTIES
-            IMPORTED_LOCATION "${MINIUPNPC_LIBRARY}"
-            INTERFACE_INCLUDE_DIRECTORIES "${MINIUPNPC_INCLUDE_DIR}")
+# Find miniupnpc for UPnP support (desktop/native builds only)
+if(NOT EMSCRIPTEN)
+    find_package(miniupnpc CONFIG QUIET)
+    if(NOT miniupnpc_FOUND)
+        find_library(MINIUPNPC_LIBRARY miniupnpc PATHS ${CMAKE_PREFIX_PATH}/lib)
+        find_path(MINIUPNPC_INCLUDE_DIR miniupnpc/miniupnpc.h PATHS ${CMAKE_PREFIX_PATH}/include)
+        if(MINIUPNPC_LIBRARY AND MINIUPNPC_INCLUDE_DIR)
+            add_library(miniupnpc::miniupnpc UNKNOWN IMPORTED)
+            set_target_properties(miniupnpc::miniupnpc PROPERTIES
+                IMPORTED_LOCATION "${MINIUPNPC_LIBRARY}"
+                INTERFACE_INCLUDE_DIRECTORIES "${MINIUPNPC_INCLUDE_DIR}")
 
+        endif()
     endif()
 endif()
 
-# Find discord-rpc for Discord Rich Presence (optional)
-find_library(DISCORD_RPC_LIBRARY discord-rpc PATHS ${CMAKE_PREFIX_PATH}/lib)
-if(DISCORD_RPC_LIBRARY)
-    target_sources(dunecity PRIVATE misc/DiscordManager.cpp)
-    target_compile_definitions(dunecity PRIVATE HAS_DISCORD_RPC)
+# Find discord-rpc for Discord Rich Presence (optional, desktop/native only)
+if(NOT EMSCRIPTEN)
+    find_library(DISCORD_RPC_LIBRARY discord-rpc PATHS ${CMAKE_PREFIX_PATH}/lib)
+    if(DISCORD_RPC_LIBRARY)
+        target_sources(dunecity PRIVATE misc/DiscordManager.cpp)
+        target_compile_definitions(dunecity PRIVATE HAS_DISCORD_RPC)
+    endif()
 endif()
 
 # Link libraries
-# vcpkg provides modern CMake targets for SDL2
-target_link_libraries(dunecity
-    PRIVATE
-        $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main>
-        $<IF:$<TARGET_EXISTS:SDL2_mixer::SDL2_mixer>,SDL2_mixer::SDL2_mixer,SDL2_mixer::SDL2_mixer-static>
-        $<IF:$<TARGET_EXISTS:SDL2_ttf::SDL2_ttf>,SDL2_ttf::SDL2_ttf,SDL2_ttf::SDL2_ttf-static>
-        $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>
-        CURL::libcurl
-        $<IF:$<TARGET_EXISTS:miniupnpc::miniupnpc>,miniupnpc::miniupnpc,${MINIUPNPC_LIBRARY}>
-        $<$<BOOL:${DISCORD_RPC_LIBRARY}>:${DISCORD_RPC_LIBRARY}>
-        $<$<PLATFORM_ID:Android>:c++_shared>
-)
+if(EMSCRIPTEN)
+    set(DUNECITY_EM_PORT_FLAGS
+        -sUSE_SDL=2
+        -sUSE_SDL_MIXER=2
+        -sUSE_SDL_TTF=2
+    )
+
+    # Existing startup paths use C++ try/catch (e.g. GFXManager init in main.cpp).
+    # Emscripten disables exception catching by default; enable it for browser builds only.
+    set(DUNECITY_EM_EXCEPTION_FLAGS
+        -fexceptions
+        -sDISABLE_EXCEPTION_CATCHING=0
+    )
+
+    target_compile_options(dunecity PRIVATE ${DUNECITY_EM_PORT_FLAGS} ${DUNECITY_EM_EXCEPTION_FLAGS})
+
+    set(DUNECITY_EM_PRELOADS
+        "${CMAKE_SOURCE_DIR}/data@/data"
+        "${CMAKE_SOURCE_DIR}/config@/config"
+    )
+    if(EXISTS "${CMAKE_SOURCE_DIR}/imported_sprites")
+        list(APPEND DUNECITY_EM_PRELOADS "${CMAKE_SOURCE_DIR}/imported_sprites@/imported_sprites")
+    endif()
+    if(EXISTS "${CMAKE_SOURCE_DIR}/mods")
+        list(APPEND DUNECITY_EM_PRELOADS "${CMAKE_SOURCE_DIR}/mods@/mods")
+    endif()
+
+    set(DUNECITY_EM_LINK_FLAGS
+        ${DUNECITY_EM_PORT_FLAGS}
+        ${DUNECITY_EM_EXCEPTION_FLAGS}
+        -sASYNCIFY=1
+        -sALLOW_MEMORY_GROWTH=1
+        -sMAXIMUM_MEMORY=2147483648
+        -sFORCE_FILESYSTEM=1
+        -sENVIRONMENT=web
+        -sMODULARIZE=0
+        -sEXPORTED_FUNCTIONS=['_main']
+        -sEXPORTED_RUNTIME_METHODS=cwrap,ccall
+        -sASSERTIONS=1
+    )
+    foreach(preload IN LISTS DUNECITY_EM_PRELOADS)
+        list(APPEND DUNECITY_EM_LINK_FLAGS "SHELL:--preload-file ${preload}")
+    endforeach()
+
+    target_link_options(dunecity PRIVATE ${DUNECITY_EM_LINK_FLAGS})
+    set_target_properties(dunecity PROPERTIES
+        OUTPUT_NAME "dunecity"
+        SUFFIX ".html"
+    )
+else()
+    # vcpkg provides modern CMake targets for SDL2
+    target_link_libraries(dunecity
+        PRIVATE
+            $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main>
+            $<IF:$<TARGET_EXISTS:SDL2_mixer::SDL2_mixer>,SDL2_mixer::SDL2_mixer,SDL2_mixer::SDL2_mixer-static>
+            $<IF:$<TARGET_EXISTS:SDL2_ttf::SDL2_ttf>,SDL2_ttf::SDL2_ttf,SDL2_ttf::SDL2_ttf-static>
+            $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>
+            CURL::libcurl
+            $<IF:$<TARGET_EXISTS:miniupnpc::miniupnpc>,miniupnpc::miniupnpc,${MINIUPNPC_LIBRARY}>
+            $<$<BOOL:${DISCORD_RPC_LIBRARY}>:${DISCORD_RPC_LIBRARY}>
+            $<$<PLATFORM_ID:Android>:c++_shared>
+    )
+endif()
 
 if(WIN32)
     target_link_libraries(dunecity
@@ -563,6 +628,9 @@ if(APPLE)
         COMMENT "Code signing app bundle with ad-hoc signature"
     )
 else()
+    if(EMSCRIPTEN)
+        # Browser build embeds runtime assets with --preload-file (see link flags above).
+    else()
     if(WIN32)
         set(BUILD_RUNTIME_DIR "$<TARGET_FILE_DIR:dunecity>")
     else()
@@ -608,6 +676,7 @@ else()
             COMMENT "Copying imported sprites to build output"
         )
     endif()
+    endif() # NOT EMSCRIPTEN
 endif()
 
 # Install data directory

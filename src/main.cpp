@@ -866,8 +866,10 @@ int main(int argc, char *argv[]) {
         }
 
         // Install crash handlers early, after logging is set up
+#ifndef __EMSCRIPTEN__
         std::string crashLogPath = getLogFilepath();
         installCrashHandlers(crashLogPath.c_str());
+#endif
 
         SDL_Log("Starting DuneCity %s on %s", VERSION, SDL_GetPlatform());
 
