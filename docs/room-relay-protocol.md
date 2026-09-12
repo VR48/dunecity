@@ -93,7 +93,8 @@ message=That room code is not open.
 ```
 
 Defined `code` values: `bad_request`, `unsupported_version`, `content_mismatch`,
-`room_not_found`, `room_full`, `room_closed`, `rate_limited`, `capacity`, `forbidden_origin`.
+`room_not_found`, `room_full`, `room_closed`, `match_in_progress`, `rate_limited`, `capacity`,
+`forbidden_origin`.
 Clients must treat an unknown code as a generic failure and must show `message` only after
 length- and charset-checking it (§3.4).
 
@@ -111,6 +112,14 @@ length- and charset-checking it (§3.4).
   anyway. Codes are matched case-insensitively and dashes are optional on input.
 - The *only* thing a room code grants is the right to ask for a client grant. It is never sent
   over the WebSocket.
+- A grant is bound to the room phase it was issued in. A phase change invalidates every
+  outstanding grant, and redeeming one afterwards consumes it and fails with `4401`, whichever
+  order the start and the handshake arrive in.
+- Once a room has entered `MATCH`, `/v1/admission/join` answers `409 match_in_progress` for the
+  rest of that room's life, including after the host returns the room to the lobby for a co-op
+  intermission. There is no snapshot or reconnect protocol, so a late arrival has nothing to
+  join; existing members are unaffected. This also means a host cannot fill an empty seat during
+  a running match.
 
 ### 3.4 Field limits
 

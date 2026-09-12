@@ -436,8 +436,9 @@ function createRelay(userConfig = {}) {
       return;
     }
     const room = conn.room;
-    if (room.phase === msg.phase) return;
-    room.phase = msg.phase;
+    // The store owns the phase, the epoch that invalidates lobby grants, and the flag that
+    // stops a started room from ever admitting somebody new.
+    if (!store.setRoomPhase(room, msg.phase)) return;
     const frame = protocol.encodeRoomPhaseChanged(room.phase, conn.peerId);
     for (const other of room.peers.values()) {
       if (other !== conn) deliver(other, frame);

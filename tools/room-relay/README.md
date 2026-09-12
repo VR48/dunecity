@@ -21,7 +21,7 @@ npm ci
 npm test
 ```
 
-`npm test` runs six suites with Node's built-in test runner:
+`npm test` runs seven suites with Node's built-in test runner:
 
 | Suite | Covers |
 | --- | --- |
@@ -30,7 +30,8 @@ npm test
 | `test/admission.test.js` | HTTP admission, field validation, body limits, Origin allowlist, rate limits, logging hygiene |
 | `test/e2e.test.js` | real `ws` clients: membership, routing, phases, co-op continuation, diagnostics, large payloads, shutdown |
 | `test/abuse.test.js` | grant replay/expiry, foreign origins, wrong roles, banned packet types, cross-room routing, full rooms, deadlines, floods, backpressure |
-| `test/analytics.test.js` | lifecycle DTO schema, configuration and startup failures, HMAC over exact bytes, idempotent retries, queue drops, timeouts, refused redirects, TLS verification, full relay lifecycle into a captured receiver |
+| `test/analytics.test.js` | lifecycle DTO schema, configuration and startup failures, HMAC over exact bytes, idempotent retries, queue drops, absolute deadlines, refused redirects, TLS verification, full relay lifecycle into a captured receiver |
+| `test/phase.test.js` | admission and grant redemption once a match has started, co-op intermission, lobby leave/rejoin |
 
 The TLS tests generate a throwaway certificate with the `openssl` binary and skip themselves if
 it is unavailable.

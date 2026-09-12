@@ -51,6 +51,14 @@ class Room {
     this.contentHash = spec.contentHash;
     this.appVersion = spec.appVersion;
     this.phase = PHASE.LOBBY;
+    /**
+     * Bumped on every phase change. A grant is only redeemable in the phase it was issued in,
+     * so a lobby grant cannot be held back and spent on a room that has since started - or on
+     * one that started and returned to the lobby.
+     */
+    this.phaseEpoch = 0;
+    /** Once a match has begun, this room never admits a new participant again. */
+    this.everStarted = false;
     this.createdAt = spec.now;
     this.emptySince = spec.now;
     this.hostPeerId = 0;
@@ -166,10 +174,23 @@ class RoomStore {
     this.grants.set(token, {
       roomCode: room.code,
       role,
+      phaseEpoch: room.phaseEpoch,
       expiresAt: this.now() + this.grantTtlMs,
     });
     room.outstandingGrants += 1;
     return token;
+  }
+
+  /**
+   * The single place a room's phase changes, so that the epoch and the "has started" flag
+   * cannot drift apart from it.
+   */
+  setRoomPhase(room, phase) {
+    if (room.phase === phase) return false;
+    room.phase = phase;
+    room.phaseEpoch += 1;
+    if (phase === PHASE.MATCH) room.everStarted = true;
+    return true;
   }
 
   /**
@@ -191,6 +212,13 @@ class RoomStore {
       throw new AdmissionError(409, 'content_mismatch',
         'This room needs the same game version and content as the host.');
     }
+    // There is no snapshot or reconnect protocol: a peer that arrives after the first match
+    // began has no way to catch up, and the lockstep peers have no way to wait for it. This
+    // also stops a host from filling an empty seat mid-match.
+    if (room.phase !== PHASE.LOBBY || room.everStarted) {
+      throw new AdmissionError(409, 'match_in_progress',
+        'That game has already started, so nobody else can join it.');
+    }
     if (room.reservedSeats >= room.maxPeers) {
       throw new AdmissionError(409, 'room_full', 'That room is full.');
     }
@@ -204,7 +232,8 @@ class RoomStore {
 
   /**
    * Atomically consumes a grant. The entry is removed before anything else happens, so a
-   * replay - even one that arrives in the same tick - finds nothing.
+   * replay - even one that arrives in the same tick - finds nothing. A grant that has been
+   * overtaken by a phase change is consumed and refused, not left redeemable.
    * @returns {{room: Room, role: number}|null}
    */
   consumeGrant(token) {
@@ -219,6 +248,9 @@ class RoomStore {
 
     if (this.now() >= grant.expiresAt) return null;
     if (room === undefined || room.closed) return null;
+    // Issued for a lobby that no longer exists in that form. Racing a match start with a
+    // handshake must lose, whichever order the two arrive in.
+    if (room.phaseEpoch !== grant.phaseEpoch) return null;
 
     return { room, role: grant.role };
   }
