@@ -14,6 +14,7 @@
 #include <DataTypes.h>
 #include <Definitions.h>
 #include <Colors.h>
+#include <dunecity/HouseColors.h>
 #include <globals.h>
 #include <FileClasses/GFXManager.h>
 #include <FileClasses/SFXManager.h>
@@ -52,7 +53,7 @@ TEST_CASE("NeutralHouse: HOUSE_NEUTRAL is after HOUSE_MERCENARY",
 TEST_CASE("NeutralHouse: savegame version includes HOUSE_NEUTRAL",
           "[neutral][savegame]") {
     // SAVEGAMEVERSION 9818 persists all kMaxCityHouses houseState[] slots (9817 added House::cityCredits, 9816 added Unit_EliteSiegeTank=55, 9813 added HOUSE_NEUTRAL).
-    REQUIRE(SAVEGAMEVERSION == 9823);
+    REQUIRE(SAVEGAMEVERSION == 9837);
 }
 
 // =============================================================================
@@ -67,6 +68,13 @@ TEST_CASE("NeutralHouse: PALCOLOR_NEUTRAL is 128",
 TEST_CASE("NeutralHouse: houseToPaletteIndex maps HOUSE_NEUTRAL to PALCOLOR_NEUTRAL",
           "[neutral][color]") {
     REQUIRE(houseToPaletteIndex[HOUSE_NEUTRAL] == PALCOLOR_NEUTRAL);
+}
+
+TEST_CASE("NeutralHouse: radar marker remains distinct from rock", "[neutral][color]") {
+    const Uint32 neutral = DuneCity::neutralRadarColor;
+    REQUIRE(((neutral & GMASK) >> GSHIFT) > 200);
+    REQUIRE(((neutral & BMASK) >> BSHIFT) > 200);
+    REQUIRE(neutral != COLOR_ROCK);
 }
 
 // =============================================================================

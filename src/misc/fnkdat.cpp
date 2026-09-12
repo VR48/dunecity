@@ -441,7 +441,13 @@ int fnkdat(const char* target, char* buffer, int len, int flags) {
       return 0;
    }
 
-   if (rawflags == FNKDAT_USER) {
+   // Isolated profiles allow local multiplayer testing without overwriting a
+   // running game's settings, saves or log. Default paths are unchanged.
+   const char* userOverride = getenv("DUNECITY_USERDIR");
+   if(rawflags == FNKDAT_USER && userOverride && userOverride[0]) {
+      if(userOverride[0] != '/' || strlen(userOverride) >= static_cast<size_t>(len)) return -1;
+      FNKDAT_S(strncpy(buffer, userOverride, len));
+   } else if (rawflags == FNKDAT_USER) {
 
 #ifdef __APPLE__
       getMacApplicationSupportFolder(buffer, len);
@@ -462,6 +468,8 @@ int fnkdat(const char* target, char* buffer, int len, int flags) {
          FNKDAT_S(strncpy(buffer, prefPath, len));
          SDL_free(prefPath);
       }
+#elif defined(__EMSCRIPTEN__)
+      FNKDAT_S(strncpy(buffer, "/home/web_user/.config/DuneCity", len));
 #else
       {
          char* xdg_config = getenv("XDG_CONFIG_HOME");
@@ -590,4 +598,3 @@ static int fnkdat_mkdirs(_TCHAR* buffer, int rlevel) {
 }
 
 /* vi: set sw=3 ts=3 tw=78 et sts: */
-

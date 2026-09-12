@@ -53,6 +53,8 @@ public:
     const std::vector<Dune2RAssetPack>& getPacks() const noexcept;
     const std::string& getRevision() const noexcept;
     bool isPackInstalled(const Dune2RAssetPack& pack) const;
+    Dune2RAssetInstallResult refreshCatalog();
+    Dune2RAssetInstallResult applyCatalog(const std::string& contents);
 
     Dune2RAssetInstallResult install(const std::vector<std::string>& packIDs,
                                      const ProgressCallback& progress = {}) const;
@@ -63,6 +65,7 @@ public:
 private:
     const Dune2RAssetPack* findPack(const std::string& id) const;
     void loadCatalog();
+    void parseCatalog(const std::string& contents);
 
     std::string modPath;
     std::string baseURL;

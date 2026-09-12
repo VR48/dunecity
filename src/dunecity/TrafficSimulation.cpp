@@ -1,14 +1,14 @@
 /*
  *  TrafficSimulation.cpp
  *
- *  BFS-based traffic connectivity check ported from Micropolis traffic.cpp.
+ *  BFS-based traffic connectivity with Micropolis density sampling.
  *  Each zone attempts to reach a complementary zone type via the road network:
  *    Residential -> Commercial
  *    Commercial  -> Industrial
  *    Industrial  -> Residential
  *
  *  Returns TrafficResult::Connected / NoDestination / NoRoad.
- *  On Connected, increments traffic density along the path.
+ *  On Connected, returns the ordered route for density sampling by the caller.
  */
 
 #include <dunecity/TrafficSimulation.h>
@@ -23,21 +23,19 @@
 
 #include <algorithm>
 #include <cstdlib>
-#include <queue>
 
 namespace DuneCity {
 
 TrafficSimulation::TrafficSimulation() = default;
 
-void TrafficSimulation::init(CitySimulation* sim) {
-    sim_ = sim;
-    driveStack_.clear();
+void TrafficSimulation::init(CitySimulation*) {
+    routeFinder_.clear();
 }
 
 bool TrafficSimulation::isRoad(int x, int y) const {
     if (!currentGameMap) return false;
     if (!currentGameMap->tileExists(x, y)) return false;
-    return currentGameMap->getTile(x, y)->isRoad();
+    return currentGameMap->getTile(x, y)->isRoadConnection();
 }
 
 bool TrafficSimulation::driveDone(int x, int y, ZoneType destZone) const {
@@ -87,85 +85,25 @@ bool TrafficSimulation::findPerimeterRoad(int zoneX, int zoneY,
     return false;
 }
 
-int TrafficSimulation::tryGo(int x, int y, int lastDir) const {
-    // Try each direction except the reverse of lastDir
-    const int reverseDir = (lastDir >= 0) ? ((lastDir + 2) % 4) : -1;
-    for (int d = 0; d < 4; ++d) {
-        if (d == reverseDir) continue;
-        if (isRoad(x + DX[d], y + DY[d])) return d;
-    }
-    return -1;
-}
-
-bool TrafficSimulation::tryDrive(int startX, int startY, ZoneType destZone) {
-    // BFS along road tiles up to kMaxTrafficDistance.
-    // Records all visited road tiles so traffic density can be stamped.
-    driveStack_.clear();
-    pathTiles_.clear();
-
+bool TrafficSimulation::tryDrive(int startX, int startY, ZoneType destZone, unsigned directionOffset) {
+    routeFinder_.clear();
     if (!currentGameMap) return false;
-    const int mapW = currentGameMap->getSizeX();
-    const int mapH = currentGameMap->getSizeY();
-    const size_t mapSize = static_cast<size_t>(mapW) * mapH;
-    // Reuse visited buffer across calls to avoid per-BFS heap allocation.
-    // assign() is cheaper than constructing a new vector each time.
-    if (visited_.size() != mapSize) {
-        visited_.assign(mapSize, false);
-    } else {
-        std::fill(visited_.begin(), visited_.end(), false);
-    }
-    visited_[startY * mapW + startX] = true;
-
-    struct BFSEntry { int x, y, dist; };
-    std::queue<BFSEntry> bfsQueue;
-    bfsQueue.push({startX, startY, 0});
-
-    while (!bfsQueue.empty()) {
-        auto [cx, cy, dist] = bfsQueue.front();
-        bfsQueue.pop();
-
-        if (driveDone(cx, cy, destZone)) {
-            // All visited road tiles are already in pathTiles_.
-            pathTiles_.push_back({cx, cy});
-            return true;
-        }
-
-        if (dist >= kMaxTrafficDistance) continue;
-
-        for (int d = 0; d < 4; ++d) {
-            const int nx = cx + DX[d];
-            const int ny = cy + DY[d];
-            if (nx < 0 || ny < 0 || nx >= mapW || ny >= mapH) continue;
-            const int nIdx = ny * mapW + nx;
-            if (visited_[nIdx]) continue;
-            if (!isRoad(nx, ny)) continue;
-            visited_[nIdx] = true;
-            bfsQueue.push({nx, ny, dist + 1});
-            pathTiles_.push_back({nx, ny});
-        }
-    }
-
-    pathTiles_.clear();  // no destination found — don't stamp density
-    return false;
+    return routeFinder_.find(currentGameMap->getSizeX(),currentGameMap->getSizeY(),
+        {startX,startY},kMaxTrafficDistance,
+        [&](int x,int y) { return isRoad(x,y); },
+        [&](int x,int y) { return driveDone(x,y,destZone); }, directionOffset);
 }
 
-void TrafficSimulation::addToTrafficDensityMap() {
-    // Increment traffic density along visited road tiles.
-    // Each visited tile gets +50 (SC Classic value), capped at 240.
-    if (!sim_) return;
-    // Access the traffic density map through the simulation's public interface
-    // by recording tiles visited and letting the caller stamp them.
-    // For now, stamp directly since we have access to the map via globals.
-    // This is called from CityEffectsRuntime which handles the stamping.
-}
-
-int TrafficSimulation::makeTraffic(int x, int y, ZoneType destZone) {
+int TrafficSimulation::makeTraffic(int x, int y, ZoneType destZone, uint32_t day) {
+    routeFinder_.clear();
     int roadX = 0, roadY = 0;
     if (!findPerimeterRoad(x, y, roadX, roadY)) {
         return -1;  // NoRoad
     }
 
-    if (tryDrive(roadX, roadY, destZone)) {
+    // Vary equal shortest routes without consuming gameplay RNG or extra searches.
+    const unsigned directionOffset = (day + unsigned(x)*3u + unsigned(y)) & 3u;
+    if (tryDrive(roadX, roadY, destZone, directionOffset)) {
         return 1;   // Connected
     }
 

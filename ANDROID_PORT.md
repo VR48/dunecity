@@ -57,6 +57,29 @@ Nvidia Shield Home while preserving phone and tablet installation.
 The next control layer should add explicit map panning. A safe default is
 two-finger drag for camera pan, leaving one-finger drag for selection boxes.
 
+## Foldables And Resizable Windows
+
+The generated activity is explicitly resizable and uses sensor landscape, so
+both landscape rotations remain available while portrait is rejected. The SDL
+orientation hint repeats that policy when its resizable native window starts;
+without the hint, SDL permits every orientation and follows the user's Android
+rotation lock. SDLActivity owns fold, unfold, DeX, and multi-window surface
+changes, and its `surfaceChanged` path forwards the current resolution to SDL
+without restarting the game. Density and large-screen configuration changes
+are declared in the manifest so Android does not place the game in size
+compatibility mode.
+
+Android keeps a stable `640x480` logical game canvas while the physical SDL
+surface changes size. SDL scales and letterboxes that canvas for the current
+outer screen, inner screen, TV, or window. This keeps the fixed-size menus
+readable and prevents a fold transition from retaining a portrait-shaped game
+target. Runtime logs include physical pixels, dp dimensions, density, and
+orientation under the `Dune2RActivity` and `SDL` tags.
+
+Foldable verification should cover launching on both displays, folding and
+unfolding while a menu and match are active, rotating the open device, and
+Samsung DeX or Android split-screen resizing.
+
 ## Required Tooling
 
 The PC needs these discoverable by Android Studio or environment variables:

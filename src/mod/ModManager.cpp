@@ -29,6 +29,8 @@
 #include <misc/exceptions.h>
 #include <Definitions.h>
 #include <globals.h>
+#include <main.h>
+#include <FileClasses/INIFile.h>
 #include <config.h>
 
 #include <SDL.h>
@@ -176,6 +178,7 @@ bool refreshManagedMod(const std::string& modName,
         if(modName == DUNE2R_MOD_NAME && std::filesystem::is_directory(destination)) {
             const std::filesystem::path persistentDirectories[] = {
                 std::filesystem::path("graphics_hd") / "units",
+                std::filesystem::path("graphics_hd") / ".atlas-backups",
                 std::filesystem::path("graphics_compact") / "objpics"
             };
             for(const auto& relative : persistentDirectories) {
@@ -189,6 +192,13 @@ bool refreshManagedMod(const std::string& modName,
                 std::filesystem::copy(installedAssets, stagedAssets,
                     std::filesystem::copy_options::recursive |
                     std::filesystem::copy_options::overwrite_existing);
+            }
+            for(const auto* filename : {"asset-catalog-online.ini", ".asset-catalog.previous"}) {
+                const auto installedCatalog = destination / filename;
+                if(std::filesystem::is_regular_file(installedCatalog)) {
+                    std::filesystem::copy_file(installedCatalog, staged / filename,
+                        std::filesystem::copy_options::overwrite_existing);
+                }
             }
         }
 
@@ -634,9 +644,20 @@ SettingsClass::GameOptionsClass ModManager::loadEffectiveGameOptions(
         return result;
     }
     
+    // The player's own choices for this mod (saved from the Options screen or
+    // a game lobby) sit on top of whatever the mod file says.
+    auto applyPlayerChoices = [&]() {
+        try {
+            applyGameOptionsFromConfig(INIFile(getConfigFilepath()), userGameOptionsSection(), result);
+        } catch (const std::exception& e) {
+            SDL_Log("ModManager: Warning - could not read the player's game option overrides: %s", e.what());
+        }
+    };
+
     // Try to load mod's GameOptions.ini
     std::string gameOptionsPath = getActiveGameOptionsPath();
     if (!existsFile(gameOptionsPath)) {
+        applyPlayerChoices();
         return result;
     }
     
@@ -695,7 +716,8 @@ SettingsClass::GameOptionsClass ModManager::loadEffectiveGameOptions(
     } catch (const std::exception& e) {
         SDL_Log("ModManager: Warning - failed to load game options from mod: %s", e.what());
     }
-    
+
+    applyPlayerChoices();
     return result;
 }
 

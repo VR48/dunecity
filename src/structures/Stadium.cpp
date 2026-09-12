@@ -5,6 +5,7 @@
 #include <FileClasses/GFXManager.h>
 #include <House.h>
 #include <Game.h>
+#include <dunecity/CitySpritePolicy.h>
 
 Stadium::Stadium(House* newOwner) : StructureBase(newOwner) {
     Stadium::init();
@@ -23,7 +24,7 @@ void Stadium::init() {
     structureSize.y = 3;
     graphicID = ObjPic_Stadium;
     graphic   = pGFXManager->getObjPic(graphicID, getOwner()->getHouseID());
-    numImagesX = 4;
+    numImagesX = DuneCity::CitySprites::specialFrames;
     numImagesY = 1;
     firstAnimFrame = 0;
     lastAnimFrame  = 0;
@@ -31,3 +32,8 @@ void Stadium::init() {
 }
 
 Stadium::~Stadium() = default;
+
+void Stadium::updateStructureSpecificStuff() {
+    firstAnimFrame = lastAnimFrame = curAnimFrame =
+        DuneCity::CitySprites::stadiumFrame(currentGame->getGameCycleCount(), location.x, location.y, owner->hasPower());
+}

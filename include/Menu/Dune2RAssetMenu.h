@@ -35,6 +35,8 @@ public:
 private:
     void onSelectionChanged(bool interactive);
     void onDownload();
+    void onRefreshCatalog();
+    void populatePacks();
     void onBack();
     void refreshSelectionStatus();
     std::vector<std::string> selectedPackIDs() const;
@@ -47,6 +49,7 @@ private:
     DropDownBox packDropDown;
     TextProgressBar progressBar;
     TextButton downloadButton;
+    TextButton refreshButton;
     TextButton backButton;
 
     std::unique_ptr<Dune2RAssetManager> assetManager;
@@ -57,6 +60,7 @@ private:
     std::string progressPack;
     std::string progressFile;
     bool downloading = false;
+    bool refreshingCatalog = false;
 };
 
 #endif // DUNE2RASSETMENU_H

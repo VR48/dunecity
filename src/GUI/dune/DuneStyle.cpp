@@ -73,8 +73,8 @@ sdl2::surface_ptr DuneStyle::createLabelSurface(Uint32 width, Uint32 height, con
 
     SDL_FillRect(surface.get(), nullptr, backgroundcolor);
 
-    if(textcolor == COLOR_DEFAULT) textcolor = defaultForegroundColor;
-    if(textshadowcolor == COLOR_DEFAULT) textshadowcolor = defaultShadowColor;
+    if(textcolor == COLOR_DEFAULT) textcolor = textPalette.foreground;
+    if(textshadowcolor == COLOR_DEFAULT) textshadowcolor = textPalette.shadow;
 
     int fontheight = getTextHeight(fontSize);
     int spacing = 2;
@@ -136,8 +136,8 @@ sdl2::surface_ptr DuneStyle::createCheckboxSurface(Uint32 width, Uint32 height, 
 
     SDL_FillRect(surface.get(), nullptr, backgroundcolor);
 
-    if(textcolor == COLOR_DEFAULT) textcolor = defaultForegroundColor;
-    if(textshadowcolor == COLOR_DEFAULT) textshadowcolor = defaultShadowColor;
+    if(textcolor == COLOR_DEFAULT) textcolor = textPalette.foreground;
+    if(textshadowcolor == COLOR_DEFAULT) textshadowcolor = textPalette.shadow;
 
     if(activated) {
         textcolor = brightenUp(textcolor);
@@ -191,8 +191,8 @@ sdl2::surface_ptr DuneStyle::createRadioButtonSurface(Uint32 width, Uint32 heigh
 
     SDL_FillRect(surface.get(), nullptr, backgroundcolor);
 
-    if(textcolor == COLOR_DEFAULT) textcolor = defaultForegroundColor;
-    if(textshadowcolor == COLOR_DEFAULT) textshadowcolor = defaultShadowColor;
+    if(textcolor == COLOR_DEFAULT) textcolor = textPalette.foreground;
+    if(textshadowcolor == COLOR_DEFAULT) textshadowcolor = textPalette.shadow;
 
     if(activated) {
         textcolor = brightenUp(textcolor);
@@ -245,7 +245,7 @@ sdl2::surface_ptr DuneStyle::createRadioButtonSurface(Uint32 width, Uint32 heigh
 
 sdl2::surface_ptr DuneStyle::createDropDownBoxButton(Uint32 size, bool pressed, bool activated, Uint32 color) {
     if(color == COLOR_DEFAULT) {
-        color = defaultForegroundColor;
+        color = textPalette.foreground;
     }
 
     // create surfaces
@@ -319,23 +319,26 @@ sdl2::surface_ptr DuneStyle::createButtonSurface(Uint32 width, Uint32 height, co
     }
 
     // create text on this button
-    int fontsize;
-    if( (width < getTextWidth(text,14) + 12) ||
-        (height < getTextHeight(14) + 2)) {
-        fontsize = 12;
-    } else {
-        fontsize = 14;
-    }
+    int fontsize = height >= 48 ? 22 : height >= 36 ? 20 : height >= 28 ? 16 : 14;
+    while(fontsize > 8 && (width < getTextWidth(text, fontsize) + 12 ||
+                          height < getTextHeight(fontsize) + 4)) --fontsize;
 
-    if(textcolor == COLOR_DEFAULT) textcolor = defaultForegroundColor;
-    if(textshadowcolor == COLOR_DEFAULT) textshadowcolor = defaultShadowColor;
+    const bool defaultText = textcolor == COLOR_DEFAULT;
+    if(defaultText) textcolor = textPalette.foreground;
+    if(textshadowcolor == COLOR_DEFAULT) textshadowcolor = textPalette.shadow;
+    const int textWidth = getTextWidth(text, fontsize);
+    const int textHeight = getTextHeight(fontsize);
+    const bool focusOutlineFits = width >= textWidth + 18 && height >= textHeight + 10;
+    if(activated && focusOutlineFits)
+        drawRect(surface.get(), 3, 3, surface->w - 4, surface->h - 4, textPalette.foreground);
 
     sdl2::surface_ptr textSurface1 = createSurfaceWithText(text, textshadowcolor, fontsize);
-    SDL_Rect textRect1 = calcDrawingRect(textSurface1.get(), surface->w / 2 + 2 + (pressed ? 1 : 0), surface->h / 2 + 3 + (pressed ? 1 : 0), HAlign::Center, VAlign::Center);
+    SDL_Rect textRect1 = calcDrawingRect(textSurface1.get(), surface->w / 2 + 1 + (pressed ? 1 : 0), surface->h / 2 + 1 + (pressed ? 1 : 0), HAlign::Center, VAlign::Center);
     SDL_BlitSurface(textSurface1.get(), nullptr, surface.get(), &textRect1);
 
-    sdl2::surface_ptr textSurface2 = createSurfaceWithText(text, (activated == true) ? brightenUp(textcolor) : textcolor, fontsize);
-    SDL_Rect textRect2 = calcDrawingRect(textSurface2.get(), surface->w / 2 + 1 + (pressed ? 1 : 0), surface->h / 2 + 2 + (pressed ? 1 : 0), HAlign::Center, VAlign::Center);
+    const Uint32 foreground = (activated && (!defaultText || !focusOutlineFits)) ? brightenUp(textcolor) : textcolor;
+    sdl2::surface_ptr textSurface2 = createSurfaceWithText(text, foreground, fontsize);
+    SDL_Rect textRect2 = calcDrawingRect(textSurface2.get(), surface->w / 2 + (pressed ? 1 : 0), surface->h / 2 + (pressed ? 1 : 0), HAlign::Center, VAlign::Center);
     SDL_BlitSurface(textSurface2.get(), nullptr, surface.get(), &textRect2);
 
     return surface;
@@ -364,8 +367,8 @@ sdl2::surface_ptr DuneStyle::createTextBoxSurface(Uint32 width, Uint32 height, c
     drawHLine(surface.get(),1,surface->h-2,surface->w-2,buttonEdgeTopLeftColor);
     drawVLine(surface.get(),surface->w-2,1,surface->h-2,buttonEdgeTopLeftColor);
 
-    if(textcolor == COLOR_DEFAULT) textcolor = defaultForegroundColor;
-    if(textshadowcolor == COLOR_DEFAULT) textshadowcolor = defaultShadowColor;
+    if(textcolor == COLOR_DEFAULT) textcolor = textPalette.foreground;
+    if(textshadowcolor == COLOR_DEFAULT) textshadowcolor = textPalette.shadow;
 
     SDL_Rect cursorPos;
 
@@ -432,7 +435,7 @@ Point DuneStyle::getMinimumScrollBarArrowButtonSize() {
 
 sdl2::surface_ptr DuneStyle::createScrollBarArrowButton(bool down, bool pressed, bool activated, Uint32 color) {
     if(color == COLOR_DEFAULT) {
-        color = defaultForegroundColor;
+        color = textPalette.foreground;
     }
 
     // create surfaces
@@ -490,7 +493,7 @@ Uint32 DuneStyle::getListBoxEntryHeight() {
 
 sdl2::surface_ptr DuneStyle::createListBoxEntry(Uint32 width, const std::string& text, bool selected, Uint32 color) {
     if(color == COLOR_DEFAULT) {
-        color = defaultForegroundColor;
+        color = textPalette.foreground;
     }
 
     // create surfaces
@@ -583,6 +586,12 @@ sdl2::surface_ptr DuneStyle::createBackground(Uint32 width, Uint32 height) {
         }
         SDL_FillRect(pSurface.get(), nullptr, buttonBackgroundColor);
     }
+
+    // Dialogs are modal panels, not overlays. The shared palette background
+    // carries a transparent color key for sprites; remove it here so underlying
+    // labels and buttons cannot bleed through a message box.
+    SDL_SetColorKey(pSurface.get(), SDL_FALSE, 0);
+    SDL_SetSurfaceBlendMode(pSurface.get(), SDL_BLENDMODE_NONE);
 
 
     drawRect(pSurface.get(), 0, 0, pSurface->w-1, pSurface->h-1, buttonBorderColor);

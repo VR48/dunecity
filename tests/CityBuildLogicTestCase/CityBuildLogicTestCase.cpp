@@ -19,17 +19,21 @@ TEST_CASE("CityBuildLogic: loaded city saves keep the simulation active",
     REQUIRE_FALSE(DuneCity::shouldEnableLoadedCityEffects(false));
 }
 
-TEST_CASE("CityBuildLogic: roads build twice as fast as concrete",
+TEST_CASE("CityBuildLogic: roads build immediately",
           "[city][roads][concrete][timing]") {
-    REQUIRE(DuneCity::getCityBuildTime(Structure_Road, 4, 16, 80) == 8);
+    REQUIRE(DuneCity::getCityBuildTime(Structure_Road, 4) == 1);
 }
 
-TEST_CASE("CityBuildLogic: zones build in half the police-station time",
-          "[city][zones][timing]") {
-    REQUIRE(DuneCity::getCityBuildTime(Structure_ZoneResidential, 1, 16, 80) == 40);
-    REQUIRE(DuneCity::getCityBuildTime(Structure_ZoneCommercial, 1, 16, 80) == 40);
-    REQUIRE(DuneCity::getCityBuildTime(Structure_ZoneIndustrial, 1, 16, 80) == 40);
-    REQUIRE(DuneCity::getCityBuildTime(Structure_PoliceStation, 80, 16, 80) == 80);
+TEST_CASE("CityBuildLogic: zones use normal configured construction timing", "[city][zones][timing]") {
+    for (const int zone : {Structure_ZoneResidential, Structure_ZoneCommercial, Structure_ZoneIndustrial}) {
+        CAPTURE(zone);
+        CHECK(DuneCity::getCityBuildTime(zone, 40) == 40);
+        CHECK(DuneCity::getCityBuildTime(zone, 24) == 24); // house/mod override
+        CHECK(DuneCity::getCityBuildTime(zone, 96) == 96);
+        CHECK(DuneCity::getCityBuildTime(zone, 0) == 1); // no divide by zero
+    }
+    CHECK(DuneCity::getCityBuildTime(Structure_Silo, 48) == 48);
+    CHECK(DuneCity::getCityBuildTime(Structure_PoliceStation, 80) == 80);
 }
 
 TEST_CASE("CityBuildLogic: city-only placement set covers every city item",

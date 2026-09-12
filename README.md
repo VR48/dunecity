@@ -199,6 +199,10 @@ cmake --build build -j$(sysctl -n hw.ncpu)
 open build/bin/dunecity.app
 ```
 
+Release DMGs are built on the self-hosted Apple Silicon GitHub Actions runner.
+See [docs/macos-release-runner.md](docs/macos-release-runner.md) for runner setup,
+artifact verification, and the release sequence.
+
 ### Windows
 
 ```bash

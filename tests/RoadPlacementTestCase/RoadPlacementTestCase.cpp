@@ -17,6 +17,7 @@
 
 #include <catch2/catch_all.hpp>
 #include <data.h>
+#include <dunecity/CityConstants.h>
 #include <fstream>
 #include <string>
 #include <cstdlib>
@@ -160,4 +161,64 @@ TEST_CASE("RoadPlacement: Road is in the build menu; PowerLine is not", "[road][
 
     REQUIRE(orderBlock.find("Structure_Road") != std::string::npos);
     REQUIRE(orderBlock.find("Structure_PowerLine") == std::string::npos);
+}
+
+TEST_CASE("Road foundation is captured before placement clears the road flag", "[road][foundation][regression]") {
+    const auto src=readSourceFile("src/structures/StructureBase.cpp");
+    const auto start=src.find("void StructureBase::assignToMap");
+    REQUIRE(start!=std::string::npos);
+    const auto capture=src.find("const bool preparedFoundation = pTile->hasPreparedFoundation();",start);
+    const auto clear=src.find("pTile->setRoad(false)",start);
+    const auto damage=src.find("if(!preparedFoundation &&",start);
+    REQUIRE(capture!=std::string::npos);REQUIRE(clear!=std::string::npos);REQUIRE(damage!=std::string::npos);
+    REQUIRE(capture<clear);REQUIRE(clear<damage);
+    const auto tile=readSourceFile("include/Tile.h");
+    REQUIRE(tile.find("return isConcrete() || isRoad();")!=std::string::npos);
+}
+
+TEST_CASE("Enemy foundations do not grant construction reach", "[road][placement][regression]") {
+    // The same owner-only rule applies to roads, concrete and bare terrain.
+    for (int builder : {0, 1, 4, 7}) {
+        for (int owner : {-1, 0, 1, 4, 7}) {
+            REQUIRE(DuneCity::isConstructionAnchor(owner, builder) == (owner == builder));
+        }
+    }
+
+}
+
+TEST_CASE("Road reuse keeps footprint occupancy and the bounded build-range check", "[road][placement][regression]") {
+    const auto map = readSourceFile("src/Map.cpp");
+    const auto begin = map.find("bool Map::okayToPlaceStructure(");
+    const auto end = map.find("bool Map::isWithinBuildRange(", begin);
+    REQUIRE(begin != std::string::npos);
+    REQUIRE(end != std::string::npos);
+    const auto checks = map.substr(begin, end-begin);
+    REQUIRE(checks.find("!pTile->hasPreparedFoundation()") != std::string::npos);
+    REQUIRE(checks.find("pTile->hasCityZone()") != std::string::npos);
+    REQUIRE(checks.find("pTile->isBlocked()") != std::string::npos);
+    const auto range = map.substr(end, map.find("return false;",end)-end);
+    REQUIRE(range.find("x - BUILDRANGE") != std::string::npos);
+    REQUIRE(range.find("x + BUILDRANGE") != std::string::npos);
+    REQUIRE(range.find("DuneCity::isConstructionAnchor(tile->getOwner(), pHouse->getHouseID())") != std::string::npos);
+    REQUIRE(range.find("isRoad") == std::string::npos);
+    REQUIRE(checks.find("isWithinBuildRange(i, j, pHouse)") != std::string::npos);
+    // Placing on a road is not rejected by road owner; only reach is owner-gated.
+    REQUIRE(checks.find("getOwner()") == std::string::npos);
+    const auto structure = readSourceFile("src/structures/StructureBase.cpp");
+    REQUIRE(structure.find("pTile->setOwner(getOwner()->getHouseID())") != std::string::npos);
+}
+
+TEST_CASE("Road overlays do not assign owners or charge recurring upkeep", "[road][regression]") {
+    const auto house = readSourceFile("src/House.cpp");
+    const auto begin=house.find("// DuneCity: when city-sim mode is active, auto-pave");
+    REQUIRE(begin != std::string::npos);
+    const auto end=house.find("if ((builderID != NONE_ID)",begin);
+    REQUIRE(house.substr(begin,end-begin).find("setOwner") == std::string::npos);
+    const auto runtime=readSourceFile("src/dunecity/CityEffectsRuntime.cpp");
+    REQUIRE(runtime.find("legacyRoadOwner") == std::string::npos);
+    REQUIRE(runtime.find("tickRoadPaid") == std::string::npos);
+    const auto sim=readSourceFile("src/dunecity/CitySimulation.cpp");
+    const auto road=sim.find("case CityTool_Road:");
+    const auto roadEnd=sim.find("} break;",road);
+    REQUIRE(sim.substr(road,roadEnd-road).find("setOwner") == std::string::npos);
 }

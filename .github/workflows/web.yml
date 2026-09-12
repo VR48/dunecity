@@ -1,0 +1,72 @@
+name: Publish browser build
+
+on:
+  workflow_run:
+    workflows: [Build Dune Legacy]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-browser
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && startsWith(github.event.workflow_run.head_branch, 'v'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Test browser shell
+        run: |
+          node --test scripts/tests/test-web-shell.cjs
+          python3 -m unittest discover -s scripts/tests -p 'test_package_web.py'
+      - name: Select latest published release
+        run: |
+          TAG=$(gh release view --json tagName --jq .tagName)
+          git fetch origin "tag" "$TAG"
+          git checkout "$TAG"
+          echo "WEB_TAG=$TAG" >> "$GITHUB_ENV"
+      - name: Install Emscripten
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$RUNNER_TEMP/emsdk"
+          "$RUNNER_TEMP/emsdk/emsdk" install 4.0.14
+          "$RUNNER_TEMP/emsdk/emsdk" activate 4.0.14
+      - name: Build browser game
+        run: |
+          source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
+          emcmake cmake -S . -B build-web -G Ninja -DCMAKE_BUILD_TYPE=Release -DDUNECITY_BUILD_TESTS=OFF -DDUNECITY_ENABLE_PCH=OFF
+          cmake --build build-web --parallel 4
+      - name: Package and publish website
+        env:
+          WEBSITE_DEPLOY_KEY: ${{ secrets.WEBSITE_DEPLOY_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$WEBSITE_DEPLOY_KEY" > ~/.ssh/website_deploy
+          chmod 600 ~/.ssh/website_deploy
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/website_deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+          git clone git@github.com:VR48/dunelegacy.com.git website-repo
+          # Do not let a slow build replace a newer release or browser hotfix.
+          test "$(gh release view --json tagName --jq .tagName)" = "$WEB_TAG"
+          export WEB_VERSION="${WEB_TAG#v}"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          current = json.loads(Path('website-repo/website/play/build.json').read_text())['version']
+          if tuple(map(int, current.split('.'))) > tuple(map(int, os.environ['WEB_VERSION'].split('.'))):
+              raise SystemExit('Website already has a newer browser build; refusing downgrade')
+          PY
+          python3 scripts/package-web.py --build-root build-web --play-root website-repo/website/play
+          python3 website-repo/deploy/check-web-security.py
+          cd website-repo
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add website/play
+          git commit -m "Publish browser build ${WEB_TAG}"
+          git pull --rebase origin main
+          git push origin main

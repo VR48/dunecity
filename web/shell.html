@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#15120c">
+    <meta name="description" content="Play Dune Legacy and DuneCity directly in your browser.">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; object-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self'; connect-src 'self' https://api.github.com https://raw.githubusercontent.com; media-src 'self' blob:; font-src 'self'; worker-src 'self' blob:; manifest-src 'self'">
+    <link rel="icon" href="/img/favicon.ico">
+    <link rel="stylesheet" href="shell.css">
+    <title>Play Dune Legacy</title>
+</head>
+<body>
+    <main class="app">
+        <header class="toolbar">
+            <a class="tool" href="/" title="Back to Dune Legacy" aria-label="Back to Dune Legacy">&#8592;</a>
+            <div class="brand"><strong>Dune Legacy</strong><span>Single-player browser build</span></div>
+            <button class="tool" id="reload" type="button" title="Reload game" aria-label="Reload game">&#8635;</button>
+            <button class="tool" id="fullscreen" type="button" title="Enter fullscreen" aria-label="Enter fullscreen">&#9974;</button>
+        </header>
+        <section class="stage" id="stage">
+            <canvas id="canvas" width="640" height="480" tabindex="0" aria-label="Dune Legacy game canvas"></canvas>
+            <div class="loading" id="loading" role="status" aria-live="polite">
+                <strong>Preparing Arrakis</strong>
+                <progress id="progress" max="100" value="0"></progress>
+                <p id="status">Loading the game and its original data into browser memory.</p>
+            </div>
+        </section>
+    </main>
+    <script src="shell.js"></script>
+    {{{ SCRIPT }}}
+</body>
+</html>

@@ -1,3 +1,5 @@
+#include <dunecity/CityFactionPolicy.h>
+#include <players/AIDecisionLog.h>
 /*
  *  This file is part of Dune Legacy.
  *
@@ -63,6 +65,11 @@ bool isWorfineryDirectProduct(Uint32 itemID) {
         || itemID == Unit_Harvester;
 }
 
+bool isCityHarkonnenProductBuilder(Uint32 builderID, Uint32 productID, int originalHouseID) {
+    return DuneCity::cityHarkonnenProduct(currentGame && currentGame->isCitySimEnabled(),
+        originalHouseID,builderID,productID);
+}
+
 bool isAlternateTornieBuilder(Uint32 builderID, Uint32 itemID) {
     return builderID == Structure_Worfinery && isWorfineryDirectProduct(itemID);
 }
@@ -75,7 +82,7 @@ void logTechCenterBuildGate(const BuilderBase* builder,
                             int missingPrerequisite,
                             const char* reason,
                             bool available) {
-    if(builder == nullptr || owner == nullptr || currentGame == nullptr) {
+    if(builder == nullptr || owner == nullptr || currentGame == nullptr || !objData.enabled || objData.techLevel < 0) {
         return;
     }
 
@@ -283,12 +290,7 @@ void BuilderBase::updateProductionProgress() {
                 FixPoint totalBuildCosts = tmp->price;
                 int buildTime = currentGame->objectData.data[currentProducedItem][originalHouseID].buildtime;
                 if (currentGame->isCitySimEnabled()) {
-                    const int concreteBuildTime =
-                        currentGame->objectData.data[Structure_Slab1][originalHouseID].buildtime;
-                    const int policeBuildTime =
-                        currentGame->objectData.data[Structure_PoliceStation][originalHouseID].buildtime;
-                    buildTime = DuneCity::getCityBuildTime(
-                        currentProducedItem, buildTime, concreteBuildTime, policeBuildTime);
+                    buildTime = DuneCity::getCityBuildTime(currentProducedItem, buildTime);
                 }
                 FixPoint totalBuildGameTicks = buildTime * 15;
                 FixPoint buildCosts = totalBuildCosts / totalBuildGameTicks;
@@ -296,7 +298,7 @@ void BuilderBase::updateProductionProgress() {
                 productionProgress += owner->takeCredits(buildCosts*buildSpeed);
 
                 /* That was wrong. Build speed does not depend on power production
-                if (getOwner()->hasPower() || (((currentGame->gameType == GameType::Campaign) || (currentGame->gameType == GameType::Skirmish)) && getOwner()->isAI())) {
+                if (getOwner()->hasPower() || (((isCampaignGameType(currentGame->gameType)) || ((currentGame->gameType == GameType::Skirmish || currentGame->gameType == GameType::SkirmishCoop))) && getOwner()->isAI())) {
                     //if not enough power, production is halved
                     ProductionProgress += owner->takeCredits(0.25_fix);
                 } else {
@@ -311,6 +313,29 @@ void BuilderBase::updateProductionProgress() {
 
             if(productionProgress >= tmp->price) {
                 setWaitingToPlace();
+            }
+        } else if(owner == pLocalHouse && productionProgress < tmp->price) {
+            // The queue is stalled and nothing tells the player why: say so in
+            // the log (every 10 s) and on the ticker (every 30 s).
+            static Uint32 lastStallLog = 0;
+            static Uint32 lastStallTicker = 0;
+            const Uint32 now = SDL_GetTicks();
+            const bool unitLimit = isUnitLimitReached(currentProducedItem);
+            const bool noCredits = owner->getCredits() <= 0;
+            if(now - lastStallLog >= 10000) {
+                lastStallLog = now;
+                SDL_Log("Production stalled: item %d in builder %u (item %d): onHold=%d unitLimit=%d (units %d/%d) credits=%d (city %ld, stored %ld, starting %ld)",
+                        currentProducedItem, getObjectID(), getItemID(),
+                        isOnHold() ? 1 : 0, unitLimit ? 1 : 0, owner->getNumUnits(), owner->getMaxUnits(),
+                        owner->getCredits(), lround(owner->getCityCredits()), lround(owner->getStoredCredits()), lround(owner->getStartingCredits()));
+            }
+            if(!isOnHold() && now - lastStallTicker >= 30000) {
+                lastStallTicker = now;
+                if(unitLimit) {
+                    currentGame->addToNewsTicker(_("Unit limit reached") + " (" + std::to_string(owner->getMaxUnits()) + ")");
+                } else if(noCredits) {
+                    currentGame->addToNewsTicker(_("Not enough money"));
+                }
             }
         }
     }
@@ -338,10 +363,13 @@ int BuilderBase::getMaxUpgradeLevel() const {
     int upgradeLevel = 0;
 
     for(int i = ItemID_FirstID; i <= ItemID_LastID; i++) {
+        if (!currentGame->isCitySimEnabled() && DuneCity::isCityOnlyStructure(i)) continue;
         const int dataHouseID = (i == Unit_ChemicalCarryall) ? owner->getHouseID() : originalHouseID;
         const ObjectData::ObjectDataStruct& objData = currentGame->objectData.data[i][dataHouseID];
 
-        if(objData.enabled && (objData.builder == (int) itemID) && (objData.techLevel <= currentGame->techLevel)) {
+        if(objData.enabled && (objData.builder == (int) itemID
+            || isCityHarkonnenProductBuilder(itemID, i, originalHouseID))
+            && (objData.techLevel <= currentGame->techLevel)) {
             upgradeLevel = std::max(upgradeLevel, (int) objData.upgradeLevel);
         }
     }
@@ -374,10 +402,10 @@ void BuilderBase::updateBuildList()
         }
 
         // City-sim gate: Starport is a shipyard scaled to a sizable city —
-        // require 20000 displayed population (= 1000 internal) before it can
+        // require 10000 displayed population (= 500 internal) before it can
         // be built. Outside city sim there's no population, so no gate.
         if (itemID2Add == Structure_StarPort && currentGame->isCitySimEnabled()) {
-            constexpr int kStarPortMinDisplayPop = 20000;
+            constexpr int kStarPortMinDisplayPop = 10000;
             constexpr int kStarPortMinInternalPop =
                 kStarPortMinDisplayPop / DuneCity::CitySimulation::kPopDisplayMultiplier;
             auto* citySim = currentGame->getCitySimulation();
@@ -411,6 +439,7 @@ void BuilderBase::updateBuildList()
             ? std::max(9, configuredTechLevel)
             : configuredTechLevel;
         const bool producedHere = objData.builder == static_cast<int>(itemID)
+                               || isCityHarkonnenProductBuilder(itemID, itemID2Add, originalHouseID)
                                || isAlternateTornieBuilder(itemID, itemID2Add)
                                || specialChemicalCarryall;
         const bool directWorfineryProduct = itemID == Structure_Worfinery
@@ -607,6 +636,9 @@ bool BuilderBase::update() {
 
                     // inform owner of its new unit
                     newUnit->getOwner()->informWasBuilt(newUnit);
+                    AITelemetry::log().write(currentGame->getGameCycleCount(), owner->getHouseID(), -1, "unit_produced",
+                        AITelemetry::Record().set("builder", getObjectID()).set("item", finishedItemID)
+                            .set("object", newUnit->getObjectID()).set("x", spot.x).set("y", spot.y));
                 }
             }
         }

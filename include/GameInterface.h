@@ -125,6 +125,7 @@ private:
     PictureButton       mentatButton;           ///< Button for accessing the mentat menu
     TextButton          budgetButton;           ///< City sim mode only: opens the budget mini-window
     TextButton          dune2rZoomButton;       ///< Dune2R only: cycles local presentation zoom
+    TextButton          dune2rVisualButton;     ///< Dune2R only: crossfades classic/enhanced visuals
     PictureLabel        topBar;                 ///< The background of the top bar
 
     PictureLabel        sideBar;                ///< The background of the side bar
@@ -132,12 +133,16 @@ private:
     RadarView           radarView;              ///< This is the minimap/radar in the side bar
 
     ChatManager         chatManager;            ///< Manages chat manages shown overlayed with the main map
+    TextButton          autoRepairButton;
+    TextButton          landValueOverlayButton;
+    TextButton          crimeOverlayButton;
+    TextButton          pollutionOverlayButton;
     TextButton          ornithopterSelectButton;///< Button that selects all owned ornithopters
     TextButton          chemicalCarryallSelectButton;///< Button that selects all owned chemical carryalls
 
     bool                showCityStatsOverlay;   ///< Whether to show the city stats overlay
 
-    Label               modVersionLabel;        ///< Bottom-right "<active mod>\nv<VERSION>" watermark, mirrors the main menu.
+    Label               modVersionLabel;        ///< High-contrast active match mod/version badge.
     Label               populationLabel;        ///< Always-visible "Pop: N" pill (city sim mode only). Refreshed in update().
     Label               rciDemandLabel;         ///< RCI demand readout (city sim mode only), sits just below populationLabel.
     int                 lastShownPopulation = -1; ///< Tracks last value pushed to populationLabel; avoids redundant setText.

@@ -25,10 +25,10 @@
 #define TEST_NETWORKPACKET_SENDGAMEINFO         1
 #define TEST_NETWORKPACKET_CLIENTSTATS          13
 #define TEST_NETWORKPACKET_KEEPALIVE            19
-#define TEST_NETWORK_PROTOCOL_VERSION           4
+#define TEST_NETWORK_PROTOCOL_VERSION           5
 
-TEST_CASE("NetworkManager: nine-house state requires protocol 4", "[network][protocol]") {
-    REQUIRE(NETWORK_PROTOCOL_VERSION == 4);
+TEST_CASE("NetworkManager: co-op mission synchronization requires protocol 5", "[network][protocol]") {
+    REQUIRE(NETWORK_PROTOCOL_VERSION == 5);
     REQUIRE(TEST_NETWORK_PROTOCOL_VERSION != 3);
     REQUIRE(NETWORKDISCONNECT_PROTOCOL_MISMATCH == 5);
 }
@@ -314,4 +314,13 @@ TEST_CASE_METHOD(ENetFixture, "NetworkManager: Packet stream various int sizes",
     REQUIRE(istream.readUint16() == 0xABCD);
     REQUIRE(istream.readUint32() == 0x12345678);
     REQUIRE(istream.readUint64() == 0xDEADBEEFCAFEBABE);
+}
+
+TEST_CASE("Executable mismatch is rejected even when mod sync is available", "[network][handshake]") {
+    int calls = 0;
+    auto disconnect = [&](int cause) { REQUIRE(cause == NETWORKDISCONNECT_PROTOCOL_MISMATCH); ++calls; };
+    REQUIRE_FALSE(rejectIncompatibleGameVersion("1.0.553", "1.0.553", disconnect));
+    REQUIRE(calls == 0);
+    REQUIRE(rejectIncompatibleGameVersion("1.0.547", "1.0.553", disconnect));
+    REQUIRE(calls == 1);
 }

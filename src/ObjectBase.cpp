@@ -1,3 +1,4 @@
+#include <players/AIDecisionLog.h>
 /*
  *  This file is part of Dune Legacy.
  *
@@ -156,7 +157,7 @@ ObjectBase::ObjectBase(InputStream& stream) {
     respondable = stream.readBool();
     byScenario = stream.readBool();
 
-    if(currentGame->getGameInitSettings().getGameType() != GameType::CustomMultiplayer) {
+    if(!isNetworkGameType(currentGame->getGameInitSettings().getGameType())) {
         selected = stream.readBool();
         selectedByOtherPlayer = stream.readBool();
     } else {
@@ -233,7 +234,7 @@ void ObjectBase::save(OutputStream& stream) const {
     stream.writeBool(respondable);
     stream.writeBool(byScenario);
 
-    if(currentGame->getGameInitSettings().getGameType() != GameType::CustomMultiplayer) {
+    if(!isNetworkGameType(currentGame->getGameInitSettings().getGameType())) {
         stream.writeBool(selected);
         stream.writeBool(selectedByOtherPlayer);
     }
@@ -266,11 +267,13 @@ int ObjectBase::getMaxHealth() const {
 }
 
 void ObjectBase::handleDamage(int damage, Uint32 damagerID, House* damagerOwner) {
+    // Multi-impact missiles must not award repeated kills for the same dead object.
+    if (damage >= 0 && getHealth() <= 0) return;
     // Immortality guard: Human-controlled houses are invulnerable in single-player modes when option is enabled
     // This applies when ANY human player controls the house (not just AI players)
     if(damage > 0) {
         GameType gameType = currentGame->getGameInitSettings().getGameType();
-        if(gameType != GameType::CustomMultiplayer 
+        if(!isNetworkGameType(gameType)
            && gameType != GameType::LoadMultiplayer
            && currentGame->getGameInitSettings().getGameOptions().immortalHumanPlayer
            && getOwner() == pLocalHouse) {
@@ -280,12 +283,18 @@ void ObjectBase::handleDamage(int damage, Uint32 damagerID, House* damagerOwner)
         }
     }
     
+    const FixPoint healthBefore = getHealth();
     if(damage >= 0) {
         FixPoint newHealth = getHealth();
 
         newHealth -= damage;
 
         if(newHealth <= 0) {
+            if (getHealth() > 0 && AITelemetry::log().enabled())
+                AITelemetry::log().write(currentGame->getGameCycleCount(), owner->getHouseID(), -1, "lethal_damage",
+                    AITelemetry::Record().set("object", objectID).set("item", itemID)
+                        .set("attacker", damagerID).set("attacker_house", damagerOwner ? damagerOwner->getHouseID() : -1)
+                        .set("damage", damage).set("x", location.x).set("y", location.y));
             setHealth(0);
 
             if(damagerOwner != nullptr) {
@@ -303,6 +312,14 @@ void ObjectBase::handleDamage(int damage, Uint32 damagerID, House* damagerOwner)
     if (damagerOwner != nullptr && damage != 0) {
         ObjectBase* pDamager = currentGame->getObjectManager().getObject(damagerID);
         if (pDamager != nullptr) {
+            const auto reward = CombatReward::hit(
+                currentGame->objectData.data[itemID][originalHouseID].price,
+                int64_t(getMaxHealth())*1000, (healthBefore*1000).lround(), (getHealth()*1000).lround(),
+                damage > 0 && damagerOwner->getTeamID() != getOwner()->getTeamID(), isAUnit());
+            damagerOwner->addCombatReward(pDamager->getItemID(), reward);
+            if (AITelemetry::log().enabled() && reward.hits > 0)
+                for (const auto& player : damagerOwner->getPlayerList())
+                    player->onCombatReward(damagerID, objectID, reward);
             int appliedDamage = damage;
             if (damagerOwner == getOwner()) {
                 appliedDamage *= -1;

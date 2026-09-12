@@ -2,6 +2,8 @@
 #define DUNECITY_CITYEFFECTS_H
 
 #include <data.h>
+#include <dunecity/ParkTerrainPolicy.h>
+#include <fixmath/FixPoint.h>
 
 #include <algorithm>
 #include <cmath>
@@ -33,8 +35,8 @@ namespace DuneCity {
 //
 // Mapping reference (as agreed in spec discussion):
 //   Slab/Slab4         -> Road
-//   WindTrap           -> Coal Power (no pollution)
-//   Nuclear Plant      -> Nuclear Power (no pollution, no meltdown)
+//   WindTrap           -> Wind power / Industrial light (no pollution)
+//   Nuclear Plant      -> Nuclear Power (no pollution; detonates when destroyed)
 //   Refinery           -> Industrial medium
 //   Light Factory      -> Industrial medium
 //   Heavy Factory      -> Industrial high
@@ -45,12 +47,13 @@ namespace DuneCity {
 //   Radar              -> Commercial medium
 //   House IX           -> Commercial high
 //   Starport           -> Shipyard / Industrial high (jobs, economic role)
-//   Palace             -> Civic dual: 2x Residential + 2x Commercial pop, land-value boost
+//   Palace             -> Civic dual: 1x Residential + 1x Commercial pop, land-value boost
 //   Stadium            -> Civic amenity (large land-value boost)
 //   Airport            -> Commercial high (transport/trade boost)
 //   Barracks           -> Residential high (infantry garrison = population)
 //   WOR                -> Residential high (heavy infantry garrison = population)
-//   Gun/Rocket Turret  -> Park bonus + 1/4 Police + land-value boost
+//   Gun Turret        -> Park bonus + 15% Police
+//   Rocket Turret     -> one park terrain source, 15% police coverage
 //   Wall               -> Park bonus only
 //   Sand (terrain)     -> Water (land-value bonus)
 // =============================================================================
@@ -64,8 +67,8 @@ constexpr int kPollutionRadius   = 5;  // emission falls off linearly to this
 // "zone-width" is two tiles here; 8 zone-widths = 16 tiles. Linear falloff
 // over that range preserves SC's "one station noticeably affects the whole
 // neighbourhood" feel without over-reaching for our smaller gameplay grid.
-constexpr int kPoliceRadius      = 16;
-constexpr int kParkBonusRadius   = 3;  // Park / Wall / Turret land-value reach
+constexpr int kPoliceRadius      = 23; // Three 6-tile diffusion steps plus the source cell.
+
 // Sand-as-water reach. Each open sand tile stamps a falloff into the land-
 // value map, bypassing the /8 dilution of the SC-style smoothing pass.
 // Tuned so a zone with one full sand-block neighbour lands solidly inside
@@ -84,7 +87,7 @@ constexpr int kSupplyRadius      = 16;
 
 // --- Effect strengths --------------------------------------------------------
 
-constexpr int kParkLandValueBonus       = 15;  // SC Classic Park land-value lift
+constexpr int kParkLandValueBonus       = 15;  // Micropolis raw park terrain contribution, before smoothing
 constexpr int kStadiumLandValueBonus   = 40;  // Stadium provides a much larger boost
 constexpr int kSandLandValueBonus       = 8;   // Per-tile direct stampFalloff
 /// Per-tile contribution to the block-smoothed terrain feature map. Box-
@@ -93,12 +96,12 @@ constexpr int kSandLandValueBonus       = 8;   // Per-tile direct stampFalloff
 /// stampFalloff above (kSandLandValueBonus). Larger than SC's +15 because
 /// Dune-sized maps don't tolerate as much smoothing dilution.
 constexpr int kSandTerrainRawBonus      = 40;
-constexpr int kPoliceCoverageFull       = 100; // Barracks / WOR
-constexpr int kPoliceCoverageGunTurret  =  25; // Gun Turret (1/4 strength)
-constexpr int kPoliceCoverageRocketTurret = 25; // Rocket Turret (matches gun turrets after tuning)
+constexpr int kPoliceCoverageFull       = 1000; // Micropolis MAX_POLICE_STATION_EFFECT
+constexpr int kPoliceCoverageGunTurret  = 150; // 15% of a police station
+constexpr int kPoliceCoverageRocketTurret = kPoliceCoverageFull * 15 / 100;  // 15% of police-station coverage.
 
 constexpr int kMaxLandValue = 250;
-constexpr int kMaxCrime     = 250;
+
 constexpr int kMaxPollution = 250;
 
 /// SimCity Classic feedback: when crime exceeds this threshold on a block,
@@ -113,7 +116,7 @@ constexpr int kCrimeLandValuePenalty   = 20;
 /// sit near neutral. Source: scan.cpp `crimeScan`, line 427.
 constexpr int kCrimeBaseMidpoint = 128;
 /// Intermediate clamp before subtracting police coverage (SC line 430).
-constexpr int kCrimePrePoliceClamp = 300;
+
 
 // --- City roles --------------------------------------------------------------
 
@@ -166,16 +169,19 @@ inline int getStructureMaxLevel(int itemID) {
         case Structure_ZoneIndustrial:
         case Structure_Palace:          // civic dual — grows to max density
             return 3;
+        case Structure_WindTrap:        // government power, no industry
+            return 0;
+        case Structure_Silo:            // industrial low (no pollution)
+        case Structure_LightFactory:    // industrial low
+            return 1;
         case Structure_Radar:           // commercial medium
-        case Structure_LightFactory:    // industrial medium
+        case Structure_Refinery:        // industrial medium
+        case Structure_HeavyFactory:    // industrial medium
+        case Structure_HighTechFactory: // industrial medium
+        case Structure_RepairYard:      // industrial medium
             return 2;
-        case Structure_Refinery:        // industrial high
-        case Structure_Silo:            // industrial high (no pollution)
-        case Structure_HighTechFactory: // industrial high
         case Structure_IX:              // commercial high
         case Structure_ConstructionYard: // industrial high (acts as factory)
-        case Structure_HeavyFactory:    // industrial high
-        case Structure_RepairYard:      // industrial high
         case Structure_StarPort:        // shipyard — industrial high
         case Structure_Airport:         // transport hub — commercial high
         case Structure_Barracks:        // residential high (infantry)
@@ -187,21 +193,32 @@ inline int getStructureMaxLevel(int itemID) {
     }
 }
 
+/// Private zones pay tax. The Palace is the sole government exception, with
+/// both R and C income. Fiscal status is independent of employment role.
+inline bool isTaxableCityStructure(int itemID) {
+    return itemID == Structure_ZoneResidential || itemID == Structure_ZoneCommercial
+        || itemID == Structure_ZoneIndustrial || itemID == Structure_Palace;
+}
+
+inline int effectiveCityLevel(int itemID, int level) {
+    return std::clamp(level, 0, getStructureMaxLevel(itemID));
+}
+
 // --- Pollution emission ------------------------------------------------------
 
 /// Per-source pollution emission (0-100 scale), scaled by current level.
-/// Industrial-role structures pollute proportionally to their level; all
-/// other roles emit zero.
+/// Industrial sources pollute by their capped city density. Government tax
+/// exemption does not remove factory emissions.
 inline int getPollutionEmission(int itemID, int level) {
+    level = effectiveCityLevel(itemID, level);
     if (level <= 0) return 0;
-    if (level > 3) level = 3;
     if (getStructureCityRole(itemID) != CityRole::Industrial) return 0;
 
     // Starport is Industrial for jobs/demand but does not pollute (it's a
     // trade hub, not a factory). Per spec override.
     if (itemID == Structure_StarPort) return 0;
 
-    // Spice Silo is industrial-high for jobs/demand but stores spice — no
+    // Spice Silo is industrial-low for jobs/demand but stores spice — no
     // smokestacks, no pollution.
     if (itemID == Structure_Silo) return 0;
 
@@ -227,18 +244,18 @@ inline int supplyForLevel(int level) {
 }
 
 inline int getCommercialSupply(int itemID, int level) {
-    return (getStructureCityRole(itemID) == CityRole::Commercial)
-        ? detail::supplyForLevel(level) : 0;
+    return (getStructureCityRole(itemID) == CityRole::Commercial || itemID == Structure_Palace)
+        ? detail::supplyForLevel(effectiveCityLevel(itemID, level)) : 0;
 }
 
 inline int getIndustrialSupply(int itemID, int level) {
     return (getStructureCityRole(itemID) == CityRole::Industrial)
-        ? detail::supplyForLevel(level) : 0;
+        ? detail::supplyForLevel(effectiveCityLevel(itemID, level)) : 0;
 }
 
 inline int getResidentialSupply(int itemID, int level) {
     return (getStructureCityRole(itemID) == CityRole::Residential)
-        ? detail::supplyForLevel(level) : 0;
+        ? detail::supplyForLevel(effectiveCityLevel(itemID, level)) : 0;
 }
 
 // --- Police coverage (crime reduction in radius) -----------------------------
@@ -246,9 +263,8 @@ inline int getResidentialSupply(int itemID, int level) {
 // Police Station (DuneCity city-mode building) is the sole source of full
 // coverage. Barracks and WOR are pure infantry-production buildings and
 // no longer reduce crime — putting a barracks down should not magically
-// turn your slums into a tier-3 luxury neighborhood. Gun and Rocket
-// turrets retain their fractional coverage as a "garrison adjacency"
-// effect, mirroring SC Classic's reduced-coverage outposts.
+// turn your slums into a tier-3 luxury neighborhood. Gun turrets retain
+// fractional coverage; rocket turrets provide 15% plus land value.
 
 inline int getPoliceCoverage(int itemID) {
     switch (itemID) {
@@ -261,42 +277,39 @@ inline int getPoliceCoverage(int itemID) {
 
 // --- Police annual cost (city budget) ----------------------------------------
 
-/// Annual upkeep in city credits for each police-role structure. Mirrors
-/// the coverage strength so a turret that protects 1/4 of an HQ's area
-/// also costs 1/4 to operate. Cost is paid out of city totalFunds_ once
-/// per city year; if the city has under-funded police, coverage scales
-/// down proportionally (handled at scan time, not here).
-///
-/// PoliceStation upkeep is designer-tuned below its build price.
+/// Annual upkeep uses fixed-point credits: guns cost exactly half of rockets.
+/// Funding scales both service coverage and the continuously charged expense.
 constexpr int kPoliceCostPoliceStation = 100;
-// Gun and Rocket turrets contribute fractional police coverage as a
-// "garrison adjacency" effect, but no longer cost anything to operate.
-// They're defensive structures first — the police effect is a bonus,
-// and the player shouldn't be charged a city-budget bill for their own
-// base defenses.
-constexpr int kPoliceCostGunTurret     =   0;
-constexpr int kPoliceCostRocketTurret  =   0;
-
-inline int getPoliceAnnualCost(int itemID) {
+inline FixPoint getPoliceAnnualCost(int itemID) {
     switch (itemID) {
-        case Structure_PoliceStation:   return kPoliceCostPoliceStation;
-        case Structure_GunTurret:       return kPoliceCostGunTurret;
-        case Structure_RocketTurret:    return kPoliceCostRocketTurret;
-        default:                        return 0;
+        case Structure_PoliceStation: return FixPoint(100);
+        case Structure_GunTurret: return FixPoint(15) / 2;
+        case Structure_RocketTurret: return FixPoint(15);
+        default: return FixPoint(0);
     }
 }
 
 // --- Park-style land-value bonus (Wall / Turrets) ----------------------------
 
+inline bool usesParkTerrain(int itemID) {
+    return itemID == Structure_Wall || itemID == Structure_GunTurret || itemID == Structure_RocketTurret;
+}
+
 inline int getParkLandValueBonus(int itemID) {
     switch (itemID) {
         case Structure_Wall:            return kParkLandValueBonus;
-        case Structure_GunTurret:       return 5;   // turrets raise land value slightly
-        case Structure_RocketTurret:    return 5;   // turrets raise land value slightly
+        case Structure_GunTurret:       return kParkLandValueBonus; // one park source
+        case Structure_RocketTurret:    return kParkLandValueBonus;
         case Structure_Stadium:         return kStadiumLandValueBonus;
         case Structure_Palace:          return kStadiumLandValueBonus;   // civic building — large boost
         default:                        return 0;
     }
+}
+
+inline int getParkLandValueRadius(int itemID) {
+    if (itemID == Structure_Stadium || itemID == Structure_Palace) return 8;
+    // Conservative candidate-search bound, not a radial gameplay bonus.
+    return kParkTerrainSearchRadius;
 }
 
 // --- Linear distance falloff helper ------------------------------------------
@@ -358,21 +371,75 @@ inline int computeBaseLandValue(int distanceFromCenter,
 //         z = clamp(z, 0, 250);
 //     }
 //
-// `computeBaseCrime` is the pre-police half (the police-coverage stamp
-// happens in the runtime via stampFalloff). `populationDensity` defaults
-// to 0 so legacy callers continue to work; the runtime passes the
-// per-block population density when SC fidelity is desired.
-
-inline int computeBaseCrime(int landValue, int populationDensity = 0) {
+// The pre-service cap and final 0–250 cap are both part of the original
+// crimeScan.  Pollution affects this equation through land value only; it is
+// not a separate crime input in Micropolis.
+inline int computeCrimeBeforePolice(int landValue, int populationDensity = 0) {
     if (landValue <= 0) {
         // SC's `if (z > 0)` guard: undeveloped blocks have zero crime.
         return 0;
     }
-    int crime = kCrimeBaseMidpoint - landValue + populationDensity;
-    if (crime > kCrimePrePoliceClamp) crime = kCrimePrePoliceClamp;
-    if (crime < 0)                    crime = 0;
-    if (crime > kMaxCrime)            crime = kMaxCrime;
-    return crime;
+    const int crime = kCrimeBaseMidpoint - landValue + populationDensity;
+    return std::clamp(crime, 0, 300);
+}
+
+inline int computeCrimeAfterPolice(int landValue, int populationDensity, int coverage) {
+    return std::clamp(computeCrimeBeforePolice(landValue, populationDensity)
+                          - std::max(0, coverage),
+                      0, 250);
+}
+
+// Legacy no-service query: return the final Micropolis display range.
+inline int computeBaseCrime(int landValue, int populationDensity = 0) {
+    return computeCrimeAfterPolice(landValue, populationDensity, 0);
+}
+
+// Micropolis calls the 192–250 band "Dangerous". DuneCity unrest uses that
+// source-defined band, with long-lived district buildup before a larger outbreak.
+constexpr int kCrimeDangerousThreshold = 192;
+constexpr uint32_t kCrimeUnrestBuildupMs = 6 * 60 * 1000;
+inline int hostileLandValuePenalty(int distanceSquared) {
+    if (distanceSquared < 0 || distanceSquared > 16) return 0;
+    int distance = 0;
+    while (distance * distance < distanceSquared) ++distance;
+    return (5 - distance) * 16;
+}
+
+inline int crimeUnrestRate(int crime) {
+    return crime < kCrimeDangerousThreshold ? 0
+                                             : 100 + 50 * std::min(58, crime - kCrimeDangerousThreshold) / 58;
+}
+
+// Gangs are a DuneCity event, separate from Micropolis' local crime formula.
+// Starter settlements cannot sustain outbreaks; mature cities keep the normal timer.
+inline int cityCrimeUnrestRate(int crime, int displayedPopulation) {
+    return displayedPopulation < 5000 ? 0 : crimeUnrestRate(crime);
+}
+
+// --- Micropolis display categories ------------------------------------------
+// These are the thresholds used by Micropolis `getDensity` (tool.cpp):
+// land value: 0–29, 30–79, 80–149, 150+;
+// crime: 0–63, 64–127, 128–191, 192+;
+// pollution: 0, 1–127, 128–191, 192+.
+inline const char* landValueCategory(int value) {
+    if (value < 30)  return "Slum";
+    if (value < 80)  return "Lower Class";
+    if (value < 150) return "Middle Class";
+    return "High";
+}
+
+inline const char* crimeCategory(int value) {
+    if (value < 64)  return "Safe";
+    if (value < 128) return "Light";
+    if (value < 192) return "Moderate";
+    return "Dangerous";
+}
+
+inline const char* pollutionCategory(int value) {
+    if (value <= 0)  return "None";
+    if (value < 128) return "Moderate";
+    if (value < 192) return "Heavy";
+    return "Very Heavy";
 }
 
 // --- Sprite-atlas indexing ---------------------------------------------------
@@ -485,14 +552,9 @@ inline int getZoneValueTier(int landValue, int numTiers) {
 /// getZonePopulation returns the residential portion; use
 /// getPalaceCommercialPopulation() for the commercial half.
 inline int getZonePopulation(int itemID, int level) {
+    level = effectiveCityLevel(itemID, level);
     if (level <= 0) return 0;
     if (level > 3) level = 3;
-
-    // Palace residential portion (2x residential zone).
-    if (itemID == Structure_Palace) {
-        static constexpr int kPalaceRes[3] = { 32, 48, 80 };  // 2× R values
-        return kPalaceRes[level - 1];
-    }
 
     // SC Classic values (mapped to 3 DuneCity levels):
     static constexpr int kResidential[3] = { 16, 24, 40 };
@@ -507,13 +569,26 @@ inline int getZonePopulation(int itemID, int level) {
     }
 }
 
-/// Palace commercial population contribution (2x commercial zone values).
+/// Palace commercial population contribution (one commercial zone).
 /// Separate from getZonePopulation so the main loop can add this to comPop.
 inline int getPalaceCommercialPopulation(int level) {
-    if (level <= 0) return 0;
-    if (level > 3) level = 3;
-    static constexpr int kPalaceCom[3] = { 2, 6, 10 };  // 2× C values
-    return kPalaceCom[level - 1];
+    return getZonePopulation(Structure_ZoneCommercial, level);
+}
+
+/// Weighted tax population in eighths. Private R/C/I income receives a 2x
+/// balance multiplier; Palace retains its unboosted R+C contribution. Preserve
+/// fractional houses until the city-wide annual total is rounded.
+constexpr int kZoneTaxMultiplier = 2;
+inline int taxablePopulationEighths(int itemID, int population, int level) {
+    population = std::max(0, population);
+    switch (itemID) {
+        case Structure_ZoneResidential: return population * kZoneTaxMultiplier;
+        case Structure_ZoneCommercial:
+        case Structure_ZoneIndustrial: return population * 8 * kZoneTaxMultiplier;
+        case Structure_Palace:
+            return population + getPalaceCommercialPopulation(effectiveCityLevel(itemID,level)) * 8;
+        default: return 0;
+    }
 }
 
 // --- Traffic connectivity result ---------------------------------------------
@@ -693,7 +768,7 @@ struct ValveInputs {
     int resPop = 0;
     int comPop = 0;
     int indPop = 0;
-    int prevResPop = 0;   // previous tick (SC uses resHist[1])
+    int prevResPop = 0;   // raw previous population; normalize by 8 for SC resHist[1]
     int prevComPop = 0;   // previous tick (SC uses comHist[1])
     int prevIndPop = 0;   // previous tick (SC uses indHist[1])
     int16_t resValve = 0; // current valve to accumulate onto
@@ -710,7 +785,16 @@ struct ValveOutputs {
     int16_t resValve = 0;
     int16_t comValve = 0;
     int16_t indValve = 0;
+    uint8_t civicDemandBlocked = 0; // positive demand stopped by missing civics
 };
+
+enum CivicRequirement : uint8_t { NeedStadium = 1, NeedAirport = 2, NeedStarport = 4 };
+
+inline uint8_t missingDemandCivics(const ValveInputs& in) {
+    return (in.resPop > 500 && !in.hasStadium && !in.hasPalace ? NeedStadium : 0)
+         | (in.comPop > 100 && !in.hasAirport ? NeedAirport : 0)
+         | (in.indPop > 70 && !in.hasStarport ? NeedStarport : 0);
+}
 
 /// Valve ranges matching Micropolis: R=2000, C=1500, I=1500
 constexpr int kResValveRange = 2000;
@@ -777,7 +861,9 @@ inline ValveOutputs computeDemandValves(const ValveInputs& in) {
     // A jobs-only history must not produce laborBase=0: that collapses both
     // projected job populations and floors the C/I valves before R can start.
     if (prevJobs > 0.0 && in.prevResPop > 0) {
-        laborBase = static_cast<double>(in.prevResPop) / prevJobs;
+        // Micropolis stores resHist in worker-equivalents (resPop / 8).
+        // Our saved history is raw population, so normalize at this boundary.
+        laborBase = (static_cast<double>(in.prevResPop) / resPopDenom) / prevJobs;
     } else {
         laborBase = 1.0;
     }
@@ -832,13 +918,18 @@ inline ValveOutputs computeDemandValves(const ValveInputs& in) {
     //   resCap: resPop > 500 && no stadium/palace → valve capped to 0
     //   comCap: comPop > 100 && no airport        → valve capped to 0
     //   indCap: indPop > 70  && no seaport/starport → valve capped to 0
-    if (in.resPop > 500 && !in.hasStadium && !in.hasPalace && newRes > 0) {
+    const uint8_t missingCivics = missingDemandCivics(in);
+    uint8_t blockedCivics = 0;
+    if ((missingCivics & NeedStadium) && newRes > 0) {
+        blockedCivics |= NeedStadium;
         newRes = 0;
     }
-    if (in.comPop > 100 && !in.hasAirport && newCom > 0) {
+    if ((missingCivics & NeedAirport) && newCom > 0) {
+        blockedCivics |= NeedAirport;
         newCom = 0;
     }
-    if (in.indPop > 70 && !in.hasStarport && newInd > 0) {
+    if ((missingCivics & NeedStarport) && newInd > 0) {
+        blockedCivics |= NeedStarport;
         newInd = 0;
     }
 
@@ -852,7 +943,7 @@ inline ValveOutputs computeDemandValves(const ValveInputs& in) {
 
     return { static_cast<int16_t>(newRes),
              static_cast<int16_t>(newCom),
-             static_cast<int16_t>(newInd) };
+             static_cast<int16_t>(newInd), blockedCivics };
 }
 
 // --- Traffic pollution -------------------------------------------------------
@@ -908,26 +999,15 @@ constexpr uint32_t kCyclesPerCityDay  = kCyclesPerCityYear / kCityDaysPerYear;
 constexpr uint32_t kCyclesPerBudgetTick = 1;
 constexpr int      kBudgetTicksPerYear  = static_cast<int>(kCyclesPerCityYear);
 
-/// Compute annual tax revenue (in credits). Revenue scales with population,
-/// tax rate, AND average land value — richer neighbourhoods pay more tax,
-/// matching SimCity Classic's `taxFund = cityTax * totalPop * landValueAvg / 120`.
-/// `avgLandValue` is 0..250; at 128 (midpoint) the multiplier is ~1.0x.
-/// When avgLandValue is 0 (unknown / not passed), falls back to the
-/// population-only formula for backward compatibility.
-///
-/// Per-citizen contribution: 200/3 credits/year at 100% tax rate. This keeps
-/// city tax income useful without letting mature cities outpace spice harvest
-/// too aggressively.
-inline int32_t computeAnnualTaxRevenue(int totalPopulation, int taxRatePct,
-                                       int avgLandValue = 0) {
-    if (totalPopulation <= 0 || taxRatePct <= 0) return 0;
-    int32_t base = static_cast<int32_t>(
-        (static_cast<int64_t>(totalPopulation) * 200 * taxRatePct) / (100 * 3));
-    if (avgLandValue > 0) {
-        // Scale by land value: 128 → 1.0x, 250 → ~2.0x, 30 → ~0.23x
-        base = static_cast<int32_t>((static_cast<int64_t>(base) * avgLandValue) / 128);
-    }
-    return base;
+/// Micropolis easy tax: (R/8 + C + I) * landValue/120 * taxRate * 1.4.
+/// Input is tax population in EIGHTHS, excluding government except Palace.
+/// Round only the city-wide annual total; retain partial-house contributions.
+/// Explicit zero land value means zero income; forecasts may use default128.
+inline int32_t computeAnnualTaxRevenue(int taxBaseEighths, int taxRatePct,
+                                       int avgLandValue = 128) {
+    if (taxBaseEighths <= 0 || taxRatePct <= 0 || avgLandValue <= 0) return 0;
+    return static_cast<int32_t>(int64_t(taxBaseEighths) * avgLandValue * taxRatePct * 14
+        / (8 * 120 * 10));
 }
 
 // --- Hospital and Church census (SC Classic) --------------------------------

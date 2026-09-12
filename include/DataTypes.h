@@ -153,9 +153,25 @@ enum class GameType {
     CustomGame        = 2,
     Skirmish          = 3,
     CustomMultiplayer = 4,
-    LoadMultiplayer   = 5
+    LoadMultiplayer   = 5,
+    CampaignCoop     = 6,
+    SkirmishCoop     = 7,
+    LoadCoop         = 8
 };
 
+
+constexpr bool isCoopGameType(GameType type) {
+    return type == GameType::CampaignCoop || type == GameType::SkirmishCoop || type == GameType::LoadCoop;
+}
+constexpr bool isNetworkGameType(GameType type) {
+    return type == GameType::CustomMultiplayer || type == GameType::LoadMultiplayer || isCoopGameType(type);
+}
+constexpr bool isCampaignGameType(GameType type) {
+    return type == GameType::Campaign || type == GameType::CampaignCoop;
+}
+constexpr bool isScenarioGameType(GameType type) {
+    return isCampaignGameType(type) || type == GameType::Skirmish || type == GameType::SkirmishCoop;
+}
 
 class SettingsClass
 {
@@ -167,6 +183,7 @@ public:
         std::string     language;           ///< Language code: "en" = English, "fr" = French, "de" = German
         int             scrollSpeed;        ///< Scroll speed in pixels
         bool            showTutorialHints;  ///< If true, tutorial hints are shown during the game
+        bool            multiplePlayersPerHouse = false; ///< Custom game lobby: allow two players per house (remembered across games)
     } general;
 
     class VideoClass {
@@ -176,6 +193,9 @@ public:
         int         physicalHeight;
         int         width;
         int         height;
+        int         interfaceHeight = 0; ///< 0=automatic; 480/600/768 with a persisted 4:3 or 16:9 logical width.
+        int         menuPalette = 0; ///< 0=desert gold; 1=high-contrast dark text.
+        int         startMenuMode = 0; ///< 0=classic; 1=enlarged TV/tablet/accessibility layout.
         bool        frameLimit;
         int         preferredZoomLevel;
         std::string scaler;

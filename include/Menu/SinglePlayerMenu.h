@@ -49,7 +49,10 @@ private:
     void onCancel();
 
     StaticContainer windowWidget;
-    VBox            menuButtonsVBox;
+    VBox menuButtonsVBox;
+    PictureLabel planetPicture;
+    PictureLabel logoPicture;
+    PictureLabel buttonBorder;
 
     TextButton  campaignButton;
     TextButton  customButton;
@@ -58,9 +61,6 @@ private:
     TextButton  loadReplayButton;
     TextButton  cancelButton;
 
-    PictureLabel    planetPicture;
-    PictureLabel    duneLegacy;
-    PictureLabel    buttonBorder;
 };
 
 #endif //SINGLEPLAYERMENU_H

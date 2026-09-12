@@ -1,3 +1,5 @@
+#include <dunecity/PowerRules.h>
+#include <players/AIDecisionLog.h>
 /*
  *  This file is part of Dune Legacy.
  *
@@ -93,6 +95,8 @@ House::House(InputStream& stream) : choam(this) {
 
     houseID = stream.readUint8();
     teamID = stream.readUint8();
+    autoRepairEnabled = currentGame && currentGame->getLoadedSavegameVersion() >= 9824
+        ? stream.readBool() : false;
 
     storedCredits = stream.readFixPoint();
     startingCredits = stream.readFixPoint();
@@ -128,6 +132,15 @@ House::House(InputStream& stream) : choam(this) {
     destroyedValue = stream.readUint32();
     numDestroyedUnits = stream.readUint32();
     numDestroyedStructures = stream.readUint32();
+    if (currentGame && currentGame->getLoadedSavegameVersion() >= 9826) {
+        const auto count = stream.readUint32();
+        for (Uint32 i=0; i<count; ++i) {
+            CombatReward::Totals reward; reward.load(stream);
+            const auto damage = stream.readSint32();
+            const auto losses = stream.readSint32();
+            if (i < Num_ItemID) { combatRewards[i]=reward; numItemDamageInflicted[i]=damage; numItemLosses[i]=losses; }
+        }
+    }
     harvestedSpice = stream.readFixPoint();
     producedPower = stream.readSint32();
     powerUsageTimer = stream.readSint32();
@@ -185,6 +198,7 @@ House::~House() = default;
 void House::save(OutputStream& stream) const {
     stream.writeUint8(houseID);
     stream.writeUint8(teamID);
+    stream.writeBool(autoRepairEnabled);
 
     stream.writeFixPoint(storedCredits);
     stream.writeFixPoint(startingCredits);
@@ -205,6 +219,11 @@ void House::save(OutputStream& stream) const {
     stream.writeUint32(destroyedValue);
     stream.writeUint32(numDestroyedUnits);
     stream.writeUint32(numDestroyedStructures);
+    stream.writeUint32(Num_ItemID);
+    for (int i=0; i<Num_ItemID; ++i) {
+        combatRewards[i].save(stream);
+        stream.writeSint32(numItemDamageInflicted[i]); stream.writeSint32(numItemLosses[i]);
+    }
     stream.writeFixPoint(harvestedSpice);
     stream.writeSint32(producedPower);
     stream.writeSint32(powerUsageTimer);
@@ -226,6 +245,31 @@ void House::save(OutputStream& stream) const {
 
 
 
+void House::configureCoopPlayers(const std::vector<std::pair<std::string, std::string>>& desired) {
+    if(desired.size() != 2 || desired.front().second != HUMANPLAYERCLASS || players.empty()
+       || dynamic_cast<HumanPlayer*>(players.front().get()) == nullptr)
+        THROW(std::runtime_error, "Co-op requires a saved human house and two controllers.");
+    // Keep the first human's tutorial and statistics state and stable player ID.
+    currentGame->unregisterPlayer(players.front().get());
+    players.front()->setPlayername(desired.front().first);
+    currentGame->registerPlayer(players.front().get());
+    if(players.size() == 2 && players.back()->getPlayerclass() == desired.back().second) {
+        currentGame->unregisterPlayer(players.back().get());
+        players.back()->setPlayername(desired.back().first);
+        currentGame->registerPlayer(players.back().get());
+        ai = false;
+        return;
+    }
+    while(players.size() > 1) {
+        currentGame->unregisterPlayer(players.back().get());
+        players.pop_back();
+    }
+    const auto* factory = PlayerFactory::getByPlayerClass(desired.back().second);
+    if(!factory) THROW(std::runtime_error, "Unknown co-op controller.");
+    addPlayer(factory->create(this, desired.back().first));
+    ai = false;
+}
+
 void House::addPlayer(std::unique_ptr<Player> newPlayer) {
     Player* pNewPlayer = newPlayer.get();
 
@@ -236,6 +280,11 @@ void House::addPlayer(std::unique_ptr<Player> newPlayer) {
     }
 
     players.push_back(std::move(newPlayer));
+    if(isCoopGameType(currentGame->gameType)) {
+        ai = std::none_of(players.begin(), players.end(), [](const auto& player) {
+            return dynamic_cast<HumanPlayer*>(player.get()) != nullptr;
+        });
+    }
 
     Uint8 newPlayerID = static_cast<Uint8>((houseID << 4) | players.size());
     pNewPlayer->playerID = newPlayerID;
@@ -243,6 +292,15 @@ void House::addPlayer(std::unique_ptr<Player> newPlayer) {
     currentGame->registerPlayer(pNewPlayer);
 }
 
+
+bool House::isPowerRequired() const {
+    return !currentGame || DuneCity::powerRulesEnabled(currentGame->isCitySimEnabled(),
+        currentGame->getGameInitSettings().getModName());
+}
+
+bool House::hasPower() const {
+    return !isPowerRequired() || producedPower >= powerRequirement;
+}
 
 void House::setProducedPower(int newPower) {
     producedPower = newPower;
@@ -253,6 +311,7 @@ void House::addCredits(FixPoint newCredits, bool wasRefined) {
     if(newCredits > 0) {
         if(wasRefined == true) {
             harvestedSpice += newCredits;
+            AITelemetry::log().account(houseID, "spice_refined", newCredits.getRawValue());
         }
 
         storedCredits += newCredits;
@@ -270,6 +329,7 @@ void House::addCredits(FixPoint newCredits, bool wasRefined) {
 
 
 void House::addCityCredits(FixPoint amount) {
+    const auto previous = cityCredits;
     cityCredits += amount;
 
     if(cityCredits < 0) {
@@ -283,6 +343,7 @@ void House::addCityCredits(FixPoint amount) {
             cityCredits = 0;
         }
     }
+    AITelemetry::log().account(houseID, "city_net_applied", (cityCredits - previous).getRawValue());
 }
 
 
@@ -290,6 +351,7 @@ void House::addCityCredits(FixPoint amount) {
 
 void House::returnCredits(FixPoint newCredits) {
     if(newCredits > 0) {
+        AITelemetry::log().account(houseID, "refunded", newCredits.getRawValue());
         FixPoint leftCapacity = capacity - storedCredits;
         if(newCredits <= leftCapacity) {
             addCredits(newCredits, false);
@@ -309,6 +371,7 @@ FixPoint House::takeCredits(FixPoint amount) {
     if(getCredits() >= 1) {
         if(cityCredits >= amount) {
             cityCredits -= amount;
+            AITelemetry::log().account(houseID, "spent_total", amount.getRawValue());
             return amount;
         }
 
@@ -334,6 +397,7 @@ FixPoint House::takeCredits(FixPoint amount) {
         }
     }
 
+    AITelemetry::log().account(houseID, "spent_total", taken.getRawValue());
     return taken;   //the amount that was actually withdrawn
 }
 
@@ -388,10 +452,12 @@ void House::update() {
     }
 
     if(storedCredits > capacity) {
+        const auto previousStored = storedCredits;
         --storedCredits;
         if(storedCredits < 0) {
          storedCredits = 0;
         }
+        AITelemetry::log().account(houseID, "storage_lost", (previousStored - storedCredits).getRawValue());
 
         if(this == pLocalHouse) {
             currentGame->addToNewsTicker(_("@DUNE.ENG|145#As insufficient spice storage is available, spice is lost."));
@@ -401,7 +467,8 @@ void House::update() {
     powerUsageTimer--;
     if(powerUsageTimer <= 0) {
         powerUsageTimer = MILLI2CYCLES(15*1000);
-        takeCredits(FixPoint(getPowerRequirement()) / 32);
+        const auto powerPaid = isPowerRequired() ? takeCredits(FixPoint(getPowerRequirement()) / 32) : FixPoint(0);
+        AITelemetry::log().account(houseID, "power_spent", powerPaid.getRawValue());
     }
 
     choam.update();
@@ -532,10 +599,10 @@ void House::incrementStructures(int itemID) {
 
 
 
-void House::decrementStructures(int itemID, const Coord& location) {
+void House::decrementStructures(int itemID, const Coord& location, bool recordLoss) {
     numStructures--;
     numItem[itemID]--;
-    numItemLosses[itemID]++;
+    if (recordLoss) numItemLosses[itemID]++;
 
     // change power requirements
     int currentItemPower = currentGame->objectData.data[itemID][houseID].power;
@@ -554,7 +621,7 @@ void House::decrementStructures(int itemID, const Coord& location) {
     if (!isAlive())
         lose();
 
-    for(auto& pPlayer : players) {
+    if (recordLoss) for(auto& pPlayer : players) {
         pPlayer->onDecrementStructures(itemID, location);
     }
 }
@@ -661,6 +728,27 @@ void House::informHasDamaged(Uint32 itemID, Uint32 damage) {
     numItemDamageInflicted[itemID] += damage;
 }
 
+
+void House::addCombatReward(Uint32 itemID, const CombatReward::Totals& reward) {
+    if (itemID >= Num_ItemID) return;
+    auto& total = combatRewards[itemID];
+    total.damageMilli += reward.damageMilli; total.killBonusMilli += reward.killBonusMilli;
+    total.conversionMilli += reward.conversionMilli; total.hpRemovedMilli += reward.hpRemovedMilli; total.hits += reward.hits; total.kills += reward.kills;
+}
+AITelemetry::Record House::combatRewardStats(const ObjectData& objectData) const {
+    AITelemetry::Record stats;
+    for (int i=0; i<Num_ItemID; ++i) {
+        const auto& reward = combatRewards[i];
+        if (reward.hits == 0 && reward.total() == 0 && numItemLosses[i] == 0) continue;
+        stats.set(std::to_string(i), AITelemetry::Record().set("item_name", getItemNameByID(i))
+            .set("damage_value_milli", reward.damageMilli).set("kill_bonus_milli", reward.killBonusMilli)
+            .set("conversion_value_milli", reward.conversionMilli).set("reward_milli", reward.total())
+            .set("hp_removed_milli", reward.hpRemovedMilli).set("hits", reward.hits).set("unit_killing_blows", reward.kills)
+            .set("raw_damage", numItemDamageInflicted[i]).set("loss_count", numItemLosses[i])
+            .set("lost_value", int64_t(numItemLosses[i])*objectData.data[i][houseID].price));
+    }
+    return stats;
+}
 
 void House::win() {
     if(getTeamID() == pLocalHouse->getTeamID()) {
@@ -889,6 +977,7 @@ StructureBase* House::placeStructure(Uint32 builderID, int itemID, int xPos, int
             const int actualSizeY = newStructure->getStructureSizeY();
             if(actualSizeX <= 0 || actualSizeY <= 0
                || !currentGameMap->tileExists(xPos + actualSizeX - 1, yPos + actualSizeY - 1)) {
+                newStructure->cancelPlacement();
                 delete newObject;
                 return nullptr;
             }
@@ -897,7 +986,14 @@ StructureBase* House::placeStructure(Uint32 builderID, int itemID, int xPos, int
                 // check if there is already something on this tile
                 for(int i=0;i<newStructure->getStructureSizeX();i++) {
                     for(int j=0;j<newStructure->getStructureSizeY();j++) {
-                        if((currentGameMap->tileExists(xPos+i, yPos+j) == false) || (currentGameMap->getTile(xPos+i, yPos+j)->hasAGroundObject() == true)) {
+                        const Tile* pTile = currentGameMap->tileExists(xPos+i, yPos+j) ? currentGameMap->getTile(xPos+i, yPos+j) : nullptr;
+                        if(pTile == nullptr || pTile->hasAGroundObject() || pTile->hasCityZone()) {
+                            if(pTile != nullptr && isZoneStructure(itemID)) {
+                                SDL_Log("placeStructure: refused zone item %d for house %d at (%d,%d): tile (%d,%d) %s",
+                                        itemID, houseID, xPos, yPos, xPos+i, yPos+j,
+                                        pTile->hasCityZone() ? "already belongs to a zone" : "is occupied");
+                            }
+                            newStructure->cancelPlacement();
                             delete newObject;
                             return nullptr;
                         }
@@ -945,7 +1041,8 @@ StructureBase* House::placeStructure(Uint32 builderID, int itemID, int xPos, int
                         if (!currentGameMap->tileExists(tx, ty)) continue;
                         Tile* t = currentGameMap->getTile(tx, ty);
                         if (t->hasAGroundObject()) continue;
-                        if (t->getType() != Terrain_Rock) continue;
+                        if (!DuneCity::isCityBuildableTerrain(t->getType())) continue;
+                        // Road overlay preserves the underlying tile/concrete owner.
                         t->setRoad(true);
                     }
                 }
@@ -998,6 +1095,9 @@ StructureBase* House::placeStructure(Uint32 builderID, int itemID, int xPos, int
                 // only if we were constructed by construction yard
                 // => inform house of the building
                 pBuilder->getOwner()->informWasBuilt(newObject);
+                AITelemetry::log().write(currentGame->getGameCycleCount(), houseID, -1, "construction_completed",
+                    AITelemetry::Record().set("builder", builderID).set("item", itemID)
+                        .set("object", newObject->getObjectID()).set("x", xPos).set("y", yPos));
             }
 
             if(newStructure->isABuilder()) {

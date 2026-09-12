@@ -100,6 +100,7 @@ private:
 
     void disableAllDropDownBoxes();
 
+    GameInitSettings::HouseInfoList fixedCoopHouses;
     GameInitSettings                gameInitSettings;
     GameInitSettings::HouseInfoList houseInfoListSetup;     ///< only used if we are loading a savegame
 

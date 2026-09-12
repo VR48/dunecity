@@ -474,7 +474,12 @@ public:
     /// based on produced-vs-required totals, so this flag is no longer about
     /// electrical conductivity — it strictly tracks "is there a road here".
     bool isRoad() const noexcept { return isRoad_; }
-    void setRoad(bool r) noexcept { isRoad_ = r; }
+    bool hasPreparedFoundation() const noexcept { return isConcrete() || isRoad(); }
+    void setRoad(bool r) noexcept {
+        isRoad_ = r;
+        if (r) { destroyedStructureTile = DestroyedStructure_None; damage.clear(); deadUnits.clear(); }
+    }
+    bool isRoadConnection() const;
     bool hasCityZone() const noexcept { return cityZoneType_ != DuneCity::ZoneType::None; }
 
 

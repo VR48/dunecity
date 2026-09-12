@@ -10,6 +10,19 @@ add_executable(dunelegacy_tests)
 # Note: Catch2WithMain provides main(), no testmain.cpp needed
 target_sources(dunelegacy_tests
     PRIVATE
+        CoopGameSettingsTestCase.cpp
+        ${CMAKE_SOURCE_DIR}/src/GameInitSettings.cpp
+        ${CMAKE_SOURCE_DIR}/src/misc/IFileStream.cpp
+        CityTrafficPolicyTestCase.cpp
+        CitySpritePolicyTestCase.cpp
+        RendererSizeTestCase.cpp
+        QuantBotBuildPolicyTestCase.cpp
+        AIDecisionLogTestCase.cpp
+        CityPlacementPolicyTestCase.cpp
+        GroundAccessPolicyTestCase.cpp
+        NuclearBlastPolicyTestCase.cpp
+        RepairYardJobTestCase.cpp
+        ${CMAKE_SOURCE_DIR}/src/players/AIDecisionLog.cpp
         PathBudgetTestCase/PathBudgetTestCase.cpp
         NetworkManagerTestCase/NetworkManagerTestCase.cpp
         GenericNinthHouseRegressionTestCase/GenericNinthHouseRegressionTestCase.cpp
@@ -28,11 +41,18 @@ target_sources(dunelegacy_tests
         PalaceUnitLimitRegressionTestCase/PalaceUnitLimitRegressionTestCase.cpp
         ZonePowerTestCase/ZonePowerTestCase.cpp
         CityEffectsTestCase/CityEffectsTestCase.cpp
+        ../src/fixmath/fix32.c
         ValueModelTestCase/ValueModelTestCase.cpp
         PoliceStationTestCase/PoliceStationTestCase.cpp
         SaveCompatTestCase/SaveCompatTestCase.cpp
         NeutralHouseTestCase/NeutralHouseTestCase.cpp
         Dune2RAssetManagerTestCase/Dune2RAssetManagerTestCase.cpp
+        EnhancedAtlasCacheTestCase/EnhancedAtlasCacheTestCase.cpp
+        EnhancedBuildingGeometryTestCase/EnhancedBuildingGeometryTestCase.cpp
+        MenuLayoutTestCase/MenuLayoutTestCase.cpp
+        ${CMAKE_SOURCE_DIR}/src/mmath.cpp
+        ${CMAKE_SOURCE_DIR}/src/FileClasses/EnhancedAtlasCache.cpp
+        ${CMAKE_SOURCE_DIR}/src/FileClasses/lodepng.cpp
         # DuneCity core sources (needed for CitySimulation tests)
         ${CMAKE_SOURCE_DIR}/src/dunecity/CitySimulation.cpp
         CityEffectsRuntime_test_stub.cpp
@@ -83,6 +103,20 @@ target_link_libraries(dunelegacy_tests
         $<IF:$<TARGET_EXISTS:SDL2_mixer::SDL2_mixer>,SDL2_mixer::SDL2_mixer,SDL2_mixer::SDL2_mixer-static>
         CURL::libcurl
 )
+
+if(APPLE)
+    # fnkdat.cpp calls getMacApplicationSupportFolder(), which is implemented in
+    # the Objective-C helper the game target also compiles (src/CMakeLists.txt).
+    target_sources(dunelegacy_tests PRIVATE ${CMAKE_SOURCE_DIR}/IDE/xCode/MacFunctions.m)
+    set_source_files_properties(${CMAKE_SOURCE_DIR}/IDE/xCode/MacFunctions.m
+        PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+    target_link_libraries(dunelegacy_tests
+        PRIVATE
+            "-framework Cocoa"
+            "-framework Foundation"
+            "-framework CoreFoundation"
+    )
+endif()
 
 if(WIN32)
     target_link_libraries(dunelegacy_tests

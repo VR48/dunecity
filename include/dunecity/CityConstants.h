@@ -30,6 +30,10 @@ inline bool shouldEnableLoadedCityEffects(bool hasCitySimulation) {
     return hasCitySimulation;
 }
 
+inline bool isTrafficConnector(bool road, Uint32 item) {
+    return road || item == Structure_RocketTurret;
+}
+
 inline bool isCityZoneStructure(int itemID) {
     return itemID == Structure_ZoneResidential
         || itemID == Structure_ZoneCommercial
@@ -46,18 +50,30 @@ inline bool isCityOnlyStructure(int itemID) {
         || itemID == Structure_Airport;
 }
 
+// Construction reach follows owned tiles, regardless of their foundation.
+// Enemy roads, like enemy concrete, may be covered inside our normal build
+// range but never grant a foothold or extend that range themselves.
+inline bool isConstructionAnchor(int tileOwner, int builderHouse) {
+    return tileOwner == builderHouse;
+}
+
 inline bool isCityBuildableTerrain(uint32_t terrain) {
     return terrain == Terrain_Rock || terrain == Terrain_Slab;
 }
 
-inline int getCityBuildTime(int itemID, int configuredBuildTime,
-                            int concreteBuildTime, int policeBuildTime) {
-    if (itemID == Structure_Road) {
-        return std::max(1, concreteBuildTime / 2);
-    }
-    if (isCityZoneStructure(itemID)) {
-        return std::max(1, policeBuildTime / 2);
-    }
+// Zones may spill onto sand: every tile must be rock, slab, sand or dunes,
+// and the footprint must keep at least one rock or slab tile so the lot stays
+// anchored to the buildable substrate. Spice, blooms and mountains never
+// qualify.
+inline bool isCityZoneTerrain(uint32_t terrain) {
+    return terrain == Terrain_Rock || terrain == Terrain_Slab
+        || terrain == Terrain_Sand || terrain == Terrain_Dunes;
+}
+
+inline int getCityBuildTime(int itemID, int configuredBuildTime) {
+    // Only roads bypass normal construction timing. Zones use their configured
+    // duration like other buildings, respecting active house/mod data.
+    if (itemID == Structure_Road) return 1;
     return std::max(1, configuredBuildTime);
 }
 

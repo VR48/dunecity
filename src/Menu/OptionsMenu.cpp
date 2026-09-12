@@ -16,6 +16,7 @@
  */
 
 #include <Menu/OptionsMenu.h>
+#include <misc/WebRuntime.h>
 
 #include <globals.h>
 
@@ -29,6 +30,7 @@
 #include <FileClasses/GFXManager.h>
 #include <FileClasses/TextManager.h>
 #include <FileClasses/INIFile.h>
+#include <mod/ModManager.h>
 #include <FileClasses/music/MusicPlayer.h>
 
 #include <SoundPlayer.h>
@@ -38,6 +40,8 @@
 #include <misc/Scaler.h>
 #include <misc/FileSystem.h>
 #include <misc/format.h>
+#include <misc/MenuPalette.h>
+#include <misc/MenuLayout.h>
 
 #include <algorithm>
 
@@ -60,25 +64,39 @@ OptionsMenu::OptionsMenu() : MenuBase()
 
     setWindowWidget(&windowWidget);
 
-    windowWidget.addWidget(&mainVBox, Point(50,50), Point(getSize().x - 100,getSize().y - 100));
-
-    mainVBox.addWidget(Spacer::create(), 0.2);
+    const int left = (getSize().x - 540) / 2;
+    title.setText(_("OPTIONS"));
+    title.setTextFontSize(22);
+    title.setAlignment(Alignment_HCenter);
+    windowWidget.addWidget(&title, Point(left, 18), Point(540, 30));
+    const char* tabNames[] = {"GENERAL", "DISPLAY", "AUDIO / NETWORK"};
+    for(int page = 0; page < 3; ++page) {
+        pageButtons[page].setText(_(tabNames[page]));
+        pageButtons[page].setToggleButton(true);
+        pageButtons[page].setOnClick([this, page] { showPage(page); });
+        windowWidget.addWidget(&pageButtons[page], Point(left + page * 182, 58), Point(176, 36));
+        windowWidget.addWidget(&pages[page], Point(left, 110), Point(540, getSize().y - 192));
+    }
+    auto optionLabel = [](const std::string& text) {
+        auto* label = Label::create(text);
+        label->setAlignment(static_cast<Alignment_Enum>(Alignment_Left | Alignment_VCenter));
+        return label;
+    };
 
     NameHBox.addWidget(Spacer::create(), 0.5);
-    NameHBox.addWidget(Label::create(_("Player Name")), 190);
+    NameHBox.addWidget(optionLabel(_("Player Name")), 190);
     nameTextBox.setMaximumTextLength(MAX_PLAYERNAMELENGHT);
     nameTextBox.setOnTextChange(std::bind(&OptionsMenu::onChangeOption, this, std::placeholders::_1));
     NameHBox.addWidget(&nameTextBox, 290);
     NameHBox.addWidget(Spacer::create(), 0.5);
     nameTextBox.setText(settings.general.playerName);
 
-    mainVBox.addWidget(&NameHBox, 0.01);
-
-    mainVBox.addWidget(VSpacer::create(5));
+    pages[0].addWidget(&NameHBox, 40);
+    pages[0].addWidget(VSpacer::create(8));
 
     gameOptionsHBox.addWidget(Spacer::create(), 0.5);
 
-    gameOptionsHBox.addWidget(Label::create(_("Default Game Options")), 190);
+    gameOptionsHBox.addWidget(optionLabel(_("Default Game Options")), 190);
     gameOptionsButton.setText(_("Change..."));
     gameOptionsButton.setOnClick(std::bind(&OptionsMenu::onGameOptions, this));
     gameOptionsHBox.addWidget(&gameOptionsButton, 130);
@@ -87,12 +105,11 @@ OptionsMenu::OptionsMenu() : MenuBase()
 
     gameOptionsHBox.addWidget(Spacer::create(), 0.5);
 
-    mainVBox.addWidget(&gameOptionsHBox, 0.01);
-
-    mainVBox.addWidget(Spacer::create(), 0.2);
+    pages[0].addWidget(&gameOptionsHBox, 40);
+    pages[0].addWidget(VSpacer::create(8));
 
     languageHBox.addWidget(Spacer::create(), 0.5);
-    languageHBox.addWidget(Label::create(_("Language")), 190);
+    languageHBox.addWidget(optionLabel(_("Language")), 190);
 
     for(size_t i = 0; i < availLanguages.size(); i++) {
         languageDropDownBox.addEntry(availLanguages[i].substr(0, availLanguages[i].size()-6), i);
@@ -106,12 +123,11 @@ OptionsMenu::OptionsMenu() : MenuBase()
     languageHBox.addWidget(Spacer::create(), 190);
     languageHBox.addWidget(Spacer::create(), 0.5);
 
-    mainVBox.addWidget(&languageHBox, 0.01);
-
-    mainVBox.addWidget(VSpacer::create(1));
+    pages[0].addWidget(&languageHBox, 40);
+    pages[0].addWidget(VSpacer::create(8));
 
     generalHBox.addWidget(Spacer::create(), 0.5);
-    generalHBox.addWidget(Label::create(_("Campaign AI")), 190);
+    generalHBox.addWidget(optionLabel(_("Campaign AI")), 190);
     int visibleIndex = 0;
     int selectedVisibleIndex = -1;
     for(unsigned int i=1; i<PlayerFactory::getList().size(); i++) {
@@ -135,30 +151,45 @@ OptionsMenu::OptionsMenu() : MenuBase()
         aiDropDownBox.setSelectedItem(0);
     }
     aiDropDownBox.setOnSelectionChange(std::bind(&OptionsMenu::onChangeOption, this, std::placeholders::_1));
-    generalHBox.addWidget(&aiDropDownBox, 140);
-    generalHBox.addWidget(Spacer::create(), 20);
+    generalHBox.addWidget(&aiDropDownBox, 290);
     introCheckbox.setText(_("Play Intro"));
     introCheckbox.setChecked(settings.general.playIntro);
     introCheckbox.setOnClick(std::bind(&OptionsMenu::onChangeOption, this, true));
-    generalHBox.addWidget(&introCheckbox, 130);
+    introHBox.addWidget(Spacer::create(), 0.5);
+    introHBox.addWidget(&introCheckbox, 480);
+    introHBox.addWidget(Spacer::create(), 0.5);
+    pages[0].addWidget(&introHBox, 40);
+    pages[0].addWidget(VSpacer::create(8));
     generalHBox.addWidget(Spacer::create(), 0.5);
 
-    mainVBox.addWidget(&generalHBox, 0.01);
-
-    mainVBox.addWidget(Spacer::create(), 0.2);
+    pages[0].addWidget(&generalHBox, 40);
+    pages[0].addWidget(VSpacer::create(8));
 
     resolutionHBox.addWidget(Spacer::create(), 0.5);
-    resolutionHBox.addWidget(Label::create(_("Video Resolution")), 190);
+#ifdef __ANDROID__
+    resolutionHBox.addWidget(optionLabel(_("Interface Resolution")), 190);
+#else
+    resolutionHBox.addWidget(optionLabel(_("Video Resolution")), 190);
+#endif
 
     int i = 0;
     for(const Coord& coord : availScreenRes) {
         int factor = getLogicalToPhysicalResolutionFactor(coord.x, coord.y);
+#ifdef __ANDROID__
+        factor = 1;
+#endif
         if(factor > 1) {
             resolutionDropDownBox.addEntry(fmt::sprintf("%d x %d @ %dx", coord.x, coord.y, factor), i);
         } else {
             resolutionDropDownBox.addEntry(fmt::sprintf("%d x %d", coord.x, coord.y), i);
         }
-        if(coord.x == settings.video.physicalWidth && coord.y == settings.video.physicalHeight) {
+        if(
+#ifdef __ANDROID__
+            coord.x == settings.video.width && coord.y == settings.video.interfaceHeight
+#else
+            coord.x == settings.video.physicalWidth && coord.y == settings.video.physicalHeight
+#endif
+        ) {
             resolutionDropDownBox.setSelectedItem(i);
         }
         i++;
@@ -183,35 +214,37 @@ OptionsMenu::OptionsMenu() : MenuBase()
 
     resolutionHBox.addWidget(Spacer::create(), 0.5);
 
-    mainVBox.addWidget(&resolutionHBox, 0.01);
-
-    mainVBox.addWidget(VSpacer::create(1));
+    pages[1].addWidget(&resolutionHBox, 40);
+    pages[1].addWidget(VSpacer::create(8));
 
     videoHBox.addWidget(Spacer::create(), 0.5);
     fullScreenCheckbox.setText(_("Full Screen"));
     fullScreenCheckbox.setChecked(settings.video.fullscreen);
     fullScreenCheckbox.setOnClick(std::bind(&OptionsMenu::onChangeOption, this, true));
-    videoHBox.addWidget(&fullScreenCheckbox, 155);
+    videoHBox.addWidget(&fullScreenCheckbox, 240);
     frameLimitCheckbox.setText(_("Enable VSync"));
     frameLimitCheckbox.setChecked(settings.video.frameLimit);
     frameLimitCheckbox.setOnClick(std::bind(&OptionsMenu::onChangeOption, this, true));
-    videoHBox.addWidget(&frameLimitCheckbox, 155);
+    videoHBox.addWidget(&frameLimitCheckbox, 240);
     showTutorialHintsCheckbox.setText(_("Show Tutorial Hints"));
     showTutorialHintsCheckbox.setChecked(settings.general.showTutorialHints);
     showTutorialHintsCheckbox.setOnClick(std::bind(&OptionsMenu::onChangeOption, this, true));
-    videoHBox.addWidget(&showTutorialHintsCheckbox, 155);
+    flagsHBox.addWidget(Spacer::create(), 0.5);
+    flagsHBox.addWidget(&showTutorialHintsCheckbox, 240);
     videoHBox.addWidget(Spacer::create(), 0.5);
 
-    mainVBox.addWidget(&videoHBox, 0.01);
-
-    mainVBox.addWidget(VSpacer::create(1));
+    pages[1].addWidget(&videoHBox, 40);
+    pages[1].addWidget(VSpacer::create(8));
 
     videoHBox2.addWidget(Spacer::create(), 0.5);
     showWatermarkCheckbox.setText(_("Show Watermark"));
     showWatermarkCheckbox.setChecked(settings.video.showWatermark);
     showWatermarkCheckbox.setOnClick(std::bind(&OptionsMenu::onChangeOption, this, true));
-    videoHBox2.addWidget(&showWatermarkCheckbox, 135);
-    videoHBox2.addWidget(Label::create(_("Cursor")), 52);
+    flagsHBox.addWidget(&showWatermarkCheckbox, 240);
+    flagsHBox.addWidget(Spacer::create(), 0.5);
+    pages[1].addWidget(&flagsHBox, 40);
+    pages[1].addWidget(VSpacer::create(8));
+    videoHBox2.addWidget(optionLabel(_("Cursor")), 190);
     cursorVisibilityDropDownBox.addEntry(_("Auto"), 0);
     cursorVisibilityDropDownBox.addEntry(_("Hidden"), 1);
     cursorVisibilityDropDownBox.addEntry(_("Visible"), 2);
@@ -219,8 +252,8 @@ OptionsMenu::OptionsMenu() : MenuBase()
         ? settings.video.cursorVisibility : 0;
     cursorVisibilityDropDownBox.setSelectedItem(cursorVisibilityIndex);
     cursorVisibilityDropDownBox.setOnSelectionChange(std::bind(&OptionsMenu::onChangeOption, this, std::placeholders::_1));
-    videoHBox2.addWidget(&cursorVisibilityDropDownBox, 78);
-    videoHBox2.addWidget(Label::create(_("Scale")), 45);
+    videoHBox2.addWidget(&cursorVisibilityDropDownBox, 130);
+    videoHBox2.addWidget(optionLabel(_("Scale")), 90);
     cursorScaleDropDownBox.addEntry(_("Auto"), 0);
     cursorScaleDropDownBox.addEntry("1x", 1);
     cursorScaleDropDownBox.addEntry("2x", 2);
@@ -229,12 +262,35 @@ OptionsMenu::OptionsMenu() : MenuBase()
     int cursorScaleIndex = settings.video.cursorScale >= 0 && settings.video.cursorScale <= 4 ? settings.video.cursorScale : 0;
     cursorScaleDropDownBox.setSelectedItem(cursorScaleIndex);
     cursorScaleDropDownBox.setOnSelectionChange(std::bind(&OptionsMenu::onChangeOption, this, std::placeholders::_1));
-    videoHBox2.addWidget(&cursorScaleDropDownBox, 65);
+    videoHBox2.addWidget(&cursorScaleDropDownBox, 70);
     videoHBox2.addWidget(Spacer::create(), 0.5);
 
-    mainVBox.addWidget(&videoHBox2, 0.01);
+    pages[1].addWidget(&videoHBox2, 40);
+    pages[1].addWidget(VSpacer::create(8));
 
-    mainVBox.addWidget(Spacer::create(), 0.2);
+    paletteHBox.addWidget(Spacer::create(), 0.5);
+    paletteHBox.addWidget(optionLabel(_("Menu Layout")), 110);
+    startMenuModeDropDownBox.addEntry(_("Classic"), 0);
+    startMenuModeDropDownBox.addEntry(_("Enlarged"), 1);
+    startMenuModeDropDownBox.setSelectedItem(validatedStartMenuMode(settings.video.startMenuMode));
+    startMenuModeDropDownBox.setOnSelectionChange(std::bind(&OptionsMenu::onChangeOption, this, std::placeholders::_1));
+    paletteHBox.addWidget(&startMenuModeDropDownBox, 120);
+    paletteHBox.addWidget(optionLabel(_("Colors")), 70);
+    paletteDropDownBox.addEntry(_("Desert Gold"), 0);
+    paletteDropDownBox.addEntry(_("High Contrast"), 1);
+    paletteDropDownBox.setSelectedItem(validatedMenuPalette(settings.video.menuPalette));
+    paletteDropDownBox.setOnSelectionChange([this](bool interactive) {
+        updatePalettePreview();
+        onChangeOption(interactive);
+    });
+    paletteHBox.addWidget(&paletteDropDownBox, 180);
+    paletteHBox.addWidget(Spacer::create(), 0.5);
+    pages[1].addWidget(&paletteHBox, 40);
+    pages[1].addWidget(VSpacer::create(8));
+    palettePreview.setText("DUNE LEGACY");
+    palettePreview.setEnabled(false);
+    updatePalettePreview();
+    pages[1].addWidget(&palettePreview, 40);
 
     audioHBox.addWidget(Spacer::create(), 0.5);
     playSFXCheckbox.setText(_("Play SFX"));
@@ -247,7 +303,8 @@ OptionsMenu::OptionsMenu() : MenuBase()
     audioHBox.addWidget(&playMusicCheckbox, 240);
     audioHBox.addWidget(Spacer::create(), 0.5);
 
-    mainVBox.addWidget(&audioHBox, 0.01);
+    pages[2].addWidget(&audioHBox, 40);
+    pages[2].addWidget(VSpacer::create(8));
 
     audioHBox2.addWidget(Spacer::create(), 0.5);
     playCreditsSFXCheckbox.setText(_("Play Credits SFX"));
@@ -257,12 +314,11 @@ OptionsMenu::OptionsMenu() : MenuBase()
     audioHBox2.addWidget(Spacer::create(), 240);
     audioHBox2.addWidget(Spacer::create(), 0.5);
 
-    mainVBox.addWidget(&audioHBox2, 0.01);
-
-    mainVBox.addWidget(Spacer::create(), 0.2);
+    pages[2].addWidget(&audioHBox2, 40);
+    pages[2].addWidget(VSpacer::create(8));
 
     networkPortHBox.addWidget(Spacer::create(), 0.5);
-    networkPortHBox.addWidget(Label::create(_("Port")), 190);
+    networkPortHBox.addWidget(optionLabel(_("Port")), 190);
     portTextBox.setMaximumTextLength(5);
     portTextBox.setAllowedChars("0123456789");
     portTextBox.setOnTextChange(std::bind(&OptionsMenu::onChangeOption, this, std::placeholders::_1));
@@ -270,52 +326,59 @@ OptionsMenu::OptionsMenu() : MenuBase()
     portTextBox.setText(std::to_string(settings.network.serverPort));
     networkPortHBox.addWidget(Spacer::create(), 190);
     networkPortHBox.addWidget(Spacer::create(), 0.5);
-    mainVBox.addWidget(&networkPortHBox, 0.01);
-
-    mainVBox.addWidget(VSpacer::create(5));
+    pages[2].addWidget(&networkPortHBox, 40);
+    pages[2].addWidget(VSpacer::create(8));
 
     networkMetaServerHBox.addWidget(Spacer::create(), 0.5);
-    networkMetaServerHBox.addWidget(Label::create(_("MetaServer")), 190);
+    networkMetaServerHBox.addWidget(optionLabel(_("MetaServer")), 190);
     metaServerTextBox.setOnTextChange(std::bind(&OptionsMenu::onChangeOption, this, std::placeholders::_1));
     networkMetaServerHBox.addWidget(&metaServerTextBox, 290);
     metaServerTextBox.setText(settings.network.metaServer);
     networkMetaServerHBox.addWidget(Spacer::create(), 0.5);
-    mainVBox.addWidget(&networkMetaServerHBox, 0.01);
-
-    mainVBox.addWidget(VSpacer::create(10));
+    pages[2].addWidget(&networkMetaServerHBox, 40);
+    pages[2].addWidget(VSpacer::create(8));
 
     restoreDefaultsHBox.addWidget(Spacer::create(), 0.5);
     restoreDefaultsButton.setText(_("Restore Config Defaults"));
     restoreDefaultsButton.setOnClick(std::bind(&OptionsMenu::onRestoreDefaults, this));
     restoreDefaultsHBox.addWidget(&restoreDefaultsButton, 320);
     restoreDefaultsHBox.addWidget(Spacer::create(), 0.5);
-    mainVBox.addWidget(&restoreDefaultsHBox, 0.01);
+    pages[0].addWidget(&restoreDefaultsHBox, 40);
+    pages[0].addWidget(VSpacer::create(8));
 
-    mainVBox.addWidget(Spacer::create(), 0.2);
-
-    okCancelHBox.addWidget(Spacer::create());
-
-    backButton.setText(_("Back"));
+    backButton.setText(_("BACK"));
     backButton.setOnClick(std::bind(&OptionsMenu::onOptionsCancel, this));
-    okCancelHBox.addWidget(&backButton);
 
-    okCancelHBox.addWidget(Spacer::create());
 
-    acceptButton.setText(_("Accept"));
-    acceptButton.setVisible(false);
+    acceptButton.setText(_("APPLY"));
+    acceptButton.setEnabled(false);
     acceptButton.setOnClick(std::bind(&OptionsMenu::onOptionsOK, this));
-    okCancelHBox.addWidget(&acceptButton);
 
-    okCancelHBox.addWidget(Spacer::create());
 
-    mainVBox.addWidget(&okCancelHBox, 26);
-
-    mainVBox.addWidget(Spacer::create(), 0.1);
+    windowWidget.addWidget(&backButton, Point(left + 30, getSize().y - 64), Point(220, 40));
+    windowWidget.addWidget(&acceptButton, Point(left + 290, getSize().y - 64), Point(220, 40));
+#ifdef __ANDROID__
+    fullScreenCheckbox.setEnabled(false);
+#endif
+    showPage(0);
 }
 
 OptionsMenu::~OptionsMenu()
 {
     ;
+}
+
+void OptionsMenu::showPage(int page) {
+    for(int i = 0; i < 3; ++i) {
+        pages[i].setVisible(i == page);
+        pages[i].setEnabled(i == page);
+        pageButtons[i].setToggleState(i == page);
+    }
+}
+
+void OptionsMenu::updatePalettePreview() {
+    const auto colors = menuPalette(paletteDropDownBox.getSelectedEntryIntData());
+    palettePreview.setTextColor(colors.foreground, colors.shadow);
 }
 
 void OptionsMenu::onChangeOption(bool bInteractive) {
@@ -334,8 +397,13 @@ void OptionsMenu::onChangeOption(bool bInteractive) {
 
     int selectedResolution = resolutionDropDownBox.getSelectedEntryIntData();
     if(selectedResolution >= 0) {
+#ifdef __ANDROID__
+        bChanged |= settings.video.width != availScreenRes[selectedResolution].x;
+        bChanged |= settings.video.interfaceHeight != availScreenRes[selectedResolution].y;
+#else
         bChanged |= (settings.video.physicalWidth != availScreenRes[selectedResolution].x);
         bChanged |= (settings.video.physicalHeight != availScreenRes[selectedResolution].y);
+#endif
     }
     bChanged |= (settings.video.preferredZoomLevel != zoomlevelDropDownBox.getSelectedEntryIntData());
     bChanged |= (settings.video.fullscreen != fullScreenCheckbox.isChecked());
@@ -344,6 +412,8 @@ void OptionsMenu::onChangeOption(bool bInteractive) {
     bChanged |= (settings.video.showWatermark != showWatermarkCheckbox.isChecked());
     bChanged |= (settings.video.cursorVisibility != cursorVisibilityDropDownBox.getSelectedEntryIntData());
     bChanged |= (settings.video.cursorScale != cursorScaleDropDownBox.getSelectedEntryIntData());
+    bChanged |= (settings.video.menuPalette != paletteDropDownBox.getSelectedEntryIntData());
+    bChanged |= (settings.video.startMenuMode != startMenuModeDropDownBox.getSelectedEntryIntData());
 
     bChanged |= (settings.audio.playSFX != playSFXCheckbox.isChecked());
     bChanged |= (settings.audio.playMusic != playMusicCheckbox.isChecked());
@@ -354,7 +424,7 @@ void OptionsMenu::onChangeOption(bool bInteractive) {
     bChanged |= (settings.network.serverPort != atoi(portTextBox.getText().c_str()));
     bChanged |= (settings.network.metaServer != metaServerTextBox.getText());
 
-    acceptButton.setVisible(bChanged);
+    acceptButton.setEnabled(bChanged);
 }
 
 void OptionsMenu::onOptionsOK() {
@@ -386,8 +456,16 @@ void OptionsMenu::onOptionsOK() {
     settings.ai.campaignAI = ((pPlayerData != nullptr) ? pPlayerData->getPlayerClass() : DEFAULTAIPLAYERCLASS);
 
     int selectedResolution = resolutionDropDownBox.getSelectedEntryIntData();
+#ifdef __ANDROID__
+    if(selectedResolution >= 0) {
+        settings.video.width = availScreenRes[selectedResolution].x;
+        settings.video.height = availScreenRes[selectedResolution].y;
+        settings.video.interfaceHeight = availScreenRes[selectedResolution].y;
+    }
+#else
     settings.video.physicalWidth = (selectedResolution >= 0) ? availScreenRes[selectedResolution].x : 0;
     settings.video.physicalHeight = (selectedResolution >= 0) ? availScreenRes[selectedResolution].y : 0;
+#endif
     
     // Validate resolution settings
     if(settings.video.physicalWidth < SCREEN_MIN_WIDTH || settings.video.physicalHeight < SCREEN_MIN_HEIGHT) {
@@ -395,6 +473,7 @@ void OptionsMenu::onOptionsOK() {
         return;
     }
     
+#ifndef __ANDROID__
     int factor = getLogicalToPhysicalResolutionFactor(settings.video.physicalWidth, settings.video.physicalHeight);
     // Prevent division by zero and ensure minimum dimensions
     if(factor <= 0) {
@@ -406,6 +485,7 @@ void OptionsMenu::onOptionsOK() {
     // Ensure minimum dimensions
     if(settings.video.width < SCREEN_MIN_WIDTH) settings.video.width = SCREEN_MIN_WIDTH;
     if(settings.video.height < SCREEN_MIN_HEIGHT) settings.video.height = SCREEN_MIN_HEIGHT;
+#endif
 
     settings.video.preferredZoomLevel = zoomlevelDropDownBox.getSelectedEntryIntData();
     settings.video.scaler = scalerDropDownBox.getSelectedEntry();
@@ -414,17 +494,20 @@ void OptionsMenu::onOptionsOK() {
     settings.video.showWatermark = showWatermarkCheckbox.isChecked();
     settings.video.cursorVisibility = cursorVisibilityDropDownBox.getSelectedEntryIntData();
     settings.video.cursorScale = cursorScaleDropDownBox.getSelectedEntryIntData();
+    settings.video.menuPalette = validatedMenuPalette(paletteDropDownBox.getSelectedEntryIntData());
+    settings.video.startMenuMode = validatedStartMenuMode(startMenuModeDropDownBox.getSelectedEntryIntData());
 
     settings.audio.playSFX = playSFXCheckbox.isChecked();
     settings.audio.playMusic = playMusicCheckbox.isChecked();
     settings.audio.playCreditsSFX = playCreditsSFXCheckbox.isChecked();
 
-    settings.gameOptions = currentGameOptions;
+    saveGameOptionsAsDefaults(currentGameOptions);
 
     settings.network.serverPort = serverport;
     settings.network.metaServer = metaserver;
 
     saveConfiguration2File();
+    WebRuntime::syncPersistentFiles();
 
     // sound is not reinitialized when restarting
     // => music and sound player do not reload settings
@@ -448,10 +531,23 @@ void OptionsMenu::onGameOptions() {
 void OptionsMenu::onRestoreDefaults() {
     // Restore config files
     if (restoreDefaultConfigs()) {
+        // Forget the player's game option choices for this mod too, so the
+        // mod's own defaults come back.
+        const std::string section = userGameOptionsSection();
+        if(!section.empty()) {
+            INIFile config(getConfigFilepath());
+            if(config.hasSection(section)) {
+                config.removeSection(section);
+                config.saveChangesTo(getConfigFilepath());
+            }
+        }
+        effectiveGameOptions = ModManager::instance().loadEffectiveGameOptions(settings.gameOptions);
+        currentGameOptions = effectiveGameOptions;
+
         std::string successMessage = 
             "Config files restored successfully!\n\n"
-            "ObjectData.ini and QuantBot Config.ini have been\n"
-            "reset to default values.\n\n"
+            "ObjectData.ini, QuantBot Config.ini and the game\n"
+            "option defaults have been reset.\n\n"
             "IMPORTANT: Changes will take effect on next game start.\n"
             "Please restart the game.";
         MsgBox* pMsgBox = MsgBox::create(successMessage);
@@ -471,11 +567,13 @@ void OptionsMenu::saveConfiguration2File() {
 
     myINIFile.setBoolValue("General","Play Intro",settings.general.playIntro);
     myINIFile.setBoolValue("General","Show Tutorial Hints",settings.general.showTutorialHints);
+    myINIFile.setBoolValue("General","Multiple Players Per House",settings.general.multiplePlayersPerHouse);
 
     myINIFile.setIntValue("Video","Physical Width",settings.video.physicalWidth);
     myINIFile.setIntValue("Video","Physical Height",settings.video.physicalHeight);
     myINIFile.setIntValue("Video","Width",settings.video.width);
     myINIFile.setIntValue("Video","Height",settings.video.height);
+    myINIFile.setIntValue("Video","Interface Height",settings.video.interfaceHeight);
     myINIFile.setBoolValue("Video","Fullscreen",settings.video.fullscreen);
     myINIFile.setBoolValue("Video","FrameLimit",settings.video.frameLimit);
     myINIFile.setIntValue("Video","Preferred Zoom Level",settings.video.preferredZoomLevel);
@@ -484,6 +582,8 @@ void OptionsMenu::saveConfiguration2File() {
     myINIFile.setBoolValue("Video","Show Watermark",settings.video.showWatermark);
     myINIFile.setIntValue("Video","Cursor Visibility",settings.video.cursorVisibility);
     myINIFile.setIntValue("Video","Cursor Scale",settings.video.cursorScale);
+    myINIFile.setIntValue("Video","Menu Palette",settings.video.menuPalette);
+    myINIFile.setIntValue("Video","Start Menu Mode",settings.video.startMenuMode);
 
     myINIFile.setStringValue("General","Player Name",settings.general.playerName);
     myINIFile.setStringValue("General","Language",settings.general.language);
@@ -517,6 +617,31 @@ void OptionsMenu::saveConfiguration2File() {
 
 void OptionsMenu::determineAvailableScreenResolutions() {
     availScreenRes.clear();
+#ifdef __EMSCRIPTEN__
+    // Browser backing buffers are independent of OS display modes and may be
+    // larger than the viewport. The shell scales them to fit.
+    for(const Coord size : {Coord(640, 480), Coord(854, 480), Coord(800, 600),
+            Coord(960, 540), Coord(1024, 768), Coord(1280, 720), Coord(1280, 800),
+            Coord(1280, 960), Coord(1366, 768), Coord(1440, 900), Coord(1600, 900),
+            Coord(1600, 1200), Coord(1680, 1050), Coord(1920, 1080), Coord(1920, 1200),
+            Coord(2560, 1440), Coord(2560, 1600), Coord(3440, 1440), Coord(3840, 2160)}) {
+        availScreenRes.push_back(size);
+    }
+    const Coord current(settings.video.physicalWidth, settings.video.physicalHeight);
+    if(std::find(availScreenRes.begin(), availScreenRes.end(), current) == availScreenRes.end()) {
+        availScreenRes.insert(availScreenRes.begin(), current);
+    }
+    return;
+#endif
+#ifdef __ANDROID__
+    availScreenRes.emplace_back(640, 480);
+    availScreenRes.emplace_back(854, 480);
+    availScreenRes.emplace_back(800, 600);
+    availScreenRes.emplace_back(1067, 600);
+    availScreenRes.emplace_back(1024, 768);
+    availScreenRes.emplace_back(1366, 768);
+    return;
+#endif
 
     // Safety check: ensure window exists before trying to get display index
     if(window == nullptr) {
@@ -554,10 +679,19 @@ void OptionsMenu::determineAvailableScreenResolutions() {
         return;
     }
     
+    // Fullscreen is always desktop-sized and a window cannot be larger than the
+    // desktop, so modes beyond it (e.g. the native pixel resolution of a Retina
+    // panel, which SDL lists next to the scaled modes) can never be used.
+    SDL_Rect displayBounds = {0, 0, 0, 0};
+    const bool haveDisplayBounds = (SDL_GetDisplayBounds(displayIndex, &displayBounds) == 0
+                                    && displayBounds.w > 0 && displayBounds.h > 0);
+
     for(int i = numDisplayModes-1; i >=0; i--) {
         if(SDL_GetDisplayMode(displayIndex, i, &displayMode) == 0) {
             Coord screenRes(displayMode.w, displayMode.h);
-            if(screenRes.x >= SCREEN_MIN_WIDTH && screenRes.y >= SCREEN_MIN_HEIGHT) {
+            const bool fitsDisplay = !haveDisplayBounds
+                                     || (screenRes.x <= displayBounds.w && screenRes.y <= displayBounds.h);
+            if(fitsDisplay && screenRes.x >= SCREEN_MIN_WIDTH && screenRes.y >= SCREEN_MIN_HEIGHT) {
                 if(std::find(availScreenRes.begin(), availScreenRes.end(), screenRes) == availScreenRes.end()) {
                     // not yet in the list (might happen if e.g. multiple refresh rates are reported)
                     availScreenRes.push_back(screenRes);

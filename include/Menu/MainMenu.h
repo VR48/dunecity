@@ -44,12 +44,10 @@ public:
     virtual void onChildWindowClose(Window* pChildWindow) override;
 
 private:
-    void onSinglePlayer() const;
-    void onMultiPlayer() const;
-    void onMapEditor() const;
-    void onMods() const;
+    void onModes() const;
     void onDune2REditor() const;
     void onOptions();
+    void onDisplay();
     void onAbout() const;
     void onHowToPlay() const;
     void onQuit();
@@ -60,30 +58,28 @@ private:
     /// directory so it only appears once per install.
     void showFirstLaunchCityPromptIfNeeded();
 
-    /// Refresh the bottom-left mod/version watermark from the current
+    /// Refresh the footer mod/version label from the current
     /// active mod. Cheap; no-op when the displayed mod hasn't changed.
     void refreshModVersionLabel();
-    void refreshDune2REditorButton();
+    void refreshContextButtons();
 
     StaticContainer windowWidget;
-    VBox            MenuButtons;
+    PictureLabel planetPicture;
+    PictureLabel logoPicture;
+    PictureLabel buttonBorder;
 
-    TextButton      singlePlayerButton;
-    TextButton      multiPlayerButton;
-    TextButton      mapEditorButton;
-    TextButton      modsButton;
+    TextButton      modesButton;
     TextButton      dune2rEditorButton;
+    bool            enlargedStartMenus = false;
     TextButton      optionsButton;
+    TextButton      displayButton;
     TextButton      howToPlayButton;
     TextButton      aboutButton;
     TextButton      quitButton;
 
-    PictureLabel    planetPicture;
-    PictureLabel    duneLegacy;
-    PictureLabel    buttonBorder;
 
-    Label           modVersionLabel; ///< Bottom-left "<active mod>\nv<VERSION>" watermark.
-    Label           cityInfoLabel;  ///< Left-side info text about DuneCity mod activation.
+    Label           activeModLabel;  ///< Prominent active mod banner above the menu buttons.
+    Label           modVersionLabel; ///< Version footer.
     std::string     lastShownModName; ///< Tracks last mod name written to modVersionLabel; avoids redundant setText.
 
     // Version checking

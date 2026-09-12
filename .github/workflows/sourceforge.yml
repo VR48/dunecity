@@ -1,0 +1,70 @@
+name: Sync SourceForge release
+
+on:
+  workflow_run:
+    workflows: [Build Dune Legacy]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published stable release to mirror (vX.Y.Z)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sourceforge-release
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       startsWith(github.event.workflow_run.head_branch, 'v'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.event.workflow_run.head_branch }}
+      GH_TOKEN: ${{ github.token }}
+      SOURCEFORGE_USER: ${{ vars.SOURCEFORGE_USER }}
+      SOURCEFORGE_API_KEY: ${{ secrets.SOURCEFORGE_API_KEY }}
+    steps:
+      # Scripts are taken from trusted main, never an untrusted run artifact.
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.x'
+      - name: Test release safeguards
+        run: python3 -m unittest discover -s scripts/tests -p 'test_sourceforge_release.py'
+      - name: Configure SourceForge authentication
+        env:
+          SF_KEY: ${{ secrets.SOURCEFORGE_SSH_KEY }}
+          SF_HOSTS: ${{ secrets.SOURCEFORGE_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          for name in SOURCEFORGE_USER SOURCEFORGE_API_KEY SF_KEY SF_HOSTS; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing SourceForge configuration: $name. See docs/sourceforge-releases.md."
+              exit 1
+            fi
+          done
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SF_KEY" > ~/.ssh/sourceforge_release
+          printf '%s\n' "$SF_HOSTS" > ~/.ssh/sourceforge_known_hosts
+          chmod 600 ~/.ssh/sourceforge_release ~/.ssh/sourceforge_known_hosts
+          ssh-keygen -F frs.sourceforge.net -f ~/.ssh/sourceforge_known_hosts >/dev/null
+          ssh-keygen -F git.code.sf.net -f ~/.ssh/sourceforge_known_hosts >/dev/null
+          echo "GIT_SSH_COMMAND=ssh -i $HOME/.ssh/sourceforge_release -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/sourceforge_known_hosts" >> "$GITHUB_ENV"
+      - name: Upload, verify and update source and platform defaults
+        run: python3 scripts/sourceforge-release.py "$RELEASE_TAG" --directory "$RUNNER_TEMP/sourceforge-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" --publish
+      - name: Remove temporary SSH credentials
+        if: always()
+        run: rm -f ~/.ssh/sourceforge_release ~/.ssh/sourceforge_known_hosts

@@ -10,6 +10,7 @@
 #include <catch2/catch_all.hpp>
 #include <data.h>
 #include <dunecity/CitySimulation.h>
+#include <dunecity/CityEffects.h>
 
 // =============================================================================
 // spendCityFunds: Sufficient Funds Tests
@@ -208,4 +209,23 @@ TEST_CASE("CityBudget: Alternating roads and power lines correct total", "[cityb
     REQUIRE(sim.spendCityFunds(25) == true);  // 160 -> 135
     REQUIRE(sim.spendCityFunds(15) == true);  // 135 -> 120
     REQUIRE(sim.getTotalFunds() == 120);
+}
+
+
+TEST_CASE("City tax census retains fractional housing and the Palace dual income", "[citybudget][tax]") {
+    using namespace DuneCity;
+    const int home=taxablePopulationEighths(Structure_ZoneResidential,40,3);
+    const int shop=taxablePopulationEighths(Structure_ZoneCommercial,5,3);
+    const int industry=taxablePopulationEighths(Structure_ZoneIndustrial,4,3);
+    const int palace=taxablePopulationEighths(Structure_Palace,40,3);
+    CHECK(home == shop);
+    CHECK(2*palace == home+shop); // Zone boost excludes Palace.
+    CHECK(computeAnnualTaxRevenue(home+shop+industry+palace,7,128) == 397);
+    // Many small plots are aggregated before rounding; one house has R=2.
+    CHECK(computeAnnualTaxRevenue(100*taxablePopulationEighths(Structure_ZoneResidential,2,0),7,128) == 522);
+    // A year of fractional cycle payouts totals the annual bill, not 3750 rounded bills.
+    const FixPoint tick=FixPoint(computeAnnualTaxRevenue(palace,7,128))/kBudgetTicksPerYear;
+    FixPoint paid=0;
+    for (int n=0;n<kBudgetTicksPerYear;++n) paid+=tick;
+    CHECK(paid.toDouble() == Catch::Approx(104).margin(0.001));
 }

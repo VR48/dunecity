@@ -1,9 +1,13 @@
+#include <stdexcept>
+#include <players/AIDecisionLog.h>
 #include <dunecity/CitySimulation.h>
 #include <dunecity/CityConstants.h>
 #include <dunecity/CityEffects.h>
 
 #include <globals.h>
 #include <Game.h>
+#include <House.h>
+#include <players/Player.h>
 #include <Map.h>
 #include <Tile.h>
 #include <Command.h>
@@ -31,7 +35,11 @@ void CitySimulation::init(int width, int height) {
     trafficDensityMap_.init(width, height, 2);
     pollutionDensityMap_.init(width, height, 2);
     landValueMap_.init(width, height, 2);
+    parkTerrain_.init(width, height);
     crimeRateMap_.init(width, height, 2);
+    crimeUnrestProgress_.assign(kMaxCityHouses * ((width+15)/16) * ((height+15)/16), {});
+    policeCoverageMap_.init(width, height, 2);
+    crimeBeforePoliceMap_.init(width, height, 2);
     populationDensityMap_.init(width, height, 2);
     growthRateMap_.init(width, height, 2);
 
@@ -120,6 +128,7 @@ void CitySimulation::load(InputStream& stream) {
     for (int i = 0; i < NUM_MILESTONES; ++i) {
         milestones_[i] = stream.readBool();
     }
+    if (loadedVersion >= 9825) loadCrimeUnrest(stream,crimeUnrestProgress_,loadedVersion);
 }
 
 void CitySimulation::save(OutputStream& stream) const {
@@ -141,6 +150,7 @@ void CitySimulation::save(OutputStream& stream) const {
     for (int i = 0; i < NUM_MILESTONES; ++i) {
         stream.writeBool(milestones_[i]);
     }
+    saveCrimeUnrest(stream,crimeUnrestProgress_);
 }
 
 // --- HouseCityState self-serializing impls ---
@@ -178,6 +188,7 @@ void HouseCityState::save(OutputStream& stream) const {
 }
 
 void HouseCityState::load(InputStream& stream) {
+    taxBaseEighths = 0;
     resPop     = stream.readSint32();
     comPop     = stream.readSint32();
     indPop     = stream.readSint32();
@@ -222,7 +233,10 @@ void CitySimulation::advancePhase(uint32_t gameCycleCount) {
     const uint32_t budgetTick = gameCycleCount / kCyclesPerBudgetTick;
     if (budgetTick > lastBudgetTick_) {
         lastBudgetTick_ = budgetTick;
-        runDailyBudget();
+        {
+            AITelemetry::PerformanceScope perfScope("city.budget", gameCycleCount);
+            runDailyBudget();
+        }
     }
 
     // Day tick: run effects scans and zone growth on SEPARATE cycles to
@@ -230,12 +244,18 @@ void CitySimulation::advancePhase(uint32_t gameCycleCount) {
     // zone growth runs on the next game cycle via pendingGrowthPhase_.
     if (pendingGrowthPhase_) {
         pendingGrowthPhase_ = false;
-        runZoneGrowth();
+        {
+            AITelemetry::PerformanceScope perfScope("city.growth", gameCycleCount);
+            runZoneGrowth();
+        }
     }
 
     if (totalDays > lastProcessedDay_) {
         lastProcessedDay_ = totalDays;
-        runEffectsScans();
+        {
+            AITelemetry::PerformanceScope perfScope("city.effects", gameCycleCount);
+            runEffectsScans();
+        }
         pendingGrowthPhase_ = true;
 
         // Diagnostic snapshot every 8 city days (~1/6 city year). Logs
@@ -282,7 +302,7 @@ void CitySimulation::registerPowerSource(int /*x*/, int /*y*/, int /*power*/) {
     // Stub — power grid registration not yet implemented
 }
 
-void CitySimulation::executeCityCommand(int /*playerID*/, int commandID,
+void CitySimulation::executeCityCommand(int playerID, int commandID,
                                         uint32_t p0, uint32_t p1, uint32_t p2) {
     if(!currentGameMap) return;
 
@@ -298,6 +318,9 @@ void CitySimulation::executeCityCommand(int /*playerID*/, int commandID,
 
             switch(toolType) {
                 case CityTool_Road: {
+                    const auto* player = currentGame && playerID >= 0 && playerID <= 255
+                        ? currentGame->getPlayerByID(static_cast<Uint8>(playerID)) : nullptr;
+                    if (!player || !player->getHouse()) return;
                     auto placementState = makeCityTilePlacementState(
                         tile->isRock(),
                         tile->isMountain(),
@@ -309,6 +332,7 @@ void CitySimulation::executeCityCommand(int /*playerID*/, int commandID,
                         return;
                     }
 
+                    // The road overlay does not claim the underlying tile.
                     tile->setRoad(placementState.hasRoad);
                     tile->setDestroyedStructureTile(DestroyedStructure_None);
                     SDL_Log("CityTool: Road placed at (%d, %d)", x, y);
@@ -346,12 +370,14 @@ void CitySimulation::executeCityCommand(int /*playerID*/, int commandID,
         } break;
 
         case CMD_CITY_SET_BUDGET: {
-            // p0 = police funding %; p1/p2 reserved (no roads/fire in
-            // the DuneCity budget model). Routed through the command
+            // p0 = police funding %; p1/p2 reserved (roads have no upkeep). Routed through the command
             // system so multiplayer stays deterministic.
             auto* sim = currentGame ? currentGame->getCitySimulation() : nullptr;
-            if (sim) {
-                sim->setPoliceFundingPercent(static_cast<int>(p0));
+            const auto* issuer = currentGame && playerID >= 0 && playerID <= 255
+                ? currentGame->getPlayerByID(static_cast<Uint8>(playerID)) : nullptr;
+            // The command belongs to its issuer, never the observing/local house.
+            if (sim && issuer && issuer->getHouse()) {
+                sim->setPoliceFundingPercent(issuer->getHouse()->getHouseID(),int(std::min(p0,100u)));
             }
         } break;
 

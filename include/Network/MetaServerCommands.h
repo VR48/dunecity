@@ -28,6 +28,7 @@
 #define METASERVERCOMMAND_LIST      4
 #define METASERVERCOMMAND_EXIT      5
 #define METASERVERCOMMAND_GAMESTART 6
+#define METASERVERCOMMAND_GAMESTATS 7
 
 
 
@@ -169,6 +170,24 @@ public:
     std::string modName;
     std::string players;  // Format: "House1:Player1,House2:Player2,..."
     std::string version;
+};
+
+// A compact, opaque JSON summary.  This is intentionally distinct from the
+// local AI decision log: it is sent only once at match start and once at end.
+class MetaServerGameStats : public MetaServerCommand {
+public:
+    MetaServerGameStats(const std::string& phase, const std::string& matchID, const std::string& stats)
+     : MetaServerCommand(METASERVERCOMMAND_GAMESTATS), phase(phase), matchID(matchID), stats(stats) {
+    }
+
+    bool operator==(const MetaServerCommand& other) const override {
+        const auto* command = dynamic_cast<const MetaServerGameStats*>(&other);
+        return command != nullptr && phase == command->phase && matchID == command->matchID;
+    }
+
+    std::string phase;
+    std::string matchID;
+    std::string stats;
 };
 
 #endif // METASERVERCOMMANDS_H

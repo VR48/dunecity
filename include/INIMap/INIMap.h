@@ -24,7 +24,6 @@
 #include <DataTypes.h>
 
 #include <globals.h>
-#include <mod/ModManager.h>
 
 #include <misc/string_util.h>
 #include <misc/SDL2pp.h>
@@ -44,15 +43,12 @@ public:
 
     INIMap(GameType gameType, const std::string& mapname, const std::string& mapdata = "") : mapname(mapname) {
 
-        if(gameType == GameType::Campaign) {
+        // The single-mission picker uses Skirmish, but still loads campaign
+        // scenarios. Use the same resolver so loose Tornie scenario copies
+        // cannot replace the original houses outside the Tornie mod.
+        if(gameType == GameType::Campaign || gameType == GameType::Skirmish) {
             inifile = std::make_unique<INIFile>(pFileManager->openCampaignFile(this->mapname).get());
-        } else if(gameType == GameType::Skirmish) {
-            const bool tornieSkirmish = ModManager::instance().isInitialized()
-                && ModManager::instance().isTornieContentActive();
-            inifile = std::make_unique<INIFile>((tornieSkirmish
-                ? pFileManager->openCampaignFile(this->mapname)
-                : pFileManager->openFile(this->mapname)).get());
-        } else if(gameType == GameType::CustomGame || gameType == GameType::CustomMultiplayer) {
+        } else if(gameType == GameType::CustomGame || gameType == GameType::CustomMultiplayer || isCoopGameType(gameType)) {
             SDL_RWops* RWops = SDL_RWFromConstMem(mapdata.c_str(), mapdata.size());
             inifile = std::make_unique<INIFile>(RWops);
             SDL_RWclose(RWops);

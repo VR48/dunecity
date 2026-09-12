@@ -1333,11 +1333,15 @@
     },
     "residential_zones": {
       "tile_range": [
-        265,
-        409
+        261,
+        405
       ],
       "count": 144,
       "files": [
+        "tile_261.png",
+        "tile_262.png",
+        "tile_263.png",
+        "tile_264.png",
         "tile_265.png",
         "tile_266.png",
         "tile_267.png",
@@ -1477,38 +1481,38 @@
         "tile_401.png",
         "tile_402.png",
         "tile_403.png",
-        "tile_404.png",
-        "tile_405.png",
-        "tile_406.png",
-        "tile_407.png",
-        "tile_408.png"
+        "tile_404.png"
       ]
     },
     "hospital": {
       "tile_range": [
-        409,
-        418
+        405,
+        414
       ],
       "count": 9,
       "files": [
+        "tile_405.png",
+        "tile_406.png",
+        "tile_407.png",
+        "tile_408.png",
         "tile_409.png",
         "tile_410.png",
         "tile_411.png",
         "tile_412.png",
-        "tile_413.png",
-        "tile_414.png",
-        "tile_415.png",
-        "tile_416.png",
-        "tile_417.png"
+        "tile_413.png"
       ]
     },
     "church": {
       "tile_range": [
-        418,
+        414,
         423
       ],
-      "count": 5,
+      "count": 9,
       "files": [
+        "tile_414.png",
+        "tile_415.png",
+        "tile_416.png",
+        "tile_417.png",
         "tile_418.png",
         "tile_419.png",
         "tile_420.png",
@@ -1519,9 +1523,9 @@
     "commercial_empty": {
       "tile_range": [
         423,
-        436
+        432
       ],
-      "count": 13,
+      "count": 9,
       "files": [
         "tile_423.png",
         "tile_424.png",
@@ -1531,20 +1535,20 @@
         "tile_428.png",
         "tile_429.png",
         "tile_430.png",
-        "tile_431.png",
-        "tile_432.png",
-        "tile_433.png",
-        "tile_434.png",
-        "tile_435.png"
+        "tile_431.png"
       ]
     },
     "commercial_zones": {
       "tile_range": [
-        436,
+        432,
         612
       ],
-      "count": 176,
+      "count": 180,
       "files": [
+        "tile_432.png",
+        "tile_433.png",
+        "tile_434.png",
+        "tile_435.png",
         "tile_436.png",
         "tile_437.png",
         "tile_438.png",
@@ -1726,9 +1730,9 @@
     "industrial_empty": {
       "tile_range": [
         612,
-        625
+        621
       ],
-      "count": 13,
+      "count": 9,
       "files": [
         "tile_612.png",
         "tile_613.png",
@@ -1738,20 +1742,20 @@
         "tile_617.png",
         "tile_618.png",
         "tile_619.png",
-        "tile_620.png",
-        "tile_621.png",
-        "tile_622.png",
-        "tile_623.png",
-        "tile_624.png"
+        "tile_620.png"
       ]
     },
     "industrial_zones": {
       "tile_range": [
-        625,
+        621,
         693
       ],
-      "count": 68,
+      "count": 72,
       "files": [
+        "tile_621.png",
+        "tile_622.png",
+        "tile_623.png",
+        "tile_624.png",
         "tile_625.png",
         "tile_626.png",
         "tile_627.png",
@@ -1956,9 +1960,9 @@
     "stadium": {
       "tile_range": [
         779,
-        800
+        795
       ],
-      "count": 21,
+      "count": 16,
       "files": [
         "tile_779.png",
         "tile_780.png",
@@ -1975,21 +1979,21 @@
         "tile_791.png",
         "tile_792.png",
         "tile_793.png",
-        "tile_794.png",
-        "tile_795.png",
-        "tile_796.png",
-        "tile_797.png",
-        "tile_798.png",
-        "tile_799.png"
+        "tile_794.png"
       ]
     },
     "stadium_full": {
       "tile_range": [
-        800,
+        795,
         811
       ],
-      "count": 11,
+      "count": 16,
       "files": [
+        "tile_795.png",
+        "tile_796.png",
+        "tile_797.png",
+        "tile_798.png",
+        "tile_799.png",
         "tile_800.png",
         "tile_801.png",
         "tile_802.png",
@@ -2098,12 +2102,12 @@
         "tile_851.png"
       ]
     },
-    "explosion": {
+    "industrial_smoke_small": {
       "tile_range": [
         852,
-        868
+        860
       ],
-      "count": 16,
+      "count": 8,
       "files": [
         "tile_852.png",
         "tile_853.png",
@@ -2112,7 +2116,16 @@
         "tile_856.png",
         "tile_857.png",
         "tile_858.png",
-        "tile_859.png",
+        "tile_859.png"
+      ]
+    },
+    "explosion": {
+      "tile_range": [
+        860,
+        884
+      ],
+      "count": 24,
+      "files": [
         "tile_860.png",
         "tile_861.png",
         "tile_862.png",
@@ -2120,7 +2133,64 @@
         "tile_864.png",
         "tile_865.png",
         "tile_866.png",
-        "tile_867.png"
+        "tile_867.png",
+        "tile_868.png",
+        "tile_869.png",
+        "tile_870.png",
+        "tile_871.png",
+        "tile_872.png",
+        "tile_873.png",
+        "tile_874.png",
+        "tile_875.png",
+        "tile_876.png",
+        "tile_877.png",
+        "tile_878.png",
+        "tile_879.png",
+        "tile_880.png",
+        "tile_881.png",
+        "tile_882.png",
+        "tile_883.png"
+      ]
+    },
+    "industrial_smoke": {
+      "tile_range": [
+        884,
+        916
+      ],
+      "count": 32,
+      "files": [
+        "tile_884.png",
+        "tile_885.png",
+        "tile_886.png",
+        "tile_887.png",
+        "tile_888.png",
+        "tile_889.png",
+        "tile_890.png",
+        "tile_891.png",
+        "tile_892.png",
+        "tile_893.png",
+        "tile_894.png",
+        "tile_895.png",
+        "tile_896.png",
+        "tile_897.png",
+        "tile_898.png",
+        "tile_899.png",
+        "tile_900.png",
+        "tile_901.png",
+        "tile_902.png",
+        "tile_903.png",
+        "tile_904.png",
+        "tile_905.png",
+        "tile_906.png",
+        "tile_907.png",
+        "tile_908.png",
+        "tile_909.png",
+        "tile_910.png",
+        "tile_911.png",
+        "tile_912.png",
+        "tile_913.png",
+        "tile_914.png",
+        "tile_915.png"
       ]
     },
     "coal_smoke": {
@@ -2184,6 +2254,19 @@
         "tile_949.png",
         "tile_950.png",
         "tile_951.png"
+      ]
+    },
+    "nuclear_animation": {
+      "tile_range": [
+        952,
+        956
+      ],
+      "count": 4,
+      "files": [
+        "tile_952.png",
+        "tile_953.png",
+        "tile_954.png",
+        "tile_955.png"
       ]
     }
   },
@@ -2801,7 +2884,7 @@
     {
       "name": "stadium_full",
       "file": "stadium_full_4x4.png",
-      "base_tile": 800,
+      "base_tile": 795,
       "grid": "4x4"
     },
     {
@@ -2833,7 +2916,7 @@
     {
       "name": "stadium_full",
       "file": "stadium_full_2x2.png",
-      "source_base": 800,
+      "source_base": 795,
       "source_grid": "4x4"
     },
     {

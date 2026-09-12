@@ -211,3 +211,16 @@ TEST_CASE("CityStructures: Road placement marks tile as road",
     INFO("Structure_Road placement must call setRoad(true)");
     REQUIRE(roadBlock.find("setRoad(true)") != std::string::npos);
 }
+
+#include <structures/PlacementResult.h>
+TEST_CASE("Tile structure placement succeeds when it consumes the completed queue entry", "[city][build]") {
+    int queued=3,placedTiles=0;
+    auto queue=[&] { return queued; };
+    auto tilePlacement=[&] { --queued; ++placedTiles; return false; };
+    for(int i=0;i<3;++i) REQUIRE(PlacementResult::apply(queue,tilePlacement));
+    REQUIRE(queued==0); REQUIRE(placedTiles==3);
+    queued=1;
+    REQUIRE_FALSE(PlacementResult::apply(queue,[] { return false; }));
+    REQUIRE(queued==1); // Rejected placement must retain the pending item.
+    REQUIRE(PlacementResult::apply(queue,[&] { --queued; return true; }));
+}

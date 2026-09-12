@@ -1,3 +1,4 @@
+#include <players/AIDecisionLog.h>
 /*
  *  This file is part of Dune Legacy.
  */
@@ -13,13 +14,16 @@
 #include <dunecity/ZoneSimulation.h>
 #include <dunecity/CityConstants.h>
 #include <dunecity/CityEffects.h>
+#include <dunecity/CitySpritePolicy.h>
 #include <dunecity/ZonePower.h>
+#include <dunecity/ResidentialPopulation.h>
 #include <FileClasses/GFXManager.h>
 
 #include <GUI/ObjectInterfaces/ZoneStructureInterface.h>
 #include <GUI/ObjectInterfaces/DefaultObjectInterface.h>
 
 #include <ObjectBase.h>
+#include <ScreenBorder.h>
 
 ZoneStructure::ZoneStructure(House* newOwner, DuneCity::ZoneType zoneType)
  : StructureBase(newOwner), zoneType_(zoneType) {
@@ -28,6 +32,7 @@ ZoneStructure::ZoneStructure(House* newOwner, DuneCity::ZoneType zoneType)
 
 void ZoneStructure::setLocation(int xPos, int yPos) {
     StructureBase::setLocation(xPos, yPos);
+    residentialPopulation_ = 0;
 
     if (getLocation().isInvalid()) return;
 
@@ -53,10 +58,8 @@ void ZoneStructure::setLocation(int xPos, int yPos) {
 }
 
 void ZoneStructure::updateStructureSpecificStuff() {
-    // Map the current tile density + sampled land-value tier to the right
-    // cell in this zone's sprite atlas (columns = density, rows = value
-    // tier). Done every tick so the building art tracks growth and value
-    // changes without needing explicit notify hooks from runZoneGrowth.
+    // Stable site variants select among all original models. Industrial
+    // animation uses prebuilt phases and does not consume simulation randomness.
     if (!currentGameMap) return;
     const Coord pos = getLocation();
     if (pos.isInvalid()) return;
@@ -65,29 +68,33 @@ void ZoneStructure::updateStructureSpecificStuff() {
     if (!pTile) return;
 
     const int density = pTile->getCityZoneDensity();
+    skinDensity_ = density;
 
     // Civic overlay: hospital/church sprites replace the normal zone art.
     // These are single-cell (1×1) atlases loaded as ObjPic_Hospital/Church.
     if (civicOverlay_ != CivicOverlay::None && density > 0) {
-        const int civicPic = (civicOverlay_ == CivicOverlay::Hospital)
+        // Keep the cache-refresh ID in sync with the single-cell layout.
+        // StructureBase::blitToScreen reloads by graphicID on every draw.
+        graphicID = (civicOverlay_ == CivicOverlay::Hospital)
             ? ObjPic_Hospital : ObjPic_Church;
-        graphic = pGFXManager->getObjPic(civicPic, getOwner()->getHouseID());
+        graphic = pGFXManager->getObjPic(graphicID, getOwner()->getHouseID());
         numImagesX = 1;
         numImagesY = 1;
         firstAnimFrame = lastAnimFrame = curAnimFrame = 0;
         return;
     }
 
-    // Restore normal zone atlas if overlay was cleared.
-    if (graphic != pGFXManager->getObjPic(graphicID, getOwner()->getHouseID())) {
-        graphic = pGFXManager->getObjPic(graphicID, getOwner()->getHouseID());
-        // Restore atlas dimensions per zone type.
-        if (graphicID == ObjPic_ZoneResidential || graphicID == ObjPic_ZoneCommercial) {
-            numImagesX = 4; numImagesY = 4;
-        } else if (graphicID == ObjPic_ZoneIndustrial) {
-            numImagesX = 4; numImagesY = 2;
-        }
+    // Restore both ID and layout when the civic overlay clears or the lot
+    // becomes vacant. Pointer equality cannot identify an atlas layout.
+    switch (zoneType_) {
+        case DuneCity::ZoneType::Residential: graphicID = ObjPic_ZoneResidential; break;
+        case DuneCity::ZoneType::Commercial: graphicID = ObjPic_ZoneCommercial; break;
+        case DuneCity::ZoneType::Industrial: graphicID = ObjPic_ZoneIndustrial; break;
+        default: return;
     }
+    graphic = pGFXManager->getObjPic(graphicID, getOwner()->getHouseID());
+    numImagesX = DuneCity::CitySprites::zoneColumns(zoneType_);
+    numImagesY = DuneCity::CitySprites::zoneRows(zoneType_);
 
     int valueT = 0;
     if (auto* citySim = currentGame ? currentGame->getCitySimulation() : nullptr;
@@ -95,12 +102,28 @@ void ZoneStructure::updateStructureSpecificStuff() {
         const auto& lvMap = citySim->getLandValueMap();
         const int bs = std::max(1, lvMap.getBlockSize());
         const int landValue = lvMap.get(pos.x / bs, pos.y / bs);
-        valueT = DuneCity::getZoneValueTier(landValue, numImagesY);
+        valueT = DuneCity::getZoneValueTier(landValue, zoneType_ == DuneCity::ZoneType::Industrial ? 2 : 4);
     }
+    skinValueTier_ = valueT;
 
-    const int frame = DuneCity::computeZoneSpriteFrame(
-        density, valueT, numImagesX, numImagesY);
+    const int frame = DuneCity::CitySprites::zoneFrame(
+        zoneType_, density, valueT, pos.x, pos.y,
+        currentGame->getGameCycleCount(), owner->hasPower(), getResidentialPopulation());
     firstAnimFrame = lastAnimFrame = curAnimFrame = frame;
+}
+
+void ZoneStructure::blitToScreen() {
+    StructureBase::blitToScreen();
+    if(fogged || civicOverlay_ != CivicOverlay::None || owner == nullptr || currentGame == nullptr) {
+        return;
+    }
+    const int anchorX = screenborder->world2screenX(
+        lround(realX) + structureSize.x * TILESIZE / 2);
+    const int anchorY = screenborder->world2screenY(
+        lround(realY) + structureSize.y * TILESIZE);
+    pGFXManager->drawDuneCityZone(
+        itemID, owner->getHouseID(), currentZoomlevel,
+        skinDensity_, skinValueTier_, GFXManager::DuneCityZoneActivity::Idle, 0, anchorX, anchorY);
 }
 
 void ZoneStructure::refreshZonePowerDraw() {
@@ -116,6 +139,8 @@ void ZoneStructure::refreshZonePowerDraw() {
     }
 
     int target = DuneCity::getZonePower(itemID, density);
+    if (zoneType_ == DuneCity::ZoneType::Residential && getResidentialPopulation() <= 8)
+        target = (DuneCity::getZonePower(itemID,1)*getResidentialPopulation()+15)/16;
     int delta  = target - registeredZonePower_;
     if (delta != 0 && owner) {
         owner->adjustPowerRequirement(delta);
@@ -131,6 +156,29 @@ ZoneStructure::ZoneStructure(InputStream& stream)
     // the saved zone never re-renders its building sprite after reload.
     structureSize = Coord(2, 2);
     zoneType_ = static_cast<DuneCity::ZoneType>(stream.readUint8());
+    residentialPopulation_ = DuneCity::ResidentialPopulation::read(stream,
+        currentGame ? currentGame->getLoadedSavegameVersion() : SAVEGAMEVERSION);
+}
+
+int ZoneStructure::getResidentialPopulation() const {
+    if (zoneType_ != DuneCity::ZoneType::Residential) return 0;
+    if (residentialPopulation_ != DuneCity::ResidentialPopulation::legacy)
+        return residentialPopulation_;
+    const auto pos = getLocation();
+    const auto* tile = currentGameMap && currentGameMap->tileExists(pos.x,pos.y)
+        ? currentGameMap->getTile(pos.x,pos.y) : nullptr;
+    return DuneCity::ResidentialPopulation::fromDensity(tile ? tile->getCityZoneDensity() : 0);
+}
+
+void ZoneStructure::setResidentialPopulation(int population) {
+    if (zoneType_ != DuneCity::ZoneType::Residential) return;
+    residentialPopulation_ = DuneCity::ResidentialPopulation::normalize(population);
+    const auto pos = getLocation();
+    if (currentGameMap && pos.isValid())
+        for (int dy=0;dy<structureSize.y;++dy) for (int dx=0;dx<structureSize.x;++dx)
+            if (auto* tile = currentGameMap->getTile(pos.x+dx,pos.y+dy))
+                tile->setCityZoneDensity(DuneCity::ResidentialPopulation::density(residentialPopulation_));
+    refreshZonePowerDraw();
 }
 
 ZoneStructure::~ZoneStructure() = default;
@@ -145,6 +193,7 @@ ObjectInterface* ZoneStructure::getInterfaceContainer() {
 void ZoneStructure::save(OutputStream& stream) const {
     StructureBase::save(stream);
     stream.writeUint8(static_cast<uint8_t>(zoneType_));
+    DuneCity::ResidentialPopulation::write(stream,getResidentialPopulation());
 }
 
 bool ZoneStructure::canBePlacedAt(int x, int y, bool torch) const {
@@ -156,6 +205,7 @@ bool ZoneStructure::canBePlacedAt(int x, int y, bool torch) const {
             }
         }
     }
+    int anchoredTiles = 0;
     for (int y1 = 0; y1 < structureSize.y; y1++) {
         for (int x1 = 0; x1 < structureSize.x; x1++) {
             Tile* pTile = currentGameMap->getTile(x + x1, y + y1);
@@ -163,10 +213,17 @@ bool ZoneStructure::canBePlacedAt(int x, int y, bool torch) const {
                 return false;
             }
             auto terrain = pTile->getType();
-            if (terrain != Terrain_Rock && terrain != Terrain_Slab) {
+            if (!DuneCity::isCityZoneTerrain(terrain)) {
                 return false;
             }
+            if (DuneCity::isCityBuildableTerrain(terrain)) {
+                anchoredTiles++;
+            }
         }
+    }
+    // A lot may reach onto sand, but at least one tile must sit on rock.
+    if (anchoredTiles == 0) {
+        return false;
     }
 
     // Trigger milestone notification for first zone built
@@ -176,7 +233,7 @@ bool ZoneStructure::canBePlacedAt(int x, int y, bool torch) const {
     return true;
 }
 
-void ZoneStructure::destroy() {
+void ZoneStructure::clearZoneState() {
     if (registeredZonePower_ != 0 && owner) {
         owner->adjustPowerRequirement(-registeredZonePower_);
         registeredZonePower_ = 0;
@@ -195,7 +252,31 @@ void ZoneStructure::destroy() {
             }
         }
     }
+}
+
+void ZoneStructure::destroy() {
+    clearZoneState();
     StructureBase::destroy();
+}
+
+void ZoneStructure::demolish() {
+    demolishedByOwner_ = true;
+    const Coord pos = getLocation();
+    const auto* sim = currentGame->getCitySimulation();
+    AITelemetry::log().write(currentGame->getGameCycleCount(), owner->getHouseID(), -1,
+        "zone_demolished", AITelemetry::Record().set("object", objectID).set("item", itemID)
+            .set("x",pos.x).set("y",pos.y).set("refund",0)
+            .set("density",currentGameMap->getTile(pos.x,pos.y)->getCityZoneDensity())
+            .set("pollution",sim ? sim->getPollutionDensityMap().worldGet(pos.x,pos.y) : 0)
+            .set("land_value",sim ? sim->getLandValueMap().worldGet(pos.x,pos.y) : 0));
+    clearZoneState();
+    for (int dy=0; dy<structureSize.y; ++dy) for (int dx=0; dx<structureSize.x; ++dx) {
+        if (auto* tile=currentGameMap->getTile(pos.x+dx,pos.y+dy))
+            tile->setDestroyedStructureTile(DestroyedStructure_None);
+    }
+    // Normal destructor unregisters ownership, pathing and selection. Roads and
+    // concrete remain; demolition does not spawn soldiers or combat explosions.
+    delete this;
 }
 
 // --- ResidentialZone ---
@@ -217,12 +298,9 @@ void ResidentialZone::init() {
 
     graphicID = ObjPic_ZoneResidential;
     graphic = pGFXManager->getObjPic(graphicID, getOwner()->getHouseID());
-    // Atlas layout: columns = density (0..3), rows = value tier (0..3).
-    // Must match the (numDensity × numValue) layout built by GFXManager
-    // so blitToScreen samples a single 2x2 cell instead of squashing the
-    // entire atlas into one zone footprint.
-    numImagesX = 4;
-    numImagesY = 4;
+    // Layout must match the prebuilt atlas and GFXManager metadata.
+    numImagesX = DuneCity::CitySprites::residentialColumns;
+    numImagesY = DuneCity::CitySprites::residentialRows;
     firstAnimFrame = lastAnimFrame = curAnimFrame = 0;
 }
 
@@ -245,7 +323,7 @@ void CommercialZone::init() {
 
     graphicID = ObjPic_ZoneCommercial;
     graphic = pGFXManager->getObjPic(graphicID, getOwner()->getHouseID());
-    numImagesX = 4;  // density columns 0..3
+    numImagesX = DuneCity::CitySprites::commercialColumns;
     numImagesY = 4;  // value-tier rows 0..3
     firstAnimFrame = lastAnimFrame = curAnimFrame = 0;
 }
@@ -269,7 +347,7 @@ void IndustrialZone::init() {
 
     graphicID = ObjPic_ZoneIndustrial;
     graphic = pGFXManager->getObjPic(graphicID, getOwner()->getHouseID());
-    numImagesX = 4;  // density columns 0..3
-    numImagesY = 2;  // value-tier rows 0..1 (Industrial only ships 2 tiers)
+    numImagesX = DuneCity::CitySprites::industrialColumns;
+    numImagesY = DuneCity::CitySprites::industrialRows;
     firstAnimFrame = lastAnimFrame = curAnimFrame = 0;
 }

@@ -180,7 +180,7 @@ void InfantryBase::checkPos() {
             
             // Check if unit should be destroyed by the bloom
             GameType gameType = currentGame->getGameInitSettings().getGameType();
-            bool isImmortal = (gameType != GameType::CustomMultiplayer 
+            bool isImmortal = (!isNetworkGameType(gameType)
                               && gameType != GameType::LoadMultiplayer
                               && currentGame->getGameInitSettings().getGameOptions().immortalHumanPlayer
                               && getOwner() == pLocalHouse);
@@ -248,7 +248,7 @@ void InfantryBase::checkPos() {
 
                     // remove all other infantry units capturing this building
                     GameType gameType = currentGame->getGameInitSettings().getGameType();
-                    bool immortalityEnabled = (gameType != GameType::CustomMultiplayer 
+                    bool immortalityEnabled = (!isNetworkGameType(gameType)
                                               && gameType != GameType::LoadMultiplayer
                                               && currentGame->getGameInitSettings().getGameOptions().immortalHumanPlayer);
                     
@@ -330,7 +330,7 @@ void InfantryBase::checkPos() {
                 
                 // Check if engineer/infantry should be destroyed after capture
                 GameType gameType = currentGame->getGameInitSettings().getGameType();
-                bool isImmortal = (gameType != GameType::CustomMultiplayer 
+                bool isImmortal = (!isNetworkGameType(gameType)
                                   && gameType != GameType::LoadMultiplayer
                                   && currentGame->getGameInitSettings().getGameOptions().immortalHumanPlayer
                                   && getOwner() == pLocalHouse);
@@ -354,7 +354,7 @@ void InfantryBase::checkPos() {
             if(blockDistance(location, closestPoint) <= 0.5_fix) {
                 // Check if infantry should be destroyed (saboteur case)
                 GameType gameType = currentGame->getGameInitSettings().getGameType();
-                bool isImmortal = (gameType != GameType::CustomMultiplayer 
+                bool isImmortal = (!isNetworkGameType(gameType)
                                   && gameType != GameType::LoadMultiplayer
                                   && currentGame->getGameInitSettings().getGameOptions().immortalHumanPlayer
                                   && getOwner() == pLocalHouse);

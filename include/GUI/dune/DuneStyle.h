@@ -19,11 +19,12 @@
 #define DUNESTYLE_H
 
 #include <GUI/GUIStyle.h>
+#include <misc/MenuPalette.h>
 
 class DuneStyle : public GUIStyle {
 public:
     /// default constructor
-    DuneStyle() : GUIStyle() {
+    explicit DuneStyle(int palette = 0) : GUIStyle(), textPalette(menuPalette(palette)) {
     }
 
     /// destructor
@@ -262,6 +263,7 @@ public:
     static const Uint32 buttonEdgeTopLeftColor = COLOR_RGB(255,190,76);
 
 private:
+    const MenuPalette textPalette;
 
     /**
         Creates a surface with text on it

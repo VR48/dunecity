@@ -33,7 +33,14 @@ int getPortFromURL(const std::string& url);
 
 std::string percentEncode(const std::string & s);
 
-std::string loadFromHttp(const std::string& url, const std::map<std::string, std::string>& parameters = std::map<std::string, std::string>());
+std::string loadFromHttp(const std::string& url,
+                         const std::map<std::string, std::string>& parameters = std::map<std::string, std::string>(),
+                         long timeoutSeconds = 30);
+
+/// Submit form parameters without putting a bounded telemetry payload in the
+/// request line. Web builds retain the GET fallback used by their HTTP shim.
+std::string postToHttp(const std::string& url, const std::map<std::string, std::string>& parameters,
+                       long timeoutSeconds = 30);
 
 std::string loadFromHttp(const std::string& domain, const std::string& filepath, unsigned short port = PORT_HTTP);
 

@@ -89,6 +89,14 @@ void Carryall::save(OutputStream& stream) const
 }
 
 bool Carryall::update() {
+    // Carryalls do not keep a house alive. Remove survivors on their own
+    // update instead of mutating the unit list recursively from House::lose.
+    // The normal destruction path releases bookings and disposes of cargo.
+    if (owner && !owner->isAlive()) {
+        destroy();
+        return false;
+    }
+
     const auto& maxSpeed = currentGame->objectData.data[itemID][originalHouseID].maxspeed;
 
     FixPoint dist = -1;
@@ -319,7 +327,7 @@ void Carryall::destroy()
 
     // destroy cargo (unless immortal)
     GameType gameType = currentGame->getGameInitSettings().getGameType();
-    bool immortalityEnabled = (gameType != GameType::CustomMultiplayer 
+    bool immortalityEnabled = (!isNetworkGameType(gameType)
                               && gameType != GameType::LoadMultiplayer
                               && currentGame->getGameInitSettings().getGameOptions().immortalHumanPlayer);
     
@@ -482,7 +490,7 @@ void Carryall::pickupTarget()
             // unit died just in the moment we tried to pick it up => carryall also crushes
             // Check if carryall itself is immortal
             GameType gameType = currentGame->getGameInitSettings().getGameType();
-            bool isImmortal = (gameType != GameType::CustomMultiplayer 
+            bool isImmortal = (!isNetworkGameType(gameType)
                               && gameType != GameType::LoadMultiplayer
                               && currentGame->getGameInitSettings().getGameOptions().immortalHumanPlayer
                               && getOwner() == pLocalHouse);

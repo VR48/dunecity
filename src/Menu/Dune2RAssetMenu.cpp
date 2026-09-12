@@ -75,24 +75,19 @@ Dune2RAssetMenu::Dune2RAssetMenu() {
 
     downloadButton.setText(_("DOWNLOAD"));
     downloadButton.setOnClick(std::bind(&Dune2RAssetMenu::onDownload, this));
+    refreshButton.setText(_("REFRESH"));
+    refreshButton.setOnClick(std::bind(&Dune2RAssetMenu::onRefreshCatalog, this));
     backButton.setText(_("BACK"));
     backButton.setOnClick(std::bind(&Dune2RAssetMenu::onBack, this));
-    windowWidget.addWidget(&downloadButton, Point(originX + 155, originY + panelHeight - 48),
-                           Point(125, 30));
-    windowWidget.addWidget(&backButton, Point(originX + 300, originY + panelHeight - 48),
-                           Point(125, 30));
+    const int buttonWidth = (panelWidth - 88) / 3;
+    windowWidget.addWidget(&refreshButton, Point(originX + 34, originY + panelHeight - 48), Point(buttonWidth, 30));
+    windowWidget.addWidget(&downloadButton, Point(originX + 44 + buttonWidth, originY + panelHeight - 48), Point(buttonWidth, 30));
+    windowWidget.addWidget(&backButton, Point(originX + 54 + 2 * buttonWidth, originY + panelHeight - 48), Point(buttonWidth, 30));
 
     try {
         assetManager = std::make_unique<Dune2RAssetManager>(
             ModManager::instance().getModPath("Dune2R"));
-        const auto& packs = assetManager->getPacks();
-        if(!packs.empty()) {
-            packDropDown.addEntry(_("Remastered Assets: ALL"), 0);
-            for(size_t i = 0; i < packs.size(); ++i) {
-                packDropDown.addEntry(packs[i].displayName, static_cast<int>(i + 1));
-            }
-            packDropDown.setSelectedItem(0);
-        }
+        populatePacks();
     } catch(const std::exception& error) {
         statusLabel.setText(std::string(_("Asset catalog error: ")) + error.what());
     }
@@ -100,9 +95,35 @@ Dune2RAssetMenu::Dune2RAssetMenu() {
     const bool ready = assetManager != nullptr && !assetManager->getPacks().empty();
     packDropDown.setEnabled(ready);
     downloadButton.setEnabled(ready);
+    refreshButton.setEnabled(assetManager != nullptr);
     if(ready) {
         refreshSelectionStatus();
     }
+}
+
+void Dune2RAssetMenu::populatePacks() {
+    packDropDown.clearAllEntries();
+    const auto& packs = assetManager->getPacks();
+    if(packs.empty()) return;
+    packDropDown.addEntry(_("Remastered Assets: ALL"), 0);
+    for(size_t i = 0; i < packs.size(); ++i) {
+        packDropDown.addEntry(packs[i].displayName, static_cast<int>(i + 1));
+    }
+    packDropDown.setSelectedItem(0);
+}
+
+void Dune2RAssetMenu::onRefreshCatalog() {
+    if(assetManager == nullptr || downloading) return;
+    downloading = true;
+    refreshingCatalog = true;
+    packDropDown.setEnabled(false);
+    downloadButton.setEnabled(false);
+    refreshButton.setEnabled(false);
+    backButton.setEnabled(false);
+    disableQuiting(true);
+    statusLabel.setText(_("Checking the published asset catalog..."));
+    progressBar.setText(_("Checking"));
+    installTask = std::async(std::launch::async, [this] { return assetManager->refreshCatalog(); });
 }
 
 Dune2RAssetMenu::~Dune2RAssetMenu() {
@@ -170,6 +191,7 @@ void Dune2RAssetMenu::onDownload() {
     totalBytes = 0;
     packDropDown.setEnabled(false);
     downloadButton.setEnabled(false);
+    refreshButton.setEnabled(false);
     backButton.setEnabled(false);
     disableQuiting(true);
     statusLabel.setText(_("Connecting to the Dune2R asset repository..."));
@@ -192,6 +214,22 @@ void Dune2RAssetMenu::update() {
     if(!downloading) {
         return;
     }
+    if(refreshingCatalog) {
+        if(installTask.wait_for(std::chrono::seconds(0)) != std::future_status::ready) return;
+        const auto result = installTask.get();
+        refreshingCatalog = false;
+        downloading = false;
+        if(result.success) populatePacks();
+        const bool ready = !assetManager->getPacks().empty();
+        packDropDown.setEnabled(ready);
+        downloadButton.setEnabled(ready);
+        refreshButton.setEnabled(true);
+        backButton.setEnabled(true);
+        disableQuiting(false);
+        statusLabel.setText(result.message);
+        progressBar.setText(result.success ? _("Catalog ready") : _("Offline catalog"));
+        return;
+    }
     const uint64_t completed = completedBytes.load();
     const uint64_t total = totalBytes.load();
     progressBar.setProgress(total == 0 ? 0.0 : 100.0 * completed / total);
@@ -211,6 +249,7 @@ void Dune2RAssetMenu::update() {
     downloading = false;
     packDropDown.setEnabled(true);
     downloadButton.setEnabled(true);
+    refreshButton.setEnabled(true);
     backButton.setEnabled(true);
     disableQuiting(false);
     statusLabel.setText((result.success ? std::string(_("OK: ")) : std::string(_("ERROR: ")))

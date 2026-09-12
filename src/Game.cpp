@@ -27,6 +27,7 @@ std::mutex Game::performanceLogMutex;
 
 #include <globals.h>
 #include <config.h>
+#include <players/AIDecisionLog.h>
 #include <main.h>
 
 #include <FileClasses/FileManager.h>
@@ -41,6 +42,7 @@ std::mutex Game::performanceLogMutex;
 #include <misc/IMemoryStream.h>
 #include <misc/FileSystem.h>
 #include <misc/fnkdat.h>
+#include <misc/WebRuntime.h>
 #include <misc/draw_util.h>
 #include <misc/md5.h>
 #include <misc/exceptions.h>
@@ -52,8 +54,10 @@ std::mutex Game::performanceLogMutex;
 #include <CursorManager.h>
 
 #include <players/HumanPlayer.h>
+#include <players/QuantBot.h>
 
 #include <Network/NetworkManager.h>
+#include <Network/MetaServerClient.h>
 #include <mod/ModManager.h>
 
 #include <GUI/dune/InGameMenu.h>
@@ -74,6 +78,10 @@ std::mutex Game::performanceLogMutex;
 #include <sand.h>
 
 #include <structures/StructureBase.h>
+#include <structures/WindTrap.h>
+#include <structures/AdvancedWindTrap.h>
+#include <structures/NuclearPlant.h>
+#include <structures/Scoutpost.h>
 #include <structures/ConstructionYard.h>
 #include <units/UnitBase.h>
 #include <structures/BuilderBase.h>
@@ -94,6 +102,66 @@ std::mutex Game::performanceLogMutex;
 namespace {
 
 constexpr Uint32 SAVE_SETUP_COLOR_MARKER = 0x53434F4C; // "SCOL"
+
+constexpr std::array<Uint32, 8> analyticsMixItems = {
+    Unit_Tank, Unit_SiegeTank, Unit_Launcher, 9999, // QBot's special-unit group
+    Unit_Ornithopter, Unit_Trike, Unit_RaiderTrike, Unit_Quad
+};
+
+std::string analyticsGameType(GameType type) {
+    switch (type) {
+        case GameType::Campaign: return "campaign";
+        case GameType::Skirmish: return "skirmish";
+        case GameType::CustomGame: return "single_custom";
+        case GameType::CustomMultiplayer: return "multiplayer";
+        case GameType::LoadSavegame:
+        case GameType::LoadMultiplayer: return "load";
+        default: return "unknown";
+    }
+}
+
+std::string analyticsArray(const std::vector<std::string>& rows) {
+    std::string output = "[";
+    for (size_t i = 0; i < rows.size(); ++i) {
+        if (i != 0) output += ',';
+        output += rows[i];
+    }
+    return output + ']';
+}
+
+std::string analyticsAIType(const std::string& playerClass) {
+    if (playerClass.rfind("qBot", 0) == 0) return "qbot";
+    if (playerClass.rfind("mentat", 0) == 0) return "mentat";
+    if (playerClass.rfind("AIPlayer", 0) == 0) return "classic";
+    if (playerClass == "CampaignAIPlayer") return "campaign";
+    if (playerClass == "SmartBot") return "smartbot";
+    return "unknown";
+}
+
+std::string analyticsAIDifficulty(const std::string& playerClass) {
+    static constexpr std::array<std::pair<const char*, const char*>, 5> suffixes = {{
+        {"Defend", "defend"}, {"Easy", "easy"}, {"Medium", "medium"},
+        {"Hard", "hard"}, {"Brutal", "brutal"},
+    }};
+    for (const auto& [suffix, name] : suffixes) {
+        const size_t suffixLength = std::char_traits<char>::length(suffix);
+        if (playerClass.size() >= suffixLength
+            && playerClass.compare(playerClass.size() - suffixLength, suffixLength, suffix) == 0) {
+            return name;
+        }
+    }
+    if (playerClass == "SmartBot") return "normal";
+    return {};
+}
+
+std::string analyticsMatchID(const GameInitSettings& settings) {
+    const auto micros = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    std::ostringstream id;
+    id << "m1-" << std::hex << static_cast<uint64_t>(micros) << '-'
+       << settings.getRandomSeed() << '-' << SDL_GetPerformanceCounter();
+    return id.str();
+}
 
 DuneCity::CityTilePlacementState makeCityTilePlacementState(const Tile& tile) {
     return DuneCity::makeCityTilePlacementState(
@@ -273,6 +341,27 @@ void Game::queuePathRequest(Uint32 objectId) {
     The destructor frees up all the used memory.
 */
 Game::~Game() {
+    finishMatchAnalytics();
+    if (AITelemetry::log().enabled()) {
+        AITelemetry::Record roster;
+        for (int h = 0; h < NUM_HOUSES; ++h) if (house[h]) {
+            for (const auto& player : house[h]->getPlayerList()) player->finishTelemetry();
+            AITelemetry::Record actual, built, lost;
+            for (int item = ItemID_FirstID; item <= ItemID_LastID; ++item) {
+                if (house[h]->getNumItems(item)) actual.set(std::to_string(item), house[h]->getNumItems(item));
+                if (house[h]->getNumBuiltItems(item)) built.set(std::to_string(item), house[h]->getNumBuiltItems(item));
+                if (house[h]->getNumLostItems(item)) lost.set(std::to_string(item), house[h]->getNumLostItems(item));
+            }
+            roster.set(std::to_string(h), AITelemetry::Record().set("name", getHouseNameByNumber(static_cast<HOUSETYPE>(h)))
+                .set("team", house[h]->getTeamID()).set("alive", house[h]->isAlive()).set("credits", house[h]->getCredits())
+                .set("actual", actual).set("built", built).set("lost", lost)
+                .set("economy_totals", AITelemetry::log().economyTotals(h)).set("combat_rewards", house[h]->combatRewardStats(objectData)));
+        }
+        AITelemetry::log().write(gameCycleCount, -1, -1, "game_summary", AITelemetry::Record()
+            .set("local_result", finished ? (won ? "victory" : "defeat") : "ended_without_result")
+            .set("local_house", pLocalHouse ? pLocalHouse->getHouseID() : -1).set("houses", roster));
+    }
+    AITelemetry::log().stop();
     // Close performance log
     closePerformanceLog();
     
@@ -284,6 +373,8 @@ Game::~Game() {
         pNetworkManager->setOnReceiveCommandList(std::function<void (const std::string&, const CommandList&)>());
         pNetworkManager->setOnReceiveSelectionList(std::function<void (const std::string&, const std::set<Uint32>&, int)>());
         pNetworkManager->setOnPeerDisconnected(std::function<void (const std::string&, bool, int)>());
+        pNetworkManager->setOnReceiveClientStats({});
+        pNetworkManager->setOnReceiveSetPathBudget({});
     }
 
     for(StructureBase* pStructure : structureList) {
@@ -360,6 +451,7 @@ void Game::closePerformanceLog() {
 }
 
 void Game::logPerformance(const char* format, ...) {
+    AITelemetry::PerformanceScope perfScope("telemetry.text_flush",gameCycleCount);
     std::lock_guard<std::mutex> lock(performanceLogMutex);
     
     if(!performanceLogFile.is_open()) {
@@ -426,6 +518,7 @@ void Game::initGame(const GameInitSettings& newGameInitSettings) {
             }
         } break;
 
+        case GameType::LoadCoop:
         case GameType::LoadMultiplayer: {
             IMemoryStream memStream(gameInitSettings.getFiledata().c_str(), gameInitSettings.getFiledata().size());
 
@@ -434,6 +527,8 @@ void Game::initGame(const GameInitSettings& newGameInitSettings) {
             }
         } break;
 
+        case GameType::CampaignCoop:
+        case GameType::SkirmishCoop:
         case GameType::Campaign:
         case GameType::Skirmish:
         case GameType::CustomGame:
@@ -450,11 +545,15 @@ void Game::initGame(const GameInitSettings& newGameInitSettings) {
             // mod's ObjectData.ini says.
             if (!citySimEnabled_) {
                 for (int h = 0; h < NUM_HOUSES; h++) {
-                    objectData.data[Structure_ZoneResidential][h].enabled = false;
-                    objectData.data[Structure_ZoneCommercial][h].enabled  = false;
-                    objectData.data[Structure_ZoneIndustrial][h].enabled  = false;
+                    for (int item = Structure_FirstID; item <= Structure_LastID; ++item)
+                        if (DuneCity::isCityOnlyStructure(item)) objectData.data[item][h].enabled = false;
                 }
             }
+
+            // Apply the city reactor balance only to a city match. ObjectData
+            // also loads non-city mods and must preserve their configured stats.
+            if (citySimEnabled_) for (int h = 0; h < NUM_HOUSES; ++h)
+                objectData.data[Structure_NuclearPlant][h].hitpoints = 750;
 
             objectData.logSettings();
 
@@ -476,7 +575,7 @@ void Game::initGame(const GameInitSettings& newGameInitSettings) {
                 citySimulation_.reset();
             }
 
-            if(bReplay == false && gameInitSettings.getGameType() != GameType::CustomGame && gameInitSettings.getGameType() != GameType::CustomMultiplayer) {
+            if(bReplay == false && gameInitSettings.getGameType() != GameType::CustomGame && !isNetworkGameType(gameInitSettings.getGameType())) {
                 /* do briefing */
                 SDL_Log("Briefing...");
                 BriefingMenu(gameInitSettings.getHouseID(), gameInitSettings.getMission(),BRIEFING).showMenu();
@@ -486,6 +585,254 @@ void Game::initGame(const GameInitSettings& newGameInitSettings) {
         default: {
         } break;
     }
+    AITelemetry::startGame(AITelemetry::Record().set("version", VERSION)
+        .set("mod", ModManager::instance().getActiveModName())
+        .set("source", newGameInitSettings.getFilename()).set("seed", gameInitSettings.getRandomSeed())
+        .set("entry_type", static_cast<int>(newGameInitSettings.getGameType()))
+        .set("game_type", static_cast<int>(gameType)).set("tech", techLevel)
+        .set("city_sim", isCitySimEnabled()).set("cycles_per_30_seconds", MILLI2CYCLES(30000))
+        .set("start_cycle", gameCycleCount)
+        .set("options", AITelemetry::Record()
+            .set("concrete_required", gameInitSettings.getGameOptions().concreteRequired)
+            .set("structures_degrade_on_concrete", gameInitSettings.getGameOptions().structuresDegradeOnConcrete)
+            .set("fog_of_war", gameInitSettings.getGameOptions().fogOfWar)
+            .set("immortal_human_player", gameInitSettings.getGameOptions().immortalHumanPlayer)
+            .set("harvester_limit_override", gameInitSettings.getGameOptions().maximumNumberOfHarvestersOverride))
+        .set("map_width", currentGameMap ? currentGameMap->getSizeX() : 0)
+        .set("map_height", currentGameMap ? currentGameMap->getSizeY() : 0));
+    startMatchAnalytics();
+}
+
+void Game::startMatchAnalytics() {
+    if (bReplay || gameInitSettings.getGameType() == GameType::LoadSavegame
+        || gameInitSettings.getGameType() == GameType::LoadMultiplayer) {
+        return;
+    }
+    // A multiplayer game is reported by its host only. The reporter is kept
+    // separate from lobby announcement state, which is deliberately stopped
+    // once the countdown ends.
+    if (isNetworkGameType(gameInitSettings.getGameType())
+        && (!pNetworkManager || !pNetworkManager->isServer())) {
+        return;
+    }
+    matchAnalyticsID = analyticsMatchID(gameInitSettings);
+#ifdef __EMSCRIPTEN__
+    // Browser builds have no SDL worker threads. Submit asynchronously through
+    // the same-origin web shell instead of creating a native MetaServerClient.
+    WebRuntime::reportMatchStats("start", matchAnalyticsID, buildMatchAnalyticsPayload(false));
+    matchAnalyticsStarted = true;
+#else
+    try {
+        matchAnalyticsClient = std::make_unique<MetaServerClient>(settings.network.metaServer);
+        matchAnalyticsClient->reportGameStats("start", matchAnalyticsID, buildMatchAnalyticsPayload(false));
+        matchAnalyticsStarted = true;
+    } catch (const std::exception& exception) {
+        SDL_Log("Game: Match analytics reporter unavailable: %s", exception.what());
+        matchAnalyticsClient.reset();
+    }
+#endif
+}
+
+void Game::finishMatchAnalytics() {
+#ifdef __EMSCRIPTEN__
+    if (!matchAnalyticsStarted) return;
+    WebRuntime::reportMatchStats("end", matchAnalyticsID, buildMatchAnalyticsPayload(true));
+    matchAnalyticsStarted = false;
+#else
+    if (!matchAnalyticsStarted || !matchAnalyticsClient) return;
+    matchAnalyticsClient->reportGameStats("end", matchAnalyticsID, buildMatchAnalyticsPayload(true));
+    // The client's worker drains the queued end event before joining. A failed
+    // request is caught inside MetaServerClient and can never affect teardown.
+    matchAnalyticsClient.reset();
+    matchAnalyticsStarted = false;
+#endif
+}
+
+std::string Game::buildMatchAnalyticsPayload(bool finishedMatch) const {
+    int totalSpice = 0;
+    int totalUnitsDestroyed = 0;
+    int totalStructuresDestroyed = 0;
+    int winnerHouse = -1;
+    int winningTeam = -1;
+    // `won` only describes the local player. Derive the winner from the game
+    // state so a host that lost still records the actual winning team.
+    if (finishedMatch) {
+        std::set<int> survivingTeams;
+        for (const auto& currentHouse : house) {
+            if (currentHouse && currentHouse->getTeamID() != 0 && currentHouse->isAlive()) {
+                survivingTeams.insert(currentHouse->getTeamID());
+            }
+        }
+        if (survivingTeams.size() == 1) winningTeam = *survivingTeams.begin();
+        else if (pLocalHouse && won) winningTeam = pLocalHouse->getTeamID();
+    }
+    std::vector<std::string> playerRows;
+    int playerSlot = 0;
+
+    for (int h = 0; h < NUM_HOUSES; ++h) {
+        const House* currentHouse = house[h].get();
+        if (!currentHouse) continue;
+        const auto& players = currentHouse->getPlayerList();
+        if (players.empty()) continue;
+        totalSpice += currentHouse->getHarvestedSpice().lround();
+        totalUnitsDestroyed += currentHouse->getNumDestroyedUnits();
+        totalStructuresDestroyed += currentHouse->getNumDestroyedStructures();
+        if (finishedMatch && winningTeam >= 0 && currentHouse->getTeamID() == winningTeam && winnerHouse < 0)
+            winnerHouse = currentHouse->getHouseID();
+
+        int unitsLost = 0;
+        int structuresLost = 0;
+        for (int item = ItemID_FirstID; item <= ItemID_LastID; ++item) {
+            if (isUnit(item)) unitsLost += currentHouse->getNumLostItems(item);
+            else if (isStructure(item)) structuresLost += currentHouse->getNumLostItems(item);
+        }
+        std::vector<std::string> itemRows;
+        if (finishedMatch) {
+            for (int item = ItemID_FirstID; item <= ItemID_LastID; ++item) {
+                if (!isUnit(item) && !isStructure(item)) continue;
+                const int produced = currentHouse->getNumBuiltItems(item);
+                const int killed = currentHouse->getNumKilledItems(item);
+                const int lost = currentHouse->getNumLostItems(item);
+                if (produced == 0 && killed == 0 && lost == 0) continue;
+                std::ostringstream itemRow;
+                // Compact positional rows keep a full item breakdown bounded:
+                // [item id, item name, kind, produced, killed, lost].
+                itemRow << '[' << item << ',' << AITelemetry::Record::quote(getItemNameByID(item))
+                        << ",\"" << (isUnit(item) ? "unit" : "structure") << "\"," << produced << ','
+                        << killed << ',' << lost << ']';
+                itemRows.push_back(itemRow.str());
+            }
+        }
+
+        for (const auto& player : players) {
+            const auto* qbot = dynamic_cast<const QuantBot*>(player.get());
+            const std::string playerClass = player->getPlayerclass();
+            const char* controller = qbot ? "qbot"
+                : playerClass == HUMANPLAYERCLASS ? "human"
+                : playerClass == "SpectatorPlayer" ? "spectator" : "ai";
+            const std::string aiType = analyticsAIType(playerClass);
+            const std::string aiDifficulty = qbot ? qbot->getDifficultyName() : analyticsAIDifficulty(playerClass);
+            std::ostringstream row;
+            row << "{\"slot\":" << playerSlot++
+                << ",\"player_id\":" << static_cast<int>(player->getPlayerID())
+                << ",\"player_name\":" << AITelemetry::Record::quote(player->getPlayername())
+                << ",\"house_slot\":" << h
+                << ",\"house_id\":" << currentHouse->getHouseID()
+                << ",\"house_name\":" << AITelemetry::Record::quote(getHouseNameByNumber(static_cast<HOUSETYPE>(h)))
+                << ",\"team\":" << currentHouse->getTeamID()
+                << ",\"controller\":\"" << controller << '"'
+                << ",\"player_class\":" << AITelemetry::Record::quote(playerClass)
+                << ",\"shared_house_players\":" << players.size();
+            if (std::string(controller) == "ai" || qbot) {
+                row << ",\"ai_type\":" << AITelemetry::Record::quote(aiType)
+                    << ",\"ai_support\":" << (playerClass.find("Support") != std::string::npos ? "true" : "false");
+                if (!aiDifficulty.empty())
+                    row << ",\"ai_difficulty\":" << AITelemetry::Record::quote(aiDifficulty);
+            }
+            if (qbot) row << ",\"qbot_difficulty\":" << AITelemetry::Record::quote(aiDifficulty);
+
+            if (finishedMatch) {
+                row << ",\"result\":\"" << (winningTeam >= 0 && currentHouse->getTeamID() == winningTeam ? "winner" : currentHouse->isAlive() ? "alive" : "defeated") << '"'
+                    << ",\"final_credits\":" << currentHouse->getCredits()
+                    << ",\"spice_harvested\":" << currentHouse->getHarvestedSpice().lround()
+                    << ",\"units_built\":" << currentHouse->getNumBuiltUnits()
+                    << ",\"structures_built\":" << currentHouse->getNumBuiltStructures()
+                    << ",\"units_destroyed\":" << currentHouse->getNumDestroyedUnits()
+                    << ",\"structures_destroyed\":" << currentHouse->getNumDestroyedStructures()
+                    << ",\"units_lost\":" << unitsLost
+                    << ",\"structures_lost\":" << structuresLost
+                    << ",\"military_value\":" << currentHouse->getMilitaryValue()
+                    << ",\"item_stats\":" << analyticsArray(itemRows);
+                if (citySimulation_ && citySimulation_->isInitialized()) {
+                    const auto& city = citySimulation_->getHouseState(currentHouse->getHouseID());
+                    row << ",\"city_population\":" << city.getTotalPop() * DuneCity::CitySimulation::kPopDisplayMultiplier
+                        << ",\"city_value\":" << city.avgLandValue
+                        << ",\"city_residential_population\":" << city.resPop * DuneCity::CitySimulation::kPopDisplayMultiplier
+                        << ",\"city_commercial_population\":" << city.comPop * DuneCity::CitySimulation::kPopDisplayMultiplier
+                        << ",\"city_industrial_population\":" << city.indPop * DuneCity::CitySimulation::kPopDisplayMultiplier
+                        << ",\"city_unemployment_percent\":" << city.unemploymentRate
+                        << ",\"city_residential_demand\":" << city.resValve
+                        << ",\"city_commercial_demand\":" << city.comValve
+                        << ",\"city_industrial_demand\":" << city.indValve;
+                }
+            }
+            if (qbot && finishedMatch) {
+                std::vector<std::string> unitRows;
+                const auto& mix = qbot->getLastUnitMixBps();
+                for (size_t i = 0; i < analyticsMixItems.size(); ++i) {
+                    const int item = analyticsMixItems[i];
+                    int built = 0;
+                    int lost = 0;
+                    int destroyed = 0;
+                    int64_t rewardMilli = 0;
+                    int64_t damageValueMilli = 0;
+                    int64_t killBonusMilli = 0;
+                    int64_t lostValue = 0;
+                    const std::array<Uint32, 3> specialItems = {Unit_Devastator, Unit_SonicTank, Unit_Deviator};
+                    const bool specialGroup = item == 9999;
+                    const auto collect = [&](Uint32 unit) {
+                        built += currentHouse->getNumBuiltItems(unit);
+                        lost += currentHouse->getNumLostItems(unit);
+                        destroyed += currentHouse->getNumKilledItems(unit);
+                        const auto& reward = currentHouse->getCombatReward(unit);
+                        rewardMilli += reward.total();
+                        damageValueMilli += reward.damageMilli;
+                        killBonusMilli += reward.killBonusMilli;
+                        lostValue += int64_t(currentHouse->getNumLostItems(unit)) * objectData.data[unit][h].price;
+                    };
+                    if (specialGroup) {
+                        for (const auto unit : specialItems) collect(unit);
+                    } else {
+                        collect(item);
+                    }
+                    std::ostringstream unit;
+                    unit << "{\"item_id\":" << item
+                         << ",\"item_name\":" << AITelemetry::Record::quote(
+                                specialGroup ? "special" : getItemNameByID(item))
+                         << ",\"target_weight_bps\":" << mix[i]
+                         << ",\"built\":" << built
+                         << ",\"lost\":" << lost
+                         << ",\"destroyed\":" << destroyed
+                         << ",\"reward_milli\":" << rewardMilli
+                         << ",\"damage_value_milli\":" << damageValueMilli
+                         << ",\"kill_bonus_milli\":" << killBonusMilli
+                         << ",\"lost_value\":" << lostValue << '}';
+                    unitRows.push_back(unit.str());
+                }
+                row << ",\"qbot_units\":" << analyticsArray(unitRows);
+            }
+            row << '}';
+            playerRows.push_back(row.str());
+        }
+    }
+
+    const std::string mapName = getBasename(gameInitSettings.getFilename(), true);
+    std::ostringstream payload;
+    payload << "{\"schema_version\":3"
+#ifdef __EMSCRIPTEN__
+            << ",\"client_runtime\":\"browser\""
+#else
+            << ",\"client_runtime\":\"native\""
+#endif
+            << ",\"game_type\":" << AITelemetry::Record::quote(analyticsGameType(gameInitSettings.getGameType()))
+            << ",\"game_version\":" << AITelemetry::Record::quote(VERSION)
+            << ",\"map\":{\"name\":" << AITelemetry::Record::quote(mapName)
+            << ",\"width\":" << (currentGameMap ? currentGameMap->getSizeX() : 0)
+            << ",\"height\":" << (currentGameMap ? currentGameMap->getSizeY() : 0)
+            << ",\"seed\":" << gameInitSettings.getRandomSeed() << '}'
+            << ",\"mod\":{\"name\":" << AITelemetry::Record::quote(gameInitSettings.getModName()) << '}'
+            << ",\"players\":" << analyticsArray(playerRows);
+    if (finishedMatch) {
+        payload << ",\"outcome\":" << AITelemetry::Record::quote(finished ? "finished" : "abandoned")
+                << ",\"duration_cycles\":" << gameCycleCount
+                << ",\"duration_seconds\":" << getGameTime() / 1000
+                << ",\"winning_house\":" << winnerHouse
+                << ",\"total_spice_harvested\":" << totalSpice
+                << ",\"total_units_destroyed\":" << totalUnitsDestroyed
+                << ",\"total_structures_destroyed\":" << totalStructuresDestroyed;
+    }
+    payload << '}';
+    return payload.str();
 }
 
 void Game::initReplay(const std::string& filename) {
@@ -522,10 +869,12 @@ void Game::processObjects()
     frameTiming.pathfindingMs += pathMs;
     frameTiming.pathfindingMsThisFrame += pathMs;
 
-    // update all tiles
-    for(int y = 0; y < currentGameMap->getSizeY(); y++) {
-        for(int x = 0; x < currentGameMap->getSizeX(); x++) {
-            currentGameMap->getTile(x,y)->update();
+    {
+        AITelemetry::PerformanceScope perfScope("objects.tiles",gameCycleCount);
+        for(int y = 0; y < currentGameMap->getSizeY(); y++) {
+            for(int x = 0; x < currentGameMap->getSizeX(); x++) {
+                currentGameMap->getTile(x,y)->update();
+            }
         }
     }
 
@@ -564,6 +913,7 @@ void Game::processObjects()
 }
 
 void Game::processTargetRequests() {
+    AITelemetry::PerformanceScope perfScope("objects.target_queue",gameCycleCount);
     if(targetRequestQueue.empty()) {
         return;
     }
@@ -713,6 +1063,9 @@ void Game::logPathInstrumentationIfNeeded() {
 }
 
 void Game::processPathRequests() {
+    frameTiming.pathsProcessedThisCycle = 0;
+    frameTiming.pathfindingMsThisCycle = 0.0;
+    frameTiming.pathTokensThisCycle = 0;
     if(pathRequestQueue.empty()) {
         frameTiming.pathsPerCycleStats.add(0.0);
         frameTiming.pathTokensPerCycleStats.add(0.0);
@@ -725,10 +1078,6 @@ void Game::processPathRequests() {
     // Timing is still measured for profiling, but does NOT affect execution
 
     const Uint64 start = SDL_GetPerformanceCounter();  // PROFILING ONLY
-
-    frameTiming.pathsProcessedThisCycle = 0;
-    frameTiming.pathfindingMsThisCycle = 0.0;
-    frameTiming.pathTokensThisCycle = 0;
 
     // Track queue depth
     const int queueDepth = static_cast<int>(pathRequestQueue.size());
@@ -760,7 +1109,12 @@ void Game::processPathRequests() {
 
         auto* unit = dynamic_cast<UnitBase*>(objectManager.getObject(request.objectId));
         if(unit != nullptr) {
+            const Uint64 requestStart = SDL_GetPerformanceCounter();
             UnitBase::PathRequestStats stats = unit->resolvePendingPathRequest();
+            auto& perf = AITelemetry::log();
+            const int owner = unit->getOwner() ? unit->getOwner()->getHouseID() : -1;
+            perf.performance(gameCycleCount,owner,"path.search",static_cast<int64_t>(getElapsedMs(requestStart,SDL_GetPerformanceCounter())*1000),unit->getItemID());
+            perf.performance(gameCycleCount,owner,stats.invalidDestination ? "path.invalid_nodes" : stats.pathFound ? "path.found_nodes" : "path.failed_nodes",stats.nodesExpanded,unit->getItemID(),false);
             
             frameTiming.pathsProcessedThisCycle++;
             frameTiming.totalPathsProcessedThisFrame++;
@@ -801,6 +1155,12 @@ void Game::processPathRequests() {
         }
     }
     
+    auto& perf = AITelemetry::log();
+    perf.performance(gameCycleCount,-1,"path.nodes",tokensUsedThisCycle,-1,false);
+    perf.performance(gameCycleCount,-1,"path.effective_budget",budget,-1,false);
+    perf.performance(gameCycleCount,-1,"path.budget_overshoot",tokensUsedThisCycle > budget ? tokensUsedThisCycle-budget : 0,-1,false);
+    perf.performance(gameCycleCount,-1,"path.queue",pathRequestQueue.size(),-1,false);
+
     // PHASE 1.2: BANK UNUSED TOKENS FOR NEXT CYCLE
     // MULTIPLAYER FIX: Disable carry-over in multiplayer to prevent desync
     // Carry-over can accumulate drift if pathfinding is even slightly non-deterministic
@@ -1692,6 +2052,20 @@ void Game::drawScreen()
 
                     }
 
+                    // A zone may reach onto sand, but at least one tile must sit on rock or slab.
+                    bool zoneFootprintAnchored = !isZoneStructure(placeItem);
+                    if(!zoneFootprintAnchored && footprintInsideMap) {
+                        for(int i = xPos; i < (xPos + structuresize.x) && !zoneFootprintAnchored; i++) {
+                            for(int j = yPos; j < (yPos + structuresize.y); j++) {
+                                if(currentGameMap->tileExists(i,j)
+                                   && DuneCity::isCityBuildableTerrain(currentGameMap->getTile(i,j)->getType())) {
+                                    zoneFootprintAnchored = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
                     for(int i = xPos; i < (xPos + structuresize.x); i++) {
                         for(int j = yPos; j < (yPos + structuresize.y); j++) {
                             SDL_Texture* image;
@@ -1700,7 +2074,8 @@ void Game::drawScreen()
                             if(footprintInsideMap && withinRange && currentGameMap->tileExists(i,j)) {
                                 Tile* pTile = currentGameMap->getTile(i,j);
                                 if(isZoneStructure(placeItem)) {
-                                    tileValid = DuneCity::isCityBuildableTerrain(pTile->getType())
+                                    tileValid = zoneFootprintAnchored
+                                        && DuneCity::isCityZoneTerrain(pTile->getType())
                                         && !pTile->hasCityZone()
                                         && !pTile->hasAGroundObject();
                                 } else {
@@ -2351,7 +2726,7 @@ void Game::runMainLoop() {
         mapName = mapName.substr(0, lastDot);
     }
     
-    if (gameInitSettings.getGameType() == GameType::CustomMultiplayer || 
+    if (isNetworkGameType(gameInitSettings.getGameType()) ||
         gameInitSettings.getGameType() == GameType::LoadMultiplayer) {
         // Count human players from game init settings (not alive houses which can change during game)
         int humanPlayerCount = 0;
@@ -2379,6 +2754,8 @@ void Game::runMainLoop() {
         const Uint64 frameStartPerf = SDL_GetPerformanceCounter();
         frameTiming.gameCyclesThisFrame = 0;
         frameTiming.totalPathsProcessedThisFrame = 0;
+        frameTiming.pathTokensThisFrame = 0;
+        frameTiming.pathsFailedThisFrame = 0;
         
         // Reset per-frame accumulators
         frameTiming.aiMsThisFrame = 0.0;
@@ -2415,10 +2792,11 @@ void Game::runMainLoop() {
         const int actualFrameTime = frameEnd - frameStart;  // Actual time for this frame
         frameTime += actualFrameTime;
         
-        // CAP frameTime to prevent excessive catch-up bursts during network stalls
-        // Allow up to 3 cycles worth of catch-up per frame for smoother gameplay
-        // This trades off "real-time accuracy" for "smooth gameplay feel"
-        const int maxFrameTime = getGameSpeed() * 3;
+        // Bound catch-up after stalls, but keep at least the previous fastest
+        // setting's 24ms budget. At 4ms/tick a 60Hz frame needs 4-5 ticks;
+        // a three-tick budget would discard time and defeat the faster setting.
+        // The independent ten-cycle guard below still prevents renderer starvation.
+        const int maxFrameTime = std::max(getGameSpeed() * 3, 24);
         if (frameTime > maxFrameTime) {
             frameTime = maxFrameTime;
         }
@@ -2473,7 +2851,14 @@ void Game::runMainLoop() {
             if(!bWaitForNetwork && !bPause) {
                 // Time the core simulation step for CPU load detection
                 const Uint64 simStart = SDL_GetPerformanceCounter();
-                updateGameState();
+                try {
+                    updateGameState();
+                } catch (const std::exception& e) {
+                    // Record before stack unwinding closes this match's telemetry.
+                    AITelemetry::log().write(gameCycleCount,-1,-1,"simulation_exception",
+                        AITelemetry::Record().set("message",e.what()).set("stage","updateGameState"));
+                    throw;
+                }
                 const Uint64 simEnd = SDL_GetPerformanceCounter();
                 const double simMs = getElapsedMs(simStart, simEnd);
                 
@@ -2593,6 +2978,36 @@ void Game::runMainLoop() {
         frameTiming.turretScanMs += frameTiming.turretScanMsThisFrame;
         frameTiming.frameCount++;
 
+        auto& perf = AITelemetry::log();
+        if (perf.enabled()) {
+            const auto us = [](double ms) { return static_cast<int64_t>(ms*1000); };
+            const auto record = [&](const char* name, double ms) { perf.performance(gameCycleCount,-1,name,us(ms)); };
+            record("frame",thisFrameMs);
+            record("frame.ai",frameTiming.aiMsThisFrame);
+            record("frame.city",frameTiming.citySimMsThisFrame);
+            record("frame.path",frameTiming.pathfindingMsThisFrame);
+            record("frame.units",frameTiming.unitsMsThisFrame);
+            record("frame.structures",frameTiming.structuresMsThisFrame);
+            record("frame.render",frameTiming.renderingMsThisFrame);
+            record("frame.network",frameTiming.networkWaitMsThisFrame);
+            perf.performance(gameCycleCount,-1,"frame.cycles",frameTiming.gameCyclesThisFrame,-1,false);
+            perf.performance(gameCycleCount,-1,"frame.units_count",unitList.size(),-1,false);
+            perf.performance(gameCycleCount,-1,"frame.structures_count",structureList.size(),-1,false);
+            perf.performance(gameCycleCount,-1,"frame.tick_ms",getGameSpeed(),-1,false);
+            perf.performance(gameCycleCount,-1,"frame.paused",bPause,-1,false);
+            if (perf.isWorstFrame(us(thisFrameMs))) perf.slowFrame(gameCycleCount,us(thisFrameMs),AITelemetry::Record()
+                .set("ai_us",us(frameTiming.aiMsThisFrame)).set("city_us",us(frameTiming.citySimMsThisFrame))
+                .set("path_us",us(frameTiming.pathfindingMsThisFrame)).set("render_us",us(frameTiming.renderingMsThisFrame))
+                .set("units_us",us(frameTiming.unitsMsThisFrame)).set("structures_us",us(frameTiming.structuresMsThisFrame))
+                .set("network_us",us(frameTiming.networkWaitMsThisFrame))
+                .set("worst_house",frameTiming.aiWorstHouseIdxThisFrame).set("worst_house_us",us(frameTiming.aiWorstHouseMsThisFrame))
+                .set("cycles",frameTiming.gameCyclesThisFrame).set("queue",pathRequestQueue.size())
+                .set("path_nodes",frameTiming.pathTokensThisFrame).set("paths",frameTiming.totalPathsProcessedThisFrame)
+                .set("units",unitList.size()).set("structures",structureList.size())
+                .set("tick_ms",getGameSpeed()).set("paused",bPause));
+            perf.flushPerformance(gameCycleCount);
+        }
+
         // Frame-spike detection: any single frame slower than ~50 FPS is a
         // visible stutter even if the rolling average looks fine. Log a one-
         // line breakdown so we can correlate the spike with whatever phase
@@ -2665,6 +3080,7 @@ void Game::runMainLoop() {
             lastTimingLogMs = now;
         }
 
+        WebRuntime::yieldToBrowser();
     } while (!bQuitGame && !finishedLevel);
 }
 
@@ -2790,6 +3206,7 @@ void Game::updateGameState() {
             house[i]->update();
             const Uint64 houseEnd = SDL_GetPerformanceCounter();
             const double houseMs = getElapsedMs(houseStart, houseEnd);
+            AITelemetry::log().performance(gameCycleCount,i,"house.update",static_cast<int64_t>(houseMs*1000));
             if(houseMs > worstHouseMs) {
                 worstHouseMs = houseMs;
                 worstHouseIdx = i;
@@ -2806,8 +3223,10 @@ void Game::updateGameState() {
     const double aiMs = getElapsedMs(aiStart, aiEnd);
     frameTiming.aiMs += aiMs;
     frameTiming.aiMsThisFrame += aiMs;
-    frameTiming.aiWorstHouseMsThisFrame = worstHouseMs;
-    frameTiming.aiWorstHouseIdxThisFrame = worstHouseIdx;
+    if (worstHouseMs > frameTiming.aiWorstHouseMsThisFrame) {
+        frameTiming.aiWorstHouseMsThisFrame = worstHouseMs;
+        frameTiming.aiWorstHouseIdxThisFrame = worstHouseIdx;
+    }
 
     screenborder->update();
     triggerManager.trigger(gameCycleCount);
@@ -2962,6 +3381,7 @@ void Game::initializeReplay() {
 
 void Game::initializeNetwork() {
     if(pNetworkManager != nullptr) {
+        pNetworkManager->beginSimulation(gameInitSettings.getRandomSeed());
         pNetworkManager->setOnReceiveChatMessage(
             std::bind(&ChatManager::addChatMessage, &(pInterface->getChatManager()), 
             std::placeholders::_1, std::placeholders::_2));
@@ -3256,7 +3676,7 @@ void Game::onOptions()
         quitGame();
     } else {
         Uint32 color = getHouseColorRGB(getHouseVisualHouse(pLocalHouse->getHouseID()), 3);
-        pInGameMenu = std::make_unique<InGameMenu>((gameType == GameType::CustomMultiplayer), color);
+        pInGameMenu = std::make_unique<InGameMenu>((isNetworkGameType(gameType)), color);
         bMenu = true;
         pauseGame();
     }
@@ -3274,6 +3694,17 @@ void Game::cycleDune2RZoom() {
                             : currentZoomlevel == 1 ? 0
                             : 2;
     applyDune2RZoom(nextZoomLevel);
+}
+
+void Game::toggleDune2RVisuals() {
+    if(!ModManager::instance().isInitialized()
+       || ModManager::instance().getActiveModName() != "Dune2R") {
+        return;
+    }
+    pGFXManager->toggleDune2RVisuals();
+    addToNewsTicker(pGFXManager->isDune2RVisualsEnabled()
+        ? "Dune2R visuals enabled"
+        : "Classic visuals enabled");
 }
 
 void Game::applyDune2RZoom(int zoomLevel) {
@@ -3323,6 +3754,7 @@ GameInitSettings Game::getNextGameInitSettings()
     }
 
     switch(gameInitSettings.getGameType()) {
+        case GameType::CampaignCoop:
         case GameType::Campaign: {
             int currentMission = gameInitSettings.getMission();
             if(!won) {
@@ -3340,7 +3772,17 @@ GameInitSettings Game::getNextGameInitSettings()
             }
 
             Uint32 alreadyShownTutorialHints = won ? pLocalPlayer->getAlreadyShownTutorialHints() : gameInitSettings.getAlreadyShownTutorialHints();
-            return GameInitSettings(gameInitSettings, nextMission, alreadyPlayedRegions, alreadyShownTutorialHints);
+            GameInitSettings next(gameInitSettings, nextMission, alreadyPlayedRegions, alreadyShownTutorialHints);
+            if(next.getGameType() == GameType::CampaignCoop) {
+                auto file = pFileManager->openCampaignFile(next.getFilename());
+                const auto size = SDL_RWsize(file.get());
+                if(size <= 0) THROW(std::runtime_error, "Cannot read next co-op mission.");
+                std::string data(static_cast<size_t>(size), '\0');
+                if(SDL_RWread(file.get(), data.data(), 1, data.size()) != data.size())
+                    THROW(std::runtime_error, "Incomplete next co-op mission.");
+                next.setScenarioData(data);
+            }
+            return next;
         } break;
 
         default: {
@@ -3364,6 +3806,7 @@ int Game::whatNext()
     }
 
     switch(gameType) {
+        case GameType::CampaignCoop:
         case GameType::Campaign: {
             if(bQuitGame == true) {
                 return GAME_RETURN_TO_MENU;
@@ -3384,6 +3827,7 @@ int Game::whatNext()
             }
         } break;
 
+        case GameType::SkirmishCoop:
         case GameType::Skirmish: {
             if(bQuitGame == true) {
                 return GAME_RETURN_TO_MENU;
@@ -3508,7 +3952,9 @@ bool Game::loadSaveGame(InputStream& stream) {
     }
 
     // if this is a multiplayer load we need to save some information before we overwrite gameInitSettings with the settings saved in the savegame
-    bool bMultiplayerLoad = (gameInitSettings.getGameType() == GameType::LoadMultiplayer);
+    const bool bCoopLoad = gameInitSettings.getGameType() == GameType::LoadCoop;
+    const std::string coopServer = gameInitSettings.getServername();
+    bool bMultiplayerLoad = (gameInitSettings.getGameType() == GameType::LoadMultiplayer || bCoopLoad);
     GameInitSettings::HouseInfoList oldHouseInfoList = gameInitSettings.getHouseInfoList();
 
     // read gameInitSettings
@@ -3517,6 +3963,8 @@ bool Game::loadSaveGame(InputStream& stream) {
     if(savegameVersion <= 9820) {
         gameInitSettings.migrateLegacyHouseColorSlots();
     }
+
+    const bool savedNetworkLayout = isNetworkGameType(gameInitSettings.getGameType());
 
     // read the actual house setup choosen at the beginning of the game
     logLoadStage("house setup");
@@ -3607,6 +4055,19 @@ bool Game::loadSaveGame(InputStream& stream) {
 
     // we have to set the local player
     logLoadStage("local player and flags");
+    // Single-player saves contain a local-player byte even when hosted online.
+    Uint8 savedLocalPlayerID = 0;
+    if(!savedNetworkLayout) savedLocalPlayerID = stream.readUint8();
+    if(bCoopLoad) {
+        for(const auto& info : oldHouseInfoList) {
+            if(info.houseID != gameInitSettings.getHouseID()) continue;
+            House* shared = getHouse(info.houseID);
+            if(!shared) THROW(std::runtime_error, "The saved player house no longer exists.");
+            std::vector<std::pair<std::string, std::string>> desired;
+            for(const auto& player : info.playerInfoList) desired.emplace_back(player.playerName, player.playerClass);
+            shared->configureCoopPlayers(desired);
+        }
+    }
     if(bMultiplayerLoad) {
         // get it from the gameInitSettings that started the game (not the one saved in the savegame)
         for(const GameInitSettings::HouseInfo& houseInfo : oldHouseInfoList) {
@@ -3646,10 +4107,11 @@ bool Game::loadSaveGame(InputStream& stream) {
         }
     } else {
         // it is stored in the savegame, so set it up
-        Uint8 localPlayerID = stream.readUint8();
-        pLocalPlayer = dynamic_cast<HumanPlayer*>(getPlayerByID(localPlayerID));
+        pLocalPlayer = dynamic_cast<HumanPlayer*>(getPlayerByID(savedLocalPlayerID));
         pLocalHouse = house[pLocalPlayer->getHouse()->getHouseID()].get();
     }
+
+    if(!pLocalPlayer || !pLocalHouse) THROW(std::runtime_error, "Cannot assign the local co-op player.");
 
     debug = stream.readBool();
     bCheatsEnabled = stream.readBool();
@@ -3664,6 +4126,59 @@ bool Game::loadSaveGame(InputStream& stream) {
     logLoadStage("objects");
     objectManager.load(stream);
 
+    // Older saves stored health-scaled windtrap totals. Reconstruct generation
+    // from the loaded generators using current rules, without changing demand.
+    std::array<int, NUM_HOUSES> loadedGeneration{};
+    for (const auto* structure : structureList) {
+        int output = 0;
+        if (const auto* plant = dynamic_cast<const WindTrap*>(structure)) output = plant->getProducedPower();
+        else if (const auto* plant = dynamic_cast<const AdvancedWindTrap*>(structure)) output = plant->getProducedPower();
+        else if (const auto* plant = dynamic_cast<const NuclearPlant*>(structure)) output = plant->getProducedPower();
+        else if (const auto* plant = dynamic_cast<const Scoutpost*>(structure)) output = plant->getProducedPower();
+        loadedGeneration[structure->getOwner()->getHouseID()] += output;
+    }
+    for (int house = 0; house < NUM_HOUSES; ++house)
+        if (getHouse(house)) getHouse(house)->setProducedPower(loadedGeneration[house]);
+
+
+    // Zones from older saves can come back without owning their tiles, which
+    // lets new lots be placed right on top of them. Re-attach every zone to
+    // its footprint and report anything that was off.
+    {
+        int detachedTiles = 0;
+        int overlappingTiles = 0;
+        for(StructureBase* pStructure : structureList) {
+            if(!isZoneStructure(pStructure->getItemID())) {
+                continue;
+            }
+            for(int dy = 0; dy < pStructure->getStructureSizeY(); dy++) {
+                for(int dx = 0; dx < pStructure->getStructureSizeX(); dx++) {
+                    Tile* pTile = currentGameMap->getTile(pStructure->getX() + dx, pStructure->getY() + dy);
+                    if(pTile == nullptr) {
+                        continue;
+                    }
+                    const ObjectBase* pOccupant = pTile->getNonInfantryGroundObject();
+                    if(pOccupant == pStructure) {
+                        continue;
+                    }
+                    if(pOccupant == nullptr) {
+                        pTile->assignNonInfantryGroundObject(pStructure->getObjectID());
+                        detachedTiles++;
+                    } else {
+                        overlappingTiles++;
+                        SDL_Log("Loaded game: zone %u at (%d,%d) overlaps object %u on tile (%d,%d)",
+                                pStructure->getObjectID(), pStructure->getX(), pStructure->getY(),
+                                pOccupant->getObjectID(), pStructure->getX() + dx, pStructure->getY() + dy);
+                    }
+                }
+            }
+        }
+        if(detachedTiles > 0 || overlappingTiles > 0) {
+            SDL_Log("Loaded game: re-attached %d zone tiles, %d zone tiles overlap another object",
+                    detachedTiles, overlappingTiles);
+        }
+    }
+
     logLoadStage("bullets");
     int numBullets = stream.readUint32();
     for(int i = 0; i < numBullets; i++) {
@@ -3677,18 +4192,15 @@ bool Game::loadSaveGame(InputStream& stream) {
     }
 
     logLoadStage("selection and screen position");
-    if(bMultiplayerLoad) {
-        screenborder->adjustScreenBorderToMapsize(currentGameMap->getSizeX(), currentGameMap->getSizeY());
-
-        screenborder->setNewScreenCenter(pLocalHouse->getCenterOfMainBase()*TILESIZE);
-
-    } else {
-        //load selection list
+    screenborder->adjustScreenBorderToMapsize(currentGameMap->getSizeX(), currentGameMap->getSizeY());
+    if(!savedNetworkLayout) {
         selectedList = stream.readUint32Set();
-
-        //load the screenborder info
-        screenborder->adjustScreenBorderToMapsize(currentGameMap->getSizeX(), currentGameMap->getSizeY());
         screenborder->load(stream);
+    }
+    if(bMultiplayerLoad) {
+        unselectAll(selectedList);
+        selectedList.clear();
+        screenborder->setNewScreenCenter(pLocalHouse->getCenterOfMainBase()*TILESIZE);
     }
 
     // load city simulation state (version 9807+)
@@ -3729,6 +4241,16 @@ bool Game::loadSaveGame(InputStream& stream) {
     logLoadStage("command history");
     cmdManager.load(stream);
 
+    if(bCoopLoad) {
+        const bool campaign = isCampaignGameType(gameInitSettings.getGameType());
+        gameInitSettings.enableCoop(campaign, coopServer);
+        gameInitSettings.clearHouseInfo();
+        for(const auto& info : oldHouseInfoList) gameInitSettings.addHouseInfo(info);
+        for(auto& actual : houseInfoListSetup)
+            for(const auto& requested : oldHouseInfoList)
+                if(actual.houseID == requested.houseID) actual.playerInfoList = requested.playerInfoList;
+        gameType = gameInitSettings.getGameType();
+    }
     logLoadStage("complete");
     finished = false;
 
@@ -3816,7 +4338,7 @@ bool Game::saveGame(const std::string& filename)
         }
     }
 
-    if(gameInitSettings.getGameType() != GameType::CustomMultiplayer) {
+    if(!isNetworkGameType(gameInitSettings.getGameType())) {
         fs.writeUint8(pLocalPlayer->getPlayerID());
     }
 
@@ -3841,7 +4363,7 @@ bool Game::saveGame(const std::string& filename)
         pExplosion->save(fs);
     }
 
-    if(gameInitSettings.getGameType() != GameType::CustomMultiplayer) {
+    if(!isNetworkGameType(gameInitSettings.getGameType())) {
         // save selection lists
 
         // write out selected units list
@@ -4146,32 +4668,32 @@ void Game::handleChatInput(SDL_KeyboardEvent& keyboardEvent) {
             } else if((bCheatsEnabled == true) && (md5string == "0xB8766C8EC7A61036B69893FC17AAF21E")) {
                 pInterface->getChatManager().addInfoMessage("Cheat mode already enabled");
             } else if((bCheatsEnabled == true) && (md5string == "0x57583291CB37F8167EDB0611D8D19E58")) {
-                if (gameType != GameType::CustomMultiplayer) {
+                if (!isNetworkGameType(gameType)) {
                     pInterface->getChatManager().addInfoMessage("You win this game");
                     setGameWon();
                 }
             } else if((bCheatsEnabled == true) && (md5string == "0x1A12BE3DBE54C5A504CAA6EE9782C1C8")) {
                 if(debug == true) {
                     pInterface->getChatManager().addInfoMessage("You are already in debug mode");
-                } else if (gameType != GameType::CustomMultiplayer) {
+                } else if (!isNetworkGameType(gameType)) {
                     pInterface->getChatManager().addInfoMessage("Debug mode enabled");
                     debug = true;
                 }
             } else if((bCheatsEnabled == true) && (md5string == "0x54F68155FC64A5BC66DCD50C1E925C0B")) {
                 if(debug == false) {
                     pInterface->getChatManager().addInfoMessage("You are not in debug mode");
-                } else if (gameType != GameType::CustomMultiplayer) {
+                } else if (!isNetworkGameType(gameType)) {
                     pInterface->getChatManager().addInfoMessage("Debug mode disabled");
                     debug = false;
                 }
             } else if((bCheatsEnabled == true) && (md5string == "0xCEF1D26CE4B145DE985503CA35232ED8")) {
-                if (gameType != GameType::CustomMultiplayer) {
+                if (!isNetworkGameType(gameType)) {
                     pInterface->getChatManager().addInfoMessage("You got some credits");
                     pLocalHouse->returnCredits(10000);
                 }
             } else if(md5string == "0x05362BF626E467A93FFE6FF0D8A899E3") {
                 // Toggle immortality cheat (muaddib) - works in single-player only, no cheat mode required
-                if (gameType != GameType::CustomMultiplayer && gameType != GameType::LoadMultiplayer) {
+                if (!isNetworkGameType(gameType) && gameType != GameType::LoadMultiplayer) {
                     bool currentState = gameInitSettings.getGameOptions().immortalHumanPlayer;
                     gameInitSettings.setImmortalHumanPlayer(!currentState);
                     if(!currentState) {
@@ -4233,6 +4755,8 @@ void Game::handleKeyInput(SDL_KeyboardEvent& keyboardEvent) {
         case SDLK_7:
         case SDLK_8:
         case SDLK_9: {
+            // Command-number shortcuts belong to macOS (including screenshots).
+            if (SDL_GetModState() & KMOD_GUI) break;
             int selectListIndex = keyboardEvent.keysym.sym - SDLK_1;
 
             if(citySimEnabled_ && (SDL_GetModState() & KMOD_SHIFT)) {
@@ -4298,7 +4822,7 @@ void Game::handleKeyInput(SDL_KeyboardEvent& keyboardEvent) {
 
         case SDLK_KP_MINUS:
         case SDLK_MINUS: {
-            if(gameType != GameType::CustomMultiplayer) {
+            if(!isNetworkGameType(gameType)) {
                 settings.gameOptions.gameSpeed = std::min(settings.gameOptions.gameSpeed+1,GAMESPEED_MAX);
                 INIFile myINIFile(getConfigFilepath());
                 myINIFile.setIntValue("Game Options","Game Speed", settings.gameOptions.gameSpeed);
@@ -4310,7 +4834,7 @@ void Game::handleKeyInput(SDL_KeyboardEvent& keyboardEvent) {
         case SDLK_KP_PLUS:
         case SDLK_PLUS:
         case SDLK_EQUALS: {
-            if(gameType != GameType::CustomMultiplayer) {
+            if(!isNetworkGameType(gameType)) {
                 settings.gameOptions.gameSpeed = std::max(settings.gameOptions.gameSpeed-1,GAMESPEED_MIN);
                 INIFile myINIFile(getConfigFilepath());
                 myINIFile.setIntValue("Game Options","Game Speed", settings.gameOptions.gameSpeed);
@@ -4385,21 +4909,21 @@ void Game::handleKeyInput(SDL_KeyboardEvent& keyboardEvent) {
 
         case SDLK_F4: {
             // skip a 30 seconds
-            if(gameType != GameType::CustomMultiplayer || bReplay) {
+            if(!isNetworkGameType(gameType) || bReplay) {
                 skipToGameCycle = gameCycleCount + (10*1000)/GAMESPEED_DEFAULT;
             }
         } break;
 
         case SDLK_F5: {
             // skip a 30 seconds
-            if(gameType != GameType::CustomMultiplayer || bReplay) {
+            if(!isNetworkGameType(gameType) || bReplay) {
                 skipToGameCycle = gameCycleCount + (30*1000)/GAMESPEED_DEFAULT;
             }
         } break;
 
         case SDLK_F6: {
             // skip 2 minutes
-            if(gameType != GameType::CustomMultiplayer || bReplay) {
+            if(!isNetworkGameType(gameType) || bReplay) {
                 skipToGameCycle = gameCycleCount + (120*1000)/GAMESPEED_DEFAULT;
             }
         } break;
@@ -4560,7 +5084,7 @@ void Game::handleKeyInput(SDL_KeyboardEvent& keyboardEvent) {
         } break;
 
         case SDLK_SPACE: {
-            bool isMultiplayer = (gameType == GameType::CustomMultiplayer);
+            bool isMultiplayer = (isNetworkGameType(gameType));
 
             if(bPause) {
                 resumeGame();
@@ -5010,9 +5534,13 @@ void Game::drawCityOverlay(int x1, int y1, int x2, int y2) {
             int blockSize = crimeMap.getBlockSize();
             for (int x = x1; x < x2; x += blockSize) {
                 for (int y = y1; y < y2; y += blockSize) {
-                    uint8_t crime = crimeMap.worldGet(x, y);
+                    const int crime = crimeMap.worldGet(x, y);
                     if (crime > 0) {
-                        drawOverlayBlock(x, y, blockSize, crime, 0, 255, 0, 255, 0, 0);
+                        // Crime is warm-coloured throughout its range: orange
+                        // at low levels and a deep red at high levels. Green
+                        // reads as safe and made this overlay misleading.
+                        drawOverlayBlock(x, y, blockSize, static_cast<uint8_t>(std::min(255, crime)),
+                                         255, 160, 0, 128, 0, 0);
                     }
                 }
             }
@@ -5283,7 +5811,7 @@ void Game::selectNextStructureOfType(const std::set<Uint32>& itemIDs) {
 }
 
 int Game::getGameSpeed() const {
-    if(gameType == GameType::CustomMultiplayer) {
+    if(isNetworkGameType(gameType)) {
         return gameInitSettings.getGameOptions().gameSpeed;
     } else {
         return settings.gameOptions.gameSpeed;

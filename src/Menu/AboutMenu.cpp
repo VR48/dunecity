@@ -20,6 +20,7 @@
 #include <globals.h>
 
 #include <FileClasses/GFXManager.h>
+#include <FileClasses/TextManager.h>
 
 AboutMenu::AboutMenu() : MenuBase()
 {
@@ -30,31 +31,50 @@ AboutMenu::AboutMenu() : MenuBase()
 
     setWindowWidget(&windowWidget);
 
-    // set up pictures in the background
-    SDL_Texture* pPlanetBackground = pGFXManager->getUIGraphic(UI_PlanetBackground);
-    planetPicture.setTexture(pPlanetBackground);
-    SDL_Rect dest1 = calcAlignedDrawingRect(pPlanetBackground);
-    dest1.y = dest1.y - getHeight(pPlanetBackground)/2 + 10;
-    windowWidget.addWidget(&planetPicture, dest1);
+    const int panelWidth = std::min(getRendererWidth() - 48, 680);
+    const int panelHeight = std::min(getRendererHeight() - 48, 520);
+    const int panelX = (getRendererWidth() - panelWidth) / 2;
+    const int panelY = (getRendererHeight() - panelHeight) / 2;
 
-    SDL_Texture* pDuneLegacy = pGFXManager->getUIGraphic(UI_DuneLegacy);
-    duneLegacy.setTexture(pDuneLegacy);
-    SDL_Rect dest2 = calcAlignedDrawingRect(pDuneLegacy);
-    dest2.y = dest2.y + getHeight(pDuneLegacy)/2 + 28;
-    windowWidget.addWidget(&duneLegacy, dest2);
+    title.setText(_("ABOUT DUNE LEGACY"));
+    title.setTextFontSize(20);
+    title.setAlignment(Alignment_HCenter);
+    windowWidget.addWidget(&title, Point(panelX, panelY), Point(panelWidth, 34));
 
-    SDL_Texture* pMenuButtonBorder = pGFXManager->getUIGraphic(UI_MenuButtonBorder);
-    buttonBorder.setTexture(pMenuButtonBorder);
-    SDL_Rect dest3 = calcAlignedDrawingRect(pMenuButtonBorder);
-    dest3.y = dest3.y + getHeight(pMenuButtonBorder)/2 + 59;
-    windowWidget.addWidget(&buttonBorder, dest3);
+    credits.setTextFontSize(14);
+    credits.setAutohideScrollbar(false);
+    credits.setText(
+        "Dune Legacy, DuneCity, and Dune2R have been built and maintained by many people.\n\n"
+        "PROJECT LEADERSHIP\n"
+        "Stefan van der Wel - creator of Dune Legacy and DuneCity\n"
+        "Vukasin Ristic - Dune Legacy repository maintainer; DuneCity maintainer and gameplay developer; "
+        "creator of Dune2R\n\n"
+        "DUNE LEGACY CONTRIBUTORS\n"
+        "Anthony Cole\n"
+        "Richard Schaller\n"
+        "Olaf van der Spek\n"
+        "Raal Goff\n"
+        "Stefen Hendriks - random map generator\n"
+        "Felix Medrano - Spanish translation\n"
+        "and many others\n\n"
+        "Dune Legacy team - base engine and ongoing contributions\n"
+        "SimHacker and Micropolis teams - city simulation reference\n"
+        "Tornie - Tornie mod content and design\n\n"
+        "Most graphics and sounds are loaded from the original Dune II PAK files, "
+        "which are not distributed with Dune Legacy. Shipped map-editor icons are "
+        "primarily from the public-domain Tango icon theme. Other contributed graphics "
+        "use the Dune Legacy license; maps are CC-BY-SA.\n\n"
+        "Dune Legacy collects gameplay statistics when matches start and end, including "
+        "player display names, houses, results, and unit statistics. These statistics help "
+        "improve game balance and the player experience.\n\n"
+        "Dune Legacy is free software released under the GNU General Public License.");
+    windowWidget.addWidget(&credits, Point(panelX, panelY + 40), Point(panelWidth, panelHeight - 88));
 
-
-    text.setText("Written by\n   Anthony Cole,\n      Richard Schaller,\n         Stefan van der Wel\n            and many others!\n");
-    text.setAlignment(Alignment_Left);
-    windowWidget.addWidget(&text,
-                            Point((getRendererWidth() - 160)/2,getRendererHeight()/2 + 70),
-                            Point(170,110));
+    backButton.setText(_("BACK"));
+    backButton.setOnClick(std::bind(&AboutMenu::onBack, this));
+    backButton.setActive();
+    windowWidget.addWidget(&backButton, Point(panelX + (panelWidth - 180) / 2, panelY + panelHeight - 40),
+                           Point(180, 32));
 }
 
 AboutMenu::~AboutMenu()
@@ -62,12 +82,7 @@ AboutMenu::~AboutMenu()
     ;
 }
 
-bool AboutMenu::doInput(SDL_Event &event)
+void AboutMenu::onBack()
 {
-    if(event.type == SDL_MOUSEBUTTONUP) {
-        quit();
-    }
-
-    return MenuBase::doInput(event);
+    quit();
 }
-

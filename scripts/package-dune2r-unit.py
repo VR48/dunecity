@@ -7,6 +7,8 @@ import argparse
 import configparser
 import json
 import math
+import io
+import shutil
 from pathlib import Path
 
 from PIL import Image, ImageOps
@@ -41,6 +43,25 @@ COMPOSITE_STATES = {
     "movement": (("chassis_movement", "chassis_idle"), ("turret_idle",)),
     "combat": (("chassis_movement", "chassis_idle"), ("turret_fire",)),
 }
+
+TILE_VARIANTS = (
+    "island", "up", "right", "up_right", "down", "up_down", "down_right", "not_left",
+    "left", "up_left", "left_right", "not_down", "down_left", "not_right", "not_up", "full",
+)
+
+BUILDING_STATES = {
+    "building_placement": ("Placement", False),
+    "building_construction": ("Construction", False),
+    "building_idle": ("Idle", True),
+    "building_active": ("Working", True),
+    "building_damaged": ("Damaged", False),
+    "building_repair": ("Repair", False),
+    "building_destroyed": ("Destroyed", False),
+}
+
+DUNECITY_ZONE_STATES = {"building_idle": ("Idle", False)}
+
+MAX_ATLAS_SIZE = 2048
 
 
 def load_frames(frames_dir: Path, frame_size: int) -> list[Image.Image]:
@@ -162,14 +183,261 @@ def load_composite_frames(metadata: dict[str, object], asset_root: Path,
 
 
 def write_atlas(frames: list[Image.Image], destination: Path, columns: int) -> tuple[int, int]:
+    if not frames or columns < 1:
+        raise ValueError("An atlas needs frames and at least one column")
     rows = math.ceil(len(frames) / columns)
-    frame_size = frames[0].width
-    atlas = Image.new("RGBA", (columns * frame_size, rows * frame_size))
+    frame_width, frame_height = frames[0].size
+    if any(frame.size != (frame_width, frame_height) for frame in frames):
+        raise ValueError("All frames in an atlas must have matching dimensions")
+    atlas = Image.new("RGBA", (columns * frame_width, rows * frame_height))
     for index, frame in enumerate(frames):
-        atlas.alpha_composite(frame, ((index % columns) * frame_size, (index // columns) * frame_size))
+        atlas.alpha_composite(frame, ((index % columns) * frame_width, (index // columns) * frame_height))
     destination.parent.mkdir(parents=True, exist_ok=True)
     atlas.save(destination, optimize=True)
     return columns, rows
+
+
+def fit_frames_to_width(frames: list[Image.Image], target_width: int) -> list[Image.Image]:
+    if not frames:
+        return []
+    target_height = max(1, round(frames[0].height * target_width / frames[0].width))
+    for index, frame in enumerate(frames):
+        resized = frame.resize((target_width, target_height), Image.Resampling.LANCZOS)
+        frame.close()
+        frames[index] = resized
+    return frames
+
+
+def write_chunked_atlases(frames: list[Image.Image], output: Path,
+                          relative_dir: Path) -> list[dict[str, int | str]]:
+    frame_width, frame_height = frames[0].size
+    if frame_width > MAX_ATLAS_SIZE or frame_height > MAX_ATLAS_SIZE:
+        raise ValueError(f"Frame {frame_width}x{frame_height} exceeds the atlas page limit")
+    columns = max(1, MAX_ATLAS_SIZE // frame_width)
+    rows = max(1, MAX_ATLAS_SIZE // frame_height)
+    frames_per_atlas = columns * rows
+    chunks: list[dict[str, int | str]] = []
+    for chunk_index, first in enumerate(range(0, len(frames), frames_per_atlas)):
+        chunk = frames[first:first + frames_per_atlas]
+        chunk_columns = min(columns, len(chunk))
+        relative_path = relative_dir / f"{chunk_index:02d}.png"
+        atlas_columns, atlas_rows = write_atlas(chunk, output / relative_path, chunk_columns)
+        chunks.append({
+            "path": relative_path.as_posix(),
+            "first": first,
+            "frames": len(chunk),
+            "columns": atlas_columns,
+            "rows": atlas_rows,
+        })
+    return chunks
+
+
+def package_tile(metadata: dict[str, object], asset_root: Path, output: Path,
+                 args: argparse.Namespace) -> int:
+    manifest = configparser.ConfigParser()
+    manifest.optionxform = str
+    manifest["Tile"] = {
+        "TerrainType": str(args.item_id),
+        "SourceUnit": str(metadata.get("slug", args.source_unit.name)),
+        "Variants": str(len(TILE_VARIANTS)),
+    }
+    manifest["Render"] = {"PixelsPerTile": str(args.frame_size)}
+
+    states = metadata.get("categories", {}).get("tile_base", {}).get("states", {})
+    full_assets = states.get("full", {}).get("assets", {})
+    full_sprite_value = full_assets.get("sprite", {}).get("file", "")
+    full_sprite_path = asset_root / full_sprite_value
+    available_variants = sum(
+        1 for variant in TILE_VARIANTS
+        if (asset_root / states.get(variant, {}).get("assets", {})
+            .get("sprite", {}).get("file", "")).is_file()
+    )
+    alias_full_master = available_variants == 1 and full_sprite_path.is_file()
+    packaged = 0
+    for index, variant in enumerate(TILE_VARIANTS):
+        assets = states.get(variant, {}).get("assets", {})
+        sprite_value = assets.get("sprite", {}).get("file", "")
+        sprite_path = asset_root / sprite_value
+        if alias_full_master:
+            assets = full_assets
+            sprite_path = full_sprite_path
+        if not sprite_path.is_file():
+            print(f"skip tile_base/{variant}: no enhanced sprite")
+            continue
+        with Image.open(sprite_path) as source:
+            tile = source.convert("RGBA").resize(
+                (args.frame_size, args.frame_size), Image.Resampling.LANCZOS)
+        relative_image = Path("tiles") / f"{variant}.png"
+        (output / relative_image).parent.mkdir(parents=True, exist_ok=True)
+        tile.save(output / relative_image, optimize=True)
+
+        section = f"Variant.{index}"
+        manifest[section] = {"Name": variant, "Image": relative_image.as_posix()}
+        compact_value = assets.get("processed", {}).get("file", "")
+        compact_path = asset_root / compact_value
+        if compact_path.is_file():
+            relative_compact = Path("compact") / f"{variant}.png"
+            (output / relative_compact).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(compact_path, output / relative_compact)
+            manifest[section]["Compact"] = relative_compact.as_posix()
+        packaged += 1
+
+    if alias_full_master:
+        print("base terrain has one seamless full master; aliased it across all topology slots")
+
+    if packaged != len(TILE_VARIANTS):
+        raise SystemExit(f"Tile package needs all {len(TILE_VARIANTS)} topology sprites; found {packaged}")
+    with (output / "tile.ini").open("w", encoding="ascii", newline="\n") as handle:
+        manifest.write(handle, space_around_delimiters=False)
+    print(f"wrote {output / 'tile.ini'} with {packaged} topology sprites")
+    return packaged
+
+
+def package_building(metadata: dict[str, object], asset_root: Path, output: Path,
+                     args: argparse.Namespace) -> int:
+    profile = metadata.get("render_profile", {})
+    footprint = profile.get("logical_footprint_tiles", [1, 1])
+    footprint_width = max(1, int(footprint[0]))
+    footprint_height = max(1, int(footprint[1]))
+    target_width = footprint_width * args.frame_size
+
+    manifest = configparser.ConfigParser()
+    manifest.optionxform = str
+    manifest["Building"] = {
+        "ItemID": str(args.item_id),
+        "HouseID": str(args.house_id),
+        "SourceUnit": str(metadata.get("slug", args.source_unit.name)),
+        "FootprintWidth": str(footprint_width),
+        "FootprintHeight": str(footprint_height),
+    }
+    manifest["Render"] = {"PixelsPerTile": str(args.frame_size)}
+
+    packaged = 0
+    for category_name, (state_name, loops) in BUILDING_STATES.items():
+        category = metadata.get("categories", {}).get(category_name, {})
+        state = category.get("states", {}).get("default", {})
+        assets = state.get("assets", {})
+        frames, frame_ms = load_source_frames(asset_root, assets)
+        if not frames:
+            print(f"skip {category_name}/default: no processed frames or sprite fallback")
+            continue
+        frames = fit_frames_to_width(frames, target_width)
+        chunks = write_chunked_atlases(
+            frames, output, Path("atlases") / state_name.lower())
+        section = f"State.{state_name}"
+        manifest[section] = {
+            "Frames": str(len(frames)),
+            "FrameMs": str(frame_ms),
+            "FrameWidth": str(frames[0].width),
+            "FrameHeight": str(frames[0].height),
+            "AnchorX": str(frames[0].width // 2),
+            "AnchorY": str(frames[0].height),
+            "Loop": "true" if loops else "false",
+            "AtlasCount": str(len(chunks)),
+        }
+        # Keep the authored still available if animation pages are pending or invalid.
+        sprite_path = asset_root / str(assets.get("sprite", {}).get("file", ""))
+        if sprite_path.is_file():
+            with Image.open(sprite_path) as source:
+                still = fit_frames_to_width([source.convert("RGBA")], target_width)[0]
+        else:
+            still = frames[0].copy()
+        relative_still = Path("stills") / f"{state_name.lower()}.png"
+        (output / relative_still).parent.mkdir(parents=True, exist_ok=True)
+        still.save(output / relative_still, optimize=True)
+        manifest[section]["Still"] = relative_still.as_posix()
+        manifest[section]["StillWidth"] = str(still.width)
+        manifest[section]["StillHeight"] = str(still.height)
+        manifest[section]["StillAnchorX"] = str(still.width // 2)
+        manifest[section]["StillAnchorY"] = str(still.height)
+        still.close()
+        for index, chunk in enumerate(chunks):
+            manifest[section][f"Atlas.{index}"] = str(chunk["path"])
+            manifest[section][f"FirstFrame.{index}"] = str(chunk["first"])
+            manifest[section][f"ChunkFrames.{index}"] = str(chunk["frames"])
+            manifest[section][f"Columns.{index}"] = str(chunk["columns"])
+            manifest[section][f"Rows.{index}"] = str(chunk["rows"])
+        packaged += 1
+        print(f"packaged {category_name}/default: {len(frames)} frame(s) in {len(chunks)} atlas chunk(s)")
+
+    if packaged == 0:
+        raise SystemExit("No enhanced building frames or sprite fallbacks were eligible for packaging")
+    text = io.StringIO()
+    manifest.write(text, space_around_delimiters=False)
+    (output / "building.ini").write_text(text.getvalue().rstrip() + "\n", encoding="ascii", newline="\n")
+    print(f"wrote {output / 'building.ini'} with {packaged} visual state(s)")
+    return packaged
+
+
+def package_dunecity_zone(metadata: dict[str, object], asset_root: Path, output: Path,
+                          args: argparse.Namespace) -> int:
+    """Package one faction's R/C/I art without entering Dune2R's unit namespace."""
+    city = metadata.get("dunecity", {})
+    atlas = city.get("zone_atlas", {}) if isinstance(city, dict) else {}
+    density_columns = max(1, min(4, int(atlas.get("density_columns", 1))))
+    value_rows = max(1, min(4, int(atlas.get("value_tier_rows", 1))))
+    profile = metadata.get("render_profile", {})
+    footprint = profile.get("logical_footprint_tiles", [2, 2])
+    target_width = max(1, int(footprint[0])) * 16
+
+    manifest = configparser.ConfigParser()
+    manifest.optionxform = str
+    manifest["Zone"] = {
+        "ItemID": str(args.item_id),
+        "HouseID": str(args.house_id),
+        "SourceUnit": str(metadata.get("slug", args.source_unit.name)),
+        "DensityColumns": str(density_columns),
+        "ValueTierRows": str(value_rows),
+        "FootprintWidth": str(max(1, int(footprint[0]))),
+        "FootprintHeight": str(max(1, int(footprint[1]))),
+    }
+    manifest["Render"] = {"PixelsPerTile": "16"}
+
+    packaged = 0
+    for category_name, (activity, loops) in DUNECITY_ZONE_STATES.items():
+        states = metadata.get("categories", {}).get(category_name, {}).get("states", {})
+        for value in range(value_rows):
+            for density in range(density_columns):
+                slot = f"d{density}_v{value}"
+                exact_assets = states.get(slot, {}).get("assets", {})
+                # Never smear the visual MASTER across simulation cells. Each
+                # density/value cell is opt-in; absent cells retain native art.
+                assets = exact_assets
+                frames, frame_ms = load_source_frames(asset_root, assets)
+                if not frames:
+                    continue
+                # Zone progression selects cells; it does not play animation.
+                frames = frames[:1]
+                frames = fit_frames_to_width(frames, target_width)
+                relative_dir = Path("atlases") / activity.lower() / slot
+                chunks = write_chunked_atlases(frames, output, relative_dir)
+                section = f"Cell.{density}.{value}.{activity}"
+                manifest[section] = {
+                    "Frames": str(len(frames)),
+                    "FrameMs": str(frame_ms),
+                    "FrameWidth": str(frames[0].width),
+                    "FrameHeight": str(frames[0].height),
+                    "AnchorX": str(frames[0].width // 2),
+                    "AnchorY": str(frames[0].height),
+                    "Loop": "true" if loops else "false",
+                    "AtlasCount": str(len(chunks)),
+                    "Fallback": "exact",
+                }
+                for index, chunk in enumerate(chunks):
+                    manifest[section][f"Atlas.{index}"] = str(chunk["path"])
+                    manifest[section][f"FirstFrame.{index}"] = str(chunk["first"])
+                    manifest[section][f"ChunkFrames.{index}"] = str(chunk["frames"])
+                    manifest[section][f"Columns.{index}"] = str(chunk["columns"])
+                    manifest[section][f"Rows.{index}"] = str(chunk["rows"])
+                packaged += 1
+
+    if packaged == 0:
+        raise SystemExit("No exact DuneCity density/value sprites were eligible for packaging")
+    text = io.StringIO()
+    manifest.write(text, space_around_delimiters=False)
+    (output / "zone.ini").write_text(text.getvalue().rstrip() + "\n", encoding="ascii", newline="\n")
+    print(f"wrote {output / 'zone.ini'} with {packaged} density/value/activity cell(s)")
+    return packaged
 
 
 def package_unit(args: argparse.Namespace) -> int:
@@ -179,6 +447,17 @@ def package_unit(args: argparse.Namespace) -> int:
     asset_root = source_unit.parent.parent
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
+
+    unit_type = str(metadata.get("unit_type", "ground")).lower()
+    if str(metadata.get("target_game", "")).lower() == "dunecity" and unit_type == "building":
+        package_dunecity_zone(metadata, asset_root, output, args)
+        return 0
+    if unit_type == "tile":
+        package_tile(metadata, asset_root, output, args)
+        return 0
+    if unit_type == "building":
+        package_building(metadata, asset_root, output, args)
+        return 0
 
     manifest = configparser.ConfigParser()
     manifest.optionxform = str

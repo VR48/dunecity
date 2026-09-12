@@ -57,11 +57,16 @@ typedef enum {
     // DuneCity commands
     CMD_CITY_PLACE_ZONE,                ///< CMD_CITY_PLACE_ZONE(X, Y, ZONE_TYPE)
     CMD_CITY_SET_TAX_RATE,              ///< CMD_CITY_SET_TAX_RATE(HOUSE_ID, RATE)
-    CMD_CITY_SET_BUDGET,                ///< CMD_CITY_SET_BUDGET(ROAD_PCT, POLICE_PCT, FIRE_PCT)
+    CMD_CITY_SET_BUDGET,                ///< CMD_CITY_SET_BUDGET(POLICE_PCT, RESERVED, RESERVED)
     CMD_CITY_TOOL,                      ///< CMD_CITY_TOOL(X, Y, TOOL_TYPE) - bulldoze, road, power line, etc.
     CMD_TECHCENTER_SPAWN,               ///< TECHCENTER_SPAWN(OBJECT_ID)
     CMD_SCOUTPOST_UPGRADE,              ///< SCOUTPOST_UPGRADE(OBJECT_ID)
     CMD_SCOUTPOST_CHEMIPOST_UPGRADE,    ///< SCOUTPOST_CHEMIPOST_UPGRADE(OBJECT_ID)
+
+    CMD_HOUSE_AUTO_REPAIR,             ///< HOUSE_AUTO_REPAIR(ENABLED), issuing player's house only
+    CMD_POLICE_REINFORCEMENTS,         ///< POLICE_REINFORCEMENTS(OBJECT_ID)
+    CMD_ZONE_DEMOLISH,                 ///< ZONE_DEMOLISH(OBJECT_ID), issuing house only
+    CMD_STRUCTURE_DEMOLISH,            ///< STRUCTURE_DEMOLISH(OBJECT_ID), issuing house only
 
     CMD_MAX
 } CMDTYPE;

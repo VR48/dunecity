@@ -1,0 +1,23 @@
+AddType application/wasm .wasm
+AddType application/octet-stream .data
+Options -Indexes
+
+<IfModule mod_headers.c>
+  Header always set Content-Security-Policy "default-src 'none'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'wasm-unsafe-eval'; script-src-attr 'none'; style-src 'self'; style-src-attr 'none'; img-src 'self'; connect-src 'self' https://api.github.com https://raw.githubusercontent.com; media-src 'self' blob:; font-src 'self'; worker-src 'self' blob:; frame-src 'none'; manifest-src 'self'; upgrade-insecure-requests"
+  Header always set Cross-Origin-Opener-Policy "same-origin"
+  Header always set Cross-Origin-Resource-Policy "same-origin"
+  Header always set Origin-Agent-Cluster "?1"
+  Header always set Referrer-Policy "no-referrer"
+  Header always set X-Frame-Options "DENY"
+
+  <FilesMatch "\.(wasm|data|js|css)$">
+    Header always set Cache-Control "public, max-age=0, must-revalidate"
+  </FilesMatch>
+  <FilesMatch "^(index\.html|build\.json)$">
+    Header always set Cache-Control "no-store"
+  </FilesMatch>
+</IfModule>
+
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE application/wasm application/javascript application/octet-stream
+</IfModule>

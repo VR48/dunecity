@@ -134,7 +134,7 @@ bool Sandworm::attack() {
             ObjectBase* pTarget = target.getObjPointer();
             if(pTarget) {
                 GameType gameType = currentGame->getGameInitSettings().getGameType();
-                bool targetIsImmortal = (gameType != GameType::CustomMultiplayer 
+                bool targetIsImmortal = (!isNetworkGameType(gameType)
                                         && gameType != GameType::LoadMultiplayer
                                         && currentGame->getGameInitSettings().getGameOptions().immortalHumanPlayer
                                         && pTarget->getOwner() == pLocalHouse);

@@ -91,7 +91,7 @@ void TextView::resize(Uint32 width, Uint32 height) {
 
     int fontSize = this->fontSize;
     std::vector<std::string> textLines = greedyWordWrap(text,
-                                                        getSize().x - scrollbar.getSize().x - 4,
+                                                        width - scrollbar.getSize().x - 4,
                                                         [fontSize](const std::string& tmp) {
                                                             return GUIStyle::getInstance().getMinimumLabelSize(tmp, fontSize).x - 4;
                                                         });

@@ -303,6 +303,7 @@ void Window::draw(Point position) {
 
             if(bSelfGeneratedBackground && !pBackground) {
                 pBackground = convertSurfaceToTexture(GUIStyle::getInstance().createBackground(getSize().x,getSize().y));
+                if(pBackground) SDL_SetTextureBlendMode(pBackground.get(), SDL_BLENDMODE_NONE);
             }
 
             if(pBackground) {

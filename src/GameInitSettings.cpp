@@ -16,6 +16,7 @@
  */
 
 #include <GameInitSettings.h>
+#include <algorithm>
 
 #include <misc/IFileStream.h>
 #include <misc/IMemoryStream.h>
@@ -61,6 +62,7 @@ GameInitSettings::GameInitSettings(const GameInitSettings& prevGameInitInfoClass
     this->alreadyPlayedRegions = alreadyPlayedRegions;
     this->alreadyShownTutorialHints = alreadyShownTutorialHints;
     filename = getScenarioFilename(houseID, mission);
+    filedata.clear();
     randomSeed = getRandomInt();
 }
 
@@ -151,6 +153,53 @@ GameInitSettings::GameInitSettings(InputStream& stream) {
         modName = "vanilla";
         modChecksum = "";
     }
+}
+
+void GameInitSettings::configureCoopSave(const GameInitSettings& saved, const HouseInfoList& houses) {
+    houseID = saved.houseID;
+    mission = saved.mission;
+    alreadyPlayedRegions = saved.alreadyPlayedRegions;
+    gameOptions = saved.gameOptions;
+    modName = saved.modName;
+    modChecksum = saved.modChecksum;
+    houseInfoList = houses;
+    // Future campaign missions can introduce enemies not present in this save.
+    for(const auto& planned : saved.houseInfoList) {
+        if(std::none_of(houseInfoList.begin(), houseInfoList.end(), [&](const HouseInfo& h) { return h.houseID == planned.houseID; }))
+            houseInfoList.push_back(planned);
+    }
+}
+
+void GameInitSettings::enableCoop(bool campaign, const std::string& serverName) {
+    gameType = (gameType == GameType::LoadMultiplayer || gameType == GameType::LoadCoop)
+        ? GameType::LoadCoop : (campaign ? GameType::CampaignCoop : GameType::SkirmishCoop);
+    multiplePlayersPerHouse = true;
+    servername = serverName;
+    gameOptions.immortalHumanPlayer = false;
+}
+
+GameInitSettings GameInitSettings::readSaveSetup(InputStream& stream, HouseInfoList& houses) {
+    if(stream.readUint32() != SAVEMAGIC) THROW(std::runtime_error, "Not a valid savegame.");
+    const auto version = stream.readUint32();
+    stream.readString();
+    if(version < 9705 || version > SAVEGAMEVERSION) THROW(std::runtime_error, "Unsupported savegame version.");
+    if(version >= 9806) { stream.readString(); stream.readString(); }
+    GameInitSettings saved(stream);
+    if(version <= 9820) saved.migrateLegacyHouseColorSlots();
+    const auto count = stream.readUint32();
+    if(count > NUM_HOUSES) THROW(std::runtime_error, "Invalid saved house count.");
+    houses.clear();
+    for(Uint32 i = 0; i < count; ++i) houses.emplace_back(stream);
+    if(version >= 9814) {
+        if(stream.readUint32() != 0x53434F4C) THROW(std::runtime_error, "Invalid saved house colors.");
+        const auto colors = stream.readUint32();
+        if(colors != count) THROW(std::runtime_error, "Invalid saved color count.");
+        for(auto& house : houses) {
+            house.colorOfHouse = stream.readSint32();
+            if(version <= 9820) house.colorOfHouse = migrateLegacyHouseColorSlot(house.colorOfHouse);
+        }
+    }
+    return saved;
 }
 
 GameInitSettings::~GameInitSettings() {

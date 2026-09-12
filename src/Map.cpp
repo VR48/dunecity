@@ -16,6 +16,7 @@
  */
 
 #include <Map.h>
+#include <dunecity/CityConstants.h>
 
 #include <globals.h>
 
@@ -375,7 +376,7 @@ bool Map::okayToPlaceStructure(int x, int y, int buildingSizeX, int buildingSize
                 return false;
             }
 
-            if(!pTile->isRock() || (tilesRequired && !pTile->isConcrete()) || (!bIgnoreUnits && pTile->isBlocked())) {
+            if(!pTile->isRock() || (tilesRequired && !pTile->hasPreparedFoundation()) || (!bIgnoreUnits && pTile->isBlocked())) {
                 return false;
             }
 
@@ -393,6 +394,8 @@ bool Map::okayToPlaceStructure(int x, int y, int buildingSizeX, int buildingSize
     }
 
     bool withinBuildRange = false;
+    const bool zoneStructure = DuneCity::isCityZoneStructure(itemID);
+    int anchoredTiles = 0;
 
     for(auto i = x; i < x + buildingSizeX; i++) {
         for(auto j = y; j < y + buildingSizeY; j++) {
@@ -406,18 +409,27 @@ bool Map::okayToPlaceStructure(int x, int y, int buildingSizeX, int buildingSize
                 return false;
             }
 
-            // Require the same gravel/slab substrate as Dune structures.
-            // Exact terrain values keep sand, spice, dunes, and mountains out
-            // of every city-only placement path.
-            if(!DuneCity::isCityBuildableTerrain(pTile->getType())
-               || (!bIgnoreUnits && pTile->isBlocked())) {
+            // Zones may spill onto sand as long as one tile anchors on rock or
+            // slab; other city-only structures keep the Dune substrate rule.
+            // Spice, blooms and mountains stay out of every city placement.
+            const uint32_t terrain = pTile->getType();
+            const bool terrainOk = zoneStructure
+                ? DuneCity::isCityZoneTerrain(terrain)
+                : DuneCity::isCityBuildableTerrain(terrain);
+            if(!terrainOk || (!bIgnoreUnits && pTile->isBlocked())) {
                 return false;
+            }
+            if(DuneCity::isCityBuildableTerrain(terrain)) {
+                anchoredTiles++;
             }
 
             if((pHouse == nullptr) || isWithinBuildRange(i, j, pHouse)) {
                 withinBuildRange = true;
             }
         }
+    }
+    if(zoneStructure && anchoredTiles == 0) {
+        return false;
     }
     return withinBuildRange;
 }
@@ -427,7 +439,7 @@ bool Map::isWithinBuildRange(int x, int y, const House* pHouse) const {
         for (auto j = y - BUILDRANGE; j <= y + BUILDRANGE; j++) {
             const auto tile = getTile_internal(i, j);
 
-            if (tile && tile->getOwner() == pHouse->getHouseID())
+            if (tile && DuneCity::isConstructionAnchor(tile->getOwner(), pHouse->getHouseID()))
                 return true;
         }
     }

@@ -33,7 +33,19 @@
 // 9822: Worfinery persists its progressive harvester extraction state.
 // 9820: CitySimulation persists every house's R/C/I and budget state.
 // 9817 added House::cityCredits; 9818 introduced the all-house city layout.
-#define SAVEGAMEVERSION     9823
+// 9824: House auto-repair setting and PoliceStation reinforcement cooldown.
+// 9825: City district unrest progress.
+// 9826: House combat reward and learning loss/damage counters.
+// 9827: QuantBot harvesting anchor selection cycle.
+// 9828: QuantBot crime-service construction allocation progress.
+// 9829: QuantBot deterministic power-demand forecast samples.
+// 9830: QuantBot coordinated waves, player orders, escorts and placement loss memory.
+// 9833: City district gang buildup persists dangerous-building exposure.
+// 9834: Former crime exposure slot stores mature-outbreak gathering time.
+// 9835: Residential zones persist individual houses and apartment population.
+// 9836: Airports persist reinforcement cooldown and partially deployed pairs.
+// 9837: Network campaign/mission game types and shared-house co-op saves.
+#define SAVEGAMEVERSION     9837
 
 // v1.0.0–v1.0.7 shipped SAVEGAMEVERSION 9810 with Num_ItemID=48.
 // v1.0.8–v1.0.10 also used 9810 but with Num_ItemID=52 (4 items added
@@ -47,7 +59,7 @@
 
 
 #define GAMESPEED_MAX 32
-#define GAMESPEED_MIN 8
+#define GAMESPEED_MIN 4   // Fastest: 4ms per cycle (twice the previous 8ms maximum speed)
 #define GAMESPEED_DEFAULT 16  // 16ms per cycle = default game speed (matches 0.97.5)
 #define MILLI2CYCLES(MILLISECONDS) ((MILLISECONDS)/GAMESPEED_DEFAULT)   // this is calculated in game milliseconds (dune 2 has about the same in game speed "fastest")
 #define VOLUME_MAX 100
@@ -104,7 +116,7 @@
 #define DEFAULT_STARTINGCREDITS 3000
 
 #define HUMANPLAYERCLASS        "HumanPlayer"
-#define DEFAULTAIPLAYERCLASS    "CampaignAIPlayer"
+#define DEFAULTAIPLAYERCLASS    "qBotEasy"
 
 
 #ifndef RESTRICT

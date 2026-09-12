@@ -16,6 +16,7 @@
  */
 
 #include <Menu/HouseChoiceMenu.h>
+#include <Menu/SinglePlayerSkirmishMenu.h>
 #include <mod/ModManager.h>
 
 #include <globals.h>
@@ -62,11 +63,7 @@ const char* const kSupportPlayerClasses[] = {
 constexpr int kSupportOptionCount = sizeof(kSupportPlayerClasses) / sizeof(kSupportPlayerClasses[0]);
 
 const char* const kEnemyAIClasses[] = {
-    "CampaignAIPlayer",
-    "qBotEasy",
-    "qBotMedium",
-    "qBotHard",
-    "qBotBrutal"
+    "qBotEasy", "qBotMedium", "qBotHard", "qBotBrutal", "qBotDefend", "CampaignAIPlayer"
 };
 
 constexpr int kEnemyAIOptionCount = sizeof(kEnemyAIClasses) / sizeof(kEnemyAIClasses[0]);
@@ -150,11 +147,12 @@ HouseChoiceMenu::HouseChoiceMenu() : MenuBase()
     windowWidget.addWidget(enemyAILabel, Point(optionsX, optionsY + 43), Point(160, 16));
     
     // Enemy AI dropdown (gap increased by 3 pixels = 29 pixel gap total)
-    enemyAIDropDown.addEntry(_("Enemy AI: Campaign AI"), 0);
-    enemyAIDropDown.addEntry(_("Enemy AI: QuantBot Easy"), 1);
-    enemyAIDropDown.addEntry(_("Enemy AI: QuantBot Medium"), 2);
-    enemyAIDropDown.addEntry(_("Enemy AI: QuantBot Hard"), 3);
-    enemyAIDropDown.addEntry(_("Enemy AI: QuantBot Brutal"), 4);
+    enemyAIDropDown.addEntry(_("QuantBot Easy"), 0);
+    enemyAIDropDown.addEntry(_("QuantBot Medium"), 1);
+    enemyAIDropDown.addEntry(_("QuantBot Hard"), 2);
+    enemyAIDropDown.addEntry(_("QuantBot Brutal"), 3);
+    enemyAIDropDown.addEntry(_("QuantBot Defend"), 4);
+    enemyAIDropDown.addEntry(_("Campaign AI"), 5);
     enemyAIDropDown.setSelectedItem(s_enemyAIIndex);
     enemyAIDropDown.setOnSelectionChange(std::bind(&HouseChoiceMenu::onEnemyAISelectionChanged, this, std::placeholders::_1));
     windowWidget.addWidget(&enemyAIDropDown, Point(optionsX, optionsY + 72), Point(160, 20));
@@ -164,6 +162,9 @@ HouseChoiceMenu::HouseChoiceMenu() : MenuBase()
     gameOptionsButton.setOnClick(std::bind(&HouseChoiceMenu::onGameOptions, this));
     windowWidget.addWidget(&gameOptionsButton, Point(optionsX, optionsY + 100), Point(160, 20));
 
+    hostCoopButton.setText(_("Host Co-op"));
+    hostCoopButton.setOnClick([] { SinglePlayerSkirmishMenu(true).showMenu(); });
+    windowWidget.addWidget(&hostCoopButton, Point(optionsX, optionsY + 128), Point(160, 20));
     updateHouseChoice();
 }
 
@@ -173,6 +174,8 @@ void HouseChoiceMenu::onChildWindowClose(Window* pChildWindow) {
     GameOptionsWindow* pGameOptionsWindow = dynamic_cast<GameOptionsWindow*>(pChildWindow);
     if(pGameOptionsWindow != nullptr) {
         s_currentGameOptions = pGameOptionsWindow->getGameOptions();
+        // Choices made here become the new defaults, the same as in Options.
+        saveGameOptionsAsDefaults(s_currentGameOptions);
     }
 }
 

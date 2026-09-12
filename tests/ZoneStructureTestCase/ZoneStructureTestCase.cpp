@@ -170,15 +170,18 @@ TEST_CASE("ZoneStructure: header declares setLocation override",
     REQUIRE(hdr.find("override") != std::string::npos);
 }
 
-TEST_CASE("ZoneStructure: placement rejects sand and accepts rock or slab",
+TEST_CASE("ZoneStructure: placement allows sand only when anchored on rock or slab",
           "[zone][placement][sand][regression]") {
     std::string src = readSourceFile("src/structures/ZoneStructure.cpp");
     REQUIRE_FALSE(src.empty());
 
     std::string body = extractFunctionBody(src, "ZoneStructure::canBePlacedAt(");
     REQUIRE_FALSE(body.empty());
-    REQUIRE(body.find("terrain != Terrain_Rock && terrain != Terrain_Slab") != std::string::npos);
-    REQUIRE(body.find("Terrain_Sand") == std::string::npos);
+    // Every tile must be zone terrain (rock, slab, sand or dunes) ...
+    REQUIRE(body.find("isCityZoneTerrain") != std::string::npos);
+    // ... and at least one tile must be rock or slab.
+    REQUIRE(body.find("isCityBuildableTerrain") != std::string::npos);
+    REQUIRE(body.find("anchoredTiles == 0") != std::string::npos);
 }
 
 // =============================================================================
@@ -352,7 +355,7 @@ TEST_CASE("ZoneStructure: tooltip uses house power model not tile power",
 
     // Extract a reasonable window around the power check.
     auto start = (densityPos > 200) ? densityPos - 200 : 0;
-    auto window = src.substr(start, 600);
+    auto window = src.substr(start, src.find("cityStats_.update(pZone)", densityPos) - start);
 
     INFO("Power check must use the owner's hasPower(), not Tile::isCityPowered()");
     REQUIRE(window.find("hasPower()") != std::string::npos);
@@ -380,41 +383,6 @@ TEST_CASE("ZoneStructure: GFXManager creates zone placeholder graphics",
 // composites_2x2/ directory at runtime, falling back to placeholders when the
 // derived PNGs are absent.
 // =============================================================================
-
-TEST_CASE("ZoneStructure: GFXManager loads derived 2x2 zone composites with fallback",
-          "[zone][graphics][sprites]") {
-    std::string src = readSourceFile("src/FileClasses/GFXManager.cpp");
-    REQUIRE_FALSE(src.empty());
-
-    INFO("GFXManager must reference composites_2x2/ directory for derived assets");
-    REQUIRE(src.find("composites_2x2/") != std::string::npos);
-
-    // Atlas builder names each cell via snprintf("<prefix>_v%d_d%d_2x2.png"),
-    // so the format string (with both %d slots) is what we look for rather
-    // than a single hard-coded variant.
-    INFO("GFXManager must build zone sprite filenames from prefix + value + density");
-    REQUIRE(src.find("_v%d_d%d_2x2.png") != std::string::npos);
-    INFO("GFXManager must include the residential prefix");
-    REQUIRE(src.find("\"res\"") != std::string::npos);
-    INFO("GFXManager must include the commercial prefix");
-    REQUIRE(src.find("\"com\"") != std::string::npos);
-    INFO("GFXManager must include the industrial prefix");
-    REQUIRE(src.find("\"ind\"") != std::string::npos);
-
-    INFO("GFXManager must NOT regress to loading raw 3x3 composites at runtime");
-    // The old pipeline loaded _3x3.png and downscaled at runtime; the improved
-    // pipeline pre-generates _2x2.png so runtime never references _3x3 files.
-    REQUIRE(src.find("_3x3.png") == std::string::npos);
-
-    INFO("GFXManager must use LoadPNG_RW for imported sprite loading");
-    REQUIRE(src.find("LoadPNG_RW") != std::string::npos);
-
-    INFO("GFXManager must fall back to makeZonePlaceholder when PNGs are absent");
-    REQUIRE(src.find("makeZonePlaceholder") != std::string::npos);
-
-    INFO("GFXManager must use SDL_BlitScaled for zoom level generation");
-    REQUIRE(src.find("SDL_BlitScaled") != std::string::npos);
-}
 
 TEST_CASE("ZoneStructure: derived 2x2 sprite files exist on disk",
           "[zone][graphics][sprites]") {
@@ -447,7 +415,7 @@ TEST_CASE("ZoneStructure: GFXManager pre-generates all zoom levels for zone spri
     REQUIRE_FALSE(src.empty());
 
     // Find the zone sprite loading block
-    auto blockStart = src.find("makeZonePlaceholder");
+    auto blockStart = src.find("auto scaleRGBASurface");
     REQUIRE(blockStart != std::string::npos);
 
     // The block must set objPic[...][0], [1], and [2] for zone sprites
@@ -457,10 +425,10 @@ TEST_CASE("ZoneStructure: GFXManager pre-generates all zoom levels for zone spri
     std::string block = src.substr(blockStart, blockEnd - blockStart);
 
     INFO("Zone block must pre-generate zoom level 1 (2x) to bypass 8-bit scaler");
-    REQUIRE(block.find("[HOUSE_HARKONNEN][1]") != std::string::npos);
+    REQUIRE(block.find("z = 1; z < NUM_ZOOMLEVEL") != std::string::npos);
 
     INFO("Zone block must pre-generate zoom level 2 (3x) to bypass 8-bit scaler");
-    REQUIRE(block.find("[HOUSE_HARKONNEN][2]") != std::string::npos);
+    REQUIRE(block.find("scaleRGBASurface(objPic[spec.id][HOUSE_HARKONNEN][0].get(), z + 1)") != std::string::npos);
 
     INFO("Zone block must use format-agnostic scaling (SDL_BlitScaled), not the paletted Scaler");
     REQUIRE(block.find("SDL_BlitScaled") != std::string::npos);
@@ -494,6 +462,33 @@ TEST_CASE("ZoneStructure: GFXManager skips SDL_SetColorKey for truecolor zone sp
 }
 
 // =============================================================================
+TEST_CASE("ZoneStructure: civic art survives the renderer texture refresh",
+          "[zone][graphics][civic][regression]") {
+    const auto zone = extractFunctionBody(readSourceFile("src/structures/ZoneStructure.cpp"),
+                                           "void ZoneStructure::updateStructureSpecificStuff()");
+    const auto draw = extractFunctionBody(readSourceFile("src/structures/StructureBase.cpp"),
+                                           "void StructureBase::blitToScreen()");
+    REQUIRE_FALSE(zone.empty());
+    REQUIRE_FALSE(draw.empty());
+    // The render path re-resolves the texture by ID. Setting only `graphic`
+    // in the update path draws a 4x4 atlas using the civic 1x1 frame layout.
+    REQUIRE(draw.find("getObjPic(graphicID, owner->getHouseID())") != std::string::npos);
+    const auto civic = extractFunctionBody(zone, "if (civicOverlay_ != CivicOverlay::None && density > 0)");
+    REQUIRE(civic.find("graphicID =") != std::string::npos);
+    REQUIRE(civic.find("ObjPic_Hospital : ObjPic_Church") != std::string::npos);
+    REQUIRE(civic.find("getObjPic(graphicID,") != std::string::npos);
+    REQUIRE(civic.find("numImagesX = 1") != std::string::npos);
+    REQUIRE(civic.find("numImagesY = 1") != std::string::npos);
+    // Clearing a civic overlay (including a vacant lot) restores the normal
+    // atlas ID and dimensions, without depending on cached pointer equality.
+    const auto restore = zone.substr(zone.find("switch (zoneType_)"));
+    REQUIRE(restore.find("graphicID = ObjPic_ZoneResidential") != std::string::npos);
+    REQUIRE(restore.find("graphicID = ObjPic_ZoneCommercial") != std::string::npos);
+    REQUIRE(restore.find("graphicID = ObjPic_ZoneIndustrial") != std::string::npos);
+    REQUIRE(restore.find("numImagesX = DuneCity::CitySprites::zoneColumns(zoneType_)") != std::string::npos);
+    REQUIRE(restore.find("DuneCity::CitySprites::zoneRows(zoneType_)") != std::string::npos);
+}
+
 // Zone animation frame regression tests
 //
 // StructureBase::init() defaults firstAnimFrame = lastAnimFrame = curAnimFrame = 2,
@@ -513,11 +508,11 @@ TEST_CASE("ZoneStructure: init sets animation frame to 0 and matches atlas size"
     // empty-lot d0/v0 placeholder) and (b) declare the atlas grid dims that
     // match the GFXManager builder. updateStructureSpecificStuff() then
     // walks curAnimFrame around the grid based on density + value tier.
-    struct ZoneInit { const char* sig; int nx; int ny; };
+    struct ZoneInit { const char* sig; const char* nx; const char* ny; };
     const ZoneInit zones[] = {
-        { "void ResidentialZone::init()", 4, 4 },
-        { "void CommercialZone::init()",  4, 4 },
-        { "void IndustrialZone::init()",  4, 2 },
+        { "void ResidentialZone::init()", "DuneCity::CitySprites::residentialColumns", "DuneCity::CitySprites::residentialRows" },
+        { "void CommercialZone::init()", "DuneCity::CitySprites::commercialColumns", "4" },
+        { "void IndustrialZone::init()", "DuneCity::CitySprites::industrialColumns", "DuneCity::CitySprites::industrialRows" },
     };
     for (const auto& z : zones) {
         auto body = extractFunctionBodyByName(src, z.sig);
@@ -529,8 +524,8 @@ TEST_CASE("ZoneStructure: init sets animation frame to 0 and matches atlas size"
         INFO(std::string(z.sig) + " must set curAnimFrame = 0");
         REQUIRE(body.find("curAnimFrame") != std::string::npos);
 
-        const std::string xExpect = "numImagesX = " + std::to_string(z.nx);
-        const std::string yExpect = "numImagesY = " + std::to_string(z.ny);
+        const std::string xExpect = std::string("numImagesX = ") + z.nx;
+        const std::string yExpect = std::string("numImagesY = ") + z.ny;
         INFO(std::string(z.sig) + " must set " + xExpect);
         REQUIRE(body.find(xExpect) != std::string::npos);
         INFO(std::string(z.sig) + " must set " + yExpect);
@@ -621,4 +616,50 @@ TEST_CASE("ZoneStructure: zone HP matches WindTrap in ObjectData config",
         INFO(std::string(zoneName) + " HitPoints must match Windtrap (" + wtHP + ")");
         REQUIRE(zoneHP == wtHP);
     }
+}
+
+#include <dunecity/ResidentialPopulation.h>
+#include <misc/IMemoryStream.h>
+#include <misc/OMemoryStream.h>
+
+TEST_CASE("Residential lots build individual houses then each apartment stage", "[zone][population]") {
+    using namespace DuneCity::ResidentialPopulation;
+    int pop=0;
+    for (int expected=1;expected<=8;++expected) {
+        pop=grow(pop,0);
+        REQUIRE(pop==expected);
+        REQUIRE(density(pop)==0);
+        REQUIRE(supply(pop)>0);
+    }
+    REQUIRE(grow(pop,64)==8);
+    for (int expected : {16,24,32,40}) {
+        pop=grow(pop,65);
+        REQUIRE(pop==expected);
+    }
+    REQUIRE(grow(pop,255)==40);
+    for (int expected : {32,24,16,8,7,6,5,4,3,2,1,0}) {
+        pop=decline(pop);
+        REQUIRE(pop==expected);
+    }
+    REQUIRE(decline(0)==0);
+    REQUIRE(supply(0)==0);
+}
+
+TEST_CASE("Residential occupancy survives saves without shifting older streams", "[zone][population][save-compat]") {
+    using namespace DuneCity::ResidentialPopulation;
+    for (int pop : {0,1,2,3,4,5,6,7,8,16,24,32,40}) {
+        OMemoryStream output;
+        write(output,pop); output.writeUint32(0x12345678);
+        IMemoryStream input(output.getData(),output.getDataLength());
+        REQUIRE(read(input,9835)==pop);
+        REQUIRE(input.readUint32()==0x12345678);
+    }
+    OMemoryStream output; output.writeUint32(0x12345678);
+    IMemoryStream input(output.getData(),output.getDataLength());
+    REQUIRE(read(input,9834)==legacy);
+    REQUIRE(input.readUint32()==0x12345678);
+    REQUIRE(fromDensity(0)==0);
+    REQUIRE(fromDensity(1)==16);
+    REQUIRE(fromDensity(2)==24);
+    REQUIRE(fromDensity(3)==40);
 }

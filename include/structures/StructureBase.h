@@ -21,6 +21,7 @@
 #include <ObjectBase.h>
 
 #include <list>
+#include <limits>
 
 class TrackedUnit;
 class UnitBase;
@@ -67,6 +68,9 @@ public:
     ObjectInterface* getInterfaceContainer() override;
 
     void destroy() override;
+    virtual void demolish();
+    // Roll back a temporary structure that never occupied the map.
+    void cancelPlacement() { demolishedByOwner_ = true; }
     void drawSelectionBox() override;
     void drawOtherPlayerSelectionBox() override;
     virtual void drawGatheringPointLine();
@@ -165,6 +169,7 @@ public:
     void setCityOccupancy(uint8_t v) { cityOccupancy_ = v; }
 
 protected:
+    bool demolishedByOwner_ = false; // transient removal cause; never survives removal
     /**
         Used for updating things that are specific to that particular structure. Is called from
         StructureBase::update() before the check if this structure is still alive.
@@ -191,6 +196,12 @@ protected:
     int     lastAnimFrame;      ///< Last frame of the current animation
     int     curAnimFrame;       ///< The current frame of the current animation
     int     animationCounter;   ///< When to show the next animation frame?
+
+    // Local Dune2R presentation timing. These values are intentionally not
+    // serialized and never participate in simulation or multiplayer state.
+    int     enhancedVisualState = -1;
+    Uint32  enhancedVisualStateStartMs = 0;
+    Uint32  enhancedPlacementStartMs = std::numeric_limits<Uint32>::max();
 
     uint8_t cityOccupancy_ = 0; ///< City sim level for non-zone city-role structures (0=vacant)
 

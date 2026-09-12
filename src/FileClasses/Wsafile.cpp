@@ -36,7 +36,7 @@ extern Palette palette;
 */
 Wsafile::Wsafile(SDL_RWops* rwop)
 {
-    readdata(1,rwop);
+    readdata({rwop});
 }
 
 /// Constructor
@@ -49,7 +49,7 @@ Wsafile::Wsafile(SDL_RWops* rwop)
 */
 Wsafile::Wsafile(SDL_RWops* rwop0, SDL_RWops* rwop1)
 {
-    readdata(2,rwop0,rwop1);
+    readdata({rwop0, rwop1});
 }
 
 /// Constructor
@@ -63,7 +63,7 @@ Wsafile::Wsafile(SDL_RWops* rwop0, SDL_RWops* rwop1)
 */
 Wsafile::Wsafile(SDL_RWops* rwop0, SDL_RWops* rwop1, SDL_RWops* rwop2)
 {
-    readdata(3,rwop0,rwop1,rwop2);
+    readdata({rwop0, rwop1, rwop2});
 }
 
 /// Constructor
@@ -78,23 +78,7 @@ Wsafile::Wsafile(SDL_RWops* rwop0, SDL_RWops* rwop1, SDL_RWops* rwop2)
 */
 Wsafile::Wsafile(SDL_RWops* rwop0, SDL_RWops* rwop1, SDL_RWops* rwop2, SDL_RWops* rwop3)
 {
-    readdata(4,rwop0,rwop1,rwop2,rwop3);
-}
-
-/// Constructor
-/**
-    The constructor reads from the RWops all data and saves them internal. The SDL_RWops can be readonly but must support
-    seeking. Immediately after the Wsafile-Object is constructed both RWops can be closed. All data is saved in the class.
-    All animations are concatinated.
-    \param  num     Number of Files
-    \param  ...     SDL_RWops for each wsa-File. (can be readonly)
-*/
-Wsafile::Wsafile(int num,...) {
-    va_list args;
-    va_start(args,num);
-
-    readdata(num,args);
-    va_end(args);
+    readdata({rwop0, rwop1, rwop2, rwop3});
 }
 
 /// Destructor
@@ -265,24 +249,10 @@ std::unique_ptr<unsigned char[]> Wsafile::readfile(SDL_RWops* rwop, int* filesiz
 /**
     This methods reads from the RWops all data and concatinates all the frames to one animation. The SDL_RWops
     can be readonly but must support seeking.
-    \param  NumFiles    Number of SDL_RWops
-    \param  ...         SDL_RWops for each wsa-File. (can be readonly)
+    \param  files       SDL_RWops for each WSA file. (can be readonly)
 */
-void Wsafile::readdata(int numFiles, ...) {
-    va_list args;
-    va_start(args,numFiles);
-    readdata(numFiles,args);
-    va_end(args);
-}
-
-/// Helper method for reading and concatinating various WSA-Files.
-/**
-    This methods reads from the RWops all data and concatinates all the frames to one animation. The SDL_RWops
-    can be readonly but must support seeking.
-    \param  numFiles    Number of SDL_RWops
-    \param  args        SDL_RWops for each wsa-File should be in this va_list. (can be readonly)
-*/
-void Wsafile::readdata(int numFiles, va_list args) {
+void Wsafile::readdata(std::initializer_list<SDL_RWops*> files) {
+    const int numFiles = static_cast<int>(files.size());
     std::vector<std::unique_ptr<unsigned char[]>> pFiledata(numFiles);
     std::vector<Uint32*> index(numFiles);
     std::vector<Uint16> numberOfFrames(numFiles);
@@ -291,41 +261,41 @@ void Wsafile::readdata(int numFiles, va_list args) {
     numFrames = 0;
     looped = false;
 
-    for(int i = 0; i < numFiles; i++) {
+    int fileIndex = 0;
+    for(SDL_RWops* rwop : files) {
         int wsaFilesize;
-        const auto rwop = va_arg(args,SDL_RWops*);
-        pFiledata[i] = readfile(rwop,&wsaFilesize);
-        numberOfFrames[i] = SDL_SwapLE16(*(reinterpret_cast<Uint16*>(pFiledata[i].get())) );
+        pFiledata[fileIndex] = readfile(rwop,&wsaFilesize);
+        numberOfFrames[fileIndex] = SDL_SwapLE16(*(reinterpret_cast<Uint16*>(pFiledata[fileIndex].get())) );
 
-        if(i == 0) {
+        if(fileIndex == 0) {
             sizeX = SDL_SwapLE16(*(reinterpret_cast<Uint16*>(pFiledata[0].get()+ 2)) );
             sizeY = SDL_SwapLE16(*(reinterpret_cast<Uint16*>(pFiledata[0].get() + 4)) );
         } else {
-            if( (sizeX != (SDL_SwapLE16(*(reinterpret_cast<Uint16*>(pFiledata[i].get()+ 2)) )))
-                || (sizeY != (SDL_SwapLE16(*(reinterpret_cast<Uint16*>(pFiledata[i].get()+ 4)) )))) {
+            if( (sizeX != (SDL_SwapLE16(*(reinterpret_cast<Uint16*>(pFiledata[fileIndex].get()+ 2)) )))
+                || (sizeY != (SDL_SwapLE16(*(reinterpret_cast<Uint16*>(pFiledata[fileIndex].get()+ 4)) )))) {
                 THROW(std::runtime_error, "Wsafile::readdata(): The wsa-files have different image dimensions. Cannot concatenate them!");
             }
         }
 
-        if( reinterpret_cast<unsigned short *>(pFiledata[i].get())[6] == 0) {
-            index[i] = reinterpret_cast<Uint32 *>(pFiledata[i].get() + 10);
+        if( reinterpret_cast<unsigned short *>(pFiledata[fileIndex].get())[6] == 0) {
+            index[fileIndex] = reinterpret_cast<Uint32 *>(pFiledata[fileIndex].get() + 10);
         } else {
-            index[i] = reinterpret_cast<Uint32 *>(pFiledata[i].get() + 8);
+            index[fileIndex] = reinterpret_cast<Uint32 *>(pFiledata[fileIndex].get() + 8);
         }
 
-        if(index[i][0] == 0) {
+        if(index[fileIndex][0] == 0) {
             // extended animation
-            if(i == 0) {
+            if(fileIndex == 0) {
                 SDL_Log("Extended WSA-File!");
             }
-            index[i]++;
-            numberOfFrames[i]--;
-            extended[i] = true;
+            index[fileIndex]++;
+            numberOfFrames[fileIndex]--;
+            extended[fileIndex] = true;
         } else {
-            extended[i] = false;
+            extended[fileIndex] = false;
         }
 
-        if(i == 0) {
+        if(fileIndex == 0) {
             if(index[0][numberOfFrames[0]+1] == 0) {
                 // index[numberOfFrames[0]] point to end of file
                 // => no loop
@@ -338,11 +308,12 @@ void Wsafile::readdata(int numFiles, va_list args) {
             }
         }
 
-        if(pFiledata[i].get() + wsaFilesize < (reinterpret_cast<unsigned char *>(index[i]) + sizeof(Uint32) * numberOfFrames[i])) {
+        if(pFiledata[fileIndex].get() + wsaFilesize < (reinterpret_cast<unsigned char *>(index[fileIndex]) + sizeof(Uint32) * numberOfFrames[fileIndex])) {
             THROW(std::runtime_error, "Wsafile::readdata(): No valid WSA-File: File too small!");
         }
 
-        numFrames += numberOfFrames[i];
+        numFrames += numberOfFrames[fileIndex];
+        ++fileIndex;
     }
 
 

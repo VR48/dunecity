@@ -1,3 +1,4 @@
+#include <players/AIDecisionLog.h>
 /*
  *  This file is part of Dune Legacy.
  *
@@ -390,9 +391,17 @@ void UnitBase::blitToScreen() {
     SDL_Rect source = calcSpriteSourceRect(pUnitGraphic, drawnAngle, numImagesX, drawnFrame, numImagesY);
     SDL_Rect dest = calcSpriteDrawingRect( pUnitGraphic, x, y, numImagesX, numImagesY, HAlign::Center, VAlign::Center);
 
+    const Uint8 dune2rBlend = pGFXManager->getDune2RVisualBlend();
+    bool classicDrawn = false;
+    if(dune2rBlend > 0 && dune2rBlend < SDL_ALPHA_OPAQUE) {
+        SDL_RenderCopy(renderer, pUnitGraphic, &source, &dest);
+        classicDrawn = true;
+    }
+
     if(!drawEnhancedUnitSprite(x, y)
        && !pGFXManager->drawHDObjPic(graphicID, getOwner()->getHouseID(), currentZoomlevel,
-                                  drawnAngle, numImagesX, drawnFrame, numImagesY, x, y)) {
+                                  drawnAngle, numImagesX, drawnFrame, numImagesY, x, y)
+       && !classicDrawn) {
         SDL_RenderCopy(renderer, pUnitGraphic, &source, &dest);
     }
 
@@ -442,7 +451,7 @@ void UnitBase::deploy(const Coord& newLocation) {
                 
                 // Check if unit should be destroyed by the bloom
                 GameType gameType = currentGame->getGameInitSettings().getGameType();
-                bool isImmortal = (gameType != GameType::CustomMultiplayer 
+                bool isImmortal = (!isNetworkGameType(gameType)
                                   && gameType != GameType::LoadMultiplayer
                                   && currentGame->getGameInitSettings().getGameOptions().immortalHumanPlayer
                                   && getOwner() == pLocalHouse);
@@ -476,6 +485,9 @@ void UnitBase::cancelDeployment() {
 }
 
 void UnitBase::destroy() {
+    if (currentGame && owner) AITelemetry::log().write(currentGame->getGameCycleCount(), owner->getHouseID(), -1,
+        "object_destroyed", AITelemetry::Record().set("object", objectID).set("item", itemID)
+            .set("x", location.x).set("y", location.y).set("health", getHealth().lround()));
 
     setTarget(nullptr);
     currentGameMap->removeObjectFromMap(getObjectID()); //no map point will reference now
@@ -519,6 +531,13 @@ void UnitBase::deviate(House* newOwner) {
         graphic = pGFXManager->getObjPic(graphicID,getOwner()->getHouseID());
         deviationTimer = DEVIATIONTIME;
     }
+
+    // Keep conversion reward in the same credit units as damage value, without
+    // awarding a killing-blow bonus for a unit that was not destroyed.
+    CombatReward::Totals conversionReward;
+    conversionReward.conversionMilli = int64_t(currentGame->objectData.data[getItemID()][newOwner->getHouseID()].price)
+        * ((getItemID() == Unit_Devastator || getItemID() == Unit_Ornithopter) ? 1000 : 100);
+    newOwner->addCombatReward(Unit_Deviator, conversionReward);
 
     // Adding this in as a surrogate for damage inflicted upon deviation.. Still not sure what the best value
     // should be... going in with a 25% of the units value unless its a devastator which we can destruct or an ornithoper

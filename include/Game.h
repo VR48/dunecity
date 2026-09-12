@@ -60,6 +60,7 @@ class House;
 class Explosion;
 class SpatialGrid;
 class UnitBase;
+class MetaServerClient;
 
 
 #define END_WAIT_TIME               (6*1000)
@@ -303,6 +304,11 @@ public:
     void cycleDune2RZoom();
 
     /**
+        Crossfades local presentation between classic and Dune2R visuals.
+    */
+    void toggleDune2RVisuals();
+
+    /**
         This method selects all units/structures in the list aList.
         \param aList the list containing all the units/structures to be selected
     */
@@ -490,6 +496,10 @@ public:
     */
     void drawCityPlacementHint();
 private:
+
+    void startMatchAnalytics();
+    void finishMatchAnalytics();
+    std::string buildMatchAnalyticsPayload(bool finishedMatch) const;
 
     void applyDune2RZoom(int zoomLevel);
 
@@ -851,6 +861,12 @@ private:
     GameInitSettings                    gameInitSettings;       ///< the init settings this game was started with
     GameInitSettings                    nextGameInitSettings;   ///< the init settings the next game shall be started with (restarting the mission, loading a savegame)
     GameInitSettings::HouseInfoList     houseInfoListSetup;     ///< this saves with which houses and players the game was actually set up. It is a copy of gameInitSettings::houseInfoList but without random houses
+
+    // A best-effort, out-of-band reporter. It never participates in lockstep
+    // state and is only created by the multiplayer host or a single-player game.
+    std::unique_ptr<MetaServerClient> matchAnalyticsClient;
+    std::string matchAnalyticsID;
+    bool matchAnalyticsStarted = false;
 
 
     std::unique_ptr<SpatialGrid>    spatialGrid;            ///< Spatial partition for fast proximity queries

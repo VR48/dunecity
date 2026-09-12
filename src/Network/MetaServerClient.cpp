@@ -160,6 +160,21 @@ void MetaServerClient::announceGameStart(const std::string& mapName, const std::
     enqueueMetaServerCommand(std::make_unique<MetaServerGameStart>(secret, mapName, modName, players, VERSIONSTRING));
 }
 
+void MetaServerClient::reportGameStats(const std::string& phase, const std::string& matchID, const std::string& stats) {
+    if ((phase != "start" && phase != "end") || matchID.empty() || stats.empty()) {
+        SDL_Log("MetaServerClient::reportGameStats - Invalid analytics event");
+        return;
+    }
+    // The server enforces the same bound. Native clients use POST, so this is
+    // a storage bound rather than a request-line constraint. End events use
+    // sparse per-item rows and normally remain far below the ceiling.
+    if (stats.size() > 64 * 1024) {
+        SDL_Log("MetaServerClient::reportGameStats - Summary exceeds 64 KiB; skipping");
+        return;
+    }
+    enqueueMetaServerCommand(std::make_unique<MetaServerGameStats>(phase, matchID, stats));
+}
+
 // NAT Traversal / Hole Punch methods (synchronous)
 
 std::string MetaServerClient::requestHolePunch(const std::string& sessionId, uint16_t stunPort) {
@@ -762,6 +777,40 @@ int MetaServerClient::connectionThreadMain(void* data) {
                     }
                 } break;
 
+                case METASERVERCOMMAND_GAMESTATS: {
+                    auto* command = dynamic_cast<MetaServerGameStats*>(nextMetaServerCommand.get());
+                    if (!command) break;
+                    std::map<std::string, std::string> parameters;
+                    parameters["command"] = "gamestats";
+                    parameters["phase"] = command->phase;
+                    parameters["match_id"] = command->matchID;
+                    parameters["stats"] = command->stats;
+                    // Match writes are idempotent. Retry once when a transient
+                    // DNS, TLS, network or server delay consumes the short
+                    // telemetry timeout; a repeated request merely upserts the
+                    // same opaque match ID. Keep both attempts bounded so an
+                    // unavailable service cannot materially delay teardown.
+                    constexpr int maxAttempts = 2;
+                    for (int attempt = 1; attempt <= maxAttempts; ++attempt) {
+                        try {
+                            postToHttp(pMetaServerClient->metaServerURL, parameters, 3);
+                            SDL_Log("MetaServerClient: Match analytics %s recorded%s", command->phase.c_str(),
+                                    attempt > 1 ? " after retry" : "");
+                            break;
+                        } catch (std::exception& e) {
+                            if (attempt < maxAttempts) {
+                                SDL_Log("MetaServerClient: Match analytics %s attempt %d timed out or failed; retrying: %s",
+                                        command->phase.c_str(), attempt, e.what());
+                            } else {
+                                // Analytics must never affect simulation or an
+                                // existing multiplayer connection.
+                                SDL_Log("MetaServerClient: Failed to record match analytics after %d attempts: %s",
+                                        maxAttempts, e.what());
+                            }
+                        }
+                    }
+                } break;
+
                 case METASERVERCOMMAND_EXIT: {
                     return 0;
                 } break;
@@ -776,4 +825,3 @@ int MetaServerClient::connectionThreadMain(void* data) {
         }
     }
 }
-

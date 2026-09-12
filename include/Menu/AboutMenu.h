@@ -21,7 +21,8 @@
 #include "MenuBase.h"
 #include <GUI/StaticContainer.h>
 #include <GUI/Label.h>
-#include <GUI/PictureLabel.h>
+#include <GUI/TextButton.h>
+#include <GUI/TextView.h>
 
 class AboutMenu : public MenuBase
 {
@@ -29,15 +30,13 @@ public:
     AboutMenu();
     virtual ~AboutMenu();
 
-    bool doInput(SDL_Event &event) override;
-
 private:
-    StaticContainer windowWidget;
-    Label           text;
+    void onBack();
 
-    PictureLabel    planetPicture;
-    PictureLabel    duneLegacy;
-    PictureLabel    buttonBorder;
+    StaticContainer windowWidget;
+    Label title;
+    TextView credits;
+    TextButton backButton;
 };
 
 #endif //ABOUTMENU_H

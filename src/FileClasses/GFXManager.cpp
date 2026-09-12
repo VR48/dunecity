@@ -16,6 +16,8 @@
  */
 
 #include <FileClasses/GFXManager.h>
+#include <dunecity/CitySpritePolicy.h>
+#include <FileClasses/EnhancedAtlasCache.h>
 
 #include <globals.h>
 
@@ -38,16 +40,24 @@
 #include <main.h>
 
 #include <misc/draw_util.h>
+#include <misc/EnhancedBuildingGeometry.h>
 #include <misc/Scaler.h>
 #include <misc/exceptions.h>
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 
 namespace {
+
+bool usesSharedCityAtlas(unsigned int id) {
+    return id == ObjPic_ZoneResidential || id == ObjPic_ZoneCommercial
+        || id == ObjPic_ZoneIndustrial || id == ObjPic_CityRoad
+        || id == ObjPic_Stadium || id == ObjPic_Airport || id == ObjPic_NuclearPlant;
+}
 
 constexpr int kEnhancedDirectionCount = 8;
 
@@ -60,6 +70,23 @@ const std::array<const char*, static_cast<size_t>(GFXManager::EnhancedUnitState:
     "Idle", "Movement", "Combat", "DamageSmoking", "DamageDamaged",
     "DamageExploded", "DamageAftermath", "DamageDissipation"
 };
+
+const std::array<const char*, static_cast<size_t>(GFXManager::EnhancedBuildingState::Count)>
+kEnhancedBuildingStateNames = {
+    "Placement", "Construction", "Idle", "Working", "Damaged", "Repair", "Destroyed"
+};
+
+const std::array<const char*, static_cast<size_t>(GFXManager::DuneCityZoneActivity::Count)>
+kDuneCityZoneActivityNames = {"Idle", "Active", "Growing", "Damaged", "Repair"};
+
+int duneCityZoneAnimationKey(int density, int valueTier,
+                             GFXManager::DuneCityZoneActivity activity) {
+    return ((std::clamp(valueTier, 0, 3) * 4 + std::clamp(density, 0, 3))
+            * static_cast<int>(GFXManager::DuneCityZoneActivity::Count))
+           + static_cast<int>(activity);
+}
+
+constexpr Uint32 kDune2RVisualFadeMs = 350;
 
 int enhancedAnimationKey(GFXManager::EnhancedUnitState state, int direction) {
     return static_cast<int>(state) * kEnhancedDirectionCount + direction;
@@ -202,14 +229,14 @@ static const Coord objPicTiles[] {
     { 4, 1 },   // ObjPic_TechCenter
     { 4, 1 },   // ObjPic_Scoutpost
     { 10, 1 },  // ObjPic_LoveFactory
-    { 4, 4 },   // ObjPic_ZoneResidential (4 density × 4 value-tier variants)
-    { 4, 4 },   // ObjPic_ZoneCommercial  (4 density × 4 value-tier variants)
-    { 4, 2 },   // ObjPic_ZoneIndustrial  (4 density × 2 value-tier variants)
-    { 16, 1 },  // ObjPic_CityRoad (16 connection variants, indexed by neighbor mask)
-    { 8, 1 },   // ObjPic_NuclearPlant (8 frame slots for build-animation parity; all identical)
+    { DuneCity::CitySprites::residentialColumns, DuneCity::CitySprites::residentialRows }, // ObjPic_ZoneResidential
+    { DuneCity::CitySprites::commercialColumns, 4 }, // ObjPic_ZoneCommercial
+    { DuneCity::CitySprites::industrialColumns, DuneCity::CitySprites::industrialRows }, // ObjPic_ZoneIndustrial
+    { 16, DuneCity::CitySprites::roadRows }, // ObjPic_CityRoad
+    { DuneCity::CitySprites::specialFrames, 1 }, // ObjPic_NuclearPlant
     { 4, 1 },   // ObjPic_PoliceStation (4 frame slots, all identical; 2x2 footprint)
-    { 4, 1 },   // ObjPic_Stadium (4 frame slots, all identical; 3x3 footprint)
-    { 4, 1 },   // ObjPic_Airport (4 frame slots, all identical; 3x3 footprint)
+    { DuneCity::CitySprites::specialFrames, 1 }, // ObjPic_Stadium
+    { DuneCity::CitySprites::specialFrames, 1 }, // ObjPic_Airport
     { 1, 1 },   // ObjPic_Hospital (single cell, 2x2 footprint, auto-placed on residential)
     { 1, 1 },   // ObjPic_Church   (single cell, 2x2 footprint, auto-placed on residential)
     { 8, 1 },   // ObjPic_SonicTrike
@@ -226,7 +253,7 @@ static_assert(sizeof(objPicTiles) / sizeof(objPicTiles[0]) == NUM_OBJPICS,
 
 static void applyRebelsTint(SDL_Surface* surface, int colorSlot);
 static bool usesPrivateVisualColorRamp(int colorSlot) {
-    return isTornieRebelsColorSlot(colorSlot) || isVanillaRebelsColorSlot(colorSlot)
+    return isDuneCityHouseColorSlot(colorSlot) || isTornieRebelsColorSlot(colorSlot) || isVanillaRebelsColorSlot(colorSlot)
         || colorSlot == HOUSE_CUSTOM || isCustomHouseColorSlot(colorSlot)
         || isTornieGuestHouseColorSlot(colorSlot);
 }
@@ -360,31 +387,9 @@ GFXManager::GFXManager() {
     objPic[ObjPic_RocketTurret][HOUSE_HARKONNEN][0] = icon->getPictureArray(24);
     objPic[ObjPic_Wall][HOUSE_HARKONNEN][0] = icon->getPictureArray(6,25,3,1);
 
-    // DuneCity zone sprites — load the full 3×3 Micropolis composites and
-    // downscale them to the 2×2 gameplay footprint (32×32 at base zoom).
-    // This shows the entire building art rather than a 2×2 center crop.
-    // Fall back to colored placeholder surfaces when the imported PNGs
-    // are absent (e.g. fresh checkout without running the import script).
-    //
-    // These surfaces are 32-bit RGBA (either from LoadPNG_RW or the
-    // placeholder helper).  The legacy Scaler functions assume 8-bit
-    // paletted surfaces and would segfault on them, so we pre-generate
-    // all three zoom levels here using format-agnostic SDL_BlitScaled,
-    // mirroring how ObjPic_Star bypasses the scaler.
+    // Prebuilt Micropolis atlases include every model and animation phase.
+    // Only texture/source-rectangle selection happens during gameplay.
     {
-        auto makeZonePlaceholder = [](Uint8 r, Uint8 g, Uint8 b) -> sdl2::surface_ptr {
-            const int sz = 2 * D2_TILESIZE;  // 32x32
-            sdl2::surface_ptr s{ SDL_CreateRGBSurface(0, sz, sz, SCREEN_BPP, RMASK, GMASK, BMASK, AMASK) };
-            SDL_FillRect(s.get(), nullptr, SDL_MapRGBA(s->format, r, g, b, 255));
-            SDL_Rect top{0,0,sz,1}, bot{0,sz-1,sz,1}, lft{0,0,1,sz}, rgt{sz-1,0,1,sz};
-            Uint32 border = SDL_MapRGBA(s->format, r/2, g/2, b/2, 255);
-            SDL_FillRect(s.get(), &top, border);
-            SDL_FillRect(s.get(), &bot, border);
-            SDL_FillRect(s.get(), &lft, border);
-            SDL_FillRect(s.get(), &rgt, border);
-            return s;
-        };
-
         // Scale a 32-bit surface by an integer factor using SDL_BlitScaled
         // (nearest-neighbour).  This avoids the legacy 8-bit Scaler path.
         auto scaleRGBASurface = [](SDL_Surface* src, int factor) -> sdl2::surface_ptr {
@@ -399,7 +404,7 @@ GFXManager::GFXManager() {
             return dst;
         };
 
-        // Try loading imported zone sprites (default: variant 0, density 2).
+        // Find imported city art in installed and development locations.
         // Search order: installed data dir, then source-tree-relative
         // paths for dev builds (binary in build/bin/ or app bundle).
         char* sdlBasePath = SDL_GetBasePath();
@@ -420,507 +425,46 @@ GFXManager::GFXManager() {
             if (srcDir.back() != '/' && srcDir.back() != '\\') srcDir += '/';
             searchDirs.push_back(srcDir + "imported_sprites/micropolis/composites_2x2/");
         }
-        // Build a per-zone-type atlas containing all (value-tier × density)
-        // variants. Atlas layout: columns = density (0..numDensity-1), rows
-        // = value tier (0..numValue-1). ZoneStructure picks the cell at
-        // (density, valueTier) each tick so a growing residential zone walks
-        // from "empty lot" through "house" to "tall apartment" sprites, with
-        // value-tier variants adding richer-looking buildings where the land
-        // value is high. Sprite files come from the Micropolis import in
-        // imported_sprites/micropolis/composites_2x2/.
-        struct ZoneAtlasSpec {
-            int objPicID;
-            const char* prefix;     // "res", "com", or "ind"
-            int numDensity;         // columns
-            int numValue;           // rows
-            int emptyBaseTile;      // top-left Micropolis tile of the 3x3 empty-zone graphic
-            Uint8 r, g, b;          // fallback color if every variant is missing
+        std::vector<std::string> atlasDirs;
+        for (const auto& dir : searchDirs)
+            atlasDirs.push_back(dir.substr(0, dir.size() - std::string("composites_2x2/").size()) + "atlases/");
+        struct CityAtlasSpec { int id; const char* name; int cellSize; };
+        const CityAtlasSpec cityAtlases[] = {
+            {ObjPic_ZoneResidential, "residential", 2 * D2_TILESIZE},
+            {ObjPic_ZoneCommercial, "commercial", 2 * D2_TILESIZE},
+            {ObjPic_ZoneIndustrial, "industrial", 2 * D2_TILESIZE},
+            {ObjPic_CityRoad, "roads", D2_TILESIZE},
+            {ObjPic_Stadium, "stadium", 3 * D2_TILESIZE},
+            {ObjPic_Airport, "airport", 3 * D2_TILESIZE},
+            {ObjPic_NuclearPlant, "nuclear", 3 * D2_TILESIZE},
         };
-        // Micropolis empty-zone graphic IDs (3x3 each, with the R/C/I letter
-        // and dotted border baked into the center tile):
-        //   Residential RZB = 240 (range 240-248)
-        //   Commercial  CZB = 423 (range 423-431)
-        //   Industrial  IZB = 612 (range 612-620)
-        const ZoneAtlasSpec zoneAtlases[] = {
-            { ObjPic_ZoneResidential, "res", 4, 4, 240,  80, 160,  80 },
-            { ObjPic_ZoneCommercial,  "com", 4, 4, 423,  80,  80, 200 },
-            { ObjPic_ZoneIndustrial,  "ind", 4, 2, 612, 200, 160,  50 },
-        };
-
-        const int cellSize = 2 * D2_TILESIZE;  // 32 px per zone cell at zoom 0
-
-        // Build the empty-zone (d=0) sprite for a zone type by compositing
-        // the Micropolis 3x3 empty-zone tile group into a 48x48 image and
-        // downscaling to 32x32. The center tile of each group carries the
-        // R/C/I letter glyph, the surrounding 8 tiles form the dotted
-        // border the player recognises from SimCity Classic.
-        auto buildEmptyZoneCell = [&](int baseTile) -> sdl2::surface_ptr {
-            std::vector<std::string> rawDirs = {
-                getDuneLegacyDataDir() + "imported_sprites/micropolis/raw_tiles/",
-                binDir + "imported_sprites/micropolis/raw_tiles/",
-                binDir + "../../imported_sprites/micropolis/raw_tiles/",
-                binDir + "../../../../../imported_sprites/micropolis/raw_tiles/",
-            };
-            if (srcDirEnv && srcDirEnv[0]) {
-                std::string sd = srcDirEnv;
-                if (sd.back() != '/' && sd.back() != '\\') sd += '/';
-                rawDirs.push_back(sd + "imported_sprites/micropolis/raw_tiles/");
+        for (const auto& spec : cityAtlases) {
+            sdl2::surface_ptr atlas;
+            for (const auto& dir : atlasDirs) {
+                auto rw = sdl2::RWops_ptr{SDL_RWFromFile((dir + spec.name + ".png").c_str(), "rb")};
+                if (rw) atlas = LoadPNG_RW(rw.get());
+                if (atlas) break;
             }
-            auto loadTile = [&](int n) -> sdl2::surface_ptr {
-                char fn[32];
-                std::snprintf(fn, sizeof(fn), "tile_%03d.png", n);
-                for (const auto& dir : rawDirs) {
-                    auto rw = sdl2::RWops_ptr{ SDL_RWFromFile((dir + fn).c_str(), "rb") };
-                    if (rw) {
-                        auto img = LoadPNG_RW(rw.get());
-                        if (img) return img;
-                    }
-                }
-                return sdl2::surface_ptr{};
-            };
-
-            const int srcTileSize = 16;  // Micropolis tile pixel size
-            const int srcW = 3 * srcTileSize;
-            const int srcH = 3 * srcTileSize;
-            sdl2::surface_ptr big{ SDL_CreateRGBSurface(0, srcW, srcH,
-                SCREEN_BPP, RMASK, GMASK, BMASK, AMASK) };
-            if (!big) return sdl2::surface_ptr{};
-            SDL_FillRect(big.get(), nullptr,
-                         SDL_MapRGBA(big->format, 0, 0, 0, 0));
-            for (int row = 0; row < 3; ++row) {
-                for (int col = 0; col < 3; ++col) {
-                    auto t = loadTile(baseTile + row * 3 + col);
-                    if (!t) continue;
-                    SDL_SetSurfaceBlendMode(t.get(), SDL_BLENDMODE_NONE);
-                    SDL_Rect d{ col * srcTileSize, row * srcTileSize,
-                                srcTileSize, srcTileSize };
-                    SDL_BlitSurface(t.get(), nullptr, big.get(), &d);
-                }
+            // These small generated PNGs are tracked and bundled on every
+            // platform. Fail clearly on incomplete/stale data, never sample
+            // a different-sized atlas or silently hide missing buildings.
+            if (!atlas || atlas->w != objPicTiles[spec.id].x * spec.cellSize
+                       || atlas->h != objPicTiles[spec.id].y * spec.cellSize)
+                THROW(std::runtime_error, "Missing or invalid city atlas %s.png; reinstall matching game data", spec.name);
+            SDL_SetSurfaceBlendMode(atlas.get(), SDL_BLENDMODE_NONE);
+            objPic[spec.id][HOUSE_HARKONNEN][0] = std::move(atlas);
+            for (int z = 1; z < NUM_ZOOMLEVEL; ++z) {
+                objPic[spec.id][HOUSE_HARKONNEN][z] = scaleRGBASurface(objPic[spec.id][HOUSE_HARKONNEN][0].get(), z + 1);
+                if (!objPic[spec.id][HOUSE_HARKONNEN][z])
+                    THROW(std::runtime_error, "Unable to scale city atlas %s", spec.name);
             }
-            // Downscale 48x48 → 32x32 to fit our 2x2 zone footprint.
-            sdl2::surface_ptr down{ SDL_CreateRGBSurface(0, cellSize, cellSize,
-                SCREEN_BPP, RMASK, GMASK, BMASK, AMASK) };
-            if (down) {
-                SDL_SetSurfaceBlendMode(big.get(), SDL_BLENDMODE_NONE);
-                SDL_BlitScaled(big.get(), nullptr, down.get(), nullptr);
-            }
-            return down;
-        };
-
-        for (const auto& spec : zoneAtlases) {
-            const int atlasW = spec.numDensity * cellSize;
-            const int atlasH = spec.numValue   * cellSize;
-            sdl2::surface_ptr atlas{ SDL_CreateRGBSurface(0,
-                atlasW, atlasH, SCREEN_BPP, RMASK, GMASK, BMASK, AMASK) };
-            if (!atlas) continue;
-            // Transparent atlas so any frame we fail to load falls back to
-            // showing terrain rather than a stale neighbour cell.
-            SDL_FillRect(atlas.get(), nullptr,
-                         SDL_MapRGBA(atlas->format, 0, 0, 0, 0));
-
-            // Pre-build the empty-zone (d=0) cell from Micropolis raw tiles
-            // so every row of column 0 shares the same proper SC-style
-            // "freshly zoned, R/C/I letter visible, dotted border" look.
-            sdl2::surface_ptr emptyCell = buildEmptyZoneCell(spec.emptyBaseTile);
-
-            for (int v = 0; v < spec.numValue; ++v) {
-                for (int d = 0; d < spec.numDensity; ++d) {
-                    if (d == 0) {
-                        if (emptyCell) {
-                            SDL_SetSurfaceBlendMode(emptyCell.get(), SDL_BLENDMODE_NONE);
-                            SDL_Rect dst{ d * cellSize, v * cellSize, cellSize, cellSize };
-                            SDL_BlitSurface(emptyCell.get(), nullptr, atlas.get(), &dst);
-                        }
-                        continue;
-                    }
-
-                    char fileName[64];
-                    std::snprintf(fileName, sizeof(fileName),
-                                  "%s_v%d_d%d_2x2.png", spec.prefix, v, d);
-
-                    sdl2::surface_ptr cell;
-                    for (const auto& dir : searchDirs) {
-                        std::string path = dir + fileName;
-                        auto rwops = sdl2::RWops_ptr{ SDL_RWFromFile(path.c_str(), "rb") };
-                        if (rwops) {
-                            cell = LoadPNG_RW(rwops.get());
-                            if (cell) break;
-                        }
-                    }
-                    if (!cell) {
-                        SDL_Log("Zone sprite missing, placeholder for %s", fileName);
-                        cell = makeZonePlaceholder(spec.r, spec.g, spec.b);
-                    }
-                    // Composites are 32×32 already; resize defensively in
-                    // case the import pipeline produced a different size.
-                    if (cell->w != cellSize || cell->h != cellSize) {
-                        sdl2::surface_ptr scaled{ SDL_CreateRGBSurface(0,
-                            cellSize, cellSize,
-                            cell->format->BitsPerPixel,
-                            cell->format->Rmask, cell->format->Gmask,
-                            cell->format->Bmask, cell->format->Amask) };
-                        if (scaled) {
-                            SDL_BlitScaled(cell.get(), nullptr, scaled.get(), nullptr);
-                            cell = std::move(scaled);
-                        }
-                    }
-                    SDL_SetSurfaceBlendMode(cell.get(), SDL_BLENDMODE_NONE);
-                    SDL_Rect dst{ d * cellSize, v * cellSize, cellSize, cellSize };
-                    SDL_BlitSurface(cell.get(), nullptr, atlas.get(), &dst);
-                }
-            }
-
-            // Pre-generate all zoom levels so the 8-bit scaler loop never
-            // runs on these truecolor RGBA surfaces.
-            objPic[spec.objPicID][HOUSE_HARKONNEN][0] = std::move(atlas);
-            objPic[spec.objPicID][HOUSE_HARKONNEN][1] = scaleRGBASurface(objPic[spec.objPicID][HOUSE_HARKONNEN][0].get(), 2);
-            objPic[spec.objPicID][HOUSE_HARKONNEN][2] = scaleRGBASurface(objPic[spec.objPicID][HOUSE_HARKONNEN][0].get(), 3);
-
-            // Zone sprites are house-independent — pre-fill every house slot
-            // so getZoomedObjPic() never tries to palette-remap RGBA data.
-            for (int h = 1; h < NUM_HOUSES; h++) {
-                for (int z = 0; z < NUM_ZOOMLEVEL; z++) {
-                    objPic[spec.objPicID][h][z] = sdl2::surface_ptr{
-                        SDL_ConvertSurface(objPic[spec.objPicID][HOUSE_HARKONNEN][z].get(),
-                                           objPic[spec.objPicID][HOUSE_HARKONNEN][z]->format, 0)
-                    };
-                }
-            }
-        }
-
-        // ----- DuneCity city-mode road atlas -----
-        //
-        // 16 connection variants indexed by Dune-Legacy neighbor mask
-        // (bit 0 up, 1 right, 2 down, 3 left).  We pull the artwork from
-        // Micropolis road tiles and use Micropolis's _RoadTable[] to map
-        // each mask to the right Micropolis tile number — the bit ordering
-        // matches Dune Legacy's exactly.  Result is a single 16×1 atlas
-        // (16*TILESIZE × TILESIZE) consumed by Tile::blitGround() when a
-        // slab is rendered in city-sim mode.
-        {
-            std::vector<std::string> roadDirs = {
-                getDuneLegacyDataDir() + "imported_sprites/micropolis/categories/roads/",
-                binDir + "imported_sprites/micropolis/categories/roads/",
-                binDir + "../../imported_sprites/micropolis/categories/roads/",
-                binDir + "../../../../../imported_sprites/micropolis/categories/roads/",
-            };
-            if (srcDirEnv && srcDirEnv[0]) {
-                std::string srcDir = srcDirEnv;
-                if (srcDir.back() != '/' && srcDir.back() != '\\') srcDir += '/';
-                roadDirs.push_back(srcDir + "imported_sprites/micropolis/categories/roads/");
-            }
-
-            // Micropolis _RoadTable[16] from src/sim/w_con.c — indexed by
-            // neighbor mask, value is the Micropolis tile number.
-            static const int kRoadTileForMask[16] = {
-                66, 67, 66, 68,   // 0=none, 1=U,    2=R,    3=UR
-                67, 67, 69, 73,   // 4=D,    5=UD,   6=RD,   7=URD
-                66, 71, 66, 72,   // 8=L,    9=UL,   10=LR,  11=ULR
-                70, 75, 74, 76    // 12=LD,  13=ULD, 14=LRD, 15=cross
-            };
-
-            // Build the 16-tile atlas at zoom-0 native pixel size (each tile
-            // is D2_TILESIZE square = 16px, matching the source PNGs and what
-            // the in-game renderer samples via world2zoomedWorld(TILESIZE)).
-            // TILESIZE (64) is a world-coord scaling constant, NOT a pixel
-            // size — using it here makes the atlas 4× too big in every
-            // dimension and the renderer ends up sampling only the corner of
-            // each tile (where curbs live, not the road markings).
-            const int atlasW = 16 * D2_TILESIZE;
-            const int atlasH = D2_TILESIZE;
-            sdl2::surface_ptr atlas{ SDL_CreateRGBSurface(0, atlasW, atlasH,
-                SCREEN_BPP, RMASK, GMASK, BMASK, AMASK) };
-
-            // Asphalt-color background — matches the recolored Micropolis
-            // road interior so a missing source PNG looks like plain road
-            // rather than a black square.
-            if (atlas) {
-                SDL_FillRect(atlas.get(), nullptr,
-                             SDL_MapRGBA(atlas->format, 90, 90, 90, 255));
-            }
-
-            int roadsLoaded = 0;
-            for (int mask = 0; mask < 16 && atlas; ++mask) {
-                char filename[32];
-                snprintf(filename, sizeof(filename), "tile_%03d.png", kRoadTileForMask[mask]);
-
-                sdl2::surface_ptr src;
-                for (const auto& dir : roadDirs) {
-                    std::string path = dir + filename;
-                    auto rwops = sdl2::RWops_ptr{ SDL_RWFromFile(path.c_str(), "rb") };
-                    if (rwops) {
-                        src = LoadPNG_RW(rwops.get());
-                        if (src) break;
-                    }
-                }
-
-                if (!src) {
-                    // Leave the black fallback for this slot — surrounding
-                    // tiles still composite into a navigable road surface.
-                    continue;
-                }
-
-                // Repaint the source tile so it reads cleanly on Dune rock:
-                //   - peach curbs (204,127,102) → asphalt (the road has no
-                //     real-world curb context on bare rock)
-                //   - grass corners (0,230,0) → asphalt (same reason)
-                //   - light-gray edge marks (191,191,191) → white (boost
-                //     contrast so they're visible against dark asphalt)
-                // Then procedurally stamp a 2×2 white center dot on every
-                // tile — the Micropolis intersection art (mask 15) has no
-                // center marking, and the dashed center on straight tiles
-                // is small enough to disappear once asphalt-on-rock becomes
-                // the dominant visual. The center dot guarantees every road
-                // tile reads as "a road" regardless of connectivity.
-                {
-                    sdl2::surface_ptr rgba{ SDL_ConvertSurfaceFormat(src.get(), SDL_PIXELFORMAT_RGBA32, 0) };
-                    if (rgba) {
-                        SDL_LockSurface(rgba.get());
-                        Uint8* pixels = static_cast<Uint8*>(rgba->pixels);
-                        for (int y = 0; y < rgba->h; ++y) {
-                            Uint8* row = pixels + y * rgba->pitch;
-                            for (int x = 0; x < rgba->w; ++x) {
-                                Uint32* px = reinterpret_cast<Uint32*>(row + x * 4);
-                                Uint8 cr, cg, cb, ca;
-                                SDL_GetRGBA(*px, rgba->format, &cr, &cg, &cb, &ca);
-                                const bool isPeachCurb = (cr == 204 && cg == 127 && cb == 102);
-                                const bool isGrass     = (cr == 0 && cg == 230 && cb == 0);
-                                const bool isLightMark = (cr == 191 && cg == 191 && cb == 191);
-                                const bool isBlack     = (cr == 0 && cg == 0 && cb == 0);
-                                const bool isBlueCond  = (cr == 102 && cg == 102 && cb == 230);
-                                const bool isBluePure  = (cr == 0 && cg == 0 && cb == 230);
-                                const bool isGray      = (cr == 127 && cg == 127 && cb == 127);
-                                const bool isRed       = (cr == 255 && cg == 0 && cb == 0);
-                                // Also catch brownish terrain pixels that leak
-                                // through on some Micropolis road tiles.
-                                const bool isBrown = (cr > 120 && cg < cr && cb < cg);
-                                if (isPeachCurb || isGrass || isBlueCond || isBluePure || isGray || isRed || isBrown) {
-                                    *px = SDL_MapRGBA(rgba->format, 90, 90, 90, 255);
-                                } else if (isLightMark) {
-                                    *px = SDL_MapRGBA(rgba->format, 255, 255, 255, 255);
-                                } else if (isBlack) {
-                                    *px = SDL_MapRGBA(rgba->format, 255, 255, 255, 255);
-                                }
-                            }
-                        }
-                        // Center 2×2 white dot to guarantee visibility.
-                        const Uint32 white = SDL_MapRGBA(rgba->format, 255, 255, 255, 255);
-                        for (int dy = 0; dy < 2; ++dy) {
-                            for (int dx = 0; dx < 2; ++dx) {
-                                int cx = rgba->w / 2 - 1 + dx;
-                                int cy = rgba->h / 2 - 1 + dy;
-                                Uint32* p = reinterpret_cast<Uint32*>(static_cast<Uint8*>(rgba->pixels) + cy * rgba->pitch + cx * 4);
-                                *p = white;
-                            }
-                        }
-                        SDL_UnlockSurface(rgba.get());
-                        src = std::move(rgba);
-                    }
-                }
-
-                SDL_Rect dst{ mask * D2_TILESIZE, 0, D2_TILESIZE, D2_TILESIZE };
-                if (src->w == D2_TILESIZE && src->h == D2_TILESIZE) {
-                    SDL_BlitSurface(src.get(), nullptr, atlas.get(), &dst);
-                } else {
-                    SDL_BlitScaled(src.get(), nullptr, atlas.get(), &dst);
-                }
-                roadsLoaded++;
-            }
-            SDL_Log("Loaded %d/16 city-road tiles from Micropolis road set", roadsLoaded);
-
-            objPic[ObjPic_CityRoad][HOUSE_HARKONNEN][0] = std::move(atlas);
-            // Nearest-neighbor scale road atlas to avoid bilinear blur on pixel art.
-            auto scaleRGBA_NN = [](SDL_Surface* src, int factor) -> sdl2::surface_ptr {
-                sdl2::surface_ptr dst{ SDL_CreateRGBSurface(0,
-                    src->w * factor, src->h * factor,
-                    src->format->BitsPerPixel,
-                    src->format->Rmask, src->format->Gmask,
-                    src->format->Bmask, src->format->Amask) };
-                if (!dst) return dst;
-                SDL_LockSurface(src);
-                SDL_LockSurface(dst.get());
-                const int bpp = src->format->BytesPerPixel;
-                for (int y = 0; y < src->h; ++y) {
-                    const Uint8* srcRow = static_cast<const Uint8*>(src->pixels) + y * src->pitch;
-                    for (int x = 0; x < src->w; ++x) {
-                        Uint32 pixel;
-                        memcpy(&pixel, srcRow + x * bpp, bpp);
-                        for (int dy = 0; dy < factor; ++dy) {
-                            Uint8* dstRow = static_cast<Uint8*>(dst->pixels) + (y * factor + dy) * dst->pitch;
-                            for (int dx = 0; dx < factor; ++dx) {
-                                memcpy(dstRow + (x * factor + dx) * bpp, &pixel, bpp);
-                            }
-                        }
-                    }
-                }
-                SDL_UnlockSurface(dst.get());
-                SDL_UnlockSurface(src);
-                return dst;
-            };
-            objPic[ObjPic_CityRoad][HOUSE_HARKONNEN][1] = scaleRGBA_NN(objPic[ObjPic_CityRoad][HOUSE_HARKONNEN][0].get(), 2);
-            objPic[ObjPic_CityRoad][HOUSE_HARKONNEN][2] = scaleRGBA_NN(objPic[ObjPic_CityRoad][HOUSE_HARKONNEN][0].get(), 3);
-
-            for (int h = 1; h < NUM_HOUSES; h++) {
-                for (int z = 0; z < NUM_ZOOMLEVEL; z++) {
-                    if (objPic[ObjPic_CityRoad][HOUSE_HARKONNEN][z]) {
-                        objPic[ObjPic_CityRoad][h][z] = sdl2::surface_ptr{
-                            SDL_ConvertSurface(objPic[ObjPic_CityRoad][HOUSE_HARKONNEN][z].get(),
-                                               objPic[ObjPic_CityRoad][HOUSE_HARKONNEN][z]->format, 0)
-                        };
-                    }
-                }
-            }
-        }
-
-        // ----- DuneCity nuclear-plant sprite -----
-        //
-        // The nuclear plant has a 3x3 gameplay footprint and StructureBase
-        // animates by stepping through 8 horizontal frames. We prefer the
-        // 4x4 (64×64) Micropolis source — downscaling 64→48 with BlitScaled
-        // gives a cleaner result than upscaling the 2x2 (32×32) variant.
-        {
-            std::vector<std::string> nuclearDirs4x4 = {
-                getDuneLegacyDataDir() + "imported_sprites/micropolis/composites_special/",
-                binDir + "imported_sprites/micropolis/composites_special/",
-                binDir + "../../imported_sprites/micropolis/composites_special/",
-                binDir + "../../../../../imported_sprites/micropolis/composites_special/",
-            };
-            std::vector<std::string> nuclearDirs2x2 = {
-                getDuneLegacyDataDir() + "imported_sprites/micropolis/composites_special_2x2/",
-                binDir + "imported_sprites/micropolis/composites_special_2x2/",
-                binDir + "../../imported_sprites/micropolis/composites_special_2x2/",
-                binDir + "../../../../../imported_sprites/micropolis/composites_special_2x2/",
-            };
-            if (srcDirEnv && srcDirEnv[0]) {
-                std::string srcDir = srcDirEnv;
-                if (srcDir.back() != '/' && srcDir.back() != '\\') srcDir += '/';
-                nuclearDirs4x4.push_back(srcDir + "imported_sprites/micropolis/composites_special/");
-                nuclearDirs2x2.push_back(srcDir + "imported_sprites/micropolis/composites_special_2x2/");
-            }
-
-            // Atlas frame dimensions at zoom-0 pixel size. TILESIZE (64) is
-            // the world-coord constant; D2_TILESIZE (16) is the actual zoom-0
-            // pixel size. Using TILESIZE here would put the sprite far outside
-            // the rectangle the renderer samples.
-            const int frameW = 3 * D2_TILESIZE;
-            const int frameH = 3 * D2_TILESIZE;
-            const int numFrames = 8;
-            const int atlasW = numFrames * frameW;
-            const int atlasH = frameH;
-            sdl2::surface_ptr atlas{ SDL_CreateRGBSurface(0, atlasW, atlasH,
-                SCREEN_BPP, RMASK, GMASK, BMASK, AMASK) };
-            if (atlas) {
-                SDL_FillRect(atlas.get(), nullptr, SDL_MapRGBA(atlas->format, 0, 0, 0, 0));
-            }
-
-            sdl2::surface_ptr nuclearSrc;
-            for (const auto& dir : nuclearDirs4x4) {
-                std::string path = dir + "nuclear_power_plant_4x4.png";
-                auto rwops = sdl2::RWops_ptr{ SDL_RWFromFile(path.c_str(), "rb") };
-                if (rwops) {
-                    nuclearSrc = LoadPNG_RW(rwops.get());
-                    if (nuclearSrc) {
-                        SDL_Log("Loaded nuclear plant sprite (4x4) from: %s", path.c_str());
-                        break;
-                    }
-                }
-            }
-            if (!nuclearSrc) {
-                for (const auto& dir : nuclearDirs2x2) {
-                    std::string path = dir + "nuclear_power_plant_2x2.png";
-                    auto rwops = sdl2::RWops_ptr{ SDL_RWFromFile(path.c_str(), "rb") };
-                    if (rwops) {
-                        nuclearSrc = LoadPNG_RW(rwops.get());
-                        if (nuclearSrc) {
-                            SDL_Log("Loaded nuclear plant sprite (2x2 fallback) from: %s", path.c_str());
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if (atlas && nuclearSrc) {
-                // Scale the source to fill the full 48×48 frame so the
-                // nuclear plant occupies its entire 3×3 gameplay footprint.
-                SDL_SetSurfaceBlendMode(nuclearSrc.get(), SDL_BLENDMODE_NONE);
-                for (int f = 0; f < numFrames; ++f) {
-                    SDL_Rect frameDst = { f * frameW, 0, frameW, frameH };
-                    SDL_BlitScaled(nuclearSrc.get(), nullptr, atlas.get(), &frameDst);
-                }
-
-                objPic[ObjPic_NuclearPlant][HOUSE_HARKONNEN][0] = std::move(atlas);
-                objPic[ObjPic_NuclearPlant][HOUSE_HARKONNEN][1] = scaleRGBASurface(objPic[ObjPic_NuclearPlant][HOUSE_HARKONNEN][0].get(), 2);
-                objPic[ObjPic_NuclearPlant][HOUSE_HARKONNEN][2] = scaleRGBASurface(objPic[ObjPic_NuclearPlant][HOUSE_HARKONNEN][0].get(), 3);
-
-                for (int h = 1; h < NUM_HOUSES; h++) {
-                    for (int z = 0; z < NUM_ZOOMLEVEL; z++) {
-                        if (objPic[ObjPic_NuclearPlant][HOUSE_HARKONNEN][z]) {
-                            objPic[ObjPic_NuclearPlant][h][z] = sdl2::surface_ptr{
-                                SDL_ConvertSurface(objPic[ObjPic_NuclearPlant][HOUSE_HARKONNEN][z].get(),
-                                                   objPic[ObjPic_NuclearPlant][HOUSE_HARKONNEN][z]->format, 0)
-                            };
-                        }
-                    }
-                }
-            } else {
-                SDL_Log("Nuclear plant sprite not found; NuclearPlant will fall back to HighTechFactory art");
-                SDL_Surface* fallback = objPic[ObjPic_HighTechFactory][HOUSE_HARKONNEN][0].get();
-                if (atlas && fallback) {
-                    const int fallbackFrames = objPicTiles[ObjPic_HighTechFactory].x;
-                    const int fallbackFrameW = fallback->w / fallbackFrames;
-                    const int fallbackFrameH = fallback->h / objPicTiles[ObjPic_HighTechFactory].y;
-
-                    SDL_SetSurfaceBlendMode(fallback, SDL_BLENDMODE_NONE);
-                    for (int f = 0; f < numFrames; ++f) {
-                        const int sourceFrame = f % fallbackFrames;
-                        SDL_Rect src{ sourceFrame * fallbackFrameW, 0, fallbackFrameW, fallbackFrameH };
-                        SDL_Rect dst{ f * frameW, 0, frameW, frameH };
-                        SDL_BlitScaled(fallback, &src, atlas.get(), &dst);
-                    }
-
-                    objPic[ObjPic_NuclearPlant][HOUSE_HARKONNEN][0] = std::move(atlas);
-                    objPic[ObjPic_NuclearPlant][HOUSE_HARKONNEN][1] = scaleRGBASurface(objPic[ObjPic_NuclearPlant][HOUSE_HARKONNEN][0].get(), 2);
-                    objPic[ObjPic_NuclearPlant][HOUSE_HARKONNEN][2] = scaleRGBASurface(objPic[ObjPic_NuclearPlant][HOUSE_HARKONNEN][0].get(), 3);
-
-                    for (int h = 1; h < NUM_HOUSES; h++) {
-                        for (int z = 0; z < NUM_ZOOMLEVEL; z++) {
-                            if (objPic[ObjPic_NuclearPlant][HOUSE_HARKONNEN][z]) {
-                                objPic[ObjPic_NuclearPlant][h][z] = sdl2::surface_ptr{
-                                    SDL_ConvertSurface(objPic[ObjPic_NuclearPlant][HOUSE_HARKONNEN][z].get(),
-                                                       objPic[ObjPic_NuclearPlant][HOUSE_HARKONNEN][z]->format, 0)
-                                };
-                            }
-                        }
-                    }
-                }
-                // Last resort: if fallback sprite was also null, fill atlas
-                // with a debug placeholder so objPic is never null.
-                if (!objPic[ObjPic_NuclearPlant][HOUSE_HARKONNEN][0]) {
-                    sdl2::surface_ptr ph{ SDL_CreateRGBSurface(0, atlasW, atlasH,
-                        SCREEN_BPP, RMASK, GMASK, BMASK, AMASK) };
-                    if (ph) {
-                        SDL_FillRect(ph.get(), nullptr, SDL_MapRGBA(ph->format, 180, 100, 100, 255));
-                        objPic[ObjPic_NuclearPlant][HOUSE_HARKONNEN][0] = std::move(ph);
-                        objPic[ObjPic_NuclearPlant][HOUSE_HARKONNEN][1] = scaleRGBASurface(objPic[ObjPic_NuclearPlant][HOUSE_HARKONNEN][0].get(), 2);
-                        objPic[ObjPic_NuclearPlant][HOUSE_HARKONNEN][2] = scaleRGBASurface(objPic[ObjPic_NuclearPlant][HOUSE_HARKONNEN][0].get(), 3);
-                        for (int h = 1; h < NUM_HOUSES; h++) {
-                            for (int z = 0; z < NUM_ZOOMLEVEL; z++) {
-                                if (objPic[ObjPic_NuclearPlant][HOUSE_HARKONNEN][z]) {
-                                    objPic[ObjPic_NuclearPlant][h][z] = sdl2::surface_ptr{
-                                        SDL_ConvertSurface(objPic[ObjPic_NuclearPlant][HOUSE_HARKONNEN][z].get(),
-                                                           objPic[ObjPic_NuclearPlant][HOUSE_HARKONNEN][z]->format, 0)
-                                    };
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            // House-independent art shares these surfaces and cached textures.
+            // Do not duplicate animation sheets for each of the 18 colour slots.
         }
 
         // ----- DuneCity police-station sprite -----
         //
-        // 2x2 footprint, no animation. Like the nuclear plant we still
+        // 2x2 footprint, no animation. We still
         // build a multi-frame atlas (4 horizontal copies) so StructureBase
         // animation indexing has somewhere to land — all frames are the
         // same image, so the sprite never appears to "animate".
@@ -1013,209 +557,6 @@ GFXManager::GFXManager() {
             }
         }
 
-    // ----- DuneCity stadium sprite -----
-    // Stadium is a 3x3 footprint civic building. Source art is the
-    // Micropolis 4x4 stadium composite (64×64) scaled to 48×48.
-    {
-        std::vector<std::string> stadiumDirs = {
-            getDuneLegacyDataDir() + "imported_sprites/micropolis/composites_special/",
-            binDir + "imported_sprites/micropolis/composites_special/",
-            binDir + "../../imported_sprites/micropolis/composites_special/",
-            binDir + "../../../../../imported_sprites/micropolis/composites_special/",
-        };
-        if (srcDirEnv && srcDirEnv[0]) {
-            std::string srcDir = srcDirEnv;
-            if (srcDir.back() != '/' && srcDir.back() != '\\') srcDir += '/';
-            stadiumDirs.push_back(srcDir + "imported_sprites/micropolis/composites_special/");
-        }
-
-        const int frameW = 3 * D2_TILESIZE;
-        const int frameH = 3 * D2_TILESIZE;
-        const int numFrames = 4;
-        sdl2::surface_ptr atlas{ SDL_CreateRGBSurface(0, numFrames * frameW, frameH,
-            SCREEN_BPP, RMASK, GMASK, BMASK, AMASK) };
-        if (atlas) SDL_FillRect(atlas.get(), nullptr, SDL_MapRGBA(atlas->format, 0, 0, 0, 0));
-
-        sdl2::surface_ptr stadiumSrc;
-        for (const auto& dir : stadiumDirs) {
-            std::string path = dir + "stadium_4x4.png";
-            auto rwops = sdl2::RWops_ptr{ SDL_RWFromFile(path.c_str(), "rb") };
-            if (rwops) {
-                stadiumSrc = LoadPNG_RW(rwops.get());
-                if (stadiumSrc) { SDL_Log("Loaded stadium sprite from: %s", path.c_str()); break; }
-            }
-        }
-
-        if (atlas && stadiumSrc) {
-            SDL_SetSurfaceBlendMode(stadiumSrc.get(), SDL_BLENDMODE_NONE);
-            for (int f = 0; f < numFrames; ++f) {
-                SDL_Rect dst = { f * frameW, 0, frameW, frameH };
-                SDL_BlitScaled(stadiumSrc.get(), nullptr, atlas.get(), &dst);
-            }
-            objPic[ObjPic_Stadium][HOUSE_HARKONNEN][0] = std::move(atlas);
-            objPic[ObjPic_Stadium][HOUSE_HARKONNEN][1] = scaleRGBASurface(objPic[ObjPic_Stadium][HOUSE_HARKONNEN][0].get(), 2);
-            objPic[ObjPic_Stadium][HOUSE_HARKONNEN][2] = scaleRGBASurface(objPic[ObjPic_Stadium][HOUSE_HARKONNEN][0].get(), 3);
-            for (int h = 1; h < NUM_HOUSES; h++) {
-                for (int z = 0; z < NUM_ZOOMLEVEL; z++) {
-                    if (objPic[ObjPic_Stadium][HOUSE_HARKONNEN][z]) {
-                        objPic[ObjPic_Stadium][h][z] = sdl2::surface_ptr{
-                            SDL_ConvertSurface(objPic[ObjPic_Stadium][HOUSE_HARKONNEN][z].get(),
-                                               objPic[ObjPic_Stadium][HOUSE_HARKONNEN][z]->format, 0)
-                        };
-                    }
-                }
-            }
-        } else {
-            SDL_Log("Stadium sprite not found; Stadium will fall back to Palace art");
-            SDL_Surface* fallback = objPic[ObjPic_Palace][HOUSE_HARKONNEN][0].get();
-            if (atlas && fallback) {
-                const int fbFrames = objPicTiles[ObjPic_Palace].x;
-                const int fbFrameW = fallback->w / fbFrames;
-                const int fbFrameH = fallback->h / objPicTiles[ObjPic_Palace].y;
-                for (int f = 0; f < numFrames; ++f) {
-                    int sourceFrame = f % fbFrames;
-                    SDL_Rect src = { sourceFrame * fbFrameW, 0, fbFrameW, fbFrameH };
-                    SDL_Rect dst = { f * frameW, 0, frameW, frameH };
-                    SDL_BlitScaled(fallback, &src, atlas.get(), &dst);
-                }
-                objPic[ObjPic_Stadium][HOUSE_HARKONNEN][0] = std::move(atlas);
-                objPic[ObjPic_Stadium][HOUSE_HARKONNEN][1] = scaleRGBASurface(objPic[ObjPic_Stadium][HOUSE_HARKONNEN][0].get(), 2);
-                objPic[ObjPic_Stadium][HOUSE_HARKONNEN][2] = scaleRGBASurface(objPic[ObjPic_Stadium][HOUSE_HARKONNEN][0].get(), 3);
-                for (int h = 1; h < NUM_HOUSES; h++) {
-                    for (int z = 0; z < NUM_ZOOMLEVEL; z++) {
-                        if (objPic[ObjPic_Stadium][HOUSE_HARKONNEN][z]) {
-                            objPic[ObjPic_Stadium][h][z] = sdl2::surface_ptr{
-                                SDL_ConvertSurface(objPic[ObjPic_Stadium][HOUSE_HARKONNEN][z].get(),
-                                                   objPic[ObjPic_Stadium][HOUSE_HARKONNEN][z]->format, 0)
-                            };
-                        }
-                    }
-                }
-            }
-            if (!objPic[ObjPic_Stadium][HOUSE_HARKONNEN][0]) {
-                sdl2::surface_ptr ph{ SDL_CreateRGBSurface(0, numFrames * frameW, frameH,
-                    SCREEN_BPP, RMASK, GMASK, BMASK, AMASK) };
-                if (ph) {
-                    SDL_FillRect(ph.get(), nullptr, SDL_MapRGBA(ph->format, 120, 180, 100, 255));
-                    objPic[ObjPic_Stadium][HOUSE_HARKONNEN][0] = std::move(ph);
-                    objPic[ObjPic_Stadium][HOUSE_HARKONNEN][1] = scaleRGBASurface(objPic[ObjPic_Stadium][HOUSE_HARKONNEN][0].get(), 2);
-                    objPic[ObjPic_Stadium][HOUSE_HARKONNEN][2] = scaleRGBASurface(objPic[ObjPic_Stadium][HOUSE_HARKONNEN][0].get(), 3);
-                    for (int h = 1; h < NUM_HOUSES; h++) {
-                        for (int z = 0; z < NUM_ZOOMLEVEL; z++) {
-                            if (objPic[ObjPic_Stadium][HOUSE_HARKONNEN][z]) {
-                                objPic[ObjPic_Stadium][h][z] = sdl2::surface_ptr{
-                                    SDL_ConvertSurface(objPic[ObjPic_Stadium][HOUSE_HARKONNEN][z].get(),
-                                                       objPic[ObjPic_Stadium][HOUSE_HARKONNEN][z]->format, 0)
-                                };
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // ----- DuneCity airport sprite -----
-    // Airport is a 3x3 footprint economic building. Source art is the
-    // Micropolis 6x6 airport composite (96×96) scaled to 48×48.
-    {
-        std::vector<std::string> airportDirs = {
-            getDuneLegacyDataDir() + "imported_sprites/micropolis/composites_special/",
-            binDir + "imported_sprites/micropolis/composites_special/",
-            binDir + "../../imported_sprites/micropolis/composites_special/",
-            binDir + "../../../../../imported_sprites/micropolis/composites_special/",
-        };
-        if (srcDirEnv && srcDirEnv[0]) {
-            std::string srcDir = srcDirEnv;
-            if (srcDir.back() != '/' && srcDir.back() != '\\') srcDir += '/';
-            airportDirs.push_back(srcDir + "imported_sprites/micropolis/composites_special/");
-        }
-
-        const int frameW = 3 * D2_TILESIZE;
-        const int frameH = 3 * D2_TILESIZE;
-        const int numFrames = 4;
-        sdl2::surface_ptr atlas{ SDL_CreateRGBSurface(0, numFrames * frameW, frameH,
-            SCREEN_BPP, RMASK, GMASK, BMASK, AMASK) };
-        if (atlas) SDL_FillRect(atlas.get(), nullptr, SDL_MapRGBA(atlas->format, 0, 0, 0, 0));
-
-        sdl2::surface_ptr airportSrc;
-        for (const auto& dir : airportDirs) {
-            std::string path = dir + "airport_6x6.png";
-            auto rwops = sdl2::RWops_ptr{ SDL_RWFromFile(path.c_str(), "rb") };
-            if (rwops) {
-                airportSrc = LoadPNG_RW(rwops.get());
-                if (airportSrc) { SDL_Log("Loaded airport sprite from: %s", path.c_str()); break; }
-            }
-        }
-
-        if (atlas && airportSrc) {
-            SDL_SetSurfaceBlendMode(airportSrc.get(), SDL_BLENDMODE_NONE);
-            for (int f = 0; f < numFrames; ++f) {
-                SDL_Rect dst = { f * frameW, 0, frameW, frameH };
-                SDL_BlitScaled(airportSrc.get(), nullptr, atlas.get(), &dst);
-            }
-            objPic[ObjPic_Airport][HOUSE_HARKONNEN][0] = std::move(atlas);
-            objPic[ObjPic_Airport][HOUSE_HARKONNEN][1] = scaleRGBASurface(objPic[ObjPic_Airport][HOUSE_HARKONNEN][0].get(), 2);
-            objPic[ObjPic_Airport][HOUSE_HARKONNEN][2] = scaleRGBASurface(objPic[ObjPic_Airport][HOUSE_HARKONNEN][0].get(), 3);
-            for (int h = 1; h < NUM_HOUSES; h++) {
-                for (int z = 0; z < NUM_ZOOMLEVEL; z++) {
-                    if (objPic[ObjPic_Airport][HOUSE_HARKONNEN][z]) {
-                        objPic[ObjPic_Airport][h][z] = sdl2::surface_ptr{
-                            SDL_ConvertSurface(objPic[ObjPic_Airport][HOUSE_HARKONNEN][z].get(),
-                                               objPic[ObjPic_Airport][HOUSE_HARKONNEN][z]->format, 0)
-                        };
-                    }
-                }
-            }
-        } else {
-            SDL_Log("Airport sprite not found; Airport will fall back to Starport art");
-            SDL_Surface* fallback = objPic[ObjPic_Starport][HOUSE_HARKONNEN][0].get();
-            if (atlas && fallback) {
-                const int fbFrames = objPicTiles[ObjPic_Starport].x;
-                const int fbFrameW = fallback->w / fbFrames;
-                const int fbFrameH = fallback->h / objPicTiles[ObjPic_Starport].y;
-                for (int f = 0; f < numFrames; ++f) {
-                    int sourceFrame = f % fbFrames;
-                    SDL_Rect src = { sourceFrame * fbFrameW, 0, fbFrameW, fbFrameH };
-                    SDL_Rect dst = { f * frameW, 0, frameW, frameH };
-                    SDL_BlitScaled(fallback, &src, atlas.get(), &dst);
-                }
-                objPic[ObjPic_Airport][HOUSE_HARKONNEN][0] = std::move(atlas);
-                objPic[ObjPic_Airport][HOUSE_HARKONNEN][1] = scaleRGBASurface(objPic[ObjPic_Airport][HOUSE_HARKONNEN][0].get(), 2);
-                objPic[ObjPic_Airport][HOUSE_HARKONNEN][2] = scaleRGBASurface(objPic[ObjPic_Airport][HOUSE_HARKONNEN][0].get(), 3);
-                for (int h = 1; h < NUM_HOUSES; h++) {
-                    for (int z = 0; z < NUM_ZOOMLEVEL; z++) {
-                        if (objPic[ObjPic_Airport][HOUSE_HARKONNEN][z]) {
-                            objPic[ObjPic_Airport][h][z] = sdl2::surface_ptr{
-                                SDL_ConvertSurface(objPic[ObjPic_Airport][HOUSE_HARKONNEN][z].get(),
-                                                   objPic[ObjPic_Airport][HOUSE_HARKONNEN][z]->format, 0)
-                            };
-                        }
-                    }
-                }
-            }
-            if (!objPic[ObjPic_Airport][HOUSE_HARKONNEN][0]) {
-                sdl2::surface_ptr ph{ SDL_CreateRGBSurface(0, numFrames * frameW, frameH,
-                    SCREEN_BPP, RMASK, GMASK, BMASK, AMASK) };
-                if (ph) {
-                    SDL_FillRect(ph.get(), nullptr, SDL_MapRGBA(ph->format, 180, 160, 100, 255));
-                    objPic[ObjPic_Airport][HOUSE_HARKONNEN][0] = std::move(ph);
-                    objPic[ObjPic_Airport][HOUSE_HARKONNEN][1] = scaleRGBASurface(objPic[ObjPic_Airport][HOUSE_HARKONNEN][0].get(), 2);
-                    objPic[ObjPic_Airport][HOUSE_HARKONNEN][2] = scaleRGBASurface(objPic[ObjPic_Airport][HOUSE_HARKONNEN][0].get(), 3);
-                    for (int h = 1; h < NUM_HOUSES; h++) {
-                        for (int z = 0; z < NUM_ZOOMLEVEL; z++) {
-                            if (objPic[ObjPic_Airport][HOUSE_HARKONNEN][z]) {
-                                objPic[ObjPic_Airport][h][z] = sdl2::surface_ptr{
-                                    SDL_ConvertSurface(objPic[ObjPic_Airport][HOUSE_HARKONNEN][z].get(),
-                                                       objPic[ObjPic_Airport][HOUSE_HARKONNEN][z]->format, 0)
-                                };
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
     // ----- DuneCity hospital & church sprites -----
     // Auto-placed on residential zones by the game (SC Classic behavior).
     // Source: Micropolis 2x2 composites (32×32), matching zone cell size.
@@ -2511,11 +1852,10 @@ GFXManager::GFXManager() {
             SDL_Surface* zoneSrc = objPic[objPicId][HOUSE_HARKONNEN][0].get();
             if (!zoneSrc) return extractSmallDetailPic("SLAB.WSA");
 
-            // Atlas layout: columns = density, rows = value tier. Sample
-            // the medium-density v0 cell (col 2, row 0) as the build-menu
-            // representative — the v0/d0 corner is an empty-lot placeholder.
-            const int cellSize = 2 * D2_TILESIZE;  // 32 px
-            SDL_Rect srcRect = { 2 * cellSize, 0, cellSize, cellSize };
+            // Representative inhabited model; phase zero, value tier zero.
+            const int cellSize = 2 * D2_TILESIZE;
+            const int model = objPicId == ObjPic_ZoneResidential ? 5 : 3;
+            SDL_Rect srcRect = { model * cellSize, 0, cellSize, cellSize };
 
             // Create a transparent 91x55 canvas.  Reserve gutters so the
             // icon doesn't overlap the top-left lattice overlay (13x13 at
@@ -3570,12 +2910,10 @@ GFXManager::GFXManager() {
             { UI_MapEditor_ZoneCommercial,  ObjPic_ZoneCommercial  },
             { UI_MapEditor_ZoneIndustrial,  ObjPic_ZoneIndustrial  },
         };
-        // Editor icon = the medium-density v0 cell (column 2, row 0) of the
-        // atlas. The v0/d0 top-left corner is an "empty lot" placeholder
-        // which would make every zone button look like dirt.
-        const int iconCellX = 2 * (2 * D2_TILESIZE);  // column 2 (d=2)
-        const int iconCellY = 0;                      // row 0 (v=0)
+        // Use the same inhabited model as the build menu, in the static row.
+        const int iconCellY = 0;
         for (const auto& z : zoneIcons) {
+            const int iconCellX = (z.objPicID == ObjPic_ZoneResidential ? 5 : 3) * 2 * D2_TILESIZE;
             for (int h = 0; h < (int)NUM_HOUSES; ++h) {
                 uiGraphic[z.uiID][h] = getSubPicture(objPic[z.objPicID][HOUSE_HARKONNEN][0].get(),
                                                     iconCellX, iconCellY,
@@ -3584,7 +2922,7 @@ GFXManager::GFXManager() {
         }
     }
     // Pull the nuclear icon directly from the Micropolis nuclear-plant atlas
-    // — first 3x3 frame is identical across all 8 animation slots. Pre-fill
+    // — the first 3x3 frame is the static plant. Pre-fill
     // every house slot like the zone icons (sprite is house-agnostic).
     for (int h = 0; h < (int)NUM_HOUSES; ++h) {
         if (objPic[ObjPic_NuclearPlant][HOUSE_HARKONNEN][0]) {
@@ -5057,6 +4395,12 @@ void GFXManager::invalidateAllSpriteTextures() {
     }
     enhancedUnitDefinitions.clear();
     enhancedUnitManifestsLoaded = false;
+    enhancedBuildingDefinitions.clear();
+    enhancedTerrainDefinitions.clear();
+    enhancedWorldManifestsLoaded = false;
+    if(enhancedBuildingAtlasCache) {
+        enhancedBuildingAtlasCache->clear();
+    }
     enhancedUnitRenderModes.clear();
     enhancedRenderModesLoaded = false;
 }
@@ -5995,7 +5339,7 @@ bool GFXManager::hasObjPic(unsigned int id, int house, unsigned int z) const {
     if(id >= NUM_OBJPICS || z >= NUM_ZOOMLEVEL) {
         return false;
     }
-    house = getHouseVisualHouse(house);
+    house = usesSharedCityAtlas(id) ? HOUSE_HARKONNEN : getHouseVisualHouse(house);
     if(!isValidHouseColorSlot(house)) {
         return false;
     }
@@ -6006,7 +5350,7 @@ SDL_Texture* GFXManager::getZoomedObjPic(unsigned int id, int house, unsigned in
     if(id >= NUM_OBJPICS) {
         THROW(std::invalid_argument, "GFXManager::getZoomedObjPic(): Unit Picture with ID %u is not available!", id);
     }
-    house = getHouseVisualHouse(house);
+    house = usesSharedCityAtlas(id) ? HOUSE_HARKONNEN : getHouseVisualHouse(house);
     if(!isValidHouseColorSlot(house)) {
         house = HOUSE_HARKONNEN;
     }
@@ -6201,7 +5545,7 @@ zoomable_texture GFXManager::getObjPic(unsigned int id, int house) {
     }
 
     const int requestedHouse = house;
-    int visualHouse = getHouseVisualHouse(requestedHouse);
+    int visualHouse = usesSharedCityAtlas(id) ? HOUSE_HARKONNEN : getHouseVisualHouse(requestedHouse);
     if(!isValidHouseColorSlot(visualHouse)) {
         visualHouse = HOUSE_HARKONNEN;
     }
@@ -6927,6 +6271,15 @@ bool GFXManager::drawHDObjPic(unsigned int id, int house, unsigned int z,
         return false;
     }
 
+    Uint8 blend = SDL_ALPHA_OPAQUE;
+    if(ModManager::instance().isInitialized()
+       && ModManager::instance().getActiveModName() == "Dune2R") {
+        blend = getDune2RVisualBlend();
+        if(blend == 0) {
+            return false;
+        }
+    }
+
     if(!loadHDObjPicOverride(id)) {
         return false;
     }
@@ -6979,8 +6332,88 @@ bool GFXManager::drawHDObjPic(unsigned int id, int house, unsigned int z,
         destH
     };
 
+    SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+    SDL_SetTextureAlphaMod(texture, blend);
     SDL_RenderCopy(renderer, texture, &source, &dest);
+    SDL_SetTextureAlphaMod(texture, SDL_ALPHA_OPAQUE);
     return true;
+}
+
+void GFXManager::loadDune2RVisualPreference() {
+    if(dune2rVisualPreferenceLoaded) {
+        return;
+    }
+    dune2rVisualPreferenceLoaded = true;
+    dune2rVisualTargetEnabled = true;
+    try {
+        INIFile config(getConfigFilepath());
+        dune2rVisualTargetEnabled = config.getBoolValue(
+            "Dune2R", "Enhanced Visuals", true);
+    } catch(const std::exception& e) {
+        SDL_Log("GFXManager: Could not load Dune2R visual preference: %s", e.what());
+    }
+    dune2rVisualBlend = dune2rVisualTargetEnabled ? SDL_ALPHA_OPAQUE : 0;
+}
+
+Uint8 GFXManager::getDune2RVisualBlend() {
+    if(!ModManager::instance().isInitialized()
+       || ModManager::instance().getActiveModName() != "Dune2R") {
+        return 0;
+    }
+    loadDune2RVisualPreference();
+    if(!dune2rVisualTransitionActive) {
+        return dune2rVisualBlend;
+    }
+
+    const Uint32 elapsed = SDL_GetTicks() - dune2rVisualTransitionStartTicks;
+    if(elapsed >= kDune2RVisualFadeMs) {
+        dune2rVisualBlend = dune2rVisualTargetEnabled ? SDL_ALPHA_OPAQUE : 0;
+        dune2rVisualTransitionActive = false;
+        return dune2rVisualBlend;
+    }
+
+    const int target = dune2rVisualTargetEnabled ? SDL_ALPHA_OPAQUE : 0;
+    const int start = dune2rVisualTransitionStartBlend;
+    dune2rVisualBlend = static_cast<Uint8>(std::clamp(
+        start + (target - start) * static_cast<int>(elapsed)
+                    / static_cast<int>(kDune2RVisualFadeMs),
+        0, static_cast<int>(SDL_ALPHA_OPAQUE)));
+    return dune2rVisualBlend;
+}
+
+bool GFXManager::isDune2RVisualsEnabled() {
+    loadDune2RVisualPreference();
+    return dune2rVisualTargetEnabled;
+}
+
+void GFXManager::setDune2RVisualsEnabled(bool enabled) {
+    if(!ModManager::instance().isInitialized()
+       || ModManager::instance().getActiveModName() != "Dune2R") {
+        return;
+    }
+    const Uint8 currentBlend = getDune2RVisualBlend();
+    if(enabled == dune2rVisualTargetEnabled && !dune2rVisualTransitionActive) {
+        return;
+    }
+    dune2rVisualTargetEnabled = enabled;
+    dune2rVisualTransitionStartBlend = currentBlend;
+    dune2rVisualTransitionStartTicks = SDL_GetTicks();
+    dune2rVisualTransitionActive = true;
+
+    try {
+        const std::string path = getConfigFilepath();
+        INIFile config(path);
+        config.setBoolValue("Dune2R", "Enhanced Visuals", enabled);
+        if(!config.saveChangesTo(path)) {
+            SDL_Log("GFXManager: Could not save Dune2R visual preference to %s", path.c_str());
+        }
+    } catch(const std::exception& e) {
+        SDL_Log("GFXManager: Could not save Dune2R visual preference: %s", e.what());
+    }
+}
+
+void GFXManager::toggleDune2RVisuals() {
+    setDune2RVisualsEnabled(!isDune2RVisualsEnabled());
 }
 
 void GFXManager::loadEnhancedUnitManifests() {
@@ -7088,6 +6521,297 @@ void GFXManager::loadEnhancedUnitManifests() {
             }
         } catch(const std::exception& e) {
             SDL_Log("GFXManager: Failed to read enhanced unit manifest %s: %s",
+                    manifestPath.string().c_str(), e.what());
+        }
+    }
+}
+
+void GFXManager::loadEnhancedWorldManifests() {
+    invalidateEnhancedUnitMountsIfChanged();
+    if(enhancedWorldManifestsLoaded) {
+        return;
+    }
+    enhancedWorldManifestsLoaded = true;
+    enhancedBuildingDefinitions.clear();
+    enhancedTerrainDefinitions.clear();
+
+    if(!ModManager::instance().isInitialized()
+       || ModManager::instance().getActiveModName() != "Dune2R") {
+        return;
+    }
+
+    const std::filesystem::path unitsRoot =
+        std::filesystem::path(ModManager::instance().getModPath("Dune2R"))
+        / "graphics_hd" / "units";
+    if(!std::filesystem::is_directory(unitsRoot)) {
+        return;
+    }
+
+    for(const auto& entry : std::filesystem::directory_iterator(unitsRoot)) {
+        if(!entry.is_directory()) {
+            continue;
+        }
+
+        const std::filesystem::path tileManifestPath = entry.path() / "tile.ini";
+        if(std::filesystem::is_regular_file(tileManifestPath)) {
+            try {
+                INIFile manifest(tileManifestPath.string());
+                EnhancedTerrainDefinition definition;
+                definition.terrainType = manifest.getIntValue("Tile", "TerrainType", -1);
+                definition.sourceUnit = manifest.getStringValue(
+                    "Tile", "SourceUnit", entry.path().filename().string());
+                const int variants = manifest.getIntValue("Tile", "Variants", 0);
+                if(definition.terrainType < 0 || variants != 16) {
+                    SDL_Log("GFXManager: Skipping invalid terrain manifest %s",
+                            tileManifestPath.string().c_str());
+                } else {
+                    bool complete = true;
+                    for(int variant = 0; variant < 16; ++variant) {
+                        const std::string section = "Variant." + std::to_string(variant);
+                        const std::string imageName = manifest.getStringValue(section, "Image", "");
+                        const std::filesystem::path imagePath =
+                            std::filesystem::weakly_canonical(entry.path() / imageName);
+                        if(imageName.empty() || !isPathInside(imagePath, unitsRoot)
+                           || !std::filesystem::is_regular_file(imagePath)) {
+                            complete = false;
+                            break;
+                        }
+                        definition.variants[variant].imagePath = imagePath.string();
+                    }
+                    if(complete) {
+                        enhancedTerrainDefinitions.push_back(std::move(definition));
+                        SDL_Log("GFXManager: Registered enhanced terrain type %d from %s",
+                                enhancedTerrainDefinitions.back().terrainType,
+                                tileManifestPath.string().c_str());
+                    } else {
+                        SDL_Log("GFXManager: Terrain manifest %s is missing a topology image",
+                                tileManifestPath.string().c_str());
+                    }
+                }
+            } catch(const std::exception& e) {
+                SDL_Log("GFXManager: Failed to read terrain manifest %s: %s",
+                        tileManifestPath.string().c_str(), e.what());
+            }
+        }
+
+        const std::filesystem::path buildingManifestPath = entry.path() / "building.ini";
+        if(!std::filesystem::is_regular_file(buildingManifestPath)) {
+            continue;
+        }
+        try {
+            INIFile manifest(buildingManifestPath.string());
+            EnhancedBuildingDefinition definition;
+            definition.itemID = manifest.getIntValue("Building", "ItemID", -1);
+            definition.houseID = manifest.getIntValue("Building", "HouseID", -1);
+            definition.sourceUnit = manifest.getStringValue(
+                "Building", "SourceUnit", entry.path().filename().string());
+            definition.footprintWidth = manifest.getIntValue("Building", "FootprintWidth", 0);
+            definition.footprintHeight = manifest.getIntValue("Building", "FootprintHeight", 0);
+            if(definition.itemID < 0 || definition.houseID < -1
+               || definition.houseID >= static_cast<int>(NUM_HOUSES)
+               || definition.footprintWidth <= 0 || definition.footprintHeight <= 0) {
+                SDL_Log("GFXManager: Skipping invalid building manifest %s",
+                        buildingManifestPath.string().c_str());
+                continue;
+            }
+
+            for(int stateIndex = 0;
+                stateIndex < static_cast<int>(kEnhancedBuildingStateNames.size());
+                ++stateIndex) {
+                const std::string section = std::string("State.")
+                                            + kEnhancedBuildingStateNames[stateIndex];
+                const int frameCount = manifest.getIntValue(section, "Frames", 0);
+                const int atlasCount = manifest.getIntValue(section, "AtlasCount", 0);
+                if(frameCount <= 0 || atlasCount <= 0 || atlasCount > 64) {
+                    continue;
+                }
+
+                EnhancedBuildingAnimation animation;
+                animation.frameCount = frameCount;
+                animation.frameMs = std::max(1, manifest.getIntValue(section, "FrameMs", 100));
+                animation.frameWidth = manifest.getIntValue(section, "FrameWidth", 0);
+                animation.frameHeight = manifest.getIntValue(section, "FrameHeight", 0);
+                animation.anchorX = manifest.getIntValue(section, "AnchorX", animation.frameWidth / 2);
+                animation.anchorY = manifest.getIntValue(section, "AnchorY", animation.frameHeight);
+                animation.loop = manifest.getBoolValue(section, "Loop", true);
+                const std::string stillName = manifest.getStringValue(section, "Still", "");
+                const auto stillPath = std::filesystem::weakly_canonical(entry.path() / stillName);
+                animation.stillWidth = manifest.getIntValue(section, "StillWidth", animation.frameWidth);
+                animation.stillHeight = manifest.getIntValue(section, "StillHeight", animation.frameHeight);
+                animation.stillAnchorX = manifest.getIntValue(section, "StillAnchorX", animation.anchorX);
+                animation.stillAnchorY = manifest.getIntValue(section, "StillAnchorY", animation.anchorY);
+                if(!stillName.empty() && isPathInside(stillPath, unitsRoot)
+                   && std::filesystem::is_regular_file(stillPath)
+                   && animation.stillWidth > 0 && animation.stillWidth <= 2048
+                   && animation.stillHeight > 0 && animation.stillHeight <= 2048) {
+                    animation.stillPath = stillPath.string();
+                }
+                bool valid = animation.frameWidth > 0 && animation.frameHeight > 0;
+                int coveredFrames = 0;
+                for(int chunkIndex = 0; valid && chunkIndex < atlasCount; ++chunkIndex) {
+                    EnhancedAtlasChunk chunk;
+                    const std::string suffix = std::to_string(chunkIndex);
+                    const std::string atlasName = manifest.getStringValue(
+                        section, "Atlas." + suffix, "");
+                    const std::filesystem::path atlasPath =
+                        std::filesystem::weakly_canonical(entry.path() / atlasName);
+                    chunk.firstFrame = manifest.getIntValue(
+                        section, "FirstFrame." + suffix, -1);
+                    chunk.frameCount = manifest.getIntValue(
+                        section, "ChunkFrames." + suffix, 0);
+                    chunk.columns = manifest.getIntValue(section, "Columns." + suffix, 0);
+                    chunk.rows = manifest.getIntValue(section, "Rows." + suffix, 0);
+                    if(atlasName.empty() || !isPathInside(atlasPath, unitsRoot)
+                       || !std::filesystem::is_regular_file(atlasPath)
+                       || chunk.firstFrame != coveredFrames || chunk.frameCount <= 0
+                       || chunk.columns <= 0 || chunk.rows <= 0
+                       || chunk.frameCount > chunk.columns * chunk.rows) {
+                        valid = false;
+                        break;
+                    }
+                    chunk.atlasPath = atlasPath.string();
+                    coveredFrames += chunk.frameCount;
+                    animation.chunks.push_back(std::move(chunk));
+                }
+                if((valid && coveredFrames == frameCount) || !animation.stillPath.empty()) {
+                    if(!valid || coveredFrames != frameCount) {
+                        animation.chunks.clear();
+                    }
+                    definition.animations.emplace(stateIndex, std::move(animation));
+                } else {
+                    SDL_Log("GFXManager: Skipping invalid %s section in %s",
+                            section.c_str(), buildingManifestPath.string().c_str());
+                }
+            }
+
+            if(!definition.animations.empty()) {
+                SDL_Log("GFXManager: Registered enhanced building ItemID=%d HouseID=%d from %s",
+                        definition.itemID, definition.houseID,
+                        buildingManifestPath.string().c_str());
+                enhancedBuildingDefinitions.push_back(std::move(definition));
+            }
+        } catch(const std::exception& e) {
+            SDL_Log("GFXManager: Failed to read building manifest %s: %s",
+                    buildingManifestPath.string().c_str(), e.what());
+        }
+    }
+}
+
+void GFXManager::loadDuneCityZoneManifests() {
+    if(duneCityZoneManifestsLoaded) {
+        return;
+    }
+    duneCityZoneManifestsLoaded = true;
+    duneCityZoneDefinitions.clear();
+
+    if(!ModManager::instance().isInitialized()
+       || !ModManager::instance().isCityModeActive()) {
+        return;
+    }
+    if(!duneCitySkinPreferenceLoaded) {
+        duneCitySkinPreferenceLoaded = true;
+        try {
+            INIFile config(getConfigFilepath());
+            std::string skin = config.getStringValue("DuneCity", "Skin", "SimCity");
+            std::transform(skin.begin(), skin.end(), skin.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            duneCityDune2SkinEnabled = skin == "dune2";
+        } catch(const std::exception& e) {
+            SDL_Log("GFXManager: Could not load DuneCity skin preference: %s", e.what());
+        }
+    }
+    if(!duneCityDune2SkinEnabled) {
+        return;
+    }
+
+    const std::filesystem::path zonesRoot =
+        std::filesystem::path(ModManager::instance().getModPath("dunecity"))
+        / "graphics_skins" / "Dune2" / "zones";
+    if(!std::filesystem::is_directory(zonesRoot)) {
+        return;
+    }
+    for(const auto& entry : std::filesystem::directory_iterator(zonesRoot)) {
+        const auto manifestPath = entry.path() / "zone.ini";
+        if(!entry.is_directory() || !std::filesystem::is_regular_file(manifestPath)) {
+            continue;
+        }
+        try {
+            INIFile manifest(manifestPath.string());
+            DuneCityZoneDefinition definition;
+            definition.itemID = manifest.getIntValue("Zone", "ItemID", -1);
+            definition.houseID = manifest.getIntValue("Zone", "HouseID", -1);
+            definition.sourceUnit = manifest.getStringValue(
+                "Zone", "SourceUnit", entry.path().filename().string());
+            definition.footprintWidth = manifest.getIntValue("Zone", "FootprintWidth", 2);
+            definition.footprintHeight = manifest.getIntValue("Zone", "FootprintHeight", 2);
+            const int densityColumns = std::clamp(
+                manifest.getIntValue("Zone", "DensityColumns", 4), 1, 4);
+            const int valueRows = std::clamp(
+                manifest.getIntValue("Zone", "ValueTierRows", 4), 1, 4);
+            if(definition.itemID < 0 || definition.houseID < -1
+               || definition.houseID >= static_cast<int>(NUM_HOUSES)) {
+                continue;
+            }
+            for(int value = 0; value < valueRows; ++value) {
+                for(int density = 0; density < densityColumns; ++density) {
+                    for(int activityIndex = 0;
+                        activityIndex < static_cast<int>(DuneCityZoneActivity::Count);
+                        ++activityIndex) {
+                        const std::string section = "Cell." + std::to_string(density) + "."
+                            + std::to_string(value) + "." + kDuneCityZoneActivityNames[activityIndex];
+                        const int frameCount = manifest.getIntValue(section, "Frames", 0);
+                        const int atlasCount = manifest.getIntValue(section, "AtlasCount", 0);
+                        if(frameCount <= 0 || atlasCount <= 0 || atlasCount > 64) {
+                            continue;
+                        }
+                        EnhancedBuildingAnimation animation;
+                        animation.frameCount = frameCount;
+                        animation.frameMs = std::max(1, manifest.getIntValue(section, "FrameMs", 100));
+                        animation.frameWidth = manifest.getIntValue(section, "FrameWidth", 0);
+                        animation.frameHeight = manifest.getIntValue(section, "FrameHeight", 0);
+                        animation.anchorX = manifest.getIntValue(section, "AnchorX", animation.frameWidth / 2);
+                        animation.anchorY = manifest.getIntValue(section, "AnchorY", animation.frameHeight);
+                        animation.loop = manifest.getBoolValue(section, "Loop", true);
+                        bool valid = animation.frameWidth > 0 && animation.frameHeight > 0;
+                        int coveredFrames = 0;
+                        for(int chunkIndex = 0; valid && chunkIndex < atlasCount; ++chunkIndex) {
+                            EnhancedAtlasChunk chunk;
+                            const std::string suffix = std::to_string(chunkIndex);
+                            const std::string atlasName = manifest.getStringValue(
+                                section, "Atlas." + suffix, "");
+                            const auto atlasPath = std::filesystem::weakly_canonical(entry.path() / atlasName);
+                            chunk.firstFrame = manifest.getIntValue(section, "FirstFrame." + suffix, -1);
+                            chunk.frameCount = manifest.getIntValue(section, "ChunkFrames." + suffix, 0);
+                            chunk.columns = manifest.getIntValue(section, "Columns." + suffix, 0);
+                            chunk.rows = manifest.getIntValue(section, "Rows." + suffix, 0);
+                            if(atlasName.empty() || !isPathInside(atlasPath, zonesRoot)
+                               || !std::filesystem::is_regular_file(atlasPath)
+                               || chunk.firstFrame != coveredFrames || chunk.frameCount <= 0
+                               || chunk.columns <= 0 || chunk.rows <= 0
+                               || chunk.frameCount > chunk.columns * chunk.rows) {
+                                valid = false;
+                                break;
+                            }
+                            chunk.atlasPath = atlasPath.string();
+                            coveredFrames += chunk.frameCount;
+                            animation.chunks.push_back(std::move(chunk));
+                        }
+                        if(valid && coveredFrames == frameCount) {
+                            definition.animations.emplace(
+                                duneCityZoneAnimationKey(density, value,
+                                    static_cast<DuneCityZoneActivity>(activityIndex)),
+                                std::move(animation));
+                        }
+                    }
+                }
+            }
+            if(!definition.animations.empty()) {
+                SDL_Log("GFXManager: Registered DuneCity Dune2 zone ItemID=%d HouseID=%d from %s",
+                        definition.itemID, definition.houseID, manifestPath.string().c_str());
+                duneCityZoneDefinitions.push_back(std::move(definition));
+            }
+        } catch(const std::exception& e) {
+            SDL_Log("GFXManager: Failed to read DuneCity zone manifest %s: %s",
                     manifestPath.string().c_str(), e.what());
         }
     }
@@ -7260,8 +6984,14 @@ void GFXManager::invalidateEnhancedUnitMountsIfChanged(bool force) {
         return;
     }
     enhancedUnitMountRevision = revision;
+    if(enhancedBuildingAtlasCache) {
+        enhancedBuildingAtlasCache->clear();
+    }
     enhancedUnitDefinitions.clear();
     enhancedUnitManifestsLoaded = false;
+    enhancedBuildingDefinitions.clear();
+    enhancedTerrainDefinitions.clear();
+    enhancedWorldManifestsLoaded = false;
     enhancedUnitRenderModes.clear();
     enhancedRenderModesLoaded = false;
     SDL_Log("GFXManager: Dune2R mounted-unit cache invalidated (%s)",
@@ -7271,6 +7001,7 @@ void GFXManager::invalidateEnhancedUnitMountsIfChanged(bool force) {
 void GFXManager::reloadEnhancedUnitMounts() {
     invalidateEnhancedUnitMountsIfChanged(true);
     loadEnhancedUnitManifests();
+    loadEnhancedWorldManifests();
 }
 
 Uint32 GFXManager::getEnhancedUnitAnimationDuration(int itemID, int house,
@@ -7297,13 +7028,286 @@ Uint32 GFXManager::getEnhancedUnitAnimationDuration(int itemID, int house,
     return 0;
 }
 
+bool GFXManager::drawEnhancedTerrain(int terrainType, int variant,
+                                     const SDL_Rect& destination) {
+    const Uint8 blend = getDune2RVisualBlend();
+    if(blend == 0 || variant < 0 || variant >= 16) {
+        return false;
+    }
+    loadEnhancedWorldManifests();
+    for(auto& definition : enhancedTerrainDefinitions) {
+        if(definition.terrainType != terrainType) {
+            continue;
+        }
+        auto& visual = definition.variants[variant];
+        if(visual.texture == nullptr) {
+            if(visual.loadAttempted) {
+                return false;
+            }
+            visual.loadAttempted = true;
+            auto rwops = sdl2::RWops_ptr{ SDL_RWFromFile(visual.imagePath.c_str(), "rb") };
+            auto surface = rwops ? LoadPNG_RW(rwops.get()) : nullptr;
+            if(!surface) {
+                SDL_Log("GFXManager: Failed to load enhanced terrain image %s",
+                        visual.imagePath.c_str());
+                return false;
+            }
+            visual.texture = convertSurfaceToTexture(surface.get());
+            if(visual.texture == nullptr) {
+                return false;
+            }
+        }
+        SDL_Texture* texture = visual.texture.get();
+        SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+        SDL_SetTextureAlphaMod(texture, blend);
+        SDL_RenderCopy(renderer, texture, nullptr, &destination);
+        SDL_SetTextureAlphaMod(texture, SDL_ALPHA_OPAQUE);
+        return true;
+    }
+    return false;
+}
+
+Uint32 GFXManager::getEnhancedBuildingAnimationDuration(
+    int itemID, int house, EnhancedBuildingState state) {
+    loadEnhancedWorldManifests();
+    for(const int requestedHouse : {house, -1}) {
+        for(const auto& definition : enhancedBuildingDefinitions) {
+            if(definition.itemID != itemID || definition.houseID != requestedHouse) {
+                continue;
+            }
+            const auto found = definition.animations.find(static_cast<int>(state));
+            if(found != definition.animations.end()) {
+                return static_cast<Uint32>(found->second.frameCount)
+                       * static_cast<Uint32>(found->second.frameMs);
+            }
+        }
+    }
+    return 0;
+}
+
+bool GFXManager::drawEnhancedBuilding(int itemID, int house, unsigned int z,
+                                      EnhancedBuildingState state,
+                                      Uint32 elapsedMs, int anchorX, int anchorY) {
+    const Uint8 blend = getDune2RVisualBlend();
+    if(blend == 0 || z >= NUM_ZOOMLEVEL) {
+        return false;
+    }
+    loadEnhancedWorldManifests();
+
+    EnhancedBuildingDefinition* selectedDefinition = nullptr;
+    EnhancedBuildingAnimation* selectedAnimation = nullptr;
+    const std::array<EnhancedBuildingState, 4> fallbacks = {
+        state,
+        state == EnhancedBuildingState::Working ? EnhancedBuildingState::Idle : state,
+        state == EnhancedBuildingState::Repair ? EnhancedBuildingState::Idle : state,
+        EnhancedBuildingState::Idle,
+    };
+    for(const int requestedHouse : {house, -1}) {
+        for(auto& definition : enhancedBuildingDefinitions) {
+            if(definition.itemID != itemID || definition.houseID != requestedHouse) {
+                continue;
+            }
+            for(const auto candidate : fallbacks) {
+                const auto found = definition.animations.find(static_cast<int>(candidate));
+                if(found != definition.animations.end()) {
+                    selectedDefinition = &definition;
+                    selectedAnimation = &found->second;
+                    break;
+                }
+            }
+            if(selectedAnimation != nullptr) {
+                break;
+            }
+        }
+        if(selectedAnimation != nullptr) {
+            break;
+        }
+    }
+    if(selectedDefinition == nullptr || selectedAnimation == nullptr) {
+        return false;
+    }
+
+    Uint32 frame = elapsedMs / static_cast<Uint32>(selectedAnimation->frameMs);
+    if(selectedAnimation->loop) {
+        frame %= static_cast<Uint32>(selectedAnimation->frameCount);
+    } else {
+        frame = std::min(frame, static_cast<Uint32>(selectedAnimation->frameCount - 1));
+    }
+
+    EnhancedAtlasChunk* selectedChunk = nullptr;
+    for(auto& chunk : selectedAnimation->chunks) {
+        if(static_cast<int>(frame) >= chunk.firstFrame
+           && static_cast<int>(frame) < chunk.firstFrame + chunk.frameCount) {
+            selectedChunk = &chunk;
+            break;
+        }
+    }
+    if(!enhancedBuildingAtlasCache) {
+        enhancedBuildingAtlasCache = std::make_unique<EnhancedAtlasCache>(renderer);
+    }
+    SDL_Texture* texture = selectedChunk ? enhancedBuildingAtlasCache->request(
+        selectedChunk->atlasPath,
+        selectedChunk->columns * selectedAnimation->frameWidth,
+        selectedChunk->rows * selectedAnimation->frameHeight) : nullptr;
+    int frameWidth = selectedAnimation->frameWidth;
+    int frameHeight = selectedAnimation->frameHeight;
+    int imageAnchorX = selectedAnimation->anchorX;
+    int imageAnchorY = selectedAnimation->anchorY;
+    SDL_Rect source{0, 0, frameWidth, frameHeight};
+    const bool animated = texture != nullptr;
+    if(animated) {
+        const int localFrame = static_cast<int>(frame) - selectedChunk->firstFrame;
+        source.x = (localFrame % selectedChunk->columns) * frameWidth;
+        source.y = (localFrame / selectedChunk->columns) * frameHeight;
+    } else {
+        if(!selectedAnimation->stillAttempted && !selectedAnimation->stillPath.empty()) {
+            selectedAnimation->stillAttempted = true;
+            auto input = sdl2::RWops_ptr{SDL_RWFromFile(selectedAnimation->stillPath.c_str(), "rb")};
+            auto surface = input ? LoadPNG_RW(input.get()) : nullptr;
+            if(surface && surface->w == selectedAnimation->stillWidth
+               && surface->h == selectedAnimation->stillHeight) {
+                selectedAnimation->stillTexture = convertSurfaceToTexture(surface.get());
+            } else {
+                SDL_Log("Dune2R building still failed: %s", selectedAnimation->stillPath.c_str());
+            }
+        }
+        texture = selectedAnimation->stillTexture.get();
+        if(!texture) {
+            return false;
+        }
+        frameWidth = selectedAnimation->stillWidth;
+        frameHeight = selectedAnimation->stillHeight;
+        imageAnchorX = selectedAnimation->stillAnchorX;
+        imageAnchorY = selectedAnimation->stillAnchorY;
+        source = {0, 0, frameWidth, frameHeight};
+    }
+    const SDL_Rect destination = calcEnhancedBuildingDrawingRect(
+        selectedDefinition->footprintWidth, z, {frameWidth, frameHeight},
+        {imageAnchorX, imageAnchorY}, {anchorX, anchorY});
+    SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+    SDL_SetTextureAlphaMod(texture, blend);
+    SDL_RenderCopy(renderer, texture, &source, &destination);
+    SDL_SetTextureAlphaMod(texture, SDL_ALPHA_OPAQUE);
+    if(animated) {
+        const auto nextFrame = selectedChunk->firstFrame + selectedChunk->frameCount;
+        for(auto& next : selectedAnimation->chunks) {
+            if(next.firstFrame == nextFrame
+               || (selectedAnimation->loop && nextFrame == selectedAnimation->frameCount && next.firstFrame == 0)) {
+                enhancedBuildingAtlasCache->request(next.atlasPath,
+                    next.columns * selectedAnimation->frameWidth,
+                    next.rows * selectedAnimation->frameHeight);
+                break;
+            }
+        }
+    }
+    return true;
+}
+
+bool GFXManager::drawDuneCityZone(int itemID, int house, unsigned int z,
+                                  int density, int valueTier,
+                                  DuneCityZoneActivity activity,
+                                  Uint32 elapsedMs, int anchorX, int anchorY) {
+    if(z >= NUM_ZOOMLEVEL) {
+        return false;
+    }
+    loadDuneCityZoneManifests();
+    if(!duneCityDune2SkinEnabled) {
+        return false;
+    }
+
+    DuneCityZoneDefinition* selectedDefinition = nullptr;
+    EnhancedBuildingAnimation* selectedAnimation = nullptr;
+    const std::array<DuneCityZoneActivity, 2> fallbacks = {
+        activity, DuneCityZoneActivity::Idle
+    };
+    for(const int requestedHouse : {house, -1}) {
+        for(auto& definition : duneCityZoneDefinitions) {
+            if(definition.itemID != itemID || definition.houseID != requestedHouse) {
+                continue;
+            }
+            for(const auto candidate : fallbacks) {
+                const auto found = definition.animations.find(
+                    duneCityZoneAnimationKey(density, valueTier, candidate));
+                if(found != definition.animations.end()) {
+                    selectedDefinition = &definition;
+                    selectedAnimation = &found->second;
+                    break;
+                }
+            }
+            if(selectedAnimation) break;
+        }
+        if(selectedAnimation) break;
+    }
+    if(!selectedDefinition || !selectedAnimation) {
+        return false;
+    }
+
+    Uint32 frame = elapsedMs / static_cast<Uint32>(selectedAnimation->frameMs);
+    if(selectedAnimation->loop) {
+        frame %= static_cast<Uint32>(selectedAnimation->frameCount);
+    } else {
+        frame = std::min(frame, static_cast<Uint32>(selectedAnimation->frameCount - 1));
+    }
+    EnhancedAtlasChunk* selectedChunk = nullptr;
+    for(auto& chunk : selectedAnimation->chunks) {
+        if(static_cast<int>(frame) >= chunk.firstFrame
+           && static_cast<int>(frame) < chunk.firstFrame + chunk.frameCount) {
+            selectedChunk = &chunk;
+            break;
+        }
+    }
+    if(!selectedChunk) {
+        return false;
+    }
+    if(!enhancedBuildingAtlasCache) {
+        enhancedBuildingAtlasCache = std::make_unique<EnhancedAtlasCache>(renderer);
+    }
+    SDL_Texture* texture = enhancedBuildingAtlasCache->request(
+        selectedChunk->atlasPath,
+        selectedChunk->columns * selectedAnimation->frameWidth,
+        selectedChunk->rows * selectedAnimation->frameHeight);
+    if(!texture) {
+        return false;
+    }
+    const int localFrame = static_cast<int>(frame) - selectedChunk->firstFrame;
+    const SDL_Rect source{
+        (localFrame % selectedChunk->columns) * selectedAnimation->frameWidth,
+        (localFrame / selectedChunk->columns) * selectedAnimation->frameHeight,
+        selectedAnimation->frameWidth,
+        selectedAnimation->frameHeight
+    };
+    const SDL_Rect destination = calcEnhancedBuildingDrawingRect(
+        selectedDefinition->footprintWidth, z,
+        {selectedAnimation->frameWidth, selectedAnimation->frameHeight},
+        {selectedAnimation->anchorX, selectedAnimation->anchorY},
+        {anchorX, anchorY});
+    SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+    SDL_RenderCopy(renderer, texture, &source, &destination);
+
+    const auto nextFrame = selectedChunk->firstFrame + selectedChunk->frameCount;
+    for(auto& next : selectedAnimation->chunks) {
+        if(next.firstFrame == nextFrame
+           || (selectedAnimation->loop && nextFrame == selectedAnimation->frameCount
+               && next.firstFrame == 0)) {
+            enhancedBuildingAtlasCache->request(
+                next.atlasPath,
+                next.columns * selectedAnimation->frameWidth,
+                next.rows * selectedAnimation->frameHeight);
+            break;
+        }
+    }
+    return true;
+}
+
 bool GFXManager::drawEnhancedUnit(int itemID, int house, unsigned int z,
                                   EnhancedUnitState state, int direction,
                                   Uint32 elapsedMs, int x, int y) {
-    loadEnhancedUnitManifests();
-    if(z >= NUM_ZOOMLEVEL || direction < 0 || direction >= kEnhancedDirectionCount) {
+    const Uint8 blend = getDune2RVisualBlend();
+    if(blend == 0 || z >= NUM_ZOOMLEVEL
+       || direction < 0 || direction >= kEnhancedDirectionCount) {
         return false;
     }
+    loadEnhancedUnitManifests();
 
     EnhancedUnitDefinition* selectedDefinition = nullptr;
     EnhancedUnitAnimation* selectedAnimation = nullptr;
@@ -7383,7 +7387,10 @@ bool GFXManager::drawEnhancedUnit(int itemID, int house, unsigned int z,
         destW,
         destH
     };
+    SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+    SDL_SetTextureAlphaMod(texture, blend);
     SDL_RenderCopy(renderer, texture, &source, &dest);
+    SDL_SetTextureAlphaMod(texture, SDL_ALPHA_OPAQUE);
     return true;
 }
 

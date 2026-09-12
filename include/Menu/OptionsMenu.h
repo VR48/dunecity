@@ -23,6 +23,7 @@
 #include <GUI/HBox.h>
 #include <GUI/VBox.h>
 #include <GUI/TextButton.h>
+#include <GUI/Label.h>
 #include <GUI/TextBox.h>
 #include <GUI/Checkbox.h>
 #include <GUI/DropDownBox.h>
@@ -42,6 +43,8 @@ public:
     virtual ~OptionsMenu();
 
 private:
+    void    showPage(int page);
+    void    updatePalettePreview();
     void    onChangeOption(bool bInteractive);
     void    onOptionsOK();
     void    onOptionsCancel();
@@ -67,7 +70,11 @@ private:
 
     StaticContainer windowWidget;
 
-    VBox        mainVBox;
+    Label       title;
+    VBox        pages[3];
+    TextButton  pageButtons[3];
+    HBox        introHBox;
+    HBox        flagsHBox;
 
     HBox        NameHBox;
     TextBox     nameTextBox;
@@ -92,6 +99,10 @@ private:
     Checkbox    showWatermarkCheckbox;
     DropDownBox cursorVisibilityDropDownBox;
     DropDownBox cursorScaleDropDownBox;
+    HBox        paletteHBox;
+    DropDownBox startMenuModeDropDownBox;
+    DropDownBox paletteDropDownBox;
+    TextButton  palettePreview;
 
     HBox        audioHBox;
     Checkbox    playSFXCheckbox;
@@ -107,7 +118,6 @@ private:
     HBox        restoreDefaultsHBox;
     TextButton  restoreDefaultsButton;
 
-    HBox        okCancelHBox;
     TextButton  acceptButton;
     TextButton  backButton;
 };

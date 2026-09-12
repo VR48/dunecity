@@ -16,6 +16,7 @@
  */
 
 #include <structures/ConstructionYard.h>
+#include <structures/PlacementResult.h>
 
 #include <globals.h>
 
@@ -54,7 +55,9 @@ ConstructionYard::~ConstructionYard() = default;
 
 bool ConstructionYard::doPlaceStructure(int x, int y) {
     if(isWaitingToPlace()) {
-        return (getOwner()->placeStructure(getObjectID(), getCurrentProducedItem(), x, y) != nullptr);
+        return PlacementResult::apply([&] { return getProductionQueueSize(); }, [&] {
+            return getOwner()->placeStructure(getObjectID(), getCurrentProducedItem(), x, y) != nullptr;
+        });
     } else {
         return false;
     }

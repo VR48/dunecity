@@ -1,3 +1,4 @@
+#include <players/AIDecisionLog.h>
 /*
  *  This file is part of Dune Legacy.
  *
@@ -116,7 +117,7 @@ StructureBase::~StructureBase() {
         }
         currentGame->getObjectManager().removeObject(getObjectID());
         structureList.remove(this);
-        owner->decrementStructures(itemID, location);
+        owner->decrementStructures(itemID, location, !demolishedByOwner_);
 
         removeFromSelectionLists();
 
@@ -154,12 +155,13 @@ void StructureBase::assignToMap(const Coord& pos) {
             if(currentGameMap->tileExists(i, j)) {
                 Tile* pTile = currentGameMap->getTile(i,j);
                 pTile->assignNonInfantryGroundObject(getObjectID());
+                const bool preparedFoundation = pTile->hasPreparedFoundation();
                 // Clear road flag when a structure is placed on a road tile,
                 // so the tile is no longer rendered/treated as a road.
                 if(pTile->isRoad()) {
                     pTile->setRoad(false);
                 }
-                if(!pTile->isConcrete() && currentGame->getGameInitSettings().getGameOptions().concreteRequired && (currentGame->gameState != GameState::Start)) {
+                if(!preparedFoundation && currentGame->getGameInitSettings().getGameOptions().concreteRequired && (currentGame->gameState != GameState::Start)) {
                     bFoundNonConcreteTile = true;
 
                     if((itemID != Structure_Wall) && (itemID != Structure_ConstructionYard)) {
@@ -264,9 +266,78 @@ void StructureBase::blitToScreen() {
         }
     }
 
-    SDL_RenderCopy(renderer, structureTexture, &source, &dest);
+    const Uint8 dune2rBlend = pGFXManager->getDune2RVisualBlend();
+    bool classicDrawn = false;
+    if(dune2rBlend < SDL_ALPHA_OPAQUE || fogged) {
+        SDL_RenderCopy(renderer, structureTexture, &source, &dest);
+        classicDrawn = true;
+    }
 
-    if(!fogged) {
+    bool enhancedDrawn = false;
+    if(!fogged && dune2rBlend > 0 && owner != nullptr) {
+        const Uint32 nowMs = currentGame->getGameTime();
+        auto visualState = GFXManager::EnhancedBuildingState::Idle;
+        Uint32 elapsedMs = nowMs + getObjectID() * 97u;
+        bool transitionTiming = false;
+
+        if(enhancedPlacementStartMs != std::numeric_limits<Uint32>::max()) {
+            const Uint32 placementDuration = pGFXManager->getEnhancedBuildingAnimationDuration(
+                itemID, owner->getHouseID(), GFXManager::EnhancedBuildingState::Placement);
+            const Uint32 constructionDuration = pGFXManager->getEnhancedBuildingAnimationDuration(
+                itemID, owner->getHouseID(), GFXManager::EnhancedBuildingState::Construction);
+            const Uint32 placementElapsed = nowMs - enhancedPlacementStartMs;
+            if(placementDuration > 0 && placementElapsed < placementDuration) {
+                visualState = GFXManager::EnhancedBuildingState::Placement;
+                elapsedMs = placementElapsed;
+                transitionTiming = true;
+            } else if(constructionDuration > 0
+                      && placementElapsed < placementDuration + constructionDuration) {
+                visualState = GFXManager::EnhancedBuildingState::Construction;
+                elapsedMs = placementElapsed - placementDuration;
+                transitionTiming = true;
+            } else {
+                enhancedPlacementStartMs = std::numeric_limits<Uint32>::max();
+            }
+        }
+
+        if(!transitionTiming) {
+            if(repairing && getHealth() < getMaxHealth()) {
+                visualState = GFXManager::EnhancedBuildingState::Repair;
+                transitionTiming = true;
+            } else if(isBadlyDamaged()) {
+                visualState = GFXManager::EnhancedBuildingState::Damaged;
+                transitionTiming = true;
+            } else if(itemID == Structure_Refinery && curAnimFrame >= 8) {
+                visualState = GFXManager::EnhancedBuildingState::Working;
+            }
+
+            const int stateIndex = static_cast<int>(visualState);
+            if(stateIndex != enhancedVisualState) {
+                enhancedVisualState = stateIndex;
+                enhancedVisualStateStartMs = nowMs;
+            }
+            if(transitionTiming) {
+                elapsedMs = nowMs - enhancedVisualStateStartMs;
+            }
+        } else {
+            enhancedVisualState = static_cast<int>(visualState);
+        }
+
+        const int anchorX = screenborder->world2screenX(
+            lround(realX) + structureSize.x * TILESIZE / 2);
+        const int anchorY = screenborder->world2screenY(
+            lround(realY) + structureSize.y * TILESIZE);
+        enhancedDrawn = pGFXManager->drawEnhancedBuilding(
+            itemID, owner->getHouseID(), currentZoomlevel,
+            visualState, elapsedMs, anchorX, anchorY);
+    }
+
+    if(!classicDrawn && !enhancedDrawn) {
+        SDL_RenderCopy(renderer, structureTexture, &source, &dest);
+        classicDrawn = true;
+    }
+
+    if(!fogged && (dune2rBlend < SDL_ALPHA_OPAQUE || !enhancedDrawn)) {
         SDL_Texture* pSmokeTex = pGFXManager->getZoomedObjPic(ObjPic_Smoke, getOwner()->getHouseID(), currentZoomlevel);
         SDL_Rect smokeSource = calcSpriteSourceRect(pSmokeTex, 0, 3);
         for(const StructureSmoke& structureSmoke : smoke) {
@@ -447,6 +518,10 @@ void StructureBase::setJustPlaced() {
     justPlacedTimer = 6;
     curAnimFrame = 0;
     animationCounter = -STRUCTURE_ANIMATIONTIMER; // make first build animation double as long
+    enhancedPlacementStartMs = currentGame != nullptr
+        ? currentGame->getGameTime()
+        : 0;
+    enhancedVisualState = -1;
 }
 
 bool StructureBase::update() {
@@ -459,7 +534,7 @@ bool StructureBase::update() {
     }
 
     // degrade
-    if((degradeTimer >= 0) && currentGame->getGameInitSettings().getGameOptions().concreteRequired && (owner->getPowerRequirement() > owner->getProducedPower())) {
+    if((degradeTimer >= 0) && currentGame->getGameInitSettings().getGameOptions().concreteRequired && !owner->hasPower()) {
         degradeTimer--;
         if(degradeTimer <= 0) {
             degradeTimer = MILLI2CYCLES(15*1000);
@@ -486,6 +561,10 @@ bool StructureBase::update() {
         return false;
     }
 
+    if (!repairing && owner->isAutoRepairEnabled()
+        && getHealth() < getMaxHealth() && owner->getCredits() >= 5) {
+        doRepair();
+    }
     if(repairing) {
         if(owner->getCredits() >= 5) {
             // Original dune 2 is doing the repair calculation with fix-point math (multiply everything with 256).
@@ -538,7 +617,18 @@ bool StructureBase::update() {
     return true;
 }
 
+void StructureBase::demolish() {
+    demolishedByOwner_ = true;
+    AITelemetry::log().write(currentGame->getGameCycleCount(), owner->getHouseID(), -1,
+        "building_demolished", AITelemetry::Record().set("object",objectID).set("item",itemID)
+            .set("x",location.x).set("y",location.y).set("refund",0));
+    destroy(); // retain special destruction behaviour, including reactor blasts
+}
+
 void StructureBase::destroy() {
+    if (currentGame && owner) AITelemetry::log().write(currentGame->getGameCycleCount(), owner->getHouseID(), -1,
+        "object_destroyed", AITelemetry::Record().set("object", objectID).set("item", itemID)
+            .set("x", location.x).set("y", location.y).set("health", getHealth().lround()));
     int*    pDestroyedStructureTiles = nullptr;
     int     DestroyedStructureTilesSizeY = 0;
     static int DestroyedStructureTilesWall[] = { DestroyedStructure_Wall };

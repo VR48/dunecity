@@ -22,6 +22,7 @@
 #include <ObjectPointer.h>
 
 class Carryall;
+class GroundUnit;
 
 class RepairYard final : public StructureBase
 {
@@ -38,7 +39,7 @@ public:
     void deployRepairUnit(Carryall* pCarryall = nullptr);
 
     inline void book() { bookings++; }
-    inline void unBook() { bookings--; }
+    inline void unBook() { if (bookings > 0) --bookings; }
     inline void assignUnit(ObjectPointer newUnit) { repairUnit = newUnit; repairingAUnit = true; }
     inline bool isFree() const { return !repairingAUnit; }
     inline int getNumBookings() const { return bookings; }  //number of harvesters goings there
@@ -53,6 +54,9 @@ protected:
     void updateStructureSpecificStuff() override;
 
 private:
+    GroundUnit* resolveRepairUnit();
+    void clearRepairJob();
+
     bool            repairingAUnit; ///< Currently repairing?
     ObjectPointer   repairUnit;     ///< The unit to repair
     Uint32          bookings;       ///< Number of bookings for this repair yard

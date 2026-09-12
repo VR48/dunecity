@@ -1,0 +1,47 @@
+{
+  "source": "Micropolis; GPL-3.0+; see ../NOTICE.txt",
+  "atlases": {
+    "residential": {
+      "columns": 15,
+      "rows": 8,
+      "cell": 32,
+      "models": 112
+    },
+    "commercial": {
+      "columns": 6,
+      "rows": 4,
+      "cell": 32,
+      "models": 20
+    },
+    "industrial": {
+      "columns": 5,
+      "rows": 18,
+      "cell": 32,
+      "models": 8
+    },
+    "airport": {
+      "columns": 9,
+      "rows": 1,
+      "cell": 48,
+      "models": 1
+    },
+    "stadium": {
+      "columns": 9,
+      "rows": 1,
+      "cell": 48,
+      "models": 1
+    },
+    "nuclear": {
+      "columns": 9,
+      "rows": 1,
+      "cell": 48,
+      "models": 1
+    },
+    "roads": {
+      "columns": 16,
+      "rows": 9,
+      "cell": 16,
+      "models": 16
+    }
+  }
+}

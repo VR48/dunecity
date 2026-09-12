@@ -31,6 +31,8 @@
 #include <memory>
 #include <vector>
 
+class EnhancedAtlasCache;
+
 #define NUM_TERRAIN_TILES_X 11
 #define NUM_TERRAIN_TILES_Y 8
 #define NUM_MAPCHOICEPIECES 28
@@ -620,6 +622,26 @@ public:
         Random
     };
 
+    enum class EnhancedBuildingState {
+        Placement,
+        Construction,
+        Idle,
+        Working,
+        Damaged,
+        Repair,
+        Destroyed,
+        Count
+    };
+
+    enum class DuneCityZoneActivity {
+        Idle,
+        Active,
+        Growing,
+        Damaged,
+        Repair,
+        Count
+    };
+
     struct EnhancedUnitEditorInfo {
         std::string sourceUnit;
         int itemID = -1;
@@ -644,6 +666,21 @@ public:
     bool             drawEnhancedUnit(int itemID, int house, unsigned int z,
                                       EnhancedUnitState state, int direction,
                                       Uint32 elapsedMs, int x, int y);
+    bool             drawEnhancedTerrain(int terrainType, int variant,
+                                         const SDL_Rect& destination);
+    bool             drawEnhancedBuilding(int itemID, int house, unsigned int z,
+                                           EnhancedBuildingState state,
+                                           Uint32 elapsedMs, int anchorX, int anchorY);
+    Uint32           getEnhancedBuildingAnimationDuration(int itemID, int house,
+                                                           EnhancedBuildingState state);
+    bool             drawDuneCityZone(int itemID, int house, unsigned int z,
+                                      int density, int valueTier,
+                                      DuneCityZoneActivity activity,
+                                      Uint32 elapsedMs, int anchorX, int anchorY);
+    Uint8            getDune2RVisualBlend();
+    bool             isDune2RVisualsEnabled();
+    void             setDune2RVisualsEnabled(bool enabled);
+    void             toggleDune2RVisuals();
     Uint32           getEnhancedUnitAnimationDuration(int itemID, int house,
                                                       EnhancedUnitState state,
                                                       int direction);
@@ -700,8 +737,11 @@ private:
     void                loadCompactObjPicOverrides();
     bool                loadHDObjPicOverride(unsigned int id);
     void                loadEnhancedUnitManifests();
+    void                loadEnhancedWorldManifests();
+    void                loadDuneCityZoneManifests();
     void                invalidateEnhancedUnitMountsIfChanged(bool force = false);
     void                loadEnhancedRenderModes();
+    void                loadDune2RVisualPreference();
     void                loadMentatGraphics();
     void                loadCustomHouseHerald();
     void                reloadModDependentObjectGraphics();
@@ -756,6 +796,98 @@ private:
         std::map<int, EnhancedUnitAnimation> animations;
     };
 
+    struct EnhancedAtlasChunk {
+        EnhancedAtlasChunk() = default;
+        EnhancedAtlasChunk(const EnhancedAtlasChunk&) = delete;
+        EnhancedAtlasChunk& operator=(const EnhancedAtlasChunk&) = delete;
+        EnhancedAtlasChunk(EnhancedAtlasChunk&&) noexcept = default;
+        EnhancedAtlasChunk& operator=(EnhancedAtlasChunk&&) noexcept = default;
+
+        std::string atlasPath;
+        int firstFrame = 0;
+        int frameCount = 0;
+        int columns = 1;
+        int rows = 1;
+    };
+
+    struct EnhancedBuildingAnimation {
+        EnhancedBuildingAnimation() = default;
+        EnhancedBuildingAnimation(const EnhancedBuildingAnimation&) = delete;
+        EnhancedBuildingAnimation& operator=(const EnhancedBuildingAnimation&) = delete;
+        EnhancedBuildingAnimation(EnhancedBuildingAnimation&&) noexcept = default;
+        EnhancedBuildingAnimation& operator=(EnhancedBuildingAnimation&&) noexcept = default;
+
+        std::vector<EnhancedAtlasChunk> chunks;
+        std::string stillPath;
+        sdl2::texture_ptr stillTexture;
+        int stillWidth = 0;
+        int stillHeight = 0;
+        int stillAnchorX = 0;
+        int stillAnchorY = 0;
+        bool stillAttempted = false;
+        int frameCount = 1;
+        int frameMs = 100;
+        int frameWidth = 1;
+        int frameHeight = 1;
+        int anchorX = 0;
+        int anchorY = 0;
+        bool loop = true;
+    };
+
+    struct EnhancedBuildingDefinition {
+        EnhancedBuildingDefinition() = default;
+        EnhancedBuildingDefinition(const EnhancedBuildingDefinition&) = delete;
+        EnhancedBuildingDefinition& operator=(const EnhancedBuildingDefinition&) = delete;
+        EnhancedBuildingDefinition(EnhancedBuildingDefinition&&) noexcept = default;
+        EnhancedBuildingDefinition& operator=(EnhancedBuildingDefinition&&) noexcept = default;
+
+        int itemID = -1;
+        int houseID = -1;
+        int footprintWidth = 1;
+        int footprintHeight = 1;
+        std::string sourceUnit;
+        std::map<int, EnhancedBuildingAnimation> animations;
+    };
+
+    struct DuneCityZoneDefinition {
+        DuneCityZoneDefinition() = default;
+        DuneCityZoneDefinition(const DuneCityZoneDefinition&) = delete;
+        DuneCityZoneDefinition& operator=(const DuneCityZoneDefinition&) = delete;
+        DuneCityZoneDefinition(DuneCityZoneDefinition&&) noexcept = default;
+        DuneCityZoneDefinition& operator=(DuneCityZoneDefinition&&) noexcept = default;
+
+        int itemID = -1;
+        int houseID = -1;
+        int footprintWidth = 2;
+        int footprintHeight = 2;
+        std::string sourceUnit;
+        std::map<int, EnhancedBuildingAnimation> animations;
+    };
+
+    struct EnhancedTerrainVariant {
+        EnhancedTerrainVariant() = default;
+        EnhancedTerrainVariant(const EnhancedTerrainVariant&) = delete;
+        EnhancedTerrainVariant& operator=(const EnhancedTerrainVariant&) = delete;
+        EnhancedTerrainVariant(EnhancedTerrainVariant&&) noexcept = default;
+        EnhancedTerrainVariant& operator=(EnhancedTerrainVariant&&) noexcept = default;
+
+        std::string imagePath;
+        sdl2::texture_ptr texture;
+        bool loadAttempted = false;
+    };
+
+    struct EnhancedTerrainDefinition {
+        EnhancedTerrainDefinition() = default;
+        EnhancedTerrainDefinition(const EnhancedTerrainDefinition&) = delete;
+        EnhancedTerrainDefinition& operator=(const EnhancedTerrainDefinition&) = delete;
+        EnhancedTerrainDefinition(EnhancedTerrainDefinition&&) noexcept = default;
+        EnhancedTerrainDefinition& operator=(EnhancedTerrainDefinition&&) noexcept = default;
+
+        int terrainType = -1;
+        std::string sourceUnit;
+        std::array<EnhancedTerrainVariant, 16> variants;
+    };
+
     // 8-bit surfaces kept in main memory for processing as needed, e.g. color remapping
     std::array<std::array<std::array<sdl2::surface_ptr, NUM_ZOOMLEVEL>, NUM_HOUSE_COLOR_SLOTS>, NUM_OBJPICS> objPic;
     std::array<std::array<sdl2::surface_ptr, NUM_ZOOMLEVEL>, NUM_HOUSE_COLOR_SLOTS> scoutpostBaseGraphics{};
@@ -774,11 +906,25 @@ private:
     std::array<std::array<std::array<sdl2::texture_ptr, NUM_ZOOMLEVEL>, NUM_HOUSE_COLOR_SLOTS>, NUM_OBJPICS> objPicTex;
     std::array<HDObjPicOverride, NUM_OBJPICS> hdObjPicOverrides;
     std::vector<EnhancedUnitDefinition> enhancedUnitDefinitions;
+    std::vector<EnhancedBuildingDefinition> enhancedBuildingDefinitions;
+    std::vector<DuneCityZoneDefinition> duneCityZoneDefinitions;
+    std::unique_ptr<EnhancedAtlasCache> enhancedBuildingAtlasCache;
+    std::vector<EnhancedTerrainDefinition> enhancedTerrainDefinitions;
     bool enhancedUnitManifestsLoaded = false;
+    bool enhancedWorldManifestsLoaded = false;
+    bool duneCityZoneManifestsLoaded = false;
+    bool duneCitySkinPreferenceLoaded = false;
+    bool duneCityDune2SkinEnabled = false;
     std::string enhancedUnitMountRevision;
     Uint32 enhancedUnitMountLastCheck = 0;
     std::map<int, EnhancedRenderMode> enhancedUnitRenderModes;
     bool enhancedRenderModesLoaded = false;
+    bool dune2rVisualPreferenceLoaded = false;
+    bool dune2rVisualTargetEnabled = true;
+    bool dune2rVisualTransitionActive = false;
+    Uint8 dune2rVisualTransitionStartBlend = SDL_ALPHA_OPAQUE;
+    Uint8 dune2rVisualBlend = SDL_ALPHA_OPAQUE;
+    Uint32 dune2rVisualTransitionStartTicks = 0;
     std::array<sdl2::texture_ptr, NUM_SMALLDETAILPICS> smallDetailPicTex;
     std::array<std::array<sdl2::texture_ptr, NUM_HOUSE_COLOR_SLOTS>, NUM_SMALLDETAILPICS> houseSmallDetailPicTex;
     std::array<sdl2::texture_ptr, NUM_TINYPICTURE> tinyPictureTex;

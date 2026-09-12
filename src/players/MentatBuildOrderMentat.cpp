@@ -78,7 +78,7 @@ const std::vector<MentatBuildStepMentat>& Mentat::getCYBuildOrder() {
             // Power buffer check for rocket turrets
             auto hasPowerBufferForTurret = [&]() {
                 if (!bot->getGameInitSettings().getGameOptions().rocketTurretsNeedPower) return true;
-                return (ctx.powerProduced - ctx.powerRequired) >= 225;
+                return !ctx.house->isPowerRequired() || (ctx.powerProduced - ctx.powerRequired) >= 225;
             };
 
             if (b->getCurrentUpgradeLevel() < 2) {
@@ -143,7 +143,7 @@ const std::vector<MentatBuildStepMentat>& Mentat::getCYBuildOrder() {
     // 1b. Power deficit recovery
     {"POWER-RECOVERY", anyMode(),
         [](Mentat*, const BuilderBase*, const MentatBuildContext& ctx) {
-            return ctx.powerProduced < ctx.powerRequired;
+            return ctx.house->isPowerRequired() && ctx.powerProduced < ctx.powerRequired;
         },
         [](Mentat* bot, const BuilderBase* b, MentatBuildContext& ctx) -> std::pair<Uint32, bool> {
             int powerDeficit = ctx.powerRequired - ctx.powerProduced;
@@ -425,7 +425,7 @@ const std::vector<MentatBuildStepMentat>& Mentat::getCYBuildOrder() {
             if (b->getCurrentUpgradeLevel() < 2) return false;
             if (!b->isAvailableToBuild(Structure_RocketTurret)) return false;
             // Check if we lack power buffer
-            return (ctx.powerProduced - ctx.powerRequired) < 225;
+            return ctx.house->isPowerRequired() && (ctx.powerProduced - ctx.powerRequired) < 225;
         },
         [](Mentat* bot, const BuilderBase*, MentatBuildContext&) -> std::pair<Uint32, bool> {
             for (const StructureBase* pStruct : bot->getStructureList()) {
@@ -452,7 +452,7 @@ const std::vector<MentatBuildStepMentat>& Mentat::getCYBuildOrder() {
             if (ctx.itemCount[Structure_StarPort] == 0 && ctx.itemCount[Structure_HeavyFactory] == 0) return false;
             if (b->getCurrentUpgradeLevel() < 2) return false;
             if (!b->isAvailableToBuild(Structure_RocketTurret)) return false;
-            return (ctx.powerProduced - ctx.powerRequired) < 225;
+            return ctx.house->isPowerRequired() && (ctx.powerProduced - ctx.powerRequired) < 225;
         },
         [](Mentat* bot, const BuilderBase* b, MentatBuildContext& ctx) -> std::pair<Uint32, bool> {
             int powerExcess = ctx.powerProduced - ctx.powerRequired;
@@ -476,7 +476,7 @@ const std::vector<MentatBuildStepMentat>& Mentat::getCYBuildOrder() {
             if (ctx.itemCount[Structure_StarPort] == 0 && ctx.itemCount[Structure_HeavyFactory] == 0) return false;
             // Power buffer check
             if (bot->getGameInitSettings().getGameOptions().rocketTurretsNeedPower
-                && (ctx.powerProduced - ctx.powerRequired) < 225) return false;
+                && ctx.house->isPowerRequired() && (ctx.powerProduced - ctx.powerRequired) < 225) return false;
             if (b->getCurrentUpgradeLevel() < 2) return false;
             if (!b->isAvailableToBuild(Structure_RocketTurret)) return false;
             return bot->findEffectiveTurretPlaceLocation(Structure_RocketTurret).isValid();
@@ -492,7 +492,7 @@ const std::vector<MentatBuildStepMentat>& Mentat::getCYBuildOrder() {
             if (ctx.itemCount[Structure_RepairYard] == 0) return false;
             if (ctx.itemCount[Structure_StarPort] == 0 && ctx.itemCount[Structure_HeavyFactory] == 0) return false;
             if (bot->getGameInitSettings().getGameOptions().rocketTurretsNeedPower
-                && (ctx.powerProduced - ctx.powerRequired) < 225) return false;
+                && ctx.house->isPowerRequired() && (ctx.powerProduced - ctx.powerRequired) < 225) return false;
             if (b->getCurrentUpgradeLevel() < 2) return false;
             if (!b->isAvailableToBuild(Structure_RocketTurret)) return false;
             if (!bot->findEffectiveTurretPlaceLocation(Structure_RocketTurret).isValid()) return false;
@@ -574,7 +574,8 @@ const std::vector<MentatBuildStepMentat>& Mentat::getCYBuildOrder() {
             if (ctx.isCitySim) {
                 auto* citySim = currentGame ? currentGame->getCitySimulation() : nullptr;
                 int tax = citySim ? citySim->getCityTax() : 7;
-                int32_t annual = DuneCity::computeAnnualTaxRevenue(ctx.ownTotalPop, tax, ctx.ownAvgLandValue);
+                const int taxBaseEighths = citySim ? citySim->getHouseState(bot->getHouse()->getHouseID()).taxBaseEighths : 0;
+                int32_t annual = DuneCity::computeAnnualTaxRevenue(taxBaseEighths, tax, ctx.ownAvgLandValue);
                 int creditsPerSec = annual / 60;
                 desiredHFs = 1 + creditsPerSec / 50;
             } else {
@@ -664,7 +665,7 @@ const std::vector<MentatBuildStepMentat>& Mentat::getCYBuildOrder() {
             if (ctx.money <= 500) return false;
             // Power buffer check
             if (bot->getGameInitSettings().getGameOptions().rocketTurretsNeedPower
-                && (ctx.powerProduced - ctx.powerRequired) < 225) return false;
+                && ctx.house->isPowerRequired() && (ctx.powerProduced - ctx.powerRequired) < 225) return false;
             if (!b->isAvailableToBuild(Structure_RocketTurret)) return false;
 
             int maxOwnCrime = 0;

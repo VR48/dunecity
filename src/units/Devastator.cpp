@@ -77,7 +77,37 @@ void Devastator::blitToScreen()
     int x1 = screenborder->world2screenX(realX);
     int y1 = screenborder->world2screenY(realY);
 
+    const Coord devastatorTurretOffset[] =  {
+        Coord(8, -16), Coord(-4, -12), Coord(0, -16), Coord(4, -12),
+        Coord(-8, -16), Coord(0, -12), Coord(-4, -12), Coord(0, -12)
+    };
+
+    const Uint8 dune2rBlend = pGFXManager->getDune2RVisualBlend();
+    const bool crossfading = dune2rBlend > 0 && dune2rBlend < SDL_ALPHA_OPAQUE;
+    if(crossfading) {
+        SDL_Texture* classicBase = graphic[currentZoomlevel];
+        SDL_Rect classicBaseSource = calcSpriteSourceRect(classicBase, drawnAngle, numImagesX);
+        SDL_Rect classicBaseDest = calcSpriteDrawingRect(
+            classicBase, x1, y1, numImagesX, 1, HAlign::Center, VAlign::Center);
+        SDL_RenderCopy(renderer, classicBase, &classicBaseSource, &classicBaseDest);
+
+        SDL_Texture* classicTurret = turretGraphic[currentZoomlevel];
+        SDL_Rect classicTurretSource = calcSpriteSourceRect(classicTurret, drawnAngle, numImagesX);
+        SDL_Rect classicTurretDest = calcSpriteDrawingRect(
+            classicTurret,
+            screenborder->world2screenX(realX + devastatorTurretOffset[drawnAngle].x),
+            screenborder->world2screenY(realY + devastatorTurretOffset[drawnAngle].y),
+            numImagesX, 1, HAlign::Center, VAlign::Center);
+        SDL_RenderCopy(renderer, classicTurret, &classicTurretSource, &classicTurretDest);
+    }
+
     if(drawEnhancedUnitSprite(x1, y1, drawnAngle, drawnAngle)) {
+        if(isBadlyDamaged()) {
+            drawSmoke(x1, y1);
+        }
+        return;
+    }
+    if(crossfading) {
         if(isBadlyDamaged()) {
             drawSmoke(x1, y1);
         }
@@ -89,17 +119,6 @@ void Devastator::blitToScreen()
     SDL_Rect dest1 = calcSpriteDrawingRect( pUnitGraphic, x1, y1, numImagesX, 1, HAlign::Center, VAlign::Center);
 
     SDL_RenderCopy(renderer, pUnitGraphic, &source1, &dest1);
-
-    const Coord devastatorTurretOffset[] =  {
-                                                Coord(8, -16),
-                                                Coord(-4, -12),
-                                                Coord(0, -16),
-                                                Coord(4, -12),
-                                                Coord(-8, -16),
-                                                Coord(0, -12),
-                                                Coord(-4, -12),
-                                                Coord(0, -12)
-                                            };
 
     SDL_Texture* pTurretGraphic = turretGraphic[currentZoomlevel];
     SDL_Rect source2 = calcSpriteSourceRect(pTurretGraphic, drawnAngle, numImagesX);
