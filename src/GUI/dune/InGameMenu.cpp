@@ -53,6 +53,7 @@ InGameMenu::InGameMenu(bool bMultiplayer, int color)
         onlineNotice.setText(_("Online game continues"));
         onlineNotice.setTextColor(color);
         onlineNotice.setTextFontSize(12);
+        onlineNotice.setAlignment(static_cast<Alignment_Enum>(Alignment_HCenter | Alignment_Bottom));
         mainVBox.addWidget(&onlineNotice, 34);
     } else {
         mainVBox.addWidget(VSpacer::create(34));
