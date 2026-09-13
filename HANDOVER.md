@@ -15,25 +15,22 @@ Report: `../outputs/network-hardening/p2p-hermes-review3.txt`. Codex must verify
 its remaining start-barrier/send-boundary, duplicate START and session lifecycle findings.
 Do not restart Opus or run further broad Hermes review rounds by default.
 
-Current checks: six native CTest suites pass; 160 PHP HTTP/concurrency tests pass; vendored RTC,
-bridge, bounded Fetch, framing and package tests pass. Real browser↔browser and browser↔native
-RTC transport tests passed previously; three native full sessions passed a 75-second outage of
-all PHP workers. The final-source 75-second outage repeat passed using the standalone
-`tools/p2p-session-smoke` CMake target, with the PHP listener confirmed closed. Full browser
-game acceptance remains unfinished.
-A full browser game join uncovered unsigned timeout underflow when a new link was created after
-the frame clock sample; the signed deadline fix and advancing-clock regression now pass natively.
-The browser rebuild containing that fix completed, but both existing test tabs crashed on
-reload and a fresh in-app browser boot also failed. The cause is not established. This local
-test build used `CMAKE_EXE_LINKER_FLAGS=-O1` to speed iteration; restore normal release
-linker settings and rebuild before preparing release artifacts. A failed pair now requires fresh admission
-instead of repeatedly generating new certificates under an existing pair identity.
+Current checks: six native CTest suites and 164 PHP HTTP/concurrency tests pass.
+RTC and bridge tests cover synchronous send failure, bounded queue order and later failure.
+The real three-client session fixture passes the prepare/ACK/commit handshake and exchanges
+262128-byte ordered payloads for 75 seconds with all PHP workers stopped.
+Hermes review3 findings are addressed by an authoritative roster CAS, host/guest start barrier,
+one-shot START callbacks, bounded admission retry recovery and best-effort leave with host expiry.
+The real fixture also caught a missing admitted-peer role assignment; it is fixed.
+The direct host menu now registers the asynchronous countdown callback as well as guests.
 
-Security corrections include atomic grant redemption+seat commit in one authoritative room file,
-authoritative directory snapshots despite stale cache, conditional expiry deletion under lock,
-strict duplicate-fingerprint rejection, native ordered/reliable channels and bounded SCTP message
-size, shared bounded HTTP admission/signaling, and roster freeze before STARTGAME fanout with
-failure propagated to the host menu. Guest roster freezes at receipt of authorized host START.
+Normal Release/O3 browser linking restored successful fresh main-menu startup after the temporary
+-O1 build crashed. Final browser and browser/native full-game acceptance is still pending.
+Do not publish based solely on transport tests. Do not use the temporary -O1 linker override.
+
+The website companion branch `feat/p2p-signaling-web` in `../dunelegacy-p2p` adds private PHP
+service installation and additive schema-3 direct-P2P lifecycle logging. Migration tests preserve
+schema-1/2 records and legacy matches. Deployment is not yet verified on the public server.
 See `docs/direct-play.md`, `tools/p2p-signaling/README.md` and `tools/p2p-session-smoke/README.md`.
 
 ## Public HTTPS polling acceptance — 13 September 2026
