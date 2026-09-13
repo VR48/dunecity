@@ -2309,13 +2309,14 @@ class AnalyticsTests(SignalingTestCase):
     def test_events_are_truthful_and_carry_no_identity(self):
         admission, host = self.seat("Hostname", maxPeers=4)
         self.seat_guest(admission, "Guestname")
-        self.phase(host.fields["session"], "match")
+        for _ in range(3):
+            self.assertEqual(200, self.phase(host.fields["session"], "match").status)
         raw = self.service.state_file("analytics.jsonl") or ""
         events = [json.loads(line) for line in raw.split("\n") if line]
         kinds = [event["kind"] for event in events]
         self.assertIn("created", kinds)
         self.assertEqual(2, kinds.count("joined"))
-        self.assertIn("started", kinds)
+        self.assertEqual(1, kinds.count("started"))
         for event in events:
             self.assertEqual(3, event["schema_version"])
             # Never 'wss' or 'https-poll': this service carries no gameplay, and claiming one of

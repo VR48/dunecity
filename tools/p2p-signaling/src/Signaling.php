@@ -712,7 +712,8 @@ final class Signaling
                 $state['grants'] = [];
                 $state['redemptions'] = [];
             }
-            if ((string)$state['phase'] !== $phase) {
+            $phaseChanged = (string)$state['phase'] !== $phase;
+            if ($phaseChanged) {
                 $state['phase'] = $phase;
                 $state['epoch'] = (int)$state['epoch'] + 1;
                 if ($phase === 'match') {
@@ -723,6 +724,7 @@ final class Signaling
                 }
             }
             return [$state, ['phase' => (string)$state['phase'], 'epoch' => (int)$state['epoch'],
+                             'phaseChanged' => $phaseChanged,
                              'everStarted' => (bool)$state['everStarted'],
                              'startId' => $state['startId'] ?? '', 'roster' => $roster,
                              'logId' => $state['logId'],

@@ -216,7 +216,7 @@ try {
                 'phase' => $result['phase'], 'epoch' => $result['epoch'],
                 'everStarted' => $result['everStarted'],
             ]);
-            if ($phase === 'match') {
+            if ($phase === 'match' && $result['phaseChanged']) {
                 $analytics->record('started', [
                     'room_log_id' => $result['logId'] ?? null,
                     'peers_admitted' => $result['peers'],

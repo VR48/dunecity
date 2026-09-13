@@ -31,10 +31,18 @@ Normal Release/O3 browser linking restored successful fresh main-menu startup af
 Two actual browser clients played with movement and construction after every local PHP
 worker was stopped: 23 matching simulation digests per client, zero mismatches.
 Evidence: `../outputs/network-hardening/p2p-browser-outage-acceptance.json`.
-Public browser/native play subsequently passed 155 matching digests through cycle 31000,
+Public browser/native play subsequently passed 417 matching digests through cycle 83400,
 with a connected RTC channel and browser construction observed. This is same-Mac testing,
-not proof of connectivity across different Internet NATs. Public browser/browser acceptance
-and final platform builds are still pending; do not publish based solely on transport tests.
+not proof of connectivity across different Internet NATs. Two fresh production-signaling
+browser clients joined publicly as alice/bob, deployed both MCVs and moved a tank while
+signaling requests were blocked in both test tabs. All 79 captured simulation digests per
+client matched, through cycle 23000. Evidence: `../outputs/network-hardening/p2p-public-game-acceptance.json`.
+The isolated browser-only test tabs were closed; browser/native gameplay was left running.
+Final platform builds remain pending. CI cancellations reported repository transfer to
+`ggtothemax/dunecity`; the restarted candidate run is 34734606729.
+The Linux relay supervisor fixture now handles ESRCH while reading a disappearing procfs file.
+Repeated successful match-phase requests no longer produce duplicate started analytics events;
+the 164-test PHP suite verifies idempotent start logging.
 Background directory refresh no longer disables the public list/join button and steals
 keyboard focus. Native keyboard joining now works during an in-flight directory refresh.
 
