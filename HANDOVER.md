@@ -1,3 +1,33 @@
+## Direct P2P branch checkpoint — 13 September 2026
+
+Branch `feat/p2pkit-direct-crossplay` is under test; **not deployed**. Live remains 1.0.661.
+The branch vendors P2PKit commit `94ae7eb8818a629478e0a6ba0aa3232c5fc0b1ab` RTCTransport and
+framing, with direct-only bounds. Browser gameplay uses those actual modules; native crossplay
+uses pinned libdatachannel `443f6934d9007eb7076ab7825ba330f355fcbead` with compatible framing.
+Apache/PHP only serves admission, public lobby/chat and SDP/ICE introductions. No TURN or
+in-game forwarding/relay. Existing native ENet remains available.
+
+Opus supplied the initial implementation and part of the review corrections. Stefan explicitly
+asked Codex to **stop using Opus** on 13 September; do not resume its sessions for this task.
+Codex completed the remaining fixes and owns coding/testing. Hermes has supplied independent
+security findings; a fixed snapshot review is still running. Do not describe that as approval.
+
+Current checks: six native CTest suites pass; 160 PHP HTTP/concurrency tests pass; vendored RTC,
+bridge, bounded Fetch, framing and package tests pass. Real browser↔browser and browser↔native
+RTC transport tests passed previously; three native full sessions passed a 75-second outage of
+all PHP workers. The final-source repeat and full browser game acceptance remain in progress.
+A full browser game join uncovered unsigned timeout underflow when a new link was created after
+the frame clock sample; the signed deadline fix and advancing-clock regression now pass natively.
+The browser rebuild containing that fix is pending. A failed pair now requires fresh admission
+instead of repeatedly generating new certificates under an existing pair identity.
+
+Security corrections include atomic grant redemption+seat commit in one authoritative room file,
+authoritative directory snapshots despite stale cache, conditional expiry deletion under lock,
+strict duplicate-fingerprint rejection, native ordered/reliable channels and bounded SCTP message
+size, shared bounded HTTP admission/signaling, and roster freeze before STARTGAME fanout with
+failure propagated to the host menu. Guest roster freezes at receipt of authorized host START.
+See `docs/direct-play.md`, `tools/p2p-signaling/README.md` and `tools/p2p-session-smoke/README.md`.
+
 ## Public HTTPS polling acceptance — 13 September 2026
 
 **1.0.661 is published on the normal website and desktop release channels.** Source

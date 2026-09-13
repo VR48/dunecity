@@ -27,6 +27,13 @@ target_sources(dunelegacy_tests
         NetworkManagerTestCase/NetworkManagerTestCase.cpp
         NetworkHardeningTestCase/NetworkHardeningTestCase.cpp
         RelayProtocolTestCase/RelayProtocolTestCase.cpp
+        # Direct peer-to-peer play. The framing and protocol headers are header-only so these
+        # drive the real encoder and decoder; the transport test drives the real state machine
+        # with a scripted signaling service and fake data channels.
+        P2PWireFramingTestCase/P2PWireFramingTestCase.cpp
+        P2PSignalingProtocolTestCase/P2PSignalingProtocolTestCase.cpp
+        DirectRoomTransportTestCase/DirectRoomTransportTestCase.cpp
+        ${CMAKE_SOURCE_DIR}/src/Network/DirectRoomTransport.cpp
         RelayProtocolTestCase/ContentCompatibilityTestCase.cpp
         CommandEmissionTestCase/CommandEmissionTestCase.cpp
         CommandBufferPolicyTestCase/CommandBufferPolicyTestCase.cpp
@@ -290,6 +297,8 @@ if(NOT EMSCRIPTEN)
         relay/RelayTransportHarness.cpp
         ${CMAKE_SOURCE_DIR}/src/Network/RoomRelayClient.cpp
         ${CMAKE_SOURCE_DIR}/src/Network/RoomAdmissionClient.cpp
+        # Admission and direct-play signalling share one bounded HTTP client.
+        ${CMAKE_SOURCE_DIR}/src/Network/BoundedHttpClient.cpp
         ${CMAKE_SOURCE_DIR}/src/Network/RelayWebSocketCurl.cpp
         # Both transports, because createRelayWebSocket() now dispatches on the endpoint scheme
         # and the harness has to be able to follow the relay to whichever it hands out.
@@ -346,3 +355,15 @@ add_custom_command(
         "${CMAKE_BINARY_DIR}/tests/data"
     COMMENT "Copying test data to build directory"
 )
+
+# The interoperability harness is a separate executable on purpose: it needs the real WebRTC
+# backend, which the unit tests deliberately do not link. See tools/p2p-interop/README.md.
+if(DUNECITY_DIRECT_P2P AND NOT EMSCRIPTEN)
+    add_executable(dunecity_p2p_interop
+        ${CMAKE_SOURCE_DIR}/tools/p2p-interop/native-peer.cpp
+        ${CMAKE_SOURCE_DIR}/src/Network/DirectPeerConnectionLibdatachannel.cpp)
+    target_include_directories(dunecity_p2p_interop PRIVATE ${CMAKE_SOURCE_DIR}/include)
+    target_compile_definitions(dunecity_p2p_interop PRIVATE DUNECITY_HAVE_LIBDATACHANNEL)
+    target_link_libraries(dunecity_p2p_interop PRIVATE ${DUNECITY_LIBDATACHANNEL_TARGET})
+    target_compile_features(dunecity_p2p_interop PRIVATE cxx_std_17)
+endif()

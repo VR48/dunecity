@@ -1,0 +1,28 @@
+# Apache 2.4 + mod_php or php-fpm. Nothing here needs a module the shared host does not
+# already have: no proxy, no rewrite map, no daemon.
+Options -Indexes -ExecCGI -FollowSymLinks
+DirectoryIndex index.php
+
+# Bounded before PHP is even reached. The largest legitimate body is one hex-encoded SDP on
+# /v1/p2p/signal (Limits::HTTP_MAX_SIGNAL_BODY_BYTES); everything else is a few hundred bytes.
+LimitRequestBody 133120
+LimitRequestFields 64
+LimitRequestFieldSize 8192
+
+RewriteEngine On
+# Only the known routes reach PHP. Anything else is a 404 from Apache, which keeps a scanner
+# out of the interpreter entirely.
+RewriteRule ^(?:v1/health|v1/admission/(?:host|join|list|visibility)|v1/lobby/(?:enter|poll|say)|v1/p2p/(?:session|poll|signal|phase|leave))$ index.php [END]
+
+<IfModule mod_headers.c>
+    # These bodies carry invitation codes, grants and session tokens.
+    Header always set Cache-Control "no-store"
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set Referrer-Policy "no-referrer"
+</IfModule>
+
+# The state directory lives outside the web root, but if an operator ever puts one here by
+# mistake, it is not served.
+<FilesMatch "\.(json|jsonl|log)$">
+    Require all denied
+</FilesMatch>

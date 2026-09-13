@@ -107,7 +107,14 @@ RelayWebSocketSupport relayWebSocketSupport();
 /// Which transport a relay endpoint asks for. The scheme is the whole decision.
 enum class RelayTransportKind {
     WebSocket,      ///< ws:// or wss://
-    HttpPolling     ///< http:// or https://
+    HttpPolling,    ///< http:// or https://
+    /**
+        Gameplay travels peer-to-peer over WebRTC data channels.
+
+        relayTransportKindForUrl() never returns this: there is no gameplay URL in a direct
+        session at all, which is the point. Only DirectRoomTransport reports it.
+    */
+    DirectPeerToPeer
 };
 
 /**

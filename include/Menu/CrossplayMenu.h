@@ -78,7 +78,8 @@ private:
     void sendLobbyChat();
     void updateLobbyChat();
     void changeVisibility();
-    void openRelaySession();
+    /// Starts the direct session once admission has produced a room and a grant.
+    void openDirectSession();
     void teardownSession(std::string reason);
     void enterReceivedLobby(const GameInitSettings& gameInitSettings,
                             const ChangeEventList& changeEventList);

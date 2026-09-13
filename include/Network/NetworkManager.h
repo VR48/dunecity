@@ -25,7 +25,9 @@
 #include <Network/NetworkPacketTypes.h>
 #include <Network/NetworkPacketPolicy.h>
 #include <Network/GamePayloadRouter.h>
+#include <Network/DirectRoomTransport.h>
 #include <Network/RoomRelayClient.h>
+#include <Network/RoomSessionTransport.h>
 
 #include <Network/LANGameFinderAndAnnouncer.h>
 #include <Network/MetaServerClient.h>
@@ -54,18 +56,27 @@ public:
     /// Which transport carries this session.
     enum class Transport {
         EnetMesh,   ///< legacy UDP mesh with LAN discovery, the metaserver and UPnP
-        RoomRelay   ///< crossplay through the room relay over one outbound WebSocket
+        RoomRelay,  ///< legacy crossplay through the room relay over one outbound WebSocket
+        /**
+            Crossplay played directly between the players over WebRTC data channels.
+
+            HTTPS is used to find the room and introduce the players to each other and for
+            nothing else: no gameplay byte passes through a server. This is what Play Online
+            starts now; RoomRelay remains for older tests and releases.
+        */
+        DirectP2P
     };
 
     /// Legacy ENet mesh session.
     NetworkManager(int port, const std::string& metaserver);
 
     /**
-        Room relay session.
+        Room session, relayed or direct.
 
         Deliberately creates no ENet host and starts no LAN discovery, metaserver thread or UPnP
-        mapping. None of those work in a browser, and a relay session has no use for any of them
-        anywhere: the only socket it opens is one outbound WebSocket to the relay.
+        mapping. None of those work in a browser, and a room session has no use for any of them
+        anywhere: a relay session opens one outbound WebSocket, and a direct session opens no
+        server socket at all - the data channels are negotiated outbound.
     */
     explicit NetworkManager(Transport transport);
 
@@ -77,13 +88,33 @@ public:
 
     void setPublicRelayRoom(bool value) { publicRelayRoom = value; }
     bool isPublicRelayRoom() const { return publicRelayRoom; }
-    bool isRelaySession() const { return transport == Transport::RoomRelay; }
+    /// True for both room transports: this session has a room, a grant and logical peer ids.
+    bool isRoomSession() const {
+        return transport == Transport::RoomRelay || transport == Transport::DirectP2P;
+    }
+    /// Kept for call sites that mean "a room session rather than the ENet mesh".
+    bool isRelaySession() const { return isRoomSession(); }
+    /// True only when gameplay travels straight between the players.
+    bool isDirectSession() const { return transport == Transport::DirectP2P; }
 
     /**
         Relay v1 carries bundled, matching content only: mod transfer packets are refused by the
         relay, so the lobby must not wait for mod acknowledgements on that transport.
     */
     bool supportsModTransfer() const { return transport == Transport::EnetMesh; }
+
+    /**
+        Whether every player is directly connected to every other player.
+
+        True on the transports where the question does not arise. On a direct session it is the
+        start barrier: the host having a channel to each guest does not mean the guests can reach
+        each other, and starting across a missing guest-to-guest link loses that pair's commands
+        silently.
+    */
+    bool isMeshReady() const;
+
+    /// A player-facing sentence naming what the mesh is waiting for, or empty when it is ready.
+    std::string getMeshBlockedReason() const;
 
     /**
         Starts the relay session with a grant that HTTPS admission already produced.
@@ -93,9 +124,27 @@ public:
     */
     bool startRelaySession(const RoomRelayClient::Config& config, std::string& error);
 
-    /// The relay session, or nullptr on the ENet transport.
-    RoomRelayClient* getRelayClient() { return pRelayClient.get(); }
-    const RoomRelayClient* getRelayClient() const { return pRelayClient.get(); }
+    /**
+        Starts a direct session with a grant that HTTPS admission already produced.
+
+        The grant is redeemed at the signaling service, which introduces the players to each
+        other. After that the service carries nothing, and the match survives losing it.
+    */
+    bool startDirectSession(const DirectRoomTransport::Config& config, std::string& error);
+
+    /// The room session, or nullptr on the ENet transport.
+    RoomSessionTransport* getRelayClient() { return pRelayClient.get(); }
+    const RoomSessionTransport* getRelayClient() const { return pRelayClient.get(); }
+
+    /// The direct session, or nullptr when this session is not a direct one.
+    DirectRoomTransport* getDirectTransport() {
+        return transport == Transport::DirectP2P
+                   ? static_cast<DirectRoomTransport*>(pRelayClient.get()) : nullptr;
+    }
+    const DirectRoomTransport* getDirectTransport() const {
+        return transport == Transport::DirectP2P
+                   ? static_cast<const DirectRoomTransport*>(pRelayClient.get()) : nullptr;
+    }
 
     /// The room code a player can pass to a friend, or empty when there is no relay session.
     std::string getRoomCode() const {
@@ -163,7 +212,7 @@ public:
 
     void sendConfigHash(const std::string& quantBotHash, const std::string& objectDataHash, const std::string& gameVersion);
 
-    void sendStartGame(unsigned int timeLeft);
+    bool sendStartGame(unsigned int timeLeft);
     void sendCoopMission(const GameInitSettings& settings);
     std::unique_ptr<GameInitSettings> takeCoopMission();
 
@@ -182,7 +231,7 @@ public:
         std::list<std::string> peerNameList;
 
         if(pRelayClient) {
-            for(const RoomRelayClient::Peer& peer : pRelayClient->peers()) {
+            for(const RoomSessionTransport::Peer& peer : pRelayClient->peers()) {
                 peerNameList.push_back(peer.name);
             }
             return peerNameList;
@@ -412,7 +461,7 @@ private:
         \param  channel         0 or 1
         \param  recipient       0 for every other peer in the room, or a relay peer id
     */
-    void sendPacketOverRelay(ENetPacketOStream& packetStream, int channel,
+    bool sendPacketOverRelay(ENetPacketOStream& packetStream, int channel,
                              std::uint32_t recipient);
 
     /// The relay peer id of the designated host, or 0 if this process is the host.
@@ -546,7 +595,7 @@ private:
 
     std::unique_ptr<GameInitSettings> pendingCoopMission;
     Transport transport = Transport::EnetMesh;
-    std::unique_ptr<RoomRelayClient> pRelayClient;
+    std::unique_ptr<RoomSessionTransport> pRelayClient;
     Uint32 nextClientId = 1;        ///< source of the stable per-connection client ids
     Uint32 lastUnidentifiedLogTime = 0;  ///< throttles logging for connections without peer state
     Uint32 simulationSeed = 0;
@@ -572,6 +621,7 @@ private:
     std::function<void (const std::string&, bool, int)>                     pOnPeerDisconnected;
     std::function<ChangeEventList (const std::string&)>                     pGetChangeEventListForNewPlayerCallback;
     std::function<void (unsigned int)>                                      pOnStartGame;
+    std::function<void (unsigned int)>                                      pOnStartGameBridge;
     std::function<void (const std::string&, const CommandList&)>            pOnReceiveCommandList;
     std::function<void (const std::string&, const std::set<Uint32>&, int)>  pOnReceiveSelectionList;
     std::function<void (const std::string&)>                                 pOnConfigMismatch;

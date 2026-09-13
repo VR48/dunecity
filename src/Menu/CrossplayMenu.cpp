@@ -27,6 +27,9 @@
 
 #include <GUI/MsgBox.h>
 
+#include <Network/DirectPeerConnection.h>
+#include <Network/DirectRoomTransport.h>
+#include <Network/RoomSessionTransport.h>
 #include <Network/NetworkManager.h>
 #include <Network/RelayWebSocket.h>
 #include <Network/RoomRelayProtocol.h>
@@ -202,16 +205,14 @@ CrossplayMenu::CrossplayMenu() : MenuBase() {
     mainVBox.addWidget(&buttonHBox, 24);
 
     // Say plainly why online play is not offered, rather than failing later.
-    if(settings.network.activeRelayEndpoint().empty()) {
+    if(settings.network.activeDirectEndpoint().empty()) {
         setStatus(_("Online play has not been set up in this copy of the game."));
         stage = Stage::Finished;
     } else {
-        // Not relayWebSocketSupport(): the endpoint arrives in the admission answer, so at this
-        // point the menu cannot know whether the session will use a WebSocket or HTTPS polling.
-        // The question it can answer is whether either transport could work at all.
-        const RelayWebSocketSupport support = relayAnyTransportSupport();
-        if(!support.available) {
-            setStatus(support.reason);
+        // Direct play needs a WebRTC backend, not a WebSocket: a build without one says so here
+        // rather than looking like it is connecting and never arriving.
+        if(!isDirectPeerConnectionAvailable()) {
+            setStatus(_("This copy of the game cannot open direct connections to other players."));
             stage = Stage::Finished;
         } else {
             setStatus(_("Choose your player name, then join a public game or host your own."));
@@ -300,7 +301,7 @@ void CrossplayMenu::refreshPublicGames(unsigned offset) {
         return;
     }
     AdmissionRequest request;
-    request.baseUrl = settings.network.activeRelayEndpoint();
+    request.baseUrl = settings.network.activeDirectEndpoint();
     request.allowLoopbackPlaintext = settings.network.relayUseDevelopmentEndpoint;
     request.appVersion = VERSIONSTRING;
     request.gameProtocol = NETWORK_PROTOCOL_VERSION;
@@ -328,7 +329,7 @@ void CrossplayMenu::joinPublicGame() {
 
 AdmissionRequest CrossplayMenu::lobbyRequest() const {
     AdmissionRequest request;
-    request.baseUrl = settings.network.activeRelayEndpoint();
+    request.baseUrl = settings.network.activeDirectEndpoint();
     request.allowLoopbackPlaintext = settings.network.relayUseDevelopmentEndpoint;
     request.appVersion = VERSIONSTRING;
     request.gameProtocol = NETWORK_PROTOCOL_VERSION;
@@ -508,7 +509,7 @@ void CrossplayMenu::beginAdmission(bool hosting, bool publicJoin) {
     if(!validateAndSavePlayerName()) {
         return;
     }
-    if(settings.network.activeRelayEndpoint().empty()) {
+    if(settings.network.activeDirectEndpoint().empty()) {
         setStatus(_("Online play has not been set up in this copy of the game."));
         return;
     }
@@ -524,7 +525,7 @@ void CrossplayMenu::beginAdmission(bool hosting, bool publicJoin) {
     }
 
     AdmissionRequest request;
-    request.baseUrl = settings.network.activeRelayEndpoint();
+    request.baseUrl = settings.network.activeDirectEndpoint();
     request.allowLoopbackPlaintext = settings.network.relayUseDevelopmentEndpoint;
     request.appVersion = VERSIONSTRING;
     request.gameProtocol = static_cast<std::uint16_t>(NETWORK_PROTOCOL_VERSION);
@@ -556,7 +557,7 @@ void CrossplayMenu::beginAdmission(bool hosting, bool publicJoin) {
     admission.begin(request);
 }
 
-void CrossplayMenu::openRelaySession() {
+void CrossplayMenu::openDirectSession() {
     // The fingerprint is recomputed rather than remembered: admission and the handshake must
     // describe the same install, and anything that changed in between has to be caught here.
     const std::string fingerprint = contentFingerprint();
@@ -568,9 +569,14 @@ void CrossplayMenu::openRelaySession() {
         return;
     }
 
-    RoomRelayClient::Config config;
-    config.socketUrl   = grantedRoom.socketUrl;
+    // Direct only. The address comes from this installation's settings, never from the admission
+    // answer: a service that could hand out a gameplay endpoint could move the match back onto a
+    // server, which is the whole thing this transport exists to stop. grantedRoom.socketUrl is
+    // deliberately ignored.
+    DirectRoomTransport::Config config;
+    config.signalingBaseUrl = settings.network.activeDirectEndpoint();
     config.grant       = grantedRoom.grant;
+    config.roomCode    = grantedRoom.roomCode;
     config.displayName = settings.general.playerName;
     config.appVersion  = VERSIONSTRING;
     config.contentHash = fingerprint;
@@ -578,15 +584,12 @@ void CrossplayMenu::openRelaySession() {
     config.allowLoopbackPlaintext = settings.network.relayUseDevelopmentEndpoint;
 #ifdef __EMSCRIPTEN__
     config.runtime = "browser";
-    // The browser sets Origin itself and does not let a page choose one.
-    config.origin.clear();
 #else
     config.runtime = "native";
-    config.origin.clear();
 #endif
 
     try {
-        pNetworkManager = std::make_unique<NetworkManager>(NetworkManager::Transport::RoomRelay);
+        pNetworkManager = std::make_unique<NetworkManager>(NetworkManager::Transport::DirectP2P);
     } catch(const std::exception& error) {
         setStatus(error.what());
         stage = Stage::Finished;
@@ -595,7 +598,7 @@ void CrossplayMenu::openRelaySession() {
     }
 
     std::string failure;
-    if(!pNetworkManager->startRelaySession(config, failure)) {
+    if(!pNetworkManager->startDirectSession(config, failure)) {
         pNetworkManager.reset();
         setStatus(failure);
         stage = Stage::Finished;
@@ -717,7 +720,7 @@ void CrossplayMenu::update() {
             case RoomAdmissionClient::Status::Succeeded:
                 grantedRoom = admission.response();
                 admission.cancel();
-                openRelaySession();
+                openDirectSession();
                 break;
             case RoomAdmissionClient::Status::Failed:
                 setStatus(admission.errorMessage());
@@ -735,7 +738,7 @@ void CrossplayMenu::update() {
         return;
     }
 
-    RoomRelayClient* relay = pNetworkManager->getRelayClient();
+    RoomSessionTransport* relay = pNetworkManager->getRelayClient();
     if(relay == nullptr) {
         return;
     }
@@ -756,7 +759,7 @@ void CrossplayMenu::update() {
         return;
     }
 
-    if(relay->status() == RoomRelayClient::Status::Closed
+    if(relay->status() == RoomSessionTransport::Status::Closed
        && (stage == Stage::Connecting || stage == Stage::HostReady
            || stage == Stage::ClientWaiting)) {
         teardownSession(relay->statusMessage().empty()
@@ -805,7 +808,7 @@ void CrossplayMenu::onPeerDisconnected(const std::string& playerName, bool isHos
 
     if(pNetworkManager && pNetworkManager->getRelayClient()) {
         const auto* relay = pNetworkManager->getRelayClient();
-        if(relay->status() == RoomRelayClient::Status::Closed && !relay->statusMessage().empty()) {
+        if(relay->status() == RoomSessionTransport::Status::Closed && !relay->statusMessage().empty()) {
             pendingDisconnectReason = relay->statusMessage();
             return;
         }

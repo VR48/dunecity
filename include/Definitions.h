@@ -41,6 +41,19 @@
 /// The loopback relay used for development and testing. Only ever plain http/ws, only loopback.
 #define DEVELOPMENT_RELAY_ENDPOINT "http://127.0.0.1:8787"
 
+/**
+    Base URL of the direct-play signaling service (see docs/direct-play.md).
+
+    This service introduces players to each other and does nothing else: it never carries a
+    gameplay byte, and a match keeps running if it goes away. It is deliberately a different path
+    from the relay endpoint above, so that an admission answer cannot move a direct match back
+    onto somebody's server - the client refuses a "/relay" address on this setting outright.
+*/
+#define DEFAULT_DIRECT_ENDPOINT "https://dunelegacy.com/p2p"
+
+/// The loopback signaling service used for development. Plain http, loopback only, opt-in only.
+#define DEVELOPMENT_DIRECT_ENDPOINT "http://127.0.0.1:8788"
+
 #define SAVEMAGIC           8675309
 // 9822: Worfinery persists its progressive harvester extraction state.
 // 9820: CitySimulation persists every house's R/C/I and budget state.
