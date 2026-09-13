@@ -588,7 +588,9 @@ CustomGamePlayers::CustomGamePlayers(const GameInitSettings& newGameInitSettings
             // Relay guests can join before the host chooses a map. startServer immediately
             // sends their lobby snapshot, so seat assignment must already be available.
             pNetworkManager->startServer(bLANServer, gameInitSettings.getServername(), settings.general.playerName, &gameInitSettings, 1, gameInitSettings.isMultiplePlayersPerHouse() ? numHouses*2 : numHouses);
-        } else {
+        }
+        // Direct hosts also wait for the acknowledged roster before their countdown.
+        if(!bServer || pNetworkManager->isDirectSession()) {
             pNetworkManager->setOnStartGame(std::bind(&CustomGamePlayers::onStartGame, this, std::placeholders::_1));
         }
         
