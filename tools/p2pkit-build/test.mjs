@@ -55,6 +55,8 @@ test('data-only SDP requires certificate fingerprint and rejects embedded relay 
   assert.throws(()=>validateDirectDescription({type:'offer',sdp:sdp+'a=candidate:1 1 udp 1 1.2.3.4 5000 typ relay\r\n'}));
   assert.throws(()=>validateDirectDescription({type:'offer',sdp:sdp+'m=audio 9 UDP/TLS/RTP/SAVPF 111\r\n'}));
   assert.throws(()=>validateDirectDescription({type:'rollback',sdp}));
+  assert.throws(()=>validateDirectDescription({type:'offer',sdp:sdp.replace(Array(32).fill('AB').join(':'), ':'.repeat(95))}));
+  assert.throws(()=>validateDirectDescription({type:'offer',sdp:sdp+'a=fingerprint:sha-256 '+Array(32).fill('AB').join(':')+'\r\n'}));
 });
 class Channel {
   label='p2pkit'; ordered=true; maxRetransmits=null; maxPacketLifeTime=null;

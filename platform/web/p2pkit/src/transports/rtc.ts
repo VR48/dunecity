@@ -50,7 +50,7 @@ export function validateDirectDescription(description: unknown): asserts descrip
   if (!description || typeof description !== 'object') throw new Error('Invalid session description')
   const { type, sdp } = description as RTCSessionDescriptionInit
   if ((type !== 'offer' && type !== 'answer') || typeof sdp !== 'string' || sdp.length > MAX_SDP ||
-      sdp.includes('\0') || !sdp.startsWith('v=0') || !/^a=fingerprint:sha-256 [0-9A-Fa-f:]{95}\r?$/m.test(sdp) ||
+      sdp.includes('\0') || !/^v=0\r?\n/.test(sdp) || !/^a=fingerprint:sha-256 (?:[0-9A-Fa-f]{2}:){31}[0-9A-Fa-f]{2}\r?$/m.test(sdp) ||
       (sdp.match(/^a=fingerprint:/gm)?.length ?? 0) !== 1 ||
       (sdp.match(/^m=application /gm)?.length ?? 0) !== 1 || /^m=(?!application )/m.test(sdp)) throw new Error('Invalid data-channel description')
   let count = 0
