@@ -116,3 +116,12 @@ test('well-formed tiny-message floods are bounded before parsing',async()=>{
   assert.equal(received,4096);assert.equal(c.closed(),1);assert.equal(c.errors.length,1);
   await tick();
 });
+
+test('ICE gathering completion does not publish an empty address or close a connection',async()=>{
+  const c=connection();c.pc.channel.open();await tick();
+  const before=c.sent.length;
+  c.pc.onicecandidate({candidate:{toJSON(){return {candidate:'',sdpMid:'0',sdpMLineIndex:0}}}});
+  c.pc.onicecandidate({candidate:null});
+  assert.equal(c.sent.length,before);assert.equal(c.closed(),0);assert.equal(c.errors.length,0);
+  await c.t.send('still connected');c.t.disconnect();
+});

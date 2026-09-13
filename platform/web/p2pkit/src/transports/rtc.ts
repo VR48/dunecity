@@ -103,6 +103,11 @@ export class RTCTransport<T = unknown> implements Transport<T> {
       try {
         const candidate = ev.candidate.toJSON()
         validateDirectCandidate(candidate)
+        // Browsers may report end-of-generation as an object with candidate="", before
+        // the final null event. It is a completion hint, not another network address.
+        // The native adapter has its own bounded connect deadline and does not consume
+        // end markers; omit this optional hint rather than publish an invalid candidate.
+        if (candidate.candidate === '') return
         this.signalling.send({ iceCandidate: candidate, from: this.self, to: this.remote })
       } catch { this.fail('Could not exchange direct connection details') }
     }
