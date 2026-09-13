@@ -1,0 +1,104 @@
+{
+  "name": "p2pkit",
+  "version": "0.1.0",
+  "description": "A transport-agnostic P2P mesh library. WebRTC, µTP, HTTP, or the DHT; gossip discovery, typed request/response, and message signing built in. Universal (browser + Node + Bun + Deno).",
+  "type": "module",
+  "license": "MIT",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./rpc": {
+      "types": "./dist/rpc.d.ts",
+      "import": "./dist/rpc.js"
+    },
+    "./discovery": {
+      "types": "./dist/discovery.d.ts",
+      "import": "./dist/discovery.js"
+    },
+    "./auth": {
+      "types": "./dist/auth.d.ts",
+      "import": "./dist/auth.js"
+    },
+    "./transports": {
+      "types": "./dist/transports.d.ts",
+      "import": "./dist/transports.js"
+    },
+    "./signalling": {
+      "types": "./dist/signalling.d.ts",
+      "import": "./dist/signalling.js"
+    },
+    "./nat": {
+      "types": "./dist/nat.d.ts",
+      "import": "./dist/nat.js"
+    },
+    "./backends": {
+      "types": "./dist/backends.d.ts",
+      "import": "./dist/backends.js"
+    },
+    "./framing": {
+      "types": "./dist/framing.d.ts",
+      "import": "./dist/framing.js"
+    },
+    "./utils": {
+      "types": "./dist/utils.d.ts",
+      "import": "./dist/utils.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@noble/ciphers": "^1.2.1",
+    "@noble/hashes": "^1.7.1",
+    "@noble/secp256k1": "^2.2.3"
+  },
+  "peerDependencies": {
+    "zod": "^3.23.0"
+  },
+  "peerDependenciesMeta": {
+    "zod": {
+      "optional": true
+    }
+  },
+  "optionalDependencies": {
+    "@roamhq/wrtc": "^0.10.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@roamhq/wrtc": "^0.10.0",
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.18.1",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8",
+    "werift": "^0.24.2",
+    "ws": "^8.21.1",
+    "zod": "^3.23.8"
+  },
+  "keywords": [
+    "p2p",
+    "webrtc",
+    "mesh",
+    "dht",
+    "utp",
+    "gossip",
+    "rpc",
+    "peer-to-peer"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}

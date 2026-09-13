@@ -119,7 +119,7 @@ WASM and data URL carries the same version/content token; unversioned artifacts
 must revalidate. Verify the live `play/build.json` and download/hash every listed
 artifact after deployment. Browser-test fresh defaults, Display aspect changes,
 Options resolution changes, reload persistence, viewport resize and fullscreen.
-Crossplay uses `https://dunelegacy.com/relay`. Desktop ENet multiplayer remains
+Released 1.0.661 crossplay uses `https://dunelegacy.com/relay`. Desktop ENet multiplayer remains
 available; browser/native crossplay supports WebSocket and HTTPS polling transports,
 the public directory, optional private invitations and confirmed-name lobby chat.
 Package production clients with `--relay-origin https://dunelegacy.com` so their CSP
@@ -149,3 +149,22 @@ next scheduled deploy. Website main 9a85d48 contains the gateway and additive re
 Untracked play-test-* previews are also removed; restore previews after deployment,
 or finish their tests before publishing. The private loopback relay and SQLite data
 live outside the deployed webroot and are preserved.
+
+### Direct-P2P release transition (1.0.663 candidate)
+
+The candidate uses actual P2PKit RTC/framing in browsers and compatible libdatachannel
+on desktop. Apache/PHP at `/p2p` handles admission, lobby/chat and introductions only.
+No gameplay relay or TURN fallback is present. Native ENet remains available.
+
+The web workflow copies matching PHP source with `scripts/package-p2p-service.py`
+into the website repository's private `p2p-service` directory. Its normal deploy
+installs a verified snapshot outside the webroot, preserves private configuration
+and worker-owned state, and keeps the tracked `/p2p` entrypoint across hourly updates.
+See that repository's `deploy/p2p-signaling.md`. Back up the existing SQLite database
+before its additive schema-3 migration. Old relay records and clients stay compatible.
+Package production browser clients with `--signaling-origin https://dunelegacy.com`.
+
+Hold stable publication until full public browser/browser and browser/native matches
+pass, including gameplay after signaling outage and SQLite runtime attribution.
+Transport fixtures alone are insufficient. Networks unable to establish direct ICE
+connectivity fail visibly; there is no hidden relay fallback.

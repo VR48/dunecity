@@ -29,6 +29,18 @@ jobs:
           python3 tools/room-relay/deploy/test-artifact-manifest.py
           python3 tools/room-relay/deploy/test-relay-supervisor.py
           python3 tools/room-relay/deploy/test-release-pinning.py
+  # Exercise the real PHP introduction service; this job never deploys it.
+  signaling-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Run the signaling service test suite
+        run: |
+          php --version
+          python3 tools/p2p-signaling/test/test_signaling.py
+
   # Gate: on v* tag builds, verify that the source-controlled version metadata
   # (CMakeLists.txt, include/config.h, vcpkg.json) already matches the tag.
   # This catches missing bump commits BEFORE any build/release/upload runs.
@@ -61,6 +73,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
       - name: Install test dependencies
         run: |
           sudo apt-get update
@@ -70,10 +86,21 @@ jobs:
             catch2
 
       - name: Configure CMake
-        run: cmake -B build -DDUNECITY_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Debug
+        # The unit tests exercise the direct transport with fake data channels, so this job does
+        # not need libdatachannel; the interoperability harness in tools/p2p-interop does, and is
+        # built where that dependency is provisioned.
+        run: cmake -B build -DDUNECITY_BUILD_TESTS=ON -DDUNECITY_DIRECT_P2P=OFF -DCMAKE_BUILD_TYPE=Debug
 
       - name: Build tests
         run: cmake --build build --target dunelegacy_tests
+
+      - name: Check native and browser framing still agree
+        run: node --experimental-strip-types tools/p2p-interop/framing-vectors.mjs
+
+      - name: Check the browser signaling fetch keeps its guarantees
+        # The JavaScript inside the EM_JS blocks is not reachable by a C++ compiler and not
+        # exercised by a wasm link either, so it gets its own regression test.
+        run: node tools/p2p-interop/signaling-fetch.test.mjs
 
       - name: Run tests
         run: |
@@ -93,6 +120,12 @@ jobs:
         with:
           persist-credentials: false
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: tools/p2pkit-build/package-lock.json
+
       - name: Install build deps
         run: |
           sudo apt-get update
@@ -100,6 +133,30 @@ jobs:
 
       - name: Check browser build safety
         run: python3 -m unittest discover -s scripts/tests -p 'test_web_build.py'
+
+      # The direct-play bridge bundle is committed so that a clean clone builds without npm.
+      # These three steps are what keeps that honest: install the pinned tool, prove the
+      # vendored transport and the bridge still behave, and prove the committed bundle is what
+      # this source actually produces.
+      - name: Install the pinned bundler
+        working-directory: tools/p2pkit-build
+        run: npm ci --ignore-scripts
+
+      - name: Test the vendored P2PKit transport and the bridge
+        working-directory: tools/p2pkit-build
+        run: |
+          node --test test.mjs
+          node --test bridge.test.mjs
+
+      - name: Verify the committed bridge bundle is reproducible
+        run: |
+          node tools/p2pkit-build/build.mjs
+          if ! git diff --quiet -- platform/web/p2p-direct.js; then
+            echo "ERROR: platform/web/p2p-direct.js does not match a rebuild from source." >&2
+            echo "Run: node tools/p2pkit-build/build.mjs and commit the result." >&2
+            git --no-pager diff --stat -- platform/web/p2p-direct.js >&2
+            exit 1
+          fi
 
       - name: Build browser target
         run: ./tools/web/build-emscripten.sh
@@ -115,6 +172,7 @@ jobs:
             build/emscripten/bin/dunecity.data
             build/emscripten/bin/shell.js
             build/emscripten/bin/shell.css
+            build/emscripten/bin/p2p-direct.js
 
   build-windows:
     runs-on: windows-latest
@@ -482,12 +540,14 @@ jobs:
   # Rolling dev build: update a "latest-dev" pre-release on every main push
   # so builds are always downloadable from the releases page.
   dev-release:
-    needs: [test-linux, relay-tests, build-windows, build-linux, build-macos]
+    needs: [test-linux, relay-tests, signaling-tests, build-emscripten, build-windows, build-linux, build-macos]
     if: |
       always() &&
       github.ref == 'refs/heads/main' &&
       needs.test-linux.result == 'success' &&
       needs.relay-tests.result == 'success' &&
+      needs.signaling-tests.result == 'success' &&
+      needs.build-emscripten.result == 'success' &&
       (needs.build-windows.result == 'success' || needs.build-linux.result == 'success' || needs.build-macos.result == 'success')
     runs-on: ubuntu-latest
     permissions:
@@ -544,7 +604,7 @@ jobs:
   # so creating a release here automatically flips every existing
   # install's "update available" flag the next time they launch.
   release:
-    needs: [verify-version, test-linux, relay-tests, build-windows, build-linux, build-macos]
+    needs: [verify-version, test-linux, relay-tests, signaling-tests, build-emscripten, build-windows, build-linux, build-macos]
     # The website advertises all desktop platforms at this version. Publish only
     # after tests and every desktop package have actually succeeded.
     if: success() && startsWith(github.ref, 'refs/tags/v')

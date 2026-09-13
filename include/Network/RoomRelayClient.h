@@ -31,6 +31,7 @@
 
 #include <Network/RelayWebSocket.h>
 #include <Network/RoomRelayProtocol.h>
+#include <Network/RoomSessionTransport.h>
 
 #include <misc/SDL2pp.h>
 
@@ -40,27 +41,19 @@
 #include <string>
 #include <vector>
 
-class RoomRelayClient {
+class RoomRelayClient : public RoomSessionTransport {
 public:
-    /// A peer in the room, as the relay describes it.
-    struct Peer {
-        std::uint32_t   id      = 0;
-        RoomRelay::Role role    = RoomRelay::Role::Unknown;
-        std::string     name;
-        std::string     runtime;        ///< client-reported, never trusted for anything
+    /**
+        The peer, status and event types are the shared ones.
 
-        // Config verification state, mirroring what the ENet path keeps per connection.
-        std::string     gameVersion;
-        std::string     quantBotConfigHash;
-        std::string     objectDataHash;
-
-        // Abuse accounting for messages this peer sent that the client itself refused.
-        Uint32          refusedMessages = 0;
-        Uint32          lastRefuseTime  = 0;
-        Uint32          lastRefuseLog   = 0;
-
-        bool isHost() const { return role == RoomRelay::Role::Host; }
-    };
+        They used to live here. They moved to RoomSessionTransport when the direct peer-to-peer
+        transport appeared, because NetworkManager's receive path names them and must not care
+        which transport produced them. The aliases keep every existing call site spelled the way
+        it was.
+    */
+    using Peer   = RoomSessionTransport::Peer;
+    using Status = RoomSessionTransport::Status;
+    using Event  = RoomSessionTransport::Event;
 
     struct Config {
         std::string   socketUrl;
@@ -74,45 +67,10 @@ public:
         bool          allowLoopbackPlaintext = false;
     };
 
-    enum class Status {
-        Idle,           ///< nothing started
-        Connecting,     ///< socket opening
-        Handshaking,    ///< HELLO sent, waiting for WELCOME
-        Joined,         ///< in a room
-        Closed          ///< finished; see statusMessage() and closeCode()
-    };
-
-    /// One thing that happened, for the game loop to act on.
-    struct Event {
-        enum class Type {
-            PeerJoined,
-            PeerLeft,
-            GamePayload,
-            Diagnostic,
-            PhaseChanged,
-            Refused,        ///< the relay refused something we sent; not fatal
-            Closed          ///< the session ended
-        };
-
-        Type              type              = Type::Closed;
-        std::uint32_t     peerId            = 0;
-        std::string       name;
-        std::string       runtime;
-        RoomRelay::Role   role              = RoomRelay::Role::Unknown;
-        std::uint8_t      reason            = 0;
-        std::uint8_t      channel           = 0;
-        std::uint16_t     gameMessageType   = 0;
-        std::uint8_t      diagnosticKind    = 0;
-        RoomRelay::Phase  phase             = RoomRelay::Phase::Lobby;
-        std::uint16_t     code              = 0;
-        std::string       message;
-        std::vector<std::uint8_t> payload;
-    };
-
     RoomRelayClient();
     RoomRelayClient(const RoomRelayClient&) = delete;
     RoomRelayClient& operator=(const RoomRelayClient&) = delete;
-    ~RoomRelayClient();
+    ~RoomRelayClient() override;
 
     /**
         Validates the endpoint, opens the socket and sends the handshake once it is open.
@@ -123,36 +81,38 @@ public:
     bool start(const Config& config, std::string& error);
 
     /// Drives the socket and fills the event queue. Call once per game loop iteration.
-    void update();
+    void update() override;
 
     /// Sends LEAVE and closes. Safe to call more than once.
-    void stop(std::uint8_t reason);
+    void stop(std::uint8_t reason) override;
 
-    bool pollEvent(Event& event);
+    bool pollEvent(Event& event) override;
 
     /// Events waiting for the game loop. Both of these are bounded; see pushEvent().
     std::size_t queuedEventCount() const { return events_.size(); }
     std::size_t queuedEventBytes() const { return eventBytes_; }
 
-    Status status() const { return status_; }
-    bool   isJoined() const { return status_ == Status::Joined; }
-    bool   isHost() const { return localRole_ == RoomRelay::Role::Host; }
-    const std::string& roomCode() const { return roomCode_; }
+    Status status() const override { return status_; }
+    bool   isJoined() const override { return status_ == Status::Joined; }
+    bool   isHost() const override { return localRole_ == RoomRelay::Role::Host; }
+    const std::string& roomCode() const override { return roomCode_; }
     /// Host-only admission response can rotate the invitation without reconnecting peers.
-    void updateInvitationCode(const std::string& code) {
+    void updateInvitationCode(const std::string& code) override {
         if(RoomRelay::isAcceptableRoomCode(code)) roomCode_ = code;
     }
-    std::uint32_t localPeerId() const { return localPeerId_; }
-    std::uint8_t  maxPeers() const { return maxPeers_; }
-    RoomRelay::Phase phase() const { return phase_; }
+    std::uint32_t localPeerId() const override { return localPeerId_; }
+    std::uint8_t  maxPeers() const override { return maxPeers_; }
+    RoomRelay::Phase phase() const override { return phase_; }
 
     /// A player-facing sentence describing the current state or the reason it ended.
-    const std::string& statusMessage() const { return statusMessage_; }
-    std::uint16_t closeCode() const { return closeCode_; }
+    const std::string& statusMessage() const override { return statusMessage_; }
+    std::uint16_t closeCode() const override { return closeCode_; }
 
     /// Round-trip time to the relay in milliseconds, or 0 before the first heartbeat answer.
-    Uint32 roundTripTimeMs() const { return roundTripMs_; }
-    RelayTransportKind transportKind() const { return relayTransportKindForUrl(config_.socketUrl); }
+    Uint32 roundTripTimeMs() const override { return roundTripMs_; }
+    RelayTransportKind transportKind() const override {
+        return relayTransportKindForUrl(config_.socketUrl);
+    }
 
     /**
         Bytes handed to the transport that it has not written to the socket yet.
@@ -160,13 +120,13 @@ public:
         A caller that produces faster than the socket drains can watch this instead of finding
         out when the session dies of a full outgoing queue.
     */
-    std::size_t outgoingBacklogBytes() const {
+    std::size_t outgoingBacklogBytes() const override {
         return socket_ ? socket_->outgoingBacklogBytes() : 0;
     }
 
-    const std::vector<Peer>& peers() const { return peers_; }
-    Peer* findPeer(std::uint32_t peerId);
-    const Peer* findPeer(std::uint32_t peerId) const;
+    const std::vector<Peer>& peers() const override { return peers_; }
+    Peer* findPeer(std::uint32_t peerId) override;
+    const Peer* findPeer(std::uint32_t peerId) const override;
 
     /**
         Sends one serialized game packet.
@@ -177,10 +137,10 @@ public:
         \return false if the message was refused locally; the reason is in statusMessage()
     */
     bool sendGamePayload(const std::uint8_t* payload, std::size_t length, int channel,
-                         std::uint32_t recipient);
+                         std::uint32_t recipient) override;
 
     /// Host only: declares the room phase so the relay can apply the right rules.
-    bool setRoomPhase(RoomRelay::Phase phase);
+    bool setRoomPhase(RoomRelay::Phase phase) override;
 
     /**
         Marks the local view of the room as in-match without telling the relay.
@@ -189,11 +149,14 @@ public:
         locally because the host's phase change has not been applied yet. The relay's own view
         is still what authorises routing; this only stops the client refusing itself.
     */
-    void assumeMatchPhase() { phase_ = RoomRelay::Phase::Match; }
+    void assumeMatchPhase() override { phase_ = RoomRelay::Phase::Match; }
 
     /// Sends a bounded diagnostic to the room. Never part of the ENet game protocol.
     bool sendDiagnostic(RoomRelay::DiagnosticKind kind, const std::uint8_t* payload,
-                        std::size_t length);
+                        std::size_t length) override;
+
+    /// Gameplay goes through a server on this transport, which is the whole difference.
+    bool isDirectSession() const override { return false; }
 
 private:
     /**

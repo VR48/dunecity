@@ -61,12 +61,13 @@ jobs:
           if tuple(map(int, current.split('.'))) > tuple(map(int, os.environ['WEB_VERSION'].split('.'))):
               raise SystemExit('Website already has a newer browser build; refusing downgrade')
           PY
-          python3 scripts/package-web.py --build-root build-web --play-root website-repo/website/play --relay-origin https://dunelegacy.com
+          python3 scripts/package-web.py --build-root build-web --play-root website-repo/website/play --signaling-origin https://dunelegacy.com
+          python3 scripts/package-p2p-service.py --output website-repo/p2p-service
           python3 website-repo/deploy/check-web-security.py
           cd website-repo
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add website/play
+          git add website/play p2p-service
           git commit -m "Publish browser build ${WEB_TAG}"
           git pull --rebase origin main
           git push origin main

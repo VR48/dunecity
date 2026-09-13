@@ -228,9 +228,25 @@ public:
         /// When set, the loopback relay is used and plain ws:// to loopback becomes acceptable.
         bool        relayUseDevelopmentEndpoint = false;
 
+        /// Base URL of the direct-play signaling service; empty means direct play is off.
+        std::string directEndpoint;
+        /// Loopback signaling service for local testing; only reachable with the option below.
+        std::string directDevelopmentEndpoint;
+
         /// The relay address this session should use, honouring the development option.
         std::string activeRelayEndpoint() const {
             return relayUseDevelopmentEndpoint ? relayDevelopmentEndpoint : relayEndpoint;
+        }
+
+        /**
+            The signaling address a direct session should use.
+
+            Shares the development opt-in with the relay setting, because it is the same
+            decision - "use the service running on this computer" - and having two switches for
+            it would let a player end up half on one and half on the other.
+        */
+        std::string activeDirectEndpoint() const {
+            return relayUseDevelopmentEndpoint ? directDevelopmentEndpoint : directEndpoint;
         }
     } network;
 

@@ -136,6 +136,14 @@ bool relayPeerNamesAreBound = true;
 } // namespace
 
 void NetworkManager::installSessionBridges() {
+    pOnStartGameBridge = [this](unsigned int timeLeft) {
+        // The packet router has already verified that STARTGAME came from the host.
+        // Freeze now, before the countdown allows a membership change to alter this match.
+        if(auto* direct = getDirectTransport()) {
+            if(!direct->acceptStartCallback()) return;
+        }
+        if(pOnStartGame) pOnStartGame(timeLeft);
+    };
     pOnReceiveCoopMissionBridge = [this](const GameInitSettings& settings) {
         pendingCoopMission = std::make_unique<GameInitSettings>(settings);
     };
@@ -253,7 +261,7 @@ void NetworkManager::startServer(bool bLANServer, const std::string& serverName,
 
         // Any peer that is already in the room needs the lobby state now.
         if(pRelayClient && pGameInitSettings != nullptr) {
-            for(const RoomRelayClient::Peer& peer : pRelayClient->peers()) {
+            for(const RoomSessionTransport::Peer& peer : pRelayClient->peers()) {
                 ENetPacketOStream packetStream(ENET_PACKET_FLAG_RELIABLE);
                 packetStream.writeUint32(NETWORKPACKET_SENDGAMEINFO);
                 pGameInitSettings->save(packetStream);
@@ -968,7 +976,7 @@ NetworkSessionCallbacks NetworkManager::sessionCallbacks() const {
     callbacks.onReceiveChatMessage     = &pOnReceiveChatMessage;
     callbacks.onReceiveGameInfo        = &pOnReceiveGameInfo;
     callbacks.onReceiveChangeEventList = &pOnReceiveChangeEventList;
-    callbacks.onStartGame              = &pOnStartGame;
+    callbacks.onStartGame              = &pOnStartGameBridge;
     callbacks.onReceiveCommandList     = &pOnReceiveCommandList;
     callbacks.onReceiveSelectionList   = &pOnReceiveSelectionList;
     callbacks.onReceiveClientStats     = &pOnReceiveClientStats;
@@ -993,7 +1001,7 @@ NetworkManager::ContentCheck NetworkManager::checkRelayContent(
     local.objectDataHash = objectDataHash;
 
     ContentCheck worst = ContentCheck::Match;
-    for(const RoomRelayClient::Peer& peer : pRelayClient->peers()) {
+    for(const RoomSessionTransport::Peer& peer : pRelayClient->peers()) {
         ContentCompatibility::Fingerprint reported;
         reported.gameVersion    = peer.gameVersion;
         reported.quantBotHash   = peer.quantBotConfigHash;
@@ -1020,8 +1028,40 @@ NetworkManager::ContentCheck NetworkManager::checkRelayContent(
     return worst;
 }
 
+bool NetworkManager::startDirectSession(const DirectRoomTransport::Config& config,
+                                       std::string& error) {
+    if(transport != Transport::DirectP2P) {
+        error = "This game session is not a direct one.";
+        return false;
+    }
+
+    bGameInProgress = false;
+    simulationSeed  = 0;
+    pendingCoopMission.reset();
+    playerName = config.displayName;
+
+    auto direct = std::make_unique<DirectRoomTransport>();
+    if(!direct->start(config, error)) {
+        return false;
+    }
+    pRelayClient = std::move(direct);
+    return true;
+}
+
+bool NetworkManager::isMeshReady() const {
+    const DirectRoomTransport* direct = getDirectTransport();
+    // On every other transport the question does not arise: the ENet mesh connects every pair
+    // itself, and the relay forwards between all of them.
+    return direct == nullptr ? true : direct->meshReady();
+}
+
+std::string NetworkManager::getMeshBlockedReason() const {
+    const DirectRoomTransport* direct = getDirectTransport();
+    return direct == nullptr ? std::string() : direct->meshBlockedReason();
+}
+
 bool NetworkManager::startRelaySession(const RoomRelayClient::Config& config, std::string& error) {
-    if(!isRelaySession()) {
+    if(transport != Transport::RoomRelay) {
         error = "This game session is not using the game service.";
         return false;
     }
@@ -1031,11 +1071,11 @@ bool NetworkManager::startRelaySession(const RoomRelayClient::Config& config, st
     pendingCoopMission.reset();
     playerName = config.displayName;
 
-    pRelayClient = std::make_unique<RoomRelayClient>();
-    if(!pRelayClient->start(config, error)) {
-        pRelayClient.reset();
+    auto relay = std::make_unique<RoomRelayClient>();
+    if(!relay->start(config, error)) {
         return false;
     }
+    pRelayClient = std::move(relay);
     return true;
 }
 
@@ -1043,7 +1083,7 @@ std::uint32_t NetworkManager::relayHostPeerId() const {
     if(!pRelayClient) {
         return 0;
     }
-    for(const RoomRelayClient::Peer& peer : pRelayClient->peers()) {
+    for(const RoomSessionTransport::Peer& peer : pRelayClient->peers()) {
         if(peer.isHost()) {
             return peer.id;
         }
@@ -1051,18 +1091,14 @@ std::uint32_t NetworkManager::relayHostPeerId() const {
     return 0;
 }
 
-void NetworkManager::sendPacketOverRelay(ENetPacketOStream& packetStream, int channel,
+bool NetworkManager::sendPacketOverRelay(ENetPacketOStream& packetStream, int channel,
                                          std::uint32_t recipient) {
-    ENetPacket* enetPacket = packetStream.getPacket();
-    if(enetPacket == nullptr) {
-        return;
-    }
-
-    if(pRelayClient) {
-        pRelayClient->sendGamePayload(enetPacket->data, enetPacket->dataLength, channel,
-                                      recipient);
-    }
-    enet_packet_destroy(enetPacket);
+    ENetPacket* packet = packetStream.getPacket();
+    if(packet == nullptr) return false;
+    const bool accepted = pRelayClient && pRelayClient->sendGamePayload(
+        packet->data, packet->dataLength, channel, recipient);
+    enet_packet_destroy(packet);
+    return accepted;
 }
 
 bool NetworkManager::sendRelayDiagnostic(RoomRelay::DiagnosticKind kind,
@@ -1080,11 +1116,11 @@ void NetworkManager::updateRelaySession() {
 
     pRelayClient->update();
 
-    RoomRelayClient::Event event;
+    RoomSessionTransport::Event event;
     bool sessionEnded = false;
     while(!sessionEnded && pRelayClient->pollEvent(event)) {
         switch(event.type) {
-            case RoomRelayClient::Event::Type::PeerJoined: {
+            case RoomSessionTransport::Event::Type::PeerJoined: {
                 debugNetwork("Relay peer '%s' joined (%s, %s)\n", event.name.c_str(),
                              event.role == RoomRelay::Role::Host ? "host" : "client",
                              event.runtime.c_str());
@@ -1101,7 +1137,7 @@ void NetworkManager::updateRelaySession() {
                 }
             } break;
 
-            case RoomRelayClient::Event::Type::PeerLeft: {
+            case RoomSessionTransport::Event::Type::PeerLeft: {
                 debugNetwork("Relay peer '%s' left (reason %u)\n", event.name.c_str(),
                              static_cast<unsigned>(event.reason));
                 if(pOnPeerDisconnected) {
@@ -1112,12 +1148,22 @@ void NetworkManager::updateRelaySession() {
                 }
             } break;
 
-            case RoomRelayClient::Event::Type::GamePayload: {
+            case RoomSessionTransport::Event::Type::MatchStart:
+                if(pOnStartGameBridge) pOnStartGameBridge(event.code);
+                break;
+            case RoomSessionTransport::Event::Type::GamePayload: {
                 handleRelayGamePayload(event.peerId, event.payload.data(), event.payload.size());
             } break;
 
-            case RoomRelayClient::Event::Type::Diagnostic: {
-                const RoomRelayClient::Peer* peer = pRelayClient->findPeer(event.peerId);
+            case RoomSessionTransport::Event::Type::Diagnostic: {
+                const RoomSessionTransport::Peer* peer = pRelayClient->findPeer(event.peerId);
+                if(peer == nullptr && !event.message.empty()) {
+                    // A transport-level note rather than a peer's diagnostic: the direct
+                    // transport reports losing the signaling service this way, which is worth
+                    // saying out loud precisely because the match keeps running.
+                    SDL_Log("NetworkManager: %s", event.message.c_str());
+                    break;
+                }
                 if(peer != nullptr && pOnReceiveRelayDiagnostic) {
                     // By value: the callback runs game code, and the peer list is not the
                     // callback's to keep alive.
@@ -1127,18 +1173,18 @@ void NetworkManager::updateRelaySession() {
                 }
             } break;
 
-            case RoomRelayClient::Event::Type::PhaseChanged: {
+            case RoomSessionTransport::Event::Type::PhaseChanged: {
                 debugNetwork("Relay room phase is now %s\n",
                              event.phase == RoomRelay::Phase::Match ? "match" : "lobby");
             } break;
 
-            case RoomRelayClient::Event::Type::Refused: {
+            case RoomSessionTransport::Event::Type::Refused: {
                 SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                             "NetworkManager: the game service refused a message: %s",
                             event.message.c_str());
             } break;
 
-            case RoomRelayClient::Event::Type::Closed: {
+            case RoomSessionTransport::Event::Type::Closed: {
                 SDL_Log("NetworkManager: relay session ended: %s", event.message.c_str());
                 // Nothing after this belongs to a live session. The terminal event is always
                 // last, but stopping here is what makes that a rule rather than an ordering
@@ -1172,7 +1218,7 @@ void NetworkManager::handleRelayGamePayload(std::uint32_t peerId,
         return;
     }
 
-    const RoomRelayClient::Peer* sender = pRelayClient->findPeer(peerId);
+    const RoomSessionTransport::Peer* sender = pRelayClient->findPeer(peerId);
     if(sender == nullptr) {
         return;     // announced to us once, gone by the time the game loop got here
     }
@@ -1246,7 +1292,7 @@ void NetworkManager::handleRelayGamePayload(std::uint32_t peerId,
             [this, peerId, &peerName](const char* reason) {
                 // Found again by id rather than captured by reference: the accounting lives on
                 // the peer, and the peer may have moved or gone while this payload was handled.
-                RoomRelayClient::Peer* offender =
+                RoomSessionTransport::Peer* offender =
                     pRelayClient ? pRelayClient->findPeer(peerId) : nullptr;
                 if(offender == nullptr) {
                     return;
@@ -1315,7 +1361,7 @@ void NetworkManager::handleRelayGamePayload(std::uint32_t peerId,
 
     // Store what the payload taught us about the peer, if it is still in the room.
     if(pRelayClient) {
-        if(RoomRelayClient::Peer* current = pRelayClient->findPeer(peerId)) {
+        if(RoomSessionTransport::Peer* current = pRelayClient->findPeer(peerId)) {
             current->gameVersion        = peerGameVersion;
             current->quantBotConfigHash = peerQuantBotConfigHash;
             current->objectDataHash     = peerObjectDataHash;
@@ -2102,9 +2148,10 @@ void NetworkManager::beginSimulation(Uint32 seed) {
     }
 }
 
-void NetworkManager::sendStartGame(unsigned int timeLeft) {
+bool NetworkManager::sendStartGame(unsigned int timeLeft) {
     if(isRelaySession()) {
-        // Every peer shares one relay hop, so one countdown serves them all.
+        if(!pRelayClient || !pRelayClient->isHost()) return false;
+        // Use the worst connected-peer RTT to give every player time to receive the start.
         const unsigned int halfRoundTrip =
             pRelayClient ? (pRelayClient->roundTripTimeMs() / 2) : 0u;
         const unsigned int peerTimeLeft =
@@ -2113,7 +2160,14 @@ void NetworkManager::sendStartGame(unsigned int timeLeft) {
         ENetPacketOStream packetStream(ENET_PACKET_FLAG_RELIABLE);
         packetStream.writeUint32(NETWORKPACKET_STARTGAME);
         packetStream.writeUint32(peerTimeLeft);
-        sendPacketOverRelay(packetStream, 0, 0);
+        if(auto* direct = getDirectTransport()) {
+            ENetPacket* packet = packetStream.getPacket();
+            if(!packet) return false;
+            const bool started = direct->sendMatchStart(packet->data, packet->dataLength, timeLeft);
+            enet_packet_destroy(packet);
+            return started;
+        }
+        if(!sendPacketOverRelay(packetStream, 0, 0)) return false;
 
         // Switch the room to the match phase immediately afterwards. The relay routes in order,
         // and no client can send a command before its own countdown has run, so the phase change
@@ -2122,7 +2176,7 @@ void NetworkManager::sendStartGame(unsigned int timeLeft) {
         if(pRelayClient) {
             pRelayClient->setRoomPhase(RoomRelay::Phase::Match);
         }
-        return;
+        return true;
     }
 
     for(ENetPeer* pCurrentPeer : peerList) {
@@ -2137,6 +2191,7 @@ void NetworkManager::sendStartGame(unsigned int timeLeft) {
 
         sendPacketToPeer(pCurrentPeer, packetStream);
     }
+    return true;
 }
 
 void NetworkManager::sendCommandList(const CommandList& commandList) {
@@ -2178,7 +2233,10 @@ Uint32 NetworkManager::getRelayServerRoundTripTimeMs() const {
 }
 
 bool NetworkManager::isRelayHttpPollingSession() const {
-    return pRelayClient && pRelayClient->transportKind() == RelayTransportKind::HttpPolling;
+    // A direct session never polls for gameplay, so the HTTP pacing budget that exists for the
+    // polling relay must not be applied to it.
+    return pRelayClient && !pRelayClient->isDirectSession()
+        && pRelayClient->transportKind() == RelayTransportKind::HttpPolling;
 }
 
 void NetworkManager::debugNetwork(const char* fmt, ...) {
