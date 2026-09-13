@@ -108,3 +108,11 @@ test('invalid signaling and a flood before SDP cannot produce unhandled rejectio
   for(let i=0;i<140;i++)handler({from:'2',to:'1',iceCandidate:{candidate:'candidate:1 1 udp 1 127.0.0.1 4000 typ host'}});
   await tick();assert.equal(c.closed(),1);assert.equal(c.handlers.size,0);
 });
+test('well-formed tiny-message floods are bounded before parsing',async()=>{
+  const c=connection();c.pc.channel.open();
+  let received=0;c.t.on('message',()=>received++);
+  const data=JSON.stringify({id:'a',i:0,n:1,part:'"ping"'});
+  for(let i=0;i<5000;i++)c.pc.channel.onmessage({data});
+  assert.equal(received,4096);assert.equal(c.closed(),1);assert.equal(c.errors.length,1);
+  await tick();
+});

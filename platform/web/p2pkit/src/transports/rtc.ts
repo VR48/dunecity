@@ -83,6 +83,9 @@ export class RTCTransport<T = unknown> implements Transport<T> {
   private outgoingCount = 0
   private closed = false
   private opened = false
+  private trafficStart = performance.now()
+  private trafficPackets = 0
+  private trafficBytes = 0
   private readonly started = performance.now()
   private readonly timer: ReturnType<typeof setInterval>
   private unsubscribe?: () => void
@@ -243,6 +246,15 @@ export class RTCTransport<T = unknown> implements Transport<T> {
       if ((typeof data !== 'string' && !(data instanceof ArrayBuffer)) ||
           (typeof data === 'string' ? data.length : data.byteLength) > 131_072) throw new Error('Oversized fragment')
       const raw = typeof data === 'string' ? data : new TextDecoder('utf-8', { fatal: true }).decode(data)
+      const now = performance.now()
+      if (now - this.trafficStart >= 1000) {
+        this.trafficStart = now; this.trafficPackets = 0; this.trafficBytes = 0
+      }
+      // Count before JSON parsing/reassembly, not only after a complete game message.
+      const bytes = typeof data === 'string' ? new TextEncoder().encode(raw).length : data.byteLength
+      this.trafficPackets++
+      this.trafficBytes += bytes
+      if (this.trafficPackets > 4096 || this.trafficBytes > 16 * 1024 * 1024) throw new Error('Peer traffic limit exceeded')
       const full = this.chunker.ingest(JSON.parse(raw))
       if (full !== undefined) this.emitter.emit('message', JSON.parse(full) as T)
     } catch { this.fail('A peer sent an invalid game frame') }
