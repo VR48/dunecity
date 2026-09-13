@@ -12,6 +12,8 @@
  */
 
 #include <catch2/catch_all.hpp>
+#include <misc/CampaignControls.h>
+#include <misc/FeedbackIssue.h>
 
 #include <CommandAuthorization.h>
 #include <CommandValidation.h>
@@ -1154,7 +1156,7 @@ TEST_CASE("Command authorization: every object action is covered, control comman
 
     // Commands that carry no acting object: they are authorized by issuer identity alone.
     const CMDTYPE nonObjectCommands[] = {
-        CMD_PLAYER_PAUSE, CMD_PLAYER_RESUME, CMD_TEST_SYNC, CMD_HOUSE_AUTO_REPAIR,
+        CMD_PLAYER_PAUSE, CMD_PLAYER_RESUME, CMD_TEST_SYNC, CMD_HOUSE_AUTO_REPAIR, CMD_CAMPAIGN_SKIP,
         CMD_CITY_PLACE_ZONE, CMD_CITY_SET_TAX_RATE, CMD_CITY_SET_BUDGET, CMD_CITY_TOOL
     };
     for(const CMDTYPE commandID : nonObjectCommands) {
@@ -1668,4 +1670,28 @@ TEST_CASE("Lobby authorization: inactive partner seats cannot grant ownership",
             == LobbyDecision::RejectUnknownSender);
     lobby.slots[2] = {SlotKind::AI, {}};
     REQUIRE(LobbyAuthorization::mayConfigurePlayerSlot(lobby, "host", 2, true));
+}
+
+TEST_CASE("Only human campaign controllers can skip missions", "[campaign][command]") {
+    for(auto type : {GameType::Campaign, GameType::CampaignCoop}) {
+        REQUIRE(CampaignControls::maySkip(type, HOUSE_ATREIDES, HOUSE_ATREIDES, true));
+        REQUIRE_FALSE(CampaignControls::maySkip(type, HOUSE_ATREIDES, HOUSE_HARKONNEN, true));
+        REQUIRE_FALSE(CampaignControls::maySkip(type, HOUSE_ATREIDES, HOUSE_ATREIDES, false));
+        REQUIRE_FALSE(CampaignControls::maySkip(type, HOUSE_ATREIDES, -1, false));
+    }
+    for(auto type : {GameType::Skirmish, GameType::SkirmishCoop, GameType::CustomGame,
+                     GameType::CustomMultiplayer, GameType::Invalid})
+        REQUIRE_FALSE(CampaignControls::maySkip(type, HOUSE_ATREIDES, HOUSE_ATREIDES, true));
+    REQUIRE(CommandValidation::isWellFormedCommand(CMD_CAMPAIGN_SKIP, 0));
+    REQUIRE_FALSE(CommandValidation::isWellFormedCommand(CMD_CAMPAIGN_SKIP, 1));
+}
+
+TEST_CASE("Feedback links preserve Unicode and cannot inject query parameters", "[feedback]") {
+    const auto url = FeedbackIssue::url("Bug & labels=admin", "Café #1\n100% + spice?", "Mod: vanilla");
+    REQUIRE(url.find("https://github.com/VR48/dunecity/issues/new?title=Bug%20%26%20labels%3Dadmin&body=") == 0);
+    REQUIRE(url.find("Caf%C3%A9%20%231%0A100%25%20%2B%20spice%3F") != std::string::npos);
+    REQUIRE(url.find("%0A%0A---%0AMod%3A%20vanilla") != std::string::npos);
+    REQUIRE_THROWS_AS(FeedbackIssue::url(" ", "Details", ""), std::invalid_argument);
+    REQUIRE_THROWS_AS(FeedbackIssue::url("Title", "\n\t", ""), std::invalid_argument);
+    REQUIRE_THROWS_AS(FeedbackIssue::url("Title", std::string(3000, '#'), ""), std::invalid_argument);
 }

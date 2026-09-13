@@ -3,6 +3,8 @@
 #include <House.h>
 #include <GameInitSettings.h>
 #include <Command.h>
+#include <GUI/dune/FeedbackWindow.h>
+#include <FileClasses/LoadSavePNG.h>
 #include <units/UnitBase.h>
 #include <players/HumanPlayer.h>
 #include <Menu/MenuBase.h>
@@ -79,6 +81,8 @@ int runOwnershipProbe() {
     batches.addCommandList("Host", complete);
     if(static_cast<HumanPlayer*>(hostPlayer)->nextExpectedCommandsCycle != 3) throw std::runtime_error("duplicate changed watermark");
     SDL_Log("COMMAND_BATCH_PROBE_PASS: mixed batch atomic, gap held, contiguous retransmission recovered, duplicate ignored");
+    Command(hostPlayer->getPlayerID(), CMD_CAMPAIGN_SKIP).executeCommand();
+    if(game->isGameFinished()) throw std::runtime_error("skip finished a non-campaign game");
     // Exercise the real Game entry points used by Options and Mentat, not a duplicate policy.
     game->pauseGame();
     if(!game->isGamePaused()) throw std::runtime_error("local game no longer pauses");
@@ -94,5 +98,71 @@ int runOwnershipProbe() {
     SDL_Log("RELAY_PAUSE_PROBE_PASS: real Game preserves local pause and keeps relay simulation running");
     game.reset(); currentGame=nullptr; pLocalPlayer=nullptr;
     pNetworkManager.reset();
+    // Run the real skip handler against campaign state, including the final-level exit.
+    for(int level : {4, 9}) {
+        game = std::make_unique<Game>(); currentGame = game.get();
+        GameInitSettings campaign(HOUSE_ATREIDES, settings.gameOptions, level);
+        {
+            auto file = pFileManager->openCampaignFile(campaign.getFilename());
+            std::string data(static_cast<size_t>(SDL_RWsize(file.get())), '\0');
+            if(SDL_RWread(file.get(), data.data(), 1, data.size()) != data.size())
+                throw std::runtime_error("campaign probe scenario read failed");
+            campaign.setScenarioData(data);
+            campaign.enableCoop(true, "Campaign probe");
+        }
+        campaign.setMultiplePlayersPerHouse(true);
+        campaign.addHouseInfo(humans);
+        campaign.addHouseInfo(enemies);
+        game->initGame(campaign);
+        auto* controller = game->getPlayerByName(level == 4 ? "Host" : "Coop");
+        if(!controller || !game->canSkipMission()) throw std::runtime_error("campaign skip unavailable");
+        if(level == 4) {
+            GameInterface interface;
+            const int x = getRendererWidth() - SIDEBARWIDTH - 15;
+            const int y = getRendererHeight() - 15;
+            if(!interface.handleMouseLeft(x, y, true) || !interface.handleMouseLeft(x, y, false)
+               || !game->isGamePaused()) throw std::runtime_error("feedback button did not open its modal");
+            game->resumeGame();
+            FeedbackWindow feedback;
+            SDL_SetRenderTarget(renderer, nullptr);
+            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+            SDL_RenderClear(renderer);
+            feedback.draw();
+            auto image = renderReadSurface(renderer);
+            SavePNG(image.get(), "feedback-window.png");
+        }
+        Command(255, CMD_CAMPAIGN_SKIP).executeCommand();
+        auto* other = game->getPlayerByName("Enemy");
+        if(other) Command(other->getPlayerID(), CMD_CAMPAIGN_SKIP).executeCommand();
+        Command(controller->getPlayerID(), CMD_CAMPAIGN_SKIP, 1).executeCommand();
+        if(game->isGameFinished()) throw std::runtime_error("invalid campaign skip accepted");
+        Command(controller->getPlayerID(), CMD_CAMPAIGN_SKIP).executeCommand();
+        if(!game->isGameFinished() || game->canSkipMission()) throw std::runtime_error("campaign skip did not finish");
+        if(game->whatNext() != GAME_DEBRIEFING_WIN) throw std::runtime_error("skip did not use victory path");
+        if(game->whatNext() != (level == 9 ? GAME_RETURN_TO_MENU : GAME_NEXTMISSION))
+            throw std::runtime_error("skip chose wrong campaign continuation");
+        game.reset(); currentGame = nullptr; pLocalPlayer = nullptr;
+    }
+    {
+        FeedbackEditor editor;
+        editor.resize(400, 140);
+        editor.setActive();
+        SDL_TextInputEvent text{};
+        SDL_strlcpy(text.text, "Café", sizeof(text.text));
+        editor.handleTextInput(text);
+        SDL_KeyboardEvent key{};
+        key.keysym.sym = SDLK_BACKSPACE;
+        editor.handleKeyPress(key);
+        if(editor.value() != "Caf") throw std::runtime_error("feedback backspace broke Unicode");
+        key.keysym.sym = SDLK_RETURN; editor.handleKeyPress(key);
+        SDL_strlcpy(text.text, "Feedback", sizeof(text.text)); editor.handleTextInput(text);
+        if(editor.value() != "Caf\nFeedback") throw std::runtime_error("feedback multiline input failed");
+        key.keysym.sym = SDLK_a; key.keysym.mod = KMOD_CTRL; editor.handleKeyPress(key);
+        SDL_strlcpy(text.text, "Replacement", sizeof(text.text)); editor.handleTextInput(text);
+        if(editor.value() != "Replacement") throw std::runtime_error("feedback select-all replace failed");
+        editor.setInactive();
+    }
+    SDL_Log("FEEDBACK_EDITOR_PROBE_PASS: multiline input, Unicode deletion and selection replacement work");
+    SDL_Log("CAMPAIGN_SKIP_PROBE_PASS: real commands win campaigns, advance levels, finish final mission and reject invalid issuers");
     return MENU_QUIT_DEFAULT;
 }

@@ -57,7 +57,8 @@ TEST_CASE("CityRoad: All DuneCity commands are contiguous after CMD_TEST_SYNC", 
     REQUIRE(CMD_POLICE_REINFORCEMENTS == CMD_HOUSE_AUTO_REPAIR + 1);
     REQUIRE(CMD_ZONE_DEMOLISH == CMD_POLICE_REINFORCEMENTS + 1);
     REQUIRE(CMD_STRUCTURE_DEMOLISH == CMD_ZONE_DEMOLISH + 1);
-    REQUIRE(CMD_MAX == CMD_STRUCTURE_DEMOLISH + 1);
+    REQUIRE(CMD_CAMPAIGN_SKIP == CMD_STRUCTURE_DEMOLISH + 1);
+    REQUIRE(CMD_MAX == CMD_CAMPAIGN_SKIP + 1);
 }
 
 // =============================================================================

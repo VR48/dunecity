@@ -119,3 +119,28 @@ TEST_CASE("Hosting an existing campaign preserves progress and missing future en
     REQUIRE(loaded.getHouseInfoList().back().houseID == HOUSE_SARDAUKAR);
     REQUIRE_FALSE(loaded.getGameOptions().immortalHumanPlayer);
 }
+
+TEST_CASE("Campaign start levels choose the first scenario and retain campaign progression", "[campaign][save]") {
+    const int level = GENERATE(1, 2, 3, 4, 5, 6, 7, 8, 9);
+    const int first[] = {1, 2, 5, 8, 11, 14, 17, 20, 22};
+    GameInitSettings init(HOUSE_ATREIDES, SettingsClass::GameOptionsClass{}, level);
+    REQUIRE(init.getGameType() == GameType::Campaign);
+    REQUIRE(init.getMission() == first[level - 1]);
+    const std::string filename = "SCENA0" + std::string(first[level - 1] < 10 ? "0" : "") + std::to_string(first[level - 1]) + ".INI";
+    REQUIRE(init.getFilename() == filename);
+    REQUIRE(init.getModName() == "vanilla");
+    OMemoryStream out; out.open(); init.save(out);
+    IMemoryStream in(out.getData(), out.getDataLength());
+    GameInitSettings loaded(in);
+    REQUIRE(loaded.getGameType() == GameType::Campaign);
+    REQUIRE(loaded.getMission() == first[level - 1]);
+    GameInitSettings next(loaded, level < 9 ? first[level] : 22, 0x42, 0x10);
+    REQUIRE(next.getGameType() == GameType::Campaign);
+    REQUIRE(next.getModName() == init.getModName());
+    REQUIRE(next.getAlreadyPlayedRegions() == 0x42);
+}
+
+TEST_CASE("Invalid campaign start levels fail before loading a scenario", "[campaign]") {
+    const int level = GENERATE(-1, 0, 10, 22);
+    REQUIRE_THROWS_AS(GameInitSettings(HOUSE_ATREIDES, SettingsClass::GameOptionsClass{}, level), std::invalid_argument);
+}

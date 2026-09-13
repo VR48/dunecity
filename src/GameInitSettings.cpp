@@ -16,6 +16,7 @@
  */
 
 #include <GameInitSettings.h>
+#include <misc/CampaignControls.h>
 #include <algorithm>
 
 #include <misc/IFileStream.h>
@@ -49,8 +50,8 @@ GameInitSettings::GameInitSettings() {
     setModInfo(modName, modChecksum);
 }
 
-GameInitSettings::GameInitSettings(HOUSETYPE newHouseID, const SettingsClass::GameOptionsClass& gameOptions)
- : gameType(GameType::Campaign), houseID(newHouseID), mission(1), alreadyShownTutorialHints(0), gameOptions(gameOptions) {
+GameInitSettings::GameInitSettings(HOUSETYPE newHouseID, const SettingsClass::GameOptionsClass& gameOptions, int startLevel)
+ : gameType(GameType::Campaign), houseID(newHouseID), mission(CampaignControls::firstMission(startLevel)), alreadyShownTutorialHints(0), gameOptions(gameOptions) {
     filename = getScenarioFilename(houseID, mission);
     randomSeed = getRandomInt();
     setModInfo(modName, modChecksum);

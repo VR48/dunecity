@@ -202,6 +202,25 @@ GameInterface::GameInterface() : Window(0,0,0,0) {
         "Show pollution: green is clean, purple is polluted. Click again to hide (Shift+4; Shift+1 off).",
         DuneCity::CityOverlayMode::Pollution, autoRepairY + 120);
 
+    // Keep these beside the sidebar: build lists use its full height even at 640x480.
+    feedbackButton.setText(_("Give feedback on\nfeatures or issues"));
+    feedbackButton.setOnClick(std::bind(&Game::onFeedback, currentGame));
+    feedbackButton.setTooltipText(_("Write feedback, then review and submit it on GitHub."));
+    const int feedbackHeight = std::max(48, feedbackButton.getMinimumSize().y);
+    const int feedbackWidth = std::max(ornithopterButtonWidth, feedbackButton.getMinimumSize().x);
+    windowWidget.addWidget(&feedbackButton,
+        Point(viewControlsRight - feedbackWidth, getRendererHeight() - feedbackHeight - 4),
+        Point(feedbackWidth, feedbackHeight));
+    skipMissionButton.setText(_("Skip mission"));
+    skipMissionButton.setTooltipText(_("Win this campaign mission and continue to the next level."));
+    skipMissionButton.setOnClick(std::bind(&Game::onSkipMission, currentGame));
+    const bool campaign = isCampaignGameType(currentGame->getGameInitSettings().getGameType());
+    skipMissionButton.setVisible(campaign);
+    skipMissionButton.setEnabled(currentGame->canSkipMission());
+    windowWidget.addWidget(&skipMissionButton,
+        Point(viewControlsRight - feedbackWidth, getRendererHeight() - feedbackHeight - 36),
+        Point(feedbackWidth, 28));
+
     // add chat manager
     windowWidget.addWidget(&chatManager, Point(20, 60), Point(getRendererWidth() - sideBar.getSize().x, 360));
 
@@ -429,6 +448,7 @@ void GameInterface::draw(Point position) {
 }
 
 void GameInterface::updateObjectInterface() {
+    skipMissionButton.setEnabled(currentGame->canSkipMission());
     const auto& selection = currentGame->getSelectedList();
 
     const std::string repairText = pLocalHouse && pLocalHouse->isAutoRepairEnabled()

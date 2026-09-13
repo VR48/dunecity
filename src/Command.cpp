@@ -19,6 +19,7 @@
 #include <Command.h>
 #include <CommandAuthorization.h>
 #include <CommandValidation.h>
+#include <misc/CampaignControls.h>
 
 #include <globals.h>
 
@@ -606,6 +607,17 @@ case CMD_INFANTRY_CAPTURE: {
                 parameter.size() > 0 ? parameter[0] : 0,
                 parameter.size() > 1 ? parameter[1] : 0,
                 parameter.size() > 2 ? parameter[2] : 0);
+        } break;
+
+        case CMD_CAMPAIGN_SKIP: {
+            if(!parameter.empty()) return;
+            const auto* issuer = dynamic_cast<const HumanPlayer*>(currentGame->getPlayerByID(playerID));
+            const auto& init = currentGame->getGameInitSettings();
+            if(CampaignControls::maySkip(init.getGameType(), init.getHouseID(),
+                    issuer && issuer->getHouse() ? issuer->getHouse()->getHouseID() : -1,
+                    issuer != nullptr)) {
+                currentGame->setGameWon();
+            }
         } break;
 
         case CMD_STRUCTURE_DEMOLISH: {

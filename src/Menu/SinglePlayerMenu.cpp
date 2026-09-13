@@ -107,6 +107,10 @@ SinglePlayerMenu::SinglePlayerMenu() : MenuBase() {
 SinglePlayerMenu::~SinglePlayerMenu() = default;
 
 void SinglePlayerMenu::onCampaign() {
+    playCampaign();
+}
+
+void SinglePlayerMenu::playCampaign() {
     int player = HouseChoiceMenu().showMenu();
 
     if(player < 0) {
@@ -134,7 +138,7 @@ void SinglePlayerMenu::onCampaign() {
     const char* supportPlayerClass = supportSelected ? kSupportPlayerClasses[supportBotIndex] : nullptr;
     const char* enemyAIClass = kEnemyAIClasses[enemyAIIndex];
 
-    GameInitSettings init((HOUSETYPE) player, gameOptions);
+    GameInitSettings init((HOUSETYPE) player, gameOptions, HouseChoiceMenu::getStartLevel());
     if(supportSelected) {
         init.setMultiplePlayersPerHouse(true);
     }
@@ -161,8 +165,6 @@ void SinglePlayerMenu::onCampaign() {
     }
 
     startSinglePlayerGame(init);
-
-    quit();
 }
 
 void SinglePlayerMenu::onCustom() {
