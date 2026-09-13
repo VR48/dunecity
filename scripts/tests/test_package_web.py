@@ -14,9 +14,9 @@ spec.loader.exec_module(packager)
 class PackageTests(unittest.TestCase):
     def test_relay_sources_are_exact_and_plaintext_is_explicit_loopback_only(self):
         self.assertEqual(packager.relay_sources('https://relay.example:443'),
-                         ['https://relay.example:443', 'wss://relay.example:443'])
+                         ['https://relay.example:443'])
         self.assertEqual(packager.relay_sources('http://127.0.0.1:8787', True),
-                         ['http://127.0.0.1:8787', 'ws://127.0.0.1:8787'])
+                         ['http://127.0.0.1:8787'])
         for origin in ('http://relay.example', 'https://relay.example/path',
                        'https://user:pass@relay.example', 'https://relay.example?x=1',
                        'https://relay.example#x', "https://relay.example; script-src *",
@@ -30,7 +30,7 @@ class PackageTests(unittest.TestCase):
         policy = "default-src 'none'; connect-src 'self'; script-src 'self'"
         sources = packager.relay_sources('https://relay.example')
         actual = packager.allow_relay_connections(policy, sources)
-        self.assertEqual(actual, "default-src 'none'; connect-src 'self' https://relay.example wss://relay.example; script-src 'self'")
+        self.assertEqual(actual, "default-src 'none'; connect-src 'self' https://relay.example; script-src 'self'")
         with self.assertRaises(RuntimeError):
             packager.allow_relay_connections("default-src 'none'", sources)
 
@@ -40,15 +40,24 @@ class PackageTests(unittest.TestCase):
                 root = Path(temp)
                 output = root / 'build/bin'
                 output.mkdir(parents=True)
-                (output / 'dunecity.html').write_text(f'<link href={quote}shell.css{quote} rel=stylesheet><script src={quote}shell.js{quote}></script><script src={quote}dunecity.js{quote} async></script>')
-                for name in ('dunecity.js','dunecity.wasm','dunecity.data'):
+                (output / 'dunecity.html').write_text(f'<link href={quote}shell.css{quote} rel=stylesheet><script src={quote}shell.js{quote}></script><script src={quote}p2p-direct.js{quote}></script><script src={quote}dunecity.js{quote} async></script>')
+                for name in ('dunecity.js','dunecity.wasm','dunecity.data','p2p-direct.js'):
                     (output / name).write_bytes(b'test artifact')
                 packager.package(root/'build', root/'play')
                 html = (root/'play/index.html').read_text()
-                self.assertEqual(html.count('?v='),3)
+                self.assertEqual(html.count('?v='),4)
                 manifest = json.loads((root/'play/build.json').read_text())
                 for name, digest in manifest['sha256'].items():
                     self.assertEqual(hashlib.sha256((root/'play'/name).read_bytes()).hexdigest(),digest)
+                self.assertIn('p2p-direct.js', manifest['artifacts'])
+                self.assertEqual(manifest['gameTransport'], 'direct-webrtc')
+                self.assertEqual(manifest['relayOrigins'], [])
+                (output / 'p2p-direct.js').write_bytes(b'changed transport, identical wasm')
+                packager.package(root/'build', root/'play')
+                self.assertNotEqual(html, (root/'play/index.html').read_text())
+                (output / 'p2p-direct.js').unlink()
+                with self.assertRaisesRegex(RuntimeError, 'Missing browser artifact'):
+                    packager.package(root/'build', root/'play')
 
 
 if __name__ == '__main__': unittest.main()
