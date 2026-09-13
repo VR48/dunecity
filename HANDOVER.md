@@ -1,6 +1,7 @@
 ## Direct P2P branch checkpoint — 13 September 2026
 
-Branch `feat/p2pkit-direct-crossplay` is under test; **not deployed**. Live remains 1.0.661.
+Branch `feat/p2pkit-direct-crossplay` is under test; the game is **not released**.
+Stable remains 1.0.661. The companion Apache/PHP service is deployed and verified.
 The branch vendors P2PKit commit `94ae7eb8818a629478e0a6ba0aa3232c5fc0b1ab` RTCTransport and
 framing, with direct-only bounds. Browser gameplay uses those actual modules; native crossplay
 uses pinned libdatachannel `443f6934d9007eb7076ab7825ba330f355fcbead` with compatible framing.
@@ -11,8 +12,9 @@ Opus supplied the initial implementation and part of the review corrections. Ste
 asked Codex to **stop using Opus** on 13 September; do not resume its sessions for this task.
 Codex completed the remaining fixes and owns coding/testing. Hermes has supplied independent
 security findings; its third fixed-snapshot review finished without production approval.
-Report: `../outputs/network-hardening/p2p-hermes-review3.txt`. Codex must verify and address
-its remaining start-barrier/send-boundary, duplicate START and session lifecycle findings.
+Report: `../outputs/network-hardening/p2p-hermes-review3.txt`. Codex addressed and tested
+its start-barrier/send-boundary, duplicate START and session lifecycle findings below;
+Hermes has not reviewed those subsequent fixes.
 Do not restart Opus or run further broad Hermes review rounds by default.
 
 Current checks: six native CTest suites and 164 PHP HTTP/concurrency tests pass.
@@ -25,12 +27,24 @@ The real fixture also caught a missing admitted-peer role assignment; it is fixe
 The direct host menu now registers the asynchronous countdown callback as well as guests.
 
 Normal Release/O3 browser linking restored successful fresh main-menu startup after the temporary
--O1 build crashed. Final browser and browser/native full-game acceptance is still pending.
-Do not publish based solely on transport tests. Do not use the temporary -O1 linker override.
+-O1 build crashed. Do not use the temporary -O1 linker override.
+Two actual browser clients played with movement and construction after every local PHP
+worker was stopped: 23 matching simulation digests per client, zero mismatches.
+Evidence: `../outputs/network-hardening/p2p-browser-outage-acceptance.json`.
+Public browser/native play subsequently passed 155 matching digests through cycle 31000,
+with a connected RTC channel and browser construction observed. This is same-Mac testing,
+not proof of connectivity across different Internet NATs. Public browser/browser acceptance
+and final platform builds are still pending; do not publish based solely on transport tests.
+Background directory refresh no longer disables the public list/join button and steals
+keyboard focus. Native keyboard joining now works during an in-flight directory refresh.
 
 The website companion branch `feat/p2p-signaling-web` in `../dunelegacy-p2p` adds private PHP
 service installation and additive schema-3 direct-P2P lifecycle logging. Migration tests preserve
-schema-1/2 records and legacy matches. Deployment is not yet verified on the public server.
+schema-1/2 records and legacy matches. Website PR #5 merged at ff3ec4f; deployment
+34733529907 succeeded. Public health and origin rejection pass; SQLite records both browser
+and native admissions as direct-p2p/signaling_service_v1, retaining old records and integrity.
+Private service/config/state remain outside the webroot. A pre-migration SQLite backup is
+in the deployment account's deployment-backups directory. Stable relay clients are unchanged.
 See `docs/direct-play.md`, `tools/p2p-signaling/README.md` and `tools/p2p-session-smoke/README.md`.
 
 ## Public HTTPS polling acceptance — 13 September 2026
