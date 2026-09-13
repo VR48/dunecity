@@ -95,6 +95,12 @@ void BuilderList::handleMouseMovement(Sint32 x, Sint32 y, bool insideOverlay) {
 }
 
 bool BuilderList::handleMouseLeft(Sint32 x, Sint32 y, bool pressed) {
+    // Containers dispatch to every child, including clicks outside this list.
+    // Only consume our own rectangle, and cancel any press dragged out of it.
+    if(!isVisible() || !isEnabled() || x < 0 || y < 0 || x >= getSize().x || y >= getSize().y) {
+        mouseLeftButton = -1;
+        return false;
+    }
     StaticContainer::handleMouseLeft(x,y,pressed);
 
     BuilderBase* pBuilder = dynamic_cast<BuilderBase*>(currentGame->getObjectManager().getObject(builderObjectID));
@@ -138,6 +144,12 @@ bool BuilderList::handleMouseLeft(Sint32 x, Sint32 y, bool pressed) {
 }
 
 bool BuilderList::handleMouseRight(Sint32 x, Sint32 y, bool pressed) {
+    // Containers dispatch to every child, including clicks outside this list.
+    // Only consume our own rectangle, and cancel any press dragged out of it.
+    if(!isVisible() || !isEnabled() || x < 0 || y < 0 || x >= getSize().x || y >= getSize().y) {
+        mouseRightButton = -1;
+        return false;
+    }
     StaticContainer::handleMouseRight(x,y,pressed);
 
     BuilderBase* pBuilder = dynamic_cast<BuilderBase*>(currentGame->getObjectManager().getObject(builderObjectID));

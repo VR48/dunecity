@@ -1,3 +1,100 @@
+## Campaign controls release integration — 13 September 2026
+
+Version 1.0.665 combines campaign controls, map-selection repair, AI partner choices
+and anonymous feedback with current main direct-P2P changes. Feedback targets
+`ggtothemax/dunecity` following repository transfer. The no-expiration token is
+restricted to this repository, Issues read/write and Metadata read-only. It is
+provisioned as the website Actions secret and server file outside the webroot.
+The dated local checkpoints below describe earlier states.
+Native Release build, dependency audits, all six CTest suites and the real-game
+command/input/feedback/AI partner probe pass for the combined source. Website
+feedback now follows the analytics service’s Python SQLite fallback when the PHP
+driver is absent; no administrator package installation is needed.
+
+# Campaign controls and feedback — 1.0.663 (local, 13 September 2026)
+
+## 2026-09-13 — 1.0.664 input repair and anonymous feedback (local)
+
+Worktree `/Users/stefan/Documents/projects/dunecity-campaign-controls`, branch
+`feature/campaign-controls`; original dev checkout remains untouched.
+
+- Fixed 1.0.663's selection regression: `BuilderList` returned handled for clicks
+  outside its bounds once a builder was selected. The new Game input guard then
+  discarded map clicks. Both left/right handlers now check bounds and visibility;
+  hidden generic buttons also let clicks through. Real SDL input tests select a
+  unit after a builder on campaign levels 4 and 9, alongside feedback open/close.
+- Moved **Give feedback** to the top bar, retained campaign skip at bottom right,
+  and let the news ticker shrink/clip within the available top-bar space.
+- Feedback sends asynchronously to `/metaserver/feedback.php`, includes the active
+  AI houses/types/difficulties, and displays **View request / OK** only after a
+  confirmed issue URL. Failure preserves the entered text and retry id. No player
+  GitHub account or credential in the game. Sending is bounded to 20 seconds;
+  the modal cannot be dismissed while sending. Browser opens only on View request.
+- Campaign AI partner selection has AI Support Easy/Medium/Hard/Brutal and full
+  QuantBot Easy/Medium/Hard/Brutal/Defend. Descriptions distinguish economy/building
+  assistance from full unit control. Existing QuantBot shared-human-house behavior
+  already permits full campaign control; no simulation/save schema changed.
+- Server counterpart is the isolated website worktree
+  `/Users/stefan/Documents/projects/dunelegacy-feedback`, branch `feature/game-feedback`.
+  See its `docs/game-feedback.md`. Fixed repo, server-only Issues-scoped token,
+  input/rate limits, SQLite idempotency, and lost-response reconciliation. Mocked
+  PHP tests create no real GitHub issues. **Not deployed.** Website Actions secret
+  `FEEDBACK_GITHUB_TOKEN` was absent when checked; it must be provisioned before
+  live submission. No broad local account token was copied to the service.
+- Validation: native Release build; all six CTest targets (683 main cases passed,
+  three expected skips); expanded real-game probe with input, AI context, retry
+  and success states; standalone Emscripten compile of the browser feedback client;
+  rendered dialog/top-bar/campaign layout checks. No full browser build or live
+  GitHub issue creation was performed. Local app is `build/bin/dunecity.app`.
+  No install, running-game restart, push, tag, PR or public release was performed.
+
+
+Implemented on `feature/campaign-controls` in
+`/Users/stefan/Documents/projects/dunecity-campaign-controls`, based on main
+`b4d1471` (1.0.662). The older `dunecity` checkout/branch was left intact.
+
+The opening menu now starts with Play Campaign and Play Other Modes. Campaign
+remains accessible through Single Player. Both use the same campaign setup.
+The house screen fits the 640x480 logical interface and adds Start from level
+(1–9), Campaign mod with its metadata description, help text and Back. Levels
+map to first scenarios 1, 2, 5, 8, 11, 14, 17, 20, 22. New settings retain the
+Campaign game type, mod identity and normal save/progression behavior. Changing
+mods activates its assets, available houses and effective game options; failed
+activation restores the previous selection.
+
+The lower-right playfield, beside the sidebar, has Give feedback on features
+or issues and a campaign-only Skip mission button. This placement keeps full
+build lists available at minimum resolution. UI mouse events are consumed so
+these buttons cannot also place buildings or issue map orders. Skip is appended
+to the command enum without renumbering existing commands. Only human controllers
+of the campaign house can execute it, including shared-house co-op. It calls the
+normal victory path; replay viewing cannot issue new skips.
+
+Stefan chose a prefilled GitHub issue using the player's account. Feedback has
+summary/multiline text fields, Unicode editing and paste, a visible game-context
+preview, validation and URL encoding. Open GitHub targets VR48/dunecity and leaves
+text available in the dialog. Players finish submission on GitHub; there is no
+anonymous endpoint, embedded credential or automatic issue submission. Empty
+labels avoid gettext's empty-string catalog metadata entry.
+
+Validation: native Release build, pre/post Ninja dependency audits, signature
+verification and version checks pass. CTest: all six targets pass (main suite
+683 passed, 3 expected skips; 9,752,032 assertions). Extended real-game command
+probe passes ordinary/final co-op mission victory/continuation, invalid issuer
+and malformed skip rejection, non-campaign rejection, actual feedback button
+opening, multiline/Unicode/select-all editing, plus previous ownership/batch/
+relay-pause checks. Feedback window rendered and visually checked. Native UI
+keyboard navigation verified the opening shortcut and level 4 with Dune City,
+Atreides, SCENA008.INI and city simulation active, at 640x480 logical resolution.
+CUA synthetic mouse clicks were unreliable even for pre-existing menu buttons;
+the new feedback button was additionally checked through its real GUI handler.
+No GitHub issue was posted during validation. Browser builds and live crossplay
+were not rerun for these UI changes.
+
+Local app: `build/bin/dunecity.app`. Test profiles and artifacts are under
+`/tmp/dunecity-campaign-*`; normal user settings were not touched. No push,
+release tag, installed-app replacement or website publication was performed.
+
 ## Direct P2P branch checkpoint — 13 September 2026
 
 Branch `feat/p2pkit-direct-crossplay` is under test; the game is **not released**.

@@ -8,7 +8,7 @@ version numbers and run IDs below are verification examples, not next-version de
 
 | Purpose | Repository / local checkout on Stefan's MacBook Air | Destination |
 | --- | --- | --- |
-| Game and release automation | `VR48/dunecity`; `~/Documents/projects/dunecity` | GitHub Releases; SourceForge Files and dedicated source refs |
+| Game and release automation | `ggtothemax/dunecity`; `~/Documents/projects/dunecity` | GitHub Releases; SourceForge Files and dedicated source refs |
 | Main website | `VR48/dunelegacy.com`; `~/Documents/projects/dunelegacy.com` | https://dunelegacy.com via **Deploy to Droplet** |
 | Historical SourceForge repository | `ssh://svan058@git.code.sf.net/p/dunelegacy/code`; `~/Documents/projects/dunelegacy-code` | `master` holds Legacy history/old website; `dunecity` holds latest released game source |
 
@@ -52,9 +52,9 @@ are separate deliberate changes, such as `dc69c5a`.
 ## Retry without rebuilding
 
 ```sh
-gh workflow run sourceforge.yml --repo VR48/dunecity --ref main -f tag=vX.Y.Z
-gh run list --repo VR48/dunecity --workflow sourceforge.yml --limit 5
-gh run watch RUN_ID --repo VR48/dunecity --exit-status
+gh workflow run sourceforge.yml --repo ggtothemax/dunecity --ref main -f tag=vX.Y.Z
+gh run list --repo ggtothemax/dunecity --workflow sourceforge.yml --limit 5
+gh run watch RUN_ID --repo ggtothemax/dunecity --exit-status
 ```
 
 Dispatch only an existing published stable tag. Historical backfills do not
@@ -149,6 +149,15 @@ next scheduled deploy. Website main 9a85d48 contains the gateway and additive re
 Untracked play-test-* previews are also removed; restore previews after deployment,
 or finish their tests before publishing. The private loopback relay and SQLite data
 live outside the deployed webroot and are preserved.
+
+## In-game feedback service
+
+From 1.0.664, the client POSTs to `https://dunelegacy.com/metaserver/feedback.php`.
+Before publishing clients, deploy the corresponding website service and provision
+`FEEDBACK_GITHUB_TOKEN` as documented in the website repository's
+`docs/game-feedback.md`. Use a fine-grained token scoped to `ggtothemax/dunecity` with
+Issues read/write only (plus mandatory Metadata read); never embed it in binaries,
+web assets or Git. A successful native build alone does not activate this service.
 
 ### Direct-P2P release transition (1.0.663 candidate)
 

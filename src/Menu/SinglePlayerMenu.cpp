@@ -107,6 +107,10 @@ SinglePlayerMenu::SinglePlayerMenu() : MenuBase() {
 SinglePlayerMenu::~SinglePlayerMenu() = default;
 
 void SinglePlayerMenu::onCampaign() {
+    playCampaign();
+}
+
+void SinglePlayerMenu::playCampaign() {
     int player = HouseChoiceMenu().showMenu();
 
     if(player < 0) {
@@ -123,7 +127,8 @@ void SinglePlayerMenu::onCampaign() {
         "qBotSupportEasy",
         "qBotSupportMedium",
         "qBotSupportHard",
-        "qBotSupportBrutal"
+        "qBotSupportBrutal",
+        "qBotEasy", "qBotMedium", "qBotHard", "qBotBrutal", "qBotDefend"
     };
 
     const char* const kEnemyAIClasses[] = {
@@ -134,7 +139,7 @@ void SinglePlayerMenu::onCampaign() {
     const char* supportPlayerClass = supportSelected ? kSupportPlayerClasses[supportBotIndex] : nullptr;
     const char* enemyAIClass = kEnemyAIClasses[enemyAIIndex];
 
-    GameInitSettings init((HOUSETYPE) player, gameOptions);
+    GameInitSettings init((HOUSETYPE) player, gameOptions, HouseChoiceMenu::getStartLevel());
     if(supportSelected) {
         init.setMultiplePlayersPerHouse(true);
     }
@@ -148,7 +153,7 @@ void SinglePlayerMenu::onCampaign() {
             humanHouseInfo.addPlayerInfo( GameInitSettings::PlayerInfo(settings.general.playerName, HUMANPLAYERCLASS) );
 
             if(supportSelected && supportPlayerClass != nullptr && *supportPlayerClass != '\0') {
-                std::string allyName = getHouseNameByNumber((HOUSETYPE) houseID) + " " + _("(AI Support)");
+                std::string allyName = getHouseNameByNumber((HOUSETYPE) houseID) + " " + (supportBotIndex >= 5 ? _("(QuantBot)") : _("(AI Support)"));
                 humanHouseInfo.addPlayerInfo(GameInitSettings::PlayerInfo(allyName, supportPlayerClass));
             }
 
@@ -161,8 +166,6 @@ void SinglePlayerMenu::onCampaign() {
     }
 
     startSinglePlayerGame(init);
-
-    quit();
 }
 
 void SinglePlayerMenu::onCustom() {

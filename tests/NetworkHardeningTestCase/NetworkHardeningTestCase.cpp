@@ -12,6 +12,8 @@
  */
 
 #include <catch2/catch_all.hpp>
+#include <misc/CampaignControls.h>
+#include <misc/FeedbackIssue.h>
 
 #include <CommandAuthorization.h>
 #include <CommandValidation.h>
@@ -1154,7 +1156,7 @@ TEST_CASE("Command authorization: every object action is covered, control comman
 
     // Commands that carry no acting object: they are authorized by issuer identity alone.
     const CMDTYPE nonObjectCommands[] = {
-        CMD_PLAYER_PAUSE, CMD_PLAYER_RESUME, CMD_TEST_SYNC, CMD_HOUSE_AUTO_REPAIR,
+        CMD_PLAYER_PAUSE, CMD_PLAYER_RESUME, CMD_TEST_SYNC, CMD_HOUSE_AUTO_REPAIR, CMD_CAMPAIGN_SKIP,
         CMD_CITY_PLACE_ZONE, CMD_CITY_SET_TAX_RATE, CMD_CITY_SET_BUDGET, CMD_CITY_TOOL
     };
     for(const CMDTYPE commandID : nonObjectCommands) {
@@ -1668,4 +1670,32 @@ TEST_CASE("Lobby authorization: inactive partner seats cannot grant ownership",
             == LobbyDecision::RejectUnknownSender);
     lobby.slots[2] = {SlotKind::AI, {}};
     REQUIRE(LobbyAuthorization::mayConfigurePlayerSlot(lobby, "host", 2, true));
+}
+
+TEST_CASE("Only human campaign controllers can skip missions", "[campaign][command]") {
+    for(auto type : {GameType::Campaign, GameType::CampaignCoop}) {
+        REQUIRE(CampaignControls::maySkip(type, HOUSE_ATREIDES, HOUSE_ATREIDES, true));
+        REQUIRE_FALSE(CampaignControls::maySkip(type, HOUSE_ATREIDES, HOUSE_HARKONNEN, true));
+        REQUIRE_FALSE(CampaignControls::maySkip(type, HOUSE_ATREIDES, HOUSE_ATREIDES, false));
+        REQUIRE_FALSE(CampaignControls::maySkip(type, HOUSE_ATREIDES, -1, false));
+    }
+    for(auto type : {GameType::Skirmish, GameType::SkirmishCoop, GameType::CustomGame,
+                     GameType::CustomMultiplayer, GameType::Invalid})
+        REQUIRE_FALSE(CampaignControls::maySkip(type, HOUSE_ATREIDES, HOUSE_ATREIDES, true));
+    REQUIRE(CommandValidation::isWellFormedCommand(CMD_CAMPAIGN_SKIP, 0));
+    REQUIRE_FALSE(CommandValidation::isWellFormedCommand(CMD_CAMPAIGN_SKIP, 1));
+}
+
+TEST_CASE("Feedback submissions preserve text and restrict returned issue links", "[feedback]") {
+    const auto fields = FeedbackIssue::fields("id", "Bug & labels=admin", "Café #1\n100% + spice?", "Mod: vanilla");
+    REQUIRE(fields.at("title") == "Bug & labels=admin");
+    REQUIRE(fields.at("details") == "Café #1\n100% + spice?");
+    REQUIRE(fields.at("context") == "Mod: vanilla");
+    REQUIRE(FeedbackIssue::isIssueUrl("https://github.com/ggtothemax/dunecity/issues/123"));
+    for(const auto* url : {"https://github.com/ggtothemax/dunecity/issues/new", "https://evil.test/123",
+        "https://github.com/ggtothemax/dunecity/issues/1?evil=1", "https://github.com/ggtothemax/dunecity/issues/"})
+        REQUIRE_FALSE(FeedbackIssue::isIssueUrl(url));
+    REQUIRE_THROWS_AS(FeedbackIssue::fields("id", " ", "Details", ""), std::invalid_argument);
+    REQUIRE_THROWS_AS(FeedbackIssue::fields("id", "Title", "\n\t", ""), std::invalid_argument);
+    REQUIRE_THROWS_AS(FeedbackIssue::fields("id", "Title", std::string(8001, '#'), ""), std::invalid_argument);
 }

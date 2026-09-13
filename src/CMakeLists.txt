@@ -181,6 +181,7 @@ target_sources(dunecity
         GUI/TextView.cpp
         GUI/RadioButtonManager.cpp
         GUI/dune/ChatManager.cpp
+        GUI/dune/FeedbackWindow.cpp
         GUI/dune/CityBudgetWindow.cpp
         GUI/dune/DuneStyle.cpp
         GUI/dune/GameOptionsWindow.cpp
@@ -225,6 +226,8 @@ target_sources(dunecity
         Network/GamePayloadRouter.cpp
         Network/RoomRelayClient.cpp
         Network/RoomAdmissionClient.cpp
+        Network/FeedbackClient.cpp
+
         Network/DirectRoomTransport.cpp
         Network/BoundedHttpClient.cpp
         Network/ENetHttp.cpp

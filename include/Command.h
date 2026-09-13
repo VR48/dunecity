@@ -68,6 +68,8 @@ typedef enum {
     CMD_ZONE_DEMOLISH,                 ///< ZONE_DEMOLISH(OBJECT_ID), issuing house only
     CMD_STRUCTURE_DEMOLISH,            ///< STRUCTURE_DEMOLISH(OBJECT_ID), issuing house only
 
+    CMD_CAMPAIGN_SKIP,                ///< CAMPAIGN_SKIP(), human campaign-house controllers only
+
     CMD_MAX
 } CMDTYPE;
 

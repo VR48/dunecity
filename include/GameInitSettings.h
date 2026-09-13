@@ -109,7 +109,7 @@ public:
         \param  newHouseID          the house to play the campaign with
         \param  gameOptions         the options for this game
     */
-    GameInitSettings(HOUSETYPE newHouseID, const SettingsClass::GameOptionsClass& gameOptions);
+    GameInitSettings(HOUSETYPE newHouseID, const SettingsClass::GameOptionsClass& gameOptions, int startLevel = 1);
 
     /**
         Constructor for continuing a campaign at the specified mission

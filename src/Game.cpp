@@ -16,6 +16,8 @@
  */
 
 #include <Game.h>
+#include <GUI/dune/FeedbackWindow.h>
+#include <misc/CampaignControls.h>
 #include <main.h>
 #include <cstdarg>
 #include <ctime>
@@ -2449,15 +2451,18 @@ void Game::doInput()
                 case SDL_MOUSEBUTTONDOWN: {
                     SDL_MouseButtonEvent* mouse = &event.button;
 
+                    bool interfaceHandled = false;
                     switch(mouse->button) {
                         case SDL_BUTTON_LEFT: {
-                            pInterface->handleMouseLeft(mouse->x, mouse->y, true);
+                            interfaceHandled = pInterface->handleMouseLeft(mouse->x, mouse->y, true);
                         } break;
 
                         case SDL_BUTTON_RIGHT: {
-                            pInterface->handleMouseRight(mouse->x, mouse->y, true);
+                            interfaceHandled = pInterface->handleMouseRight(mouse->x, mouse->y, true);
                         } break;
                     }
+
+                    if(interfaceHandled) break; // A UI click must not also place or command units.
 
                     switch(mouse->button) {
 
@@ -2579,14 +2584,20 @@ case CursorMode_Heal: {
                 case SDL_MOUSEBUTTONUP: {
                     SDL_MouseButtonEvent* mouse = &event.button;
 
+                    bool interfaceHandled = false;
                     switch(mouse->button) {
                         case SDL_BUTTON_LEFT: {
-                            pInterface->handleMouseLeft(mouse->x, mouse->y, false);
+                            interfaceHandled = pInterface->handleMouseLeft(mouse->x, mouse->y, false);
                         } break;
 
                         case SDL_BUTTON_RIGHT: {
-                            pInterface->handleMouseRight(mouse->x, mouse->y, false);
+                            interfaceHandled = pInterface->handleMouseRight(mouse->x, mouse->y, false);
                         } break;
+                    }
+
+                    if(interfaceHandled) {
+                        selectionMode = false;
+                        break;
                     }
 
                     if(selectionMode && (mouse->button == SDL_BUTTON_LEFT)) {
@@ -3832,6 +3843,22 @@ void Game::applyDune2RZoom(int zoomLevel) {
 void Game::onMentat()
 {
     pInGameMentat = std::make_unique<MentatHelp>(pLocalHouse->getHouseID(), techLevel, gameInitSettings.getMission());
+    bMenu = true;
+    pauseGame();
+}
+
+bool Game::canSkipMission() const {
+    return !bReplay && !finished && !bQuitGame && pLocalPlayer && pLocalHouse
+        && CampaignControls::maySkip(gameInitSettings.getGameType(), gameInitSettings.getHouseID(),
+                                     pLocalHouse->getHouseID(), true);
+}
+
+void Game::onSkipMission() {
+    if(canSkipMission()) cmdManager.addCommand(Command(pLocalPlayer->getPlayerID(), CMD_CAMPAIGN_SKIP));
+}
+
+void Game::onFeedback() {
+    pInGameMenu = std::make_unique<FeedbackWindow>();
     bMenu = true;
     pauseGame();
 }

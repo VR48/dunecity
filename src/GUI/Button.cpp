@@ -50,9 +50,8 @@ bool Button::handleMouseLeft(Sint32 x, Sint32 y, bool pressed) {
         return false;
     }
 
-    if((isEnabled() == false) || (isVisible() == false)) {
-        return true;
-    }
+    if(!isVisible()) return false;
+    if(!isEnabled()) return true;
 
     if(pressed == true) {
         // button pressed

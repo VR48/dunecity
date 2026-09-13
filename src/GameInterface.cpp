@@ -75,7 +75,7 @@ GameInterface::GameInterface() : Window(0,0,0,0) {
     windowWidget.addWidget(&topBarHBox,Point(5,5),
                             Point(getRendererWidth() - sideBar.getSize().x, topBar.getSize().y - 10));
 
-    topBarHBox.addWidget(&newsticker);
+    topBarHBox.addWidget(&newsticker, 3.0);
 
     topBarHBox.addWidget(Spacer::create());
 
@@ -91,6 +91,12 @@ GameInterface::GameInterface() : Window(0,0,0,0) {
     mentatButton.setOnClick(std::bind(&Game::onMentat, currentGame));
     topBarHBox.addWidget(&mentatButton);
 
+    topBarHBox.addWidget(Spacer::create());
+
+    feedbackButton.setText(_("Give feedback"));
+    feedbackButton.setTooltipText(_("Send a feature request or report an issue."));
+    feedbackButton.setOnClick(std::bind(&Game::onFeedback, currentGame));
+    topBarHBox.addWidget(&feedbackButton);
     topBarHBox.addWidget(Spacer::create());
 
     // City sim only: a "Budget" text button next to Mentat. There's no
@@ -201,6 +207,19 @@ GameInterface::GameInterface() : Window(0,0,0,0) {
     addOverlayButton(pollutionOverlayButton, "Pollution",
         "Show pollution: green is clean, purple is polluted. Click again to hide (Shift+4; Shift+1 off).",
         DuneCity::CityOverlayMode::Pollution, autoRepairY + 120);
+
+    // Build lists use the sidebar's full height; keep skip beside it.
+    const int skipWidth = std::max(ornithopterButtonWidth,
+        GUIStyle::getInstance().getMinimumButtonSize(_("Skip mission")).x);
+    skipMissionButton.setText(_("Skip mission"));
+    skipMissionButton.setTooltipText(_("Win this campaign mission and continue to the next level."));
+    skipMissionButton.setOnClick(std::bind(&Game::onSkipMission, currentGame));
+    const bool campaign = isCampaignGameType(currentGame->getGameInitSettings().getGameType());
+    skipMissionButton.setVisible(campaign);
+    skipMissionButton.setEnabled(currentGame->canSkipMission());
+    windowWidget.addWidget(&skipMissionButton,
+        Point(viewControlsRight - skipWidth, getRendererHeight() - 32),
+        Point(skipWidth, 28));
 
     // add chat manager
     windowWidget.addWidget(&chatManager, Point(20, 60), Point(getRendererWidth() - sideBar.getSize().x, 360));
@@ -429,6 +448,7 @@ void GameInterface::draw(Point position) {
 }
 
 void GameInterface::updateObjectInterface() {
+    skipMissionButton.setEnabled(currentGame->canSkipMission());
     const auto& selection = currentGame->getSelectedList();
 
     const std::string repairText = pLocalHouse && pLocalHouse->isAutoRepairEnabled()

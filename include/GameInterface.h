@@ -133,6 +133,8 @@ private:
     RadarView           radarView;              ///< This is the minimap/radar in the side bar
 
     ChatManager         chatManager;            ///< Manages chat manages shown overlayed with the main map
+    TextButton          feedbackButton;
+    TextButton          skipMissionButton;
     TextButton          autoRepairButton;
     TextButton          landValueOverlayButton;
     TextButton          crimeOverlayButton;

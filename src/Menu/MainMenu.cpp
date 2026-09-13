@@ -175,9 +175,11 @@ MainMenu::MainMenu()
     setWindowWidget(&windowWidget);
     enlargedStartMenus = validatedStartMenuMode(settings.video.startMenuMode) == 1;
 
-    modesButton.setText(_("MODES"));
+    campaignButton.setText(_("PLAY CAMPAIGN"));
+    campaignButton.setOnClick([] { SinglePlayerMenu::playCampaign(); });
+    campaignButton.setActive();
+    modesButton.setText(_("PLAY OTHER MODES"));
     modesButton.setOnClick(std::bind(&MainMenu::onModes, this));
-    modesButton.setActive();
     dune2rEditorButton.setText("DUNE2R ASSETS");
     dune2rEditorButton.setOnClick(std::bind(&MainMenu::onDune2REditor, this));
     optionsButton.setText(_("OPTIONS"));
@@ -222,7 +224,7 @@ MainMenu::MainMenu()
         windowWidget.addWidget(&buttonBorder, borderBounds);
 
     }
-    TextButton* allButtons[] = {&modesButton, &optionsButton, &displayButton, &howToPlayButton,
+    TextButton* allButtons[] = {&campaignButton, &modesButton, &optionsButton, &displayButton, &howToPlayButton,
                                 &dune2rEditorButton, &aboutButton, &quitButton};
     for(TextButton* button : allButtons) {
         windowWidget.addWidget(button, Point(0, 0), Point(1, 1));
@@ -421,7 +423,7 @@ void MainMenu::refreshContextButtons()
     howToPlayButton.setVisible(showHowToPlay);
     howToPlayButton.setEnabled(showHowToPlay);
 
-    std::vector<TextButton*> buttons{&modesButton, &optionsButton, &displayButton};
+    std::vector<TextButton*> buttons{&campaignButton, &modesButton, &optionsButton, &displayButton};
     if(showHowToPlay) buttons.push_back(&howToPlayButton);
     if(showDune2R) buttons.push_back(&dune2rEditorButton);
     buttons.push_back(&aboutButton);

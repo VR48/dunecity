@@ -27,6 +27,8 @@
 #include <GUI/PictureLabel.h>
 #include <GUI/PictureButton.h>
 #include <DataTypes.h>
+#include <GUI/TextView.h>
+#include <mod/ModInfo.h>
 
 class HouseChoiceMenu : public MenuBase {
 public:
@@ -36,12 +38,15 @@ public:
     void onChildWindowClose(Window* pChildWindow) override;
 
     // Static accessors for AI settings (so SinglePlayerMenu can read them)
+    static int getStartLevel() { return s_startLevel; }
     static int getSupportBotIndex() { return s_supportBotIndex; }
     static int getEnemyAIIndex() { return s_enemyAIIndex; }
     static const SettingsClass::GameOptionsClass& getGameOptions() { return s_currentGameOptions; }
 
 private:
     void onHouseButton(int button);
+    void onModSelectionChanged(bool interactive);
+    void updateModDescription();
     void updateHouseChoice();
 
     void onHouseLeft();
@@ -63,6 +68,12 @@ private:
     PictureButton   houseLeftButton;
     PictureButton   houseRightButton;
 
+    DropDownBox     startLevelDropDown;
+    DropDownBox     modDropDown;
+    TextView        modDescription;
+    std::vector<ModInfo> availableMods;
+    TextButton      backButton;
+    Label          supportDescription;
     DropDownBox     supportBotDropDown;
     DropDownBox     enemyAIDropDown;
     TextButton hostCoopButton;
@@ -71,6 +82,7 @@ private:
     int currentHouseChoiceScrollPos;
 
     // Static storage for AI settings
+    static int s_startLevel;
     static int s_supportBotIndex;
     static int s_enemyAIIndex;
     static SettingsClass::GameOptionsClass s_currentGameOptions;
