@@ -184,7 +184,8 @@
       __publicField(this, "signalChain", Promise.resolve());
       __publicField(this, "signalCount", 0);
       __publicField(this, "candidateCount", 0);
-      __publicField(this, "sendChain", Promise.resolve());
+      __publicField(this, "sendQueue", []);
+      __publicField(this, "sendTimer");
       __publicField(this, "outgoingBytes", 0);
       __publicField(this, "outgoingCount", 0);
       __publicField(this, "closed", false);
@@ -251,39 +252,78 @@
     on(event, handler) {
       this.emitter.on(event, handler);
     }
-    async send(value) {
-      if (this.closed || !this.opened) throw new Error("Direct connection is not open");
-      const data = JSON.stringify(value);
-      if (typeof data !== "string" || data.length > CHUNK_LIMITS.messageBytes) throw new Error("Message too large");
-      const bytes = new TextEncoder().encode(data).length;
-      if (bytes > CHUNK_LIMITS.messageBytes || bytes > MAX_OUTGOING - this.outgoingBytes || this.outgoingCount >= 128) {
-        this.fail("Direct connection send queue is full");
-        throw new Error("Direct connection send queue is full");
-      }
-      this.outgoingBytes += bytes;
-      this.outgoingCount++;
-      const result = this.sendChain.then(async () => {
-        const deadline = performance.now() + SEND_TIMEOUT;
-        for (const packet of this.chunker.split(randomId(8), data)) {
-          const channel = this.channel;
-          while (!this.closed && channel?.readyState === "open" && channel.bufferedAmount > MAX_BUFFER) {
-            if (performance.now() > deadline) throw new Error("Direct connection stalled");
-            await new Promise((resolve) => setTimeout(resolve, 10));
-          }
-          if (this.closed || channel?.readyState !== "open") throw new Error("Direct connection closed");
-          channel.send(packet);
-        }
-      }).finally(() => {
-        this.outgoingBytes -= bytes;
-        this.outgoingCount--;
+    send(value) {
+      return new Promise((resolve, reject) => {
+        if (!this.enqueue(value, resolve, reject)) reject(new Error("Direct send was refused"));
       });
-      this.sendChain = result.catch(() => this.fail("Direct connection could not deliver a message"));
-      return result;
+    }
+    /** True means accepted by this bounded queue, never a promise masquerading as success. */
+    trySend(value) {
+      return this.enqueue(value, () => {
+      }, () => {
+      });
+    }
+    enqueue(value, resolve, reject) {
+      if (this.closed || !this.opened || this.channel?.readyState !== "open") return false;
+      try {
+        const data = JSON.stringify(value);
+        if (typeof data !== "string" || data.length > CHUNK_LIMITS.messageBytes) return false;
+        const bytes = new TextEncoder().encode(data).length;
+        if (bytes > CHUNK_LIMITS.messageBytes || bytes > MAX_OUTGOING - this.outgoingBytes || this.outgoingCount >= 128) {
+          this.fail("Direct connection send queue is full");
+          return false;
+        }
+        this.sendQueue.push({
+          packets: [...this.chunker.split(randomId(8), data)],
+          next: 0,
+          bytes,
+          deadline: performance.now() + SEND_TIMEOUT,
+          resolve,
+          reject
+        });
+        this.outgoingBytes += bytes;
+        this.outgoingCount++;
+        this.drainSends();
+        return !this.closed;
+      } catch {
+        this.fail("Direct connection could not deliver a message");
+        return false;
+      }
+    }
+    drainSends() {
+      if (this.sendTimer !== void 0) {
+        clearTimeout(this.sendTimer);
+        this.sendTimer = void 0;
+      }
+      try {
+        while (!this.closed && this.sendQueue.length) {
+          const job = this.sendQueue[0], channel = this.channel;
+          if (channel?.readyState !== "open") throw new Error("Direct channel closed");
+          if (performance.now() > job.deadline) throw new Error("Direct channel stalled");
+          while (job.next < job.packets.length) {
+            if (channel.bufferedAmount > MAX_BUFFER) {
+              this.sendTimer = setTimeout(() => this.drainSends(), 10);
+              return;
+            }
+            channel.send(job.packets[job.next++]);
+          }
+          this.sendQueue.shift();
+          this.outgoingBytes -= job.bytes;
+          this.outgoingCount--;
+          job.resolve();
+        }
+      } catch {
+        this.fail("Direct connection could not deliver a message");
+      }
     }
     disconnect() {
       if (this.closed) return;
       this.closed = true;
       clearInterval(this.timer);
+      if (this.sendTimer !== void 0) clearTimeout(this.sendTimer);
+      for (const job of this.sendQueue.splice(0)) job.reject(new Error("Direct connection closed"));
+      this.outgoingBytes = 0;
+      this.outgoingCount = 0;
       this.unsubscribe?.();
       this.pendingCandidates.length = 0;
       this.chunker.reset();
@@ -555,10 +595,7 @@
         return false;
       }
       if (typeof value !== "string") return false;
-      void connection.transport.send(value).catch((error) => {
-        fail(connection, error instanceof Error ? error.message : "send failed");
-      });
-      return true;
+      return connection.transport.trySend(value);
     },
     /** Takes one received envelope as JSON text, or null. */
     pollValue(handle) {

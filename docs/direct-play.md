@@ -38,7 +38,7 @@ broadcast, no RPC, no signer. P2PKit's own separation of concerns is what the de
 
 | Upstream concept | Here |
 | --- | --- |
-| `RTCTransport` (`transports/rtc.ts`) | the browser peer connection, used as-is |
+| `RTCTransport` (`transports/rtc.ts`) | the browser peer connection, with the documented local hardening |
 | `SignallingChannel` (`signalling/types.ts`) | implemented by the bridge over `tools/p2p-signaling`, so `announce`/`description`/`iceCandidate` become HTTPS records instead of a WebSocket |
 | `Chunker` (`framing/index.ts`) | the fragment format; `include/Network/P2PWireFraming.h` is the same format written for C++ |
 | `Transport` events `connect`/`message`/`disconnect`/`error` | `DirectPeerConnection`'s state and queues |
@@ -57,7 +57,7 @@ values; `GamePayloadRouter` is still the only thing that understands them.
 ```
 game packet bytes (ENetPacketOStream, unchanged)
   -> envelope string
-    -> JSON value handed to RTCTransport.send() / P2PWire::splitIntoChunkPackets()
+    -> JSON value handed to RTCTransport.trySend() / P2PWire::splitIntoChunkPackets()
       -> chunk packets {"id","i","n","part"}, one per data-channel message
         -> DTLS/SCTP
 ```
@@ -187,3 +187,25 @@ tried first, so a prebuilt pinned install can be supplied with `CMAKE_PREFIX_PAT
 `-DFETCHCONTENT_SOURCE_DIR_LIBDATACHANNEL=<checkout>`).
 
 The live native-to-browser session harness is `tools/p2p-interop/README.md`.
+
+## Match-start barrier
+
+Before its countdown, the host asks the signaling service to atomically close admission with
+an exact sorted peer-ID roster. A changed roster is refused. The successful transaction clears
+unredeemed grants and returns a random start ID for that room epoch. The host then sends
+`s:p:<id>:<roster>:` directly to every peer. Each verifies the same fully connected roster,
+freezes it and replies `s:a:<id>:<roster>:`. Only after every acknowledgement does the host send
+`s:c:<id>:<roster>:<STARTGAME hex>` and publish its local countdown event. Guests invoke the
+shared game parser for one commit only. Duplicate prepare/commit messages cannot reset a
+countdown; conflicts and a 30-second preparation timeout end the room. A failed fanout closes
+all local links. This does not promise progress after a peer crashes or loses connectivity.
+
+The browser's bounded synchronous queue reports acceptance truthfully; the first channel send
+runs synchronously, and a thrown send returns false immediately. Backpressure preserves order
+and later failure closes the connection. Queue acceptance is not a delivery acknowledgement.
+
+Session requests include a stable per-grant recovery nonce. An identical retry within 45 seconds
+can recover its already committed session, without creating another seat or joined event.
+Normal teardown makes one best-effort bounded leave request (four concurrent requests maximum,
+two-second deadline). The lobby also closes when its host expires. A signaling timeout never
+changes the membership of an established match.

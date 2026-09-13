@@ -111,12 +111,14 @@ DirectRoomTransport::DirectRoomTransport(Dependencies dependencies)
             return createDirectPeerConnection(options, error);
         };
     }
+    if(!dependencies_.leaveSender) dependencies_.leaveSender=sendBestEffortHttpRequest;
     if(!dependencies_.clock) {
         dependencies_.clock = []() { return static_cast<std::uint32_t>(SDL_GetTicks()); };
     }
 }
 
 DirectRoomTransport::~DirectRoomTransport() {
+    queueLeave();
     for(auto& link : links_) {
         if(link->connection) {
             link->connection->close();
@@ -153,7 +155,7 @@ bool DirectRoomTransport::start(const Config& config, std::string& error) {
     if(!isAcceptableSignalingBaseUrl(config.signalingBaseUrl, config.allowLoopbackPlaintext, error)) {
         return false;
     }
-    if(!RoomRelay::isAcceptableGrant(config.grant) || config.grant.empty()) {
+    if(!RoomRelay::isAcceptableGrant(config.grant) || config.grant.size() != 64) {
         error = "The invitation from the game service is not usable.";
         return false;
     }
@@ -191,6 +193,8 @@ void DirectRoomTransport::beginSession() {
     request.url  = endpoint(kSessionPath);
     request.body = fieldsFor(config_);
     request.body += "&grant=" + P2PSignal::encodeFormValue(config_.grant);
+    // Stable per single-use grant; a response lost after commit can recover the same session.
+    request.body += "&nonce=" + config_.grant.substr(config_.grant.size() - 32);
     request.body += "&name=" + P2PSignal::encodeFormValue(P2PSignal::encodeHexText(config_.displayName));
     if(!config_.roomCode.empty()) {
         request.body += "&room=" + P2PSignal::encodeFormValue(config_.roomCode);
@@ -208,6 +212,10 @@ void DirectRoomTransport::update() {
     const std::uint32_t nowMs = now();
     pumpSignaling(nowMs);
     pumpConnections(nowMs);
+    if(status_ == Status::Joined && startStage_ != StartStage::Idle && startStage_ != StartStage::Committed
+       && SDL_TICKS_PASSED(nowMs, startDeadline_)) {
+        finish(RoomRelay::Close::Timeout, "The players could not confirm the start. Please host a new game.");
+    }
 }
 
 void DirectRoomTransport::pumpSignaling(std::uint32_t nowMs) {
@@ -299,6 +307,9 @@ void DirectRoomTransport::beginNextSignalingRequest(std::uint32_t nowMs) {
         request.sessionToken = sessionToken_;
         request.body         = std::string("phase=")
                              + (pendingPhase_ == RoomRelay::Phase::Match ? "match" : "lobby");
+        if(pendingPhase_ == RoomRelay::Phase::Match)
+            request.body += "&roster=" + P2PSignal::encodeFormValue(
+                startStage_ == StartStage::ClosingRoster ? startRoster_ : localRosterKey());
         http_->begin(request);
         inFlight_         = InFlight::Phase;
         requestStartedMs_ = nowMs;
@@ -361,7 +372,10 @@ void DirectRoomTransport::beginNextSignalingRequest(std::uint32_t nowMs) {
 }
 
 void DirectRoomTransport::handleSessionResult(const BoundedHttpClient::Result& result) {
-    if(!result.transportError.empty()) {
+    if(!result.transportError.empty() || result.httpStatus >= 500) {
+        if(sessionRetries_++ < 2 && !SDL_TICKS_PASSED(now(), sessionStartedMs_ + 45000)) {
+            beginSession(); return;
+        }
         finish(RoomRelay::Close::Timeout,
                "The game service could not be reached, so the match could not be set up.");
         return;
@@ -556,6 +570,12 @@ void DirectRoomTransport::handlePostResult(const BoundedHttpClient::Result& resu
     const bool refused   = result.httpStatus >= 400 && result.httpStatus < 500;
 
     if(!haveInFlightSignal_) {
+        if(startStage_ == StartStage::ClosingRoster) {
+            if(succeeded) { phaseUpdatePending_ = false; beginStartPrepare(result); }
+            else if(refused) { phaseUpdatePending_ = false;
+                finish(RoomRelay::Close::Normal, "The game service could not confirm this roster. Please host a new game."); }
+            return;
+        }
         // A phase update. It is retried until the service takes it, because the whole point of
         // it is to stop a late grant being redeemed; a transient failure must not lose it.
         if(succeeded || refused) {
@@ -597,6 +617,7 @@ void DirectRoomTransport::openLink(std::uint32_t peerId, std::uint32_t nowMs) {
     if(std::find(retiredPeerIds_.begin(), retiredPeerIds_.end(), peerId) != retiredPeerIds_.end()) return;
     auto link      = std::make_unique<Link>();
     link->peerId   = peerId;
+    if(const Peer* peer = findPeer(peerId)) link->role = peer->role;
     link->startedMs = nowMs;
     // The lower peer id offers. Both sides compute the same answer without another round trip,
     // and neither can end up waiting for the other to start.
@@ -825,6 +846,8 @@ void DirectRoomTransport::handleReceivedValue(Link& link, const std::string& ass
     }
 
     switch(envelope.kind) {
+        case P2PWire::EnvelopeKind::Start:
+            handleStartEnvelope(link, envelope); return;
         case P2PWire::EnvelopeKind::Game: {
             // Addressed to someone else: fatal, not forwarded. This transport has no route to
             // another peer's channel and is not going to grow one, and a peer that asks for one
@@ -1074,10 +1097,97 @@ bool DirectRoomTransport::sendDiagnostic(RoomRelay::DiagnosticKind kind,
     return anySent;
 }
 
-bool DirectRoomTransport::sendMatchStart(const std::uint8_t* payload, std::size_t length) {
-    if(localRole_ != RoomRelay::Role::Host || !prepareMatchStart()) return false;
-    if(!peers_.empty() && !sendGamePayload(payload, length, 0, 0)) return false;
-    return setRoomPhase(RoomRelay::Phase::Match);
+bool DirectRoomTransport::sendMatchStart(const std::uint8_t* payload, std::size_t length,
+                                         unsigned int localDelay) {
+    if(!isHost() || startStage_ != StartStage::Idle || !meshReady()
+       || !payload || length == 0 || length > 64 || localDelay > 10000) return false;
+    startPayload_.assign(payload, payload + length);
+    startRoster_ = localRosterKey();
+    startDelay_ = localDelay;
+    startStage_ = StartStage::ClosingRoster;
+    startDeadline_ = now() + 30000;
+    phaseUpdatePending_ = true;
+    pendingPhase_ = RoomRelay::Phase::Match;
+    return true; // accepted for preparation; no countdown until MatchStart event
+}
+
+void DirectRoomTransport::beginStartPrepare(const BoundedHttpClient::Result& result) {
+    // This tiny response has no repeatable fields. Refuse duplicates and unknown extensions.
+    std::map<std::string,std::string> fields;
+    std::size_t at = 0;
+    while(at < result.body.size() && result.body.size() <= 1024) {
+        const auto end = result.body.find('\n', at);
+        const auto line = result.body.substr(at, end == std::string::npos ? end : end-at);
+        const auto equal = line.find('=');
+        if(equal == std::string::npos || !fields.emplace(line.substr(0,equal),line.substr(equal+1)).second) break;
+        at = end == std::string::npos ? result.body.size() : end+1;
+    }
+    const auto id = fields["startId"];
+    if(at != result.body.size() || fields["status"] != "ok" || fields["phase"] != "match"
+       || fields["roster"] != startRoster_ || localRosterKey() != startRoster_
+       || id.size() != 32 || !P2PSignal::isLowercaseHexText(id) || !meshReady()) {
+        finish(RoomRelay::Close::ProtocolError, "The game service did not confirm the same players."); return;
+    }
+    startId_ = id;
+    startStage_ = StartStage::Preparing;
+    freezeRoster("the game service closed admission for this roster");
+    phase_ = RoomRelay::Phase::Match;
+    const auto message = P2PWire::encodeStartEnvelope('p', startId_, startRoster_);
+    for(auto& link : links_) if(!link->connected || !sendEnvelopeTo(*link, message)) {
+        finish(RoomRelay::Close::Normal, "A player disconnected before confirming the start."); return;
+    }
+    completeStartIfReady();
+}
+
+void DirectRoomTransport::handleStartEnvelope(Link& link, const P2PWire::Envelope& e) {
+    if(e.startStage == 'p') {
+        if(isHost() || link.role != RoomRelay::Role::Host) { dropLink(link.peerId,"Only the host can start a match."); return; }
+        if(startStage_ != StartStage::Idle) {
+            if(e.startId != startId_ || e.rosterKey != startRoster_) finish(RoomRelay::Close::ProtocolError,"Conflicting match starts.");
+            return; // exact replay does not reset deadline or countdown
+        }
+        if(e.rosterKey != localRosterKey() || !meshReady()) {
+            finish(RoomRelay::Close::Normal,"The players disagree about who is in the game."); return;
+        }
+        startId_ = e.startId; startRoster_ = e.rosterKey;
+        startStage_ = StartStage::Preparing; startDeadline_ = now() + 30000;
+        freezeRoster("the host requested confirmation of this match");
+        phase_ = RoomRelay::Phase::Match;
+        if(!sendEnvelopeTo(link,P2PWire::encodeStartEnvelope('a',startId_,startRoster_)))
+            finish(RoomRelay::Close::Normal,"The host could not receive the start confirmation.");
+        return;
+    }
+    if(e.startId != startId_ || e.rosterKey != startRoster_ || startStage_ == StartStage::Idle) {
+        dropLink(link.peerId,"Unrecognized match start."); return;
+    }
+    if(e.startStage == 'a') {
+        if(!isHost()) { dropLink(link.peerId,"Unexpected start acknowledgement."); return; }
+        if(startStage_ == StartStage::Committed) return;
+        if(std::find(startAcks_.begin(),startAcks_.end(),link.peerId)==startAcks_.end()) startAcks_.push_back(link.peerId);
+        completeStartIfReady(); return;
+    }
+    if(isHost() || link.role != RoomRelay::Role::Host) { dropLink(link.peerId,"Only the host can commit a start."); return; }
+    if(startStage_ == StartStage::Committed) return;
+    startStage_ = StartStage::Committed;
+    Event event; event.type=Event::Type::GamePayload; event.peerId=link.peerId; event.payload=e.payload;
+    pushEvent(std::move(event)); // same authorized game parser as every other transport
+}
+
+void DirectRoomTransport::completeStartIfReady() {
+    if(!isHost() || startStage_ != StartStage::Preparing || startAcks_.size() != frozenRoster_.size()) return;
+    const auto message=P2PWire::encodeStartEnvelope('c',startId_,startRoster_,startPayload_);
+    for(auto& link:links_) if(!link->connected || !sendEnvelopeTo(*link,message)) {
+        finish(RoomRelay::Close::Normal,"A player disconnected while starting the match."); return;
+    }
+    startStage_=StartStage::Committed;
+    Event event; event.type=Event::Type::MatchStart; event.code=static_cast<std::uint16_t>(startDelay_);
+    pushEvent(std::move(event));
+}
+
+bool DirectRoomTransport::acceptStartCallback() {
+    if(status_ != Status::Joined || startStage_ != StartStage::Committed || startCallbackAccepted_) return false;
+    startCallbackAccepted_=true;
+    return true;
 }
 
 bool DirectRoomTransport::prepareMatchStart() {
@@ -1256,19 +1366,23 @@ void DirectRoomTransport::dropLink(std::uint32_t peerId, const std::string& reas
     }
 }
 
+void DirectRoomTransport::queueLeave() {
+    if(leaveQueued_ || sessionToken_.empty()) return;
+    leaveQueued_=true;
+    auto request=signalingRequest(); request.url=endpoint("/v1/p2p/leave");
+    request.sessionToken=sessionToken_; request.body="bye=1";
+    try { dependencies_.leaveSender(std::move(request)); } catch(...) { }
+}
+
 void DirectRoomTransport::stop(std::uint8_t reason) {
     (void)reason;
+    queueLeave();
     for(auto& link : links_) {
         if(link->connection) {
             link->connection->close();
         }
     }
     links_.clear();
-    // No parting message to the service. The game destroys this object immediately after
-    // stopping it, so a request begun here would never be driven to completion, and a call that
-    // only looks like it tells the service something is worse than not making it: the peers
-    // already know, because their channels just closed, and the service expires the session on
-    // its own. /v1/p2p/leave exists for callers that can wait for it; this one cannot.
     if(http_) {
         http_->cancel();
     }
@@ -1286,6 +1400,7 @@ void DirectRoomTransport::finish(std::uint16_t code, const std::string& message)
     if(status_ == Status::Closed) {
         return;
     }
+    queueLeave();
     status_        = Status::Closed;
     closeCode_     = code;
     statusMessage_ = message;

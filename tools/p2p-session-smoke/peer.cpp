@@ -29,13 +29,19 @@ int main(int argc, char** argv) {
     if(!transport.start(config,error)){std::cerr<<error<<'\n';return 1;}
     const auto started=SDL_GetTicks();
     unsigned readyAt=0,lastSend=0,sequence=0;
+    bool startRequested=false;
+    const std::vector<std::uint8_t> startPacket={8,0,0,0,0,0,0,0};
     std::map<unsigned,unsigned> received;
     std::vector<std::uint8_t> payload(262128,0xab);
     while(SDL_GetTicks()-started < hold+45000) {
         transport.update();
         RoomSessionTransport::Event event;
         while(transport.pollEvent(event)) {
-            if(event.type==RoomSessionTransport::Event::Type::GamePayload) {
+            if(event.type==RoomSessionTransport::Event::Type::MatchStart
+               || (event.type==RoomSessionTransport::Event::Type::GamePayload && event.payload==startPacket)) {
+                if(!transport.acceptStartCallback() || readyAt) return 1;
+                readyAt=SDL_GetTicks(); std::cout<<"READY\n"<<std::flush;
+            } else if(event.type==RoomSessionTransport::Event::Type::GamePayload) {
                 auto& next=received[event.peerId];
                 if(event.payload.size()!=payload.size() || event.payload[0]!=(next&255)
                    || event.payload[1]!=0xab || event.payload.back()!=0xab) {
@@ -50,12 +56,10 @@ int main(int argc, char** argv) {
                 std::cerr<<"REFUSED: "<<event.message<<'\n';
             }
         }
-        if(!readyAt && transport.connectedPeerCount()==static_cast<unsigned>(count-1)
+        if(!startRequested && transport.isHost() && transport.connectedPeerCount()==static_cast<unsigned>(count-1)
            && transport.meshReady()) {
-            readyAt=SDL_GetTicks();
-            if(transport.isHost()&&!transport.setRoomPhase(RoomRelay::Phase::Match))return 1;
-            else if(!transport.isHost())transport.assumeMatchPhase();
-            std::cout<<"READY\n"<<std::flush;
+            startRequested=true;
+            if(!transport.sendMatchStart(startPacket.data(),startPacket.size(),0)) return 1;
         }
         if(readyAt && SDL_GetTicks()-lastSend>=1000 && sequence<hold/1000+5) {
             payload[0]=sequence&255;

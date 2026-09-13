@@ -78,6 +78,7 @@ public:
                                                             std::string&)> peerFactory;
         /// Monotonic milliseconds. Defaults to SDL_GetTicks().
         std::function<std::uint32_t()> clock;
+        std::function<void(BoundedHttpClient::Request)> leaveSender;
     };
 
     DirectRoomTransport();
@@ -142,7 +143,8 @@ public:
     /// Recheck the whole mesh and freeze its roster before accepting or sending STARTGAME.
     bool prepareMatchStart();
     /// Atomically commit the roster before fanout; any rejection closes every match link.
-    bool sendMatchStart(const std::uint8_t* payload, std::size_t length);
+    bool sendMatchStart(const std::uint8_t* payload, std::size_t length, unsigned int localDelay = 3000);
+    bool acceptStartCallback();
     /**
         The local simulation has started, whatever the service thinks.
 
@@ -244,6 +246,10 @@ private:
     };
 
     void beginSession();
+    void queueLeave();
+    void handleStartEnvelope(Link& link, const P2PWire::Envelope& envelope);
+    void completeStartIfReady();
+    void beginStartPrepare(const BoundedHttpClient::Result& result);
     void freezeRoster(const char* why);
     bool isFrozenMember(std::uint32_t peerId) const;
     bool chargeIngress(Link& link, std::size_t bytes, std::uint32_t nowMs);
@@ -306,6 +312,16 @@ private:
         themselves, so losing the service is only a diagnostic.
     */
     bool           matchStarted_    = false;
+    enum class StartStage { Idle, ClosingRoster, Preparing, Committed };
+    StartStage startStage_ = StartStage::Idle;
+    std::string startId_, startRoster_;
+    std::vector<std::uint8_t> startPayload_;
+    std::vector<std::uint32_t> startAcks_;
+    std::uint32_t startDeadline_ = 0;
+    unsigned int startDelay_ = 3000;
+    unsigned int sessionRetries_ = 0;
+    bool startCallbackAccepted_ = false;
+    bool leaveQueued_ = false;
     std::vector<std::uint32_t> frozenRoster_;
     /// The phase the host still owes the service, and when it stopped being worth retrying.
     bool           phaseUpdatePending_ = false;

@@ -15,10 +15,8 @@ declare(strict_types=1);
  * than replaced: same kinds, same id shapes, same fixed reason codes, plus `transport:
  * "direct-p2p"` and the additive `runtime_claimed` / `peers_admitted` fields, at schema_version 3.
  *
- * NOT IMPLEMENTED HERE, ON PURPOSE: delivery to the metaserver analytics API. That integration is
- * an outbound HTTPS request, and this service is specified to make no outbound request at all.
- * Events are appended to a bounded local JSONL file in the private state directory, and a
- * separate, out-of-band shipper (Codex) can read them. See README.md "Analytics".
+ * A trusted local deployment hook may also write these bounded records through the existing
+ * metaserver SQLite helper. No outbound request or client-selected code path is involved.
  */
 final class Analytics
 {
@@ -48,7 +46,8 @@ final class Analytics
             'transport'      => 'direct-p2p',
             'occurred_at'    => (int)floor($this->store->now() / 1000),
             'room_log_id'    => self::token($fields['room_log_id'] ?? null),
-            'participant_id' => self::token($fields['participant_id'] ?? null),
+            'participant_id' => is_int($fields['participant_id'] ?? null)
+                && $fields['participant_id'] > 0 && $fields['participant_id'] <= 65535 ? $fields['participant_id'] : null,
             'game_version'   => self::version($fields['game_version'] ?? null),
             'peers_admitted' => self::count($fields['peers_admitted'] ?? null),
             'runtime_claimed' => in_array($fields['runtime_claimed'] ?? null, ['browser', 'native'], true)
@@ -60,7 +59,14 @@ final class Analytics
         if ($line === false || strlen($line) > 1024) {
             return;     // a malformed event is a bug here, not a reason to interrupt a game
         }
-        $this->store->append('analytics.jsonl', $line, Limits::ANALYTICS_MAX_BYTES);
+        try { $this->store->append('analytics.jsonl', $line, Limits::ANALYTICS_MAX_BYTES); }
+        catch (Throwable) { /* analytics cannot veto a committed admission */ }
+        // Optional trusted deployment hook writes to the existing local metaserver SQLite helper.
+        // No outbound request or client-controlled library path is introduced.
+        if (function_exists('dunecityP2PRecordEvent')) {
+            try { dunecityP2PRecordEvent($event); }
+            catch (Throwable) { error_log('P2P lifecycle storage unavailable'); }
+        }
     }
 
     private static function token(mixed $value): ?string

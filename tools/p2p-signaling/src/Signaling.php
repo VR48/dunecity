@@ -163,7 +163,7 @@ final class Signaling
      *
      * @return array{peer:int,session:string,role:string,phase:string,maxPeers:int}
      */
-    public function redeemAndSeat(string $grant, array $claims, string $name, string $runtime): array
+    public function redeemAndSeat(string $grant, array $claims, string $name, string $runtime, string $nonce = ""): array
     {
         $roomId = self::roomIdFromToken($grant, 'That invitation is not valid.');
         $now    = $this->store->now();
@@ -171,7 +171,7 @@ final class Signaling
         $token  = $roomId . $secret;
 
         $result = $this->store->withLock(self::file($roomId), function (array $state) use (
-            $grant, $claims, $name, $runtime, $now, $token
+            $grant, $claims, $name, $runtime, $nonce, $now, $token
         ): array {
             if ($state === []) {
                 return [null, ['error' => 'unauthorized']];
@@ -180,6 +180,13 @@ final class Signaling
             $state = self::expire($state, $now);
 
             $hash = hash('sha256', $grant);
+            $recovery = $state['redemptions'][$hash] ?? null;
+            if ($nonce !== '' && is_array($recovery) && $recovery['nonce'] === $nonce
+                && $recovery['name'] === $name && $recovery['claims'] === $claims
+                && isset($state['peers'][(string)$recovery['result']['peer']])
+                && !($state['closed'] ?? false) && $state['phase'] === 'lobby') {
+                return [$state, array_merge($recovery['result'], ['recovered' => true])];
+            }
             $record = null;
             foreach (($state['grants'] ?? []) as $key => $candidate) {
                 if (hash_equals((string)$key, $hash)) {
@@ -250,6 +257,7 @@ final class Signaling
                 'role'     => $role,
                 'name'     => $name,
                 'runtime'  => $runtime,
+                'gameVersion' => (string)$claims['appVersion'],
                 'token'    => hash('sha256', $token),
                 'joinedAt' => $now,
                 'lastSeen' => $now,
@@ -260,7 +268,7 @@ final class Signaling
                 $state['hostName']   = $name;
             }
             $state['lastSeen'] = $now;
-            return [$state, [
+            $answer = [
                 'peer'        => $peerId,
                 'session'     => $token,
                 'role'        => $role,
@@ -271,7 +279,14 @@ final class Signaling
                 'hostName'    => (string)$state['hostName'],
                 'peers'       => count($state['peers']),
                 'outstanding' => count($state['grants']),
-            ]];
+            ];
+            if ($nonce !== '') {
+                // Short-lived response recovery. Reusing a nonce never creates a second seat.
+                $state['redemptions'][$hash] = ['nonce'=>$nonce, 'name'=>$name, 'claims'=>$claims,
+                    'expiresAt'=>$now+45000, 'result'=>$answer];
+                while (count($state['redemptions']) > Limits::MAX_PEERS_PER_ROOM) array_shift($state['redemptions']);
+            }
+            return [$state, $answer];
         });
         self::refuse($result);
         return $result;
@@ -345,6 +360,9 @@ final class Signaling
 
     private static function expireGrants(array $state, int $now): array
     {
+        foreach (($state['redemptions'] ?? []) as $key => $record) {
+            if ((int)($record['expiresAt'] ?? 0) <= $now) unset($state['redemptions'][$key]);
+        }
         foreach (($state['grants'] ?? []) as $key => $record) {
             if (!is_array($record) || (int)($record['expiresAt'] ?? 0) <= $now) {
                 unset($state['grants'][$key]);
@@ -506,6 +524,7 @@ final class Signaling
             }
             $newCursor = $sent === [] ? $highest : max($sent);
             $lines[] = ['cursor', (string)$newCursor];
+            if ($state['closed'] ?? false) $lines[] = ['closed', '1000'];
 
             return [$state, [
                 'phase'   => (string)$state['phase'],
@@ -669,11 +688,11 @@ final class Signaling
      * fingerprint is fixed for the room's whole life, which is stricter than per-epoch and means
      * a phase change can never be used to launder a new certificate onto an existing link.
      */
-    public function setPhase(string $token, string $phase): array
+    public function setPhase(string $token, string $phase, string $roster = ""): array
     {
         $roomId = self::roomIdFromSession($token);
         $now = $this->store->now();
-        return $this->store->withLock(self::file($roomId), function (array $state) use ($token, $phase, $now): array {
+        return $this->store->withLock(self::file($roomId), function (array $state) use ($token, $phase, $roster, $now): array {
             if ($state === []) {
                 throw new ServiceError(404, 'room_not_found', 'That room is no longer open.');
             }
@@ -684,6 +703,15 @@ final class Signaling
             }
             $state['peers'][(string)$who['peerId']]['lastSeen'] = $now;
             $state['lastSeen'] = $now;
+            if ($phase === 'match') {
+                $ids = array_map('intval', array_keys($state['peers'])); sort($ids, SORT_NUMERIC);
+                if ($roster !== implode(',', $ids)) {
+                    throw new ServiceError(409, 'roster_changed', 'The players changed. Check the lobby before starting.');
+                }
+                if ($state['phase'] !== 'match') $state['startId'] = Store::randomHex(16);
+                $state['grants'] = [];
+                $state['redemptions'] = [];
+            }
             if ((string)$state['phase'] !== $phase) {
                 $state['phase'] = $phase;
                 $state['epoch'] = (int)$state['epoch'] + 1;
@@ -696,6 +724,8 @@ final class Signaling
             }
             return [$state, ['phase' => (string)$state['phase'], 'epoch' => (int)$state['epoch'],
                              'everStarted' => (bool)$state['everStarted'],
+                             'startId' => $state['startId'] ?? '', 'roster' => $roster,
+                             'logId' => $state['logId'],
                              'peers' => count($state['peers'])]];
         });
     }
@@ -718,6 +748,8 @@ final class Signaling
             $state['lastSeen'] = $now;
             return [$state, [
                 'closed' => $state['closed'],
+                'participant_id' => $peerId, 'runtime' => $who['peer']['runtime'],
+                'game_version' => $who['peer']['gameVersion'] ?? '',
                 'peers'  => count($state['peers']),
                 'logId'  => (string)$state['logId'],
             ]];
@@ -758,6 +790,12 @@ final class Signaling
                     $state = self::removePeer($state, (int)$peerId, $now);
                 }
             }
+        }
+        // Lobby authority ends with its host. Match liveness belongs to the frozen P2P mesh.
+        if ($state['phase'] === 'lobby' && (int)$state['hostPeerId'] !== 0
+            && !isset($state['peers'][(string)$state['hostPeerId']])) {
+            $state['closed'] = true;
+            $state['grants'] = [];
         }
         $state['gone'] = array_values(array_filter($state['gone'] ?? [],
             static fn(array $g) => $now - (int)$g['at'] <= Limits::SIGNAL_TTL_MS));

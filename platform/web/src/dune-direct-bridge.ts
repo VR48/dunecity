@@ -257,10 +257,7 @@ const bridge = {
       return false
     }
     if (typeof value !== "string") return false
-    void connection.transport.send(value).catch((error: unknown) => {
-      fail(connection, error instanceof Error ? error.message : "send failed")
-    })
-    return true
+    return connection.transport.trySend(value)
   },
 
   /** Takes one received envelope as JSON text, or null. */

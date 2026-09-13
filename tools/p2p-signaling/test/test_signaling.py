@@ -586,7 +586,9 @@ class SignalingTestCase(unittest.TestCase):
                                     headers={"X-Dune-Session": token})
 
     def phase(self, token, phase):
-        return self.service.request("POST", "/v1/p2p/phase", {"phase": phase},
+        state = json.loads((Path(self.service.state)/"rooms"/(token[:8]+".json")).read_text())
+        roster = ",".join(str(i) for i in sorted(map(int,state['peers'])))
+        return self.service.request("POST", "/v1/p2p/phase", {"phase": phase, "roster": roster},
                                     headers={"X-Dune-Session": token})
 
     def seat(self, name="Host", **kw):
@@ -810,6 +812,49 @@ class GrantTests(SignalingTestCase):
 
 
 class AtomicAdmissionTests(SignalingTestCase):
+    def test_derived_cache_failure_does_not_hide_a_committed_session(self):
+        admission, host=self.seat('Host');grant=self.join(admission.fields['room']).fields['grant']
+        index=Path(self.service.state)/'index.json';original=index.read_bytes()
+        index.write_text('{corrupt-cache')
+        try:
+            answer=self.session(grant,'Guest');self.assertEqual(200,answer.status)
+            self.assertEqual(200,self.poll(answer.fields['session']).status)
+        finally:index.write_bytes(original)
+
+
+    def test_start_compares_authoritative_roster_and_revokes_outstanding_grants(self):
+        admission, host = self.seat("Host")
+        stale_roster = host.fields['peer']
+        guest = self.seat_guest(admission)
+        outstanding = self.join(admission.fields['room'])
+        refused = self.service.request('POST','/v1/p2p/phase',
+            {'phase':'match','roster':stale_roster}, headers={'X-Dune-Session':host.fields['session']})
+        self.assertEqual(409,refused.status)
+        started=self.phase(host.fields['session'],'match')
+        self.assertEqual(200,started.status)
+        self.assertEqual(32,len(started.fields['startId']))
+        self.assertEqual(started.fields['startId'],self.phase(host.fields['session'],'match').fields['startId'])
+        self.assertNotEqual(200,self.session(outstanding.fields['grant'],'Late').status)
+
+    def test_session_nonce_recovers_committed_response_without_an_extra_seat(self):
+        admission, host=self.seat('Host')
+        grant=self.join(admission.fields['room']).fields['grant']
+        form=dict(claims(),grant=grant,name='Guest'.encode().hex(),nonce='a'*32)
+        first=self.service.request('POST','/v1/p2p/session',form)
+        retry=self.service.request('POST','/v1/p2p/session',form)
+        self.assertEqual(200,first.status);self.assertEqual(first.fields['session'],retry.fields['session'])
+        self.assertEqual(2,len(json.loads(Path(self.room_path(admission)).read_text())['peers']))
+        wrong=self.service.request('POST','/v1/p2p/session',dict(form,nonce='b'*32))
+        self.assertEqual(401,wrong.status)
+
+    def test_expired_host_closes_lobby_even_when_guest_is_still_polling(self):
+        admission, host=self.seat('Host',visibility='public')
+        guest=self.seat_guest(admission)
+        path=Path(self.room_path(admission));state=json.loads(path.read_text())
+        state['peers'][host.fields['peer']]['lastSeen']-=3600000;path.write_text(json.dumps(state))
+        polled=self.poll(guest.fields['session']);self.assertEqual('1000',polled.fields['closed'])
+        self.assertEqual(404,self.join(admission.fields['room']).status)
+
     def room_path(self, admission):
         return os.path.join(self.service.state, "rooms", admission.fields["grant"][:8] + ".json")
 
@@ -870,7 +915,7 @@ class AtomicAdmissionTests(SignalingTestCase):
                 for peer in room["peers"].values(): peer["lastSeen"] -= 3600000
                 path.write_text(json.dumps(room))
                 answer = self.service.request("POST", "/v1/p2p/" + operation,
-                    {"phase": "match"} if operation == "phase" else {"bye": "1"},
+                    {"phase": "match", "roster": "1"} if operation == "phase" else {"bye": "1"},
                     headers={"X-Dune-Session": host.fields["session"]})
                 self.assertEqual(403, answer.status)
                 polled = self.poll(host.fields["session"])

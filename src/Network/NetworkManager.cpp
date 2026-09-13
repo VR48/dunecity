@@ -140,7 +140,7 @@ void NetworkManager::installSessionBridges() {
         // The packet router has already verified that STARTGAME came from the host.
         // Freeze now, before the countdown allows a membership change to alter this match.
         if(auto* direct = getDirectTransport()) {
-            if(!direct->prepareMatchStart()) return;
+            if(!direct->acceptStartCallback()) return;
         }
         if(pOnStartGame) pOnStartGame(timeLeft);
     };
@@ -1148,6 +1148,9 @@ void NetworkManager::updateRelaySession() {
                 }
             } break;
 
+            case RoomSessionTransport::Event::Type::MatchStart:
+                if(pOnStartGameBridge) pOnStartGameBridge(event.code);
+                break;
             case RoomSessionTransport::Event::Type::GamePayload: {
                 handleRelayGamePayload(event.peerId, event.payload.data(), event.payload.size());
             } break;
@@ -2160,7 +2163,7 @@ bool NetworkManager::sendStartGame(unsigned int timeLeft) {
         if(auto* direct = getDirectTransport()) {
             ENetPacket* packet = packetStream.getPacket();
             if(!packet) return false;
-            const bool started = direct->sendMatchStart(packet->data, packet->dataLength);
+            const bool started = direct->sendMatchStart(packet->data, packet->dataLength, timeLeft);
             enet_packet_destroy(packet);
             return started;
         }

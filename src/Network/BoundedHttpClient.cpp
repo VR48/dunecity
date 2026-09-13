@@ -40,6 +40,9 @@
 #include <emscripten/emscripten.h>
 #else
 #include <curl/curl.h>
+#include <atomic>
+#include <chrono>
+#include <thread>
 #include <misc/FileSystem.h>
 #include <filesystem>
 #include <system_error>
@@ -189,6 +192,16 @@ EM_JS(int, duneSignalStart, (const char* urlPtr, const char* tokenPtr, const cha
     });
 
     return handle;
+});
+
+EM_JS(int, duneSignalDetachedCount, (), {
+    var registry = globalThis.__duneP2PSignal;
+    return registry ? Object.values(registry.requests).filter(function(e) { return e.abandoned; }).length : 0;
+});
+EM_JS(void, duneSignalDetach, (int handle), {
+    var registry = globalThis.__duneP2PSignal;
+    var entry = registry && registry.requests[handle];
+    if (entry) { entry.abandoned = 1; if (entry.done) delete registry.requests[handle]; }
 });
 
 EM_JS(int, duneSignalState, (int handle), {
@@ -553,5 +566,32 @@ std::unique_ptr<BoundedHttpClient> createBoundedHttpClient() {
     return std::make_unique<FetchHttpClient>();
 #else
     return std::make_unique<CurlHttpClient>();
+#endif
+}
+
+void sendBestEffortHttpRequest(BoundedHttpClient::Request request) {
+    if(request.body.size() > 1024 || request.url.size() > 256 || request.sessionToken.size() != 64) return;
+    request.timeoutSeconds=2; request.maxResponseBytes=1024;
+#ifdef __EMSCRIPTEN__
+    if(duneSignalDetachedCount() >= 4) return;
+    const int handle=duneSignalStart(request.url.c_str(),request.sessionToken.c_str(),
+        request.body.c_str(),static_cast<int>(request.body.size()),2000,1024);
+    duneSignalDetach(handle); // same bounded Fetch; it owns cleanup after this object is gone
+#else
+    static std::atomic<unsigned> active{0};
+    if(active.fetch_add(1) >= 4) { --active; return; }
+    try {
+        std::thread([request=std::move(request)] {
+            try {
+                auto http=createBoundedHttpClient(); http->begin(request);
+                const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(2);
+                while(http->busy() && std::chrono::steady_clock::now()<deadline) {
+                    http->update(); std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                }
+                http->cancel();
+            } catch(...) { /* cleanup cannot prevent exiting a game */ }
+            --active;
+        }).detach();
+    } catch(...) { --active; }
 #endif
 }

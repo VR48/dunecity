@@ -98,4 +98,7 @@ public:
 /// The platform's bounded HTTP client: libcurl natively, Fetch in the browser.
 std::unique_ptr<BoundedHttpClient> createBoundedHttpClient();
 
+/// At most four short cleanup requests may outlive their owner; failures are discarded.
+void sendBestEffortHttpRequest(BoundedHttpClient::Request request);
+
 #endif // BOUNDEDHTTPCLIENT_H

@@ -78,7 +78,9 @@ export class RTCTransport<T = unknown> implements Transport<T> {
   private signalChain = Promise.resolve()
   private signalCount = 0
   private candidateCount = 0
-  private sendChain = Promise.resolve()
+  private sendQueue: Array<{ packets: string[]; next: number; bytes: number; deadline: number;
+    resolve: () => void; reject: (error: Error) => void }> = []
+  private sendTimer?: ReturnType<typeof setTimeout>
   private outgoingBytes = 0
   private outgoingCount = 0
   private closed = false
@@ -134,37 +136,64 @@ export class RTCTransport<T = unknown> implements Transport<T> {
   get bufferedAmount(): number { return this.outgoingBytes + (this.channel?.bufferedAmount ?? 0) }
   on<E extends keyof TransportEvents<T>>(event: E, handler: TransportEvents<T>[E]): void { this.emitter.on(event, handler) }
 
-  async send(value: T): Promise<void> {
-    if (this.closed || !this.opened) throw new Error('Direct connection is not open')
-    const data = JSON.stringify(value)
-    if (typeof data !== 'string' || data.length > CHUNK_LIMITS.messageBytes) throw new Error('Message too large')
-    const bytes = new TextEncoder().encode(data).length
-    if (bytes > CHUNK_LIMITS.messageBytes || bytes > MAX_OUTGOING - this.outgoingBytes || this.outgoingCount >= 128) {
-      this.fail('Direct connection send queue is full')
-      throw new Error('Direct connection send queue is full')
-    }
-    this.outgoingBytes += bytes
-    this.outgoingCount++
-    const result = this.sendChain.then(async () => {
-      const deadline = performance.now() + SEND_TIMEOUT
-      for (const packet of this.chunker.split(randomId(8), data)) {
-        const channel = this.channel
-        while (!this.closed && channel?.readyState === 'open' && channel.bufferedAmount > MAX_BUFFER) {
-          if (performance.now() > deadline) throw new Error('Direct connection stalled')
-          await new Promise(resolve => setTimeout(resolve, 10))
-        }
-        if (this.closed || channel?.readyState !== 'open') throw new Error('Direct connection closed')
-        channel.send(packet)
+  send(value: T): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (!this.enqueue(value, resolve, reject)) reject(new Error('Direct send was refused'))
+    })
+  }
+
+  /** True means accepted by this bounded queue, never a promise masquerading as success. */
+  trySend(value: T): boolean { return this.enqueue(value, () => {}, () => {}) }
+
+  private enqueue(value: T, resolve: () => void, reject: (error: Error) => void): boolean {
+    if (this.closed || !this.opened || this.channel?.readyState !== 'open') return false
+    try {
+      const data = JSON.stringify(value)
+      if (typeof data !== 'string' || data.length > CHUNK_LIMITS.messageBytes) return false
+      const bytes = new TextEncoder().encode(data).length
+      if (bytes > CHUNK_LIMITS.messageBytes || bytes > MAX_OUTGOING - this.outgoingBytes || this.outgoingCount >= 128) {
+        this.fail('Direct connection send queue is full')
+        return false
       }
-    }).finally(() => { this.outgoingBytes -= bytes; this.outgoingCount-- })
-    this.sendChain = result.catch(() => this.fail('Direct connection could not deliver a message'))
-    return result
+      this.sendQueue.push({packets: [...this.chunker.split(randomId(8), data)], next: 0, bytes,
+        deadline: performance.now() + SEND_TIMEOUT, resolve, reject})
+      this.outgoingBytes += bytes
+      this.outgoingCount++
+      this.drainSends()
+      return !this.closed
+    } catch { this.fail('Direct connection could not deliver a message'); return false }
+  }
+
+  private drainSends(): void {
+    if (this.sendTimer !== undefined) { clearTimeout(this.sendTimer); this.sendTimer = undefined }
+    try {
+      while (!this.closed && this.sendQueue.length) {
+        const job = this.sendQueue[0], channel = this.channel
+        if (channel?.readyState !== 'open') throw new Error('Direct channel closed')
+        if (performance.now() > job.deadline) throw new Error('Direct channel stalled')
+        while (job.next < job.packets.length) {
+          if (channel.bufferedAmount > MAX_BUFFER) {
+            this.sendTimer = setTimeout(() => this.drainSends(), 10)
+            return
+          }
+          channel.send(job.packets[job.next++])
+        }
+        this.sendQueue.shift()
+        this.outgoingBytes -= job.bytes
+        this.outgoingCount--
+        job.resolve()
+      }
+    } catch { this.fail('Direct connection could not deliver a message') }
   }
 
   disconnect(): void {
     if (this.closed) return
     this.closed = true
     clearInterval(this.timer)
+    if (this.sendTimer !== undefined) clearTimeout(this.sendTimer)
+    for (const job of this.sendQueue.splice(0)) job.reject(new Error('Direct connection closed'))
+    this.outgoingBytes = 0
+    this.outgoingCount = 0
     this.unsubscribe?.()
     this.pendingCandidates.length = 0
     this.chunker.reset()

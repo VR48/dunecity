@@ -84,7 +84,7 @@ final class Lobby
                     'name' => $name, 'key' => $key, 'channel' => $channel, 'address' => $address,
                     'deadline' => $now + Limits::LOBBY_SESSION_LIFETIME_MS,
                     'expiresAt' => $now + Limits::LOBBY_SESSION_TTL_MS,
-                    'sends' => [], 
+                    'sends' => [],
                 ];
                 return [$state, [['session', $token],
                                  ['cursor', (string)$state['channels'][$channel]['sequence']]]];

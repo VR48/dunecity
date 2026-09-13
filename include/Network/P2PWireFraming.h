@@ -89,6 +89,7 @@ enum class EnvelopeKind : std::uint8_t {
         connected to, and the match only starts when every peer agrees and is fully connected.
     */
     Readiness,
+    Start,      ///< prepare/ack/commit of one identified match start
     Ping,       ///< liveness probe; the reply measures the direct path, not a server's
     Pong
 };
@@ -97,6 +98,8 @@ struct Envelope {
     EnvelopeKind              kind           = EnvelopeKind::Game;
     /// Readiness only: the sender's roster, as sorted decimal peer ids joined by commas.
     std::string               rosterKey;
+    std::string               startId;
+    char                      startStage = 0;
     /// Readiness only: the peers the sender currently has an open direct channel to.
     std::vector<std::uint32_t> connectedPeers;
     /// Ping and pong only: echoed back unchanged, so a reply can be matched to its probe.
@@ -369,6 +372,13 @@ inline std::string encodeReadinessEnvelope(const std::string& rosterKey,
     return encodeJsonString(body);
 }
 
+inline std::string encodeStartEnvelope(char stage, const std::string& id,
+                                        const std::string& roster,
+                                        const std::vector<std::uint8_t>& payload = {}) {
+    return encodeJsonString(std::string("s:") + stage + ":" + id + ":" + roster + ":"
+                            + encodeHex(payload.data(), payload.size()));
+}
+
 /// Builds a ping or a pong. The token is echoed so a reply can be matched to its probe.
 inline std::string encodeProbeEnvelope(bool pong, std::uint32_t token) {
     std::string body = pong ? "q:" : "p:";
@@ -431,6 +441,7 @@ inline bool decodeEnvelope(const std::string& valueText, Envelope& out, const ch
     // encoding did not already rule that out.
     std::size_t wanted = 0;
     switch(kind) {
+        case 's': wanted = 5; break;
         case 'g': wanted = 4; break;
         case 'd': wanted = 3; break;
         case 'r': wanted = 3; break;
@@ -457,6 +468,25 @@ inline bool decodeEnvelope(const std::string& valueText, Envelope& out, const ch
 
     out = Envelope();
     switch(kind) {
+        case 's': {
+            std::vector<std::uint32_t> ids;
+            if((fields[1] != "p" && fields[1] != "a" && fields[1] != "c")
+               || fields[2].size() != 32 || fields[3].empty() || fields[3].size() > 128
+               || !parsePeerIdList(fields[3], ids)
+               || !decodeHex(fields[4], 64, out.payload)) {
+                reason = "invalid match-start envelope"; return false;
+            }
+            for(char c : fields[2]) if(!isHexDigit(c)) { reason = "invalid start id"; return false; }
+            for(std::size_t i=1; i<ids.size(); ++i) if(ids[i] <= ids[i-1]) {
+                reason = "invalid start roster"; return false;
+            }
+            if((fields[1] == "c") != !out.payload.empty()) {
+                reason = "invalid start payload"; return false;
+            }
+            out.kind = EnvelopeKind::Start;
+            out.startStage = fields[1][0]; out.startId = fields[2]; out.rosterKey = fields[3];
+            return true;
+        }
         case 'g': {
             std::uint64_t channel = 0;
             std::uint64_t recipient = 0;

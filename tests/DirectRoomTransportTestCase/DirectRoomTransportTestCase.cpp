@@ -68,6 +68,7 @@ public:
     std::deque<Result>    answers;
     /// When set, every further request simply never answers, as if the service had gone away.
     bool silent = false;
+    std::string phaseAnswer;
 
     void begin(const Request& request) override {
         requests.push_back(Exchange{request.url, request.body, request.sessionToken});
@@ -109,6 +110,12 @@ public:
                 // changes nothing.
                 out = ok("status=ok\ncursor=0\n");
             }
+        } else if(pendingUrl_.find("/v1/p2p/phase") != std::string::npos) {
+            auto body=requests.back().body;
+            auto pos=body.find("&roster=");
+            auto roster=pos==std::string::npos ? "" : body.substr(pos+8);
+            for(auto p=roster.find("%2C");p!=std::string::npos;p=roster.find("%2C")) roster.replace(p,3,",");
+            out=ok(phaseAnswer.empty() ? "status=ok\nphase=match\nstartId="+std::string(32,'a')+"\nroster="+roster+"\n" : phaseAnswer);
         } else {
             out = ok("status=ok\n");
         }
@@ -241,6 +248,7 @@ struct Harness {
 
     Harness() {
         DirectRoomTransport::Dependencies dependencies;
+        dependencies.leaveSender=[](BoundedHttpClient::Request) {};
         dependencies.httpFactory = [this]() {
             auto owned = std::make_unique<ScriptedService>();
             service = owned.get();
@@ -355,6 +363,8 @@ std::unique_ptr<DirectPeerConnection> createDirectPeerConnection(
     error = "no backend in tests";
     return nullptr;
 }
+
+void sendBestEffortHttpRequest(BoundedHttpClient::Request) {}
 
 std::unique_ptr<BoundedHttpClient> createBoundedHttpClient() {
     return nullptr;
@@ -938,7 +948,7 @@ TEST_CASE("The host tells the service the match started, even while busy", "[dir
 
     const ScriptedService::Exchange* phase = harness.service->lastRequestTo("/v1/p2p/phase");
     REQUIRE(phase != nullptr);
-    REQUIRE(phase->body == "phase=match");
+    REQUIRE(phase->body == "phase=match&roster=1%2C2");
     REQUIRE(phase->sessionToken == std::string(64, 'c'));
 }
 
@@ -1070,7 +1080,8 @@ TEST_CASE("The game-start send fails the whole match when the last channel refus
     REQUIRE(h.transport->meshReady());
     h.channels[1]->refuseSends=true;
     const std::uint8_t start[]={0,0,0,5,0,0,11,184};
-    REQUIRE_FALSE(h.transport->sendMatchStart(start,sizeof(start)));
+    REQUIRE(h.transport->sendMatchStart(start,sizeof(start)));
+    h.pump(8,10);
     REQUIRE(h.transport->status()==RoomSessionTransport::Status::Closed);
     REQUIRE(h.channels[0]->current==DirectPeerConnection::State::Closed);
     REQUIRE(h.channels[1]->current==DirectPeerConnection::State::Closed);
@@ -1086,4 +1097,87 @@ TEST_CASE("A connection created during a frame does not time out from unsigned u
     REQUIRE(h.transport->isJoined());
     h.pump(1,60000);
     REQUIRE(h.channels[0]->current==DirectPeerConnection::State::Closed);
+}
+
+namespace {
+void readyTwoGuests(Harness& h) {
+    h.join();
+    h.deliverPoll("status=ok\nphase=lobby\n" + peerRecord(2,"client","Ada","browser")
+        +peerRecord(3,"client","Bo","native")+fingerprintRecord(2,kFingerprintA)
+        +fingerprintRecord(3,kFingerprintB)+"cursor=0\n");
+    for(auto& c:h.channels) c->current=DirectPeerConnection::State::Connected;
+    h.pump();
+    h.channels[0]->deliver(P2PWire::encodeReadinessEnvelope("1,2,3",{1,3}));
+    h.channels[1]->deliver(P2PWire::encodeReadinessEnvelope("1,2,3",{1,2}));
+    h.pump(); REQUIRE(h.transport->meshReady());
+}
+unsigned startEvents(Harness& h) {
+    RoomSessionTransport::Event e; unsigned count=0;
+    while(h.transport->pollEvent(e)) if(e.type==RoomSessionTransport::Event::Type::MatchStart) ++count;
+    return count;
+}
+}
+TEST_CASE("A host countdown waits for the service and every frozen peer", "[direct][start]") {
+    Harness h;readyTwoGuests(h);
+    const std::uint8_t packet[]={8,0,0,0,184,11,0,0};
+    REQUIRE(h.transport->sendMatchStart(packet,sizeof(packet)));
+    REQUIRE(startEvents(h)==0);
+    REQUIRE_FALSE(h.transport->acceptStartCallback());
+    h.pump(8,10);
+    REQUIRE(startEvents(h)==0);
+    const auto ack=P2PWire::encodeStartEnvelope('a',std::string(32,'a'),"1,2,3");
+    h.channels[0]->deliver(ack);h.pump();REQUIRE(startEvents(h)==0);
+    h.channels[0]->deliver(ack);h.pump();REQUIRE(startEvents(h)==0);
+    h.channels[1]->deliver(ack);h.pump();REQUIRE(startEvents(h)==1);
+    REQUIRE(h.transport->acceptStartCallback());REQUIRE_FALSE(h.transport->acceptStartCallback());
+    h.channels[1]->deliver(ack);h.pump();REQUIRE(startEvents(h)==0);
+}
+TEST_CASE("An authoritative roster mismatch never sends prepare or starts a countdown", "[direct][start]") {
+    Harness h;readyTwoGuests(h);
+    h.service->phaseAnswer="status=ok\nphase=match\nstartId="+std::string(32,'a')+"\nroster=1,2,3,4\n";
+    const std::uint8_t packet[]={8,0,0,0,184,11,0,0};
+    REQUIRE(h.transport->sendMatchStart(packet,sizeof(packet)));h.pump(8,10);
+    REQUIRE(h.transport->status()==RoomSessionTransport::Status::Closed);
+    REQUIRE(startEvents(h)==0);
+    for(const auto& c:h.channels)for(const auto& value:c->sent) {
+        P2PWire::Envelope e;const char* why=nullptr;REQUIRE(P2PWire::decodeEnvelope(value,e,why));
+        REQUIRE(e.kind!=P2PWire::EnvelopeKind::Start);
+    }
+}
+TEST_CASE("A missing start acknowledgement ends the room without starting", "[direct][start]") {
+    Harness h;readyTwoGuests(h);const std::uint8_t packet[]={8,0,0,0,184,11,0,0};
+    REQUIRE(h.transport->sendMatchStart(packet,sizeof(packet)));h.pump(8,10);
+    h.pump(1,31000);
+    REQUIRE(h.transport->status()==RoomSessionTransport::Status::Closed);REQUIRE(startEvents(h)==0);
+}
+TEST_CASE("A failed final commit closes all peers and never starts the host", "[direct][start]") {
+    Harness h;readyTwoGuests(h);const std::uint8_t packet[]={8,0,0,0,184,11,0,0};
+    REQUIRE(h.transport->sendMatchStart(packet,sizeof(packet)));h.pump(8,10);
+    const auto ack=P2PWire::encodeStartEnvelope('a',std::string(32,'a'),"1,2,3");
+    for(auto& c:h.channels)c->deliver(ack);
+    h.channels[1]->refuseSends=true;h.pump();
+    REQUIRE(h.transport->status()==RoomSessionTransport::Status::Closed);
+    REQUIRE(startEvents(h)==0);
+    for(const auto& c:h.channels) REQUIRE(c->current==DirectPeerConnection::State::Closed);
+}
+TEST_CASE("A guest accepts exactly one committed start after matching preparation", "[direct][start]") {
+    Harness h;std::string error;REQUIRE(h.transport->start(h.config(),error));
+    h.service->answers.push_back(ScriptedService::ok("status=ok\nprotocol=1\npeer=1\nsession="+std::string(64,'c')
+        +"\nrole=client\nmaxPeers=4\nphase=lobby\n"));h.pump();
+    h.deliverPoll("status=ok\nphase=lobby\n"+peerRecord(2,"host","Ada","browser")+fingerprintRecord(2,kFingerprintA)+"cursor=0\n");
+    auto c=h.channels[0];c->current=DirectPeerConnection::State::Connected;h.pump();
+    c->deliver(P2PWire::encodeReadinessEnvelope("1,2",{1}));h.pump();
+    REQUIRE_FALSE(h.transport->acceptStartCallback());
+    const auto id=std::string(32,'a');
+    c->deliver(P2PWire::encodeStartEnvelope('p',id,"1,2"));h.pump();
+    REQUIRE_FALSE(h.transport->acceptStartCallback());
+    const std::vector<std::uint8_t> packet={8,0,0,0,184,11,0,0};
+    c->deliver(P2PWire::encodeStartEnvelope('c',id,"1,2",packet));h.pump();
+    REQUIRE(h.transport->acceptStartCallback());REQUIRE_FALSE(h.transport->acceptStartCallback());
+    RoomSessionTransport::Event e;unsigned delivered=0;
+    while(h.transport->pollEvent(e))if(e.type==RoomSessionTransport::Event::Type::GamePayload)++delivered;
+    REQUIRE(delivered==1);
+    c->deliver(P2PWire::encodeStartEnvelope('c',id,"1,2",packet));h.pump();
+    while(h.transport->pollEvent(e)) REQUIRE(e.type!=RoomSessionTransport::Event::Type::GamePayload);
+    REQUIRE_FALSE(h.transport->acceptStartCallback());
 }

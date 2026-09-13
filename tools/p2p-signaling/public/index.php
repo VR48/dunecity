@@ -43,8 +43,10 @@ const FIELD_RULES = [
     'publicOnly'   => '/^[01]$/D',
     'room'         => '/^[0-9A-Za-z-]{1,16}$/D',
     'grant'        => '/^[0-9a-f]{1,64}$/D',
+    'nonce'        => '/^[0-9a-f]{32}$/D',
     'kind'         => '/^(offer|answer|candidate)$/D',
     'phase'        => '/^(lobby|match)$/D',
+    'roster'       => '/^[1-9][0-9]{0,4}(,[1-9][0-9]{0,4}){0,15}$/D',
     'bye'          => '/^[01]$/D',
 ];
 
@@ -209,7 +211,7 @@ try {
         if ($path === '/v1/p2p/phase') {
             $phase = requireField($form, 'phase');
             $roomId = Signaling::roomIdFromSession($token);
-            $result = $signaling->setPhase($token, $phase);
+            $result = $signaling->setPhase($token, $phase, $phase === 'match' ? requireField($form, 'roster') : '');
             $rooms->touch($roomId, [
                 'phase' => $result['phase'], 'epoch' => $result['epoch'],
                 'everStarted' => $result['everStarted'],
@@ -221,13 +223,16 @@ try {
                 ]);
             }
             $http->send(200, [['status', 'ok'], ['protocol', (string)Limits::PROTOCOL_VERSION],
-                              ['phase', $result['phase']]], true);
+                              ['phase', $result['phase']], ['startId', $result['startId']],
+                              ['roster', $result['roster']]], true);
             return;
         }
         // /v1/p2p/leave
         $roomId = Signaling::roomIdFromSession($token);
         $result = $signaling->leave($token);
-        $analytics->record('left', ['room_log_id' => $result['logId'] ?? null, 'reason' => 'normal']);
+        $analytics->record('left', ['room_log_id' => $result['logId'] ?? null, 'reason' => 'normal',
+            'participant_id' => $result['participant_id'] ?? null, 'runtime_claimed' => $result['runtime'] ?? null,
+            'game_version' => $result['game_version'] ?? null]);
         if ($result['closed'] === true) {
             $analytics->record('closed', ['room_log_id' => $result['logId'] ?? null,
                                           'reason' => 'host_left']);
@@ -284,13 +289,14 @@ try {
         $name = requireHexName($form, 'name');
         // Grant consumption and seating commit together in the authoritative room file.
         $signaling = new Signaling($store, $config);
-        $result = $signaling->redeemAndSeat($grant, $claims, $name, $runtime);
+        $result = $signaling->redeemAndSeat($grant, $claims, $name, $runtime,
+            array_key_exists('nonce', $form) ? requireField($form, 'nonce') : '');
         $room = $result;
         $rooms->touch(Signaling::roomIdFromSession($result['session']), array_merge($result,
             $result['role'] === 'host' ? ['hostSeated' => true] : []));
-        $analytics->record('joined', [
+        if (!($result['recovered'] ?? false)) $analytics->record('joined', [
             'room_log_id'     => (string)$room['logId'],
-            'participant_id'  => Store::randomHex(12),
+            'participant_id'  => (int)$result['peer'],
             'game_version'    => $appVersion,
             'runtime_claimed' => $runtime,
         ]);

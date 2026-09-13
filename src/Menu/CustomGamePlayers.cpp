@@ -1284,8 +1284,8 @@ void CustomGamePlayers::checkAllClientsReady() {
             addInfoMessage("The match could not start because a player disconnected or was not ready.");
             return;
         }
-        startGameTime = SDL_GetTicks() + timeLeft;
-        
+        if(!pNetworkManager->isDirectSession()) startGameTime = SDL_GetTicks() + timeLeft;
+        else addInfoMessage("Confirming the final players before starting...");
         disableAllDropDownBoxes();
         
         // Send Discord presence with game details

@@ -60,3 +60,25 @@ test('closing a bridge cannot be undone by an asynchronous callback',async()=>{
  assert.equal(bridge.state(handle),4);assert.equal(pc.connectionState,'closed');
  assert.equal(bridge.pollValue(handle),null);assert.equal(bridge.pollSignal(handle),null);
 });
+
+test('a synchronous channel send failure returns false immediately', async()=>{
+ const {handle,pc}=create();
+ try { pc.channel.open(); await tick();
+  pc.channel.send=()=>{throw new Error('forced send failure')};
+  assert.equal(bridge.sendValue(handle,'"g:0:0:0102"'),false);
+  assert.equal(bridge.state(handle),3);
+ } finally {bridge.close(handle)}
+});
+test('queued messages preserve order and later failures close the bridge',async()=>{
+ const {handle,pc}=create();
+ try {pc.channel.open(); await tick();pc.channel.bufferedAmount=2<<20;
+  assert.equal(bridge.sendValue(handle,'"first"'),true);
+  assert.equal(bridge.sendValue(handle,'"second"'),true);
+  assert.equal(pc.channel.sent.length,0);
+  pc.channel.bufferedAmount=0;await new Promise(r=>setTimeout(r,30));
+  assert.deepEqual(pc.channel.sent.map(x=>JSON.parse(JSON.parse(x).part)),['first','second']);
+  pc.channel.bufferedAmount=2<<20;assert.equal(bridge.sendValue(handle,'"third"'),true);
+  pc.channel.send=()=>{throw new Error('late failure')};pc.channel.bufferedAmount=0;
+  await new Promise(r=>setTimeout(r,30));assert.equal(bridge.state(handle),3);
+ } finally {bridge.close(handle)}
+});

@@ -81,6 +81,7 @@ public:
             GamePayload,
             Diagnostic,
             PhaseChanged,
+            MatchStart,     ///< direct host barrier completed; begin the local countdown
             Refused,        ///< something we sent was refused; not fatal
             Closed          ///< the session ended
         };

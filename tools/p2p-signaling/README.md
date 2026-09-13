@@ -35,10 +35,10 @@ New, parsed by `P2PSignal::parse{Session,Poll}Response`:
 
 | Endpoint | Auth | Body | Answer |
 | --- | --- | --- | --- |
-| `POST /v1/p2p/session` | single-use `grant` | `app,appVersion,gameProtocol,contentHash,runtime,grant,name` | `peer`, `session` (64 hex), `role`, `maxPeers`, `phase`, `room`, `ice=` (STUN only, repeatable) |
+| `POST /v1/p2p/session` | single-use `grant` | `app,appVersion,gameProtocol,contentHash,runtime,grant,name,nonce` | `peer`, `session` (64 hex), `role`, `maxPeers`, `phase`, `room`, `ice=` (STUN only, repeatable) |
 | `POST /v1/p2p/poll` | `X-Dune-Session` | `cursor` | `phase`, `peer=<id>|<role>|<hex name>|<hex runtime>`, `gone=<id>`, `fp=<from>|<to>|sha-256|<value>`, `sig=<from>|<seq>|<kind>|<hex>`, `cursor` |
 | `POST /v1/p2p/signal` | `X-Dune-Session` | `to,kind=offer|answer|candidate,data=<hex>` | `status=ok` |
-| `POST /v1/p2p/phase` | `X-Dune-Session`, host only | `phase=lobby|match` | `status=ok`, `phase` |
+| `POST /v1/p2p/phase` | `X-Dune-Session`, host only | `phase=lobby|match,roster` (exact sorted roster required for match) | `status=ok`, `phase`, `startId`, `roster` |
 | `POST /v1/p2p/leave` | `X-Dune-Session` | `bye=1` | `status=ok` |
 
 A candidate's payload is `<sdpMid>|<candidate line>` — the media id both stacks need to place the
@@ -133,11 +133,11 @@ browser/native runtime classification is preserved as what it is — a client's 
 Nothing here may be described as an observed move, outcome, score or duration: this service never
 sees a game packet, because there is no endpoint that would take one.
 
-**Not implemented, on purpose:** delivery to the metaserver relay-analytics API. That integration
-is an outbound HTTPS request, and this service is specified to make none. The events are on disk
-in a stable shape for an out-of-band shipper to pick up. `relay_analytics` schema 2 also only
-admits `wss` and `https-poll` as transports, so an additive `direct-p2p` value has to land there
-before anything can be shipped. See NOTES-5.
+The production entrypoint provides a trusted local `dunecityP2PRecordEvent` hook which uses the
+existing metaserver PHP/Python SQLite writer. Schema 3 adds `direct-p2p` and labels its source
+`signaling_service_v1`; schema 1/2 rows retain their meanings. The private JSONL journal remains
+available if analytics storage fails. A storage failure never vetoes a committed admission.
+There is no outbound HTTP call and no gameplay data in this hook.
 
 ## Deployment
 
@@ -170,7 +170,7 @@ file, no port and no state directory with them, so games already in progress are
 PHP_BIN=/path/to/php8.3 python3 tools/p2p-signaling/test/test_signaling.py
 ```
 
-160 tests against a real PHP server over real HTTP, with `PHP_CLI_SERVER_WORKERS=4` so the
+164 tests against a real PHP server over real HTTP, with `PHP_CLI_SERVER_WORKERS=4` so the
 concurrency tests cross process boundaries the way Apache does — the tests that depend on that
 assert the server really forked, rather than quietly proving nothing on a single-process build.
 They cover hosting, public and private joining, grant replay and compatibility binding, names and

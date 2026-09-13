@@ -152,7 +152,7 @@ final class Rooms
     public function touch(string $roomId, array $fields): void
     {
         $now = $this->store->now();
-        $this->store->withLock('index.json', static function (array $state) use ($roomId, $fields, $now): array {
+        try { $this->store->withLock('index.json', static function (array $state) use ($roomId, $fields, $now): array {
             $room = $state['rooms'][$roomId] ?? null;
             if (!is_array($room)) {
                 return [null, null];
@@ -178,6 +178,7 @@ final class Rooms
             }
             return [$state, null];
         });
+        } catch (\Throwable $ignored) { /* derived cache; authoritative room remains committed */ }
     }
 
     // ------------------------------------------------------------------------------------
