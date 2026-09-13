@@ -138,7 +138,8 @@ def alive(pid):
         state = pathlib.Path('/proc/%d/stat' % pid).read_text().rsplit(')', 1)[1].split()[0]
         if state == 'Z':
             return False
-    except FileNotFoundError:
+    except (FileNotFoundError, ProcessLookupError):
+        # The process can exit between opening procfs and reading its stat file.
         return False
     try:
         os.kill(pid, 0)
