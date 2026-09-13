@@ -266,12 +266,14 @@ void CrossplayMenu::refreshControls() {
     chatSendButton.setEnabled(!chatSession.empty() && !chatPending);
     visibilityChoice.setEnabled(idle || (stage == Stage::HostReady
         && !visibilityPending && !grantedRoom.controlToken.empty()));
-    publicGameList.setEnabled(idle && !directoryPending);
+    // A background directory refresh must not steal selection/keyboard focus.
+    // Joining a cached listing is safe: admission validates that it is still open.
+    publicGameList.setEnabled(idle);
     refreshGamesButton.setEnabled(idle && !directoryPending);
     moreGamesButton.setEnabled(idle && !directoryPending && nextDirectoryPage > 0);
     const int selected = publicGameList.getSelectedIndex();
     joinPublicButton.setText(_("Join Game"));
-    joinPublicButton.setEnabled(idle && !directoryPending && selected >= 0
+    joinPublicButton.setEnabled(idle && selected >= 0
         && static_cast<std::size_t>(selected) < publicGames.size());
 
     // Once in a room as the host, the two host buttons become "what do you want to play".
