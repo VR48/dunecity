@@ -47,7 +47,7 @@ public:
     Point getMinimumSize() const override
     {
         if(pBackground != nullptr) {
-            return getTextureSize(pBackground);
+            return Point(120, getHeight(pBackground));
         } else {
             return Point(0,0);
         }

@@ -226,6 +226,7 @@ target_sources(dunecity
         Network/GamePayloadRouter.cpp
         Network/RoomRelayClient.cpp
         Network/RoomAdmissionClient.cpp
+        Network/FeedbackClient.cpp
         Network/ENetHttp.cpp
         Network/MetaServerClient.cpp
         Network/VersionChecker.cpp

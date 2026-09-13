@@ -2,6 +2,7 @@
 #define DUNECITY_FEEDBACK_ISSUE_H
 
 #include <string>
+#include <map>
 #include <stdexcept>
 
 namespace FeedbackIssue {
@@ -9,26 +10,19 @@ inline bool hasText(const std::string& value) {
     return value.find_first_not_of(" \r\n\t") != std::string::npos;
 }
 
-inline std::string encode(const std::string& value) {
-    constexpr char hex[] = "0123456789ABCDEF";
-    std::string result;
-    for(unsigned char c : value) {
-        if((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
-           || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~') {
-            result += static_cast<char>(c);
-        } else {
-            result += '%'; result += hex[c >> 4]; result += hex[c & 15];
-        }
-    }
-    return result;
+// Only a confirmed issue in this repository can be opened by the client.
+inline bool isIssueUrl(const std::string& url) {
+    const std::string prefix = "https://github.com/VR48/dunecity/issues/";
+    return url.compare(0, prefix.size(), prefix) == 0 && url.size() > prefix.size()
+        && url[prefix.size()] != '0'
+        && url.find_first_not_of("0123456789", prefix.size()) == std::string::npos;
 }
-
-inline std::string url(const std::string& title, const std::string& details, const std::string& context) {
+inline std::map<std::string, std::string> fields(const std::string& id, const std::string& title,
+        const std::string& details, const std::string& context) {
     if(!hasText(title) || !hasText(details)) throw std::invalid_argument("Enter a summary and some feedback first.");
-    const auto result = "https://github.com/VR48/dunecity/issues/new?title=" + encode(title)
-        + "&body=" + encode(details + "\n\n---\n" + context);
-    if(result.size() > 7500) throw std::invalid_argument("Please shorten the feedback before opening GitHub.");
-    return result;
+    if(title.size() > 400 || details.size() > 8000 || context.size() > 8000)
+        throw std::invalid_argument("Please shorten the feedback.");
+    return {{"request_id", id}, {"title", title}, {"details", details}, {"context", context}};
 }
 }
 #endif

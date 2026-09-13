@@ -1,5 +1,41 @@
 # Campaign controls and feedback — 1.0.663 (local, 13 September 2026)
 
+## 2026-09-13 — 1.0.664 input repair and anonymous feedback (local)
+
+Worktree `/Users/stefan/Documents/projects/dunecity-campaign-controls`, branch
+`feature/campaign-controls`; original dev checkout remains untouched.
+
+- Fixed 1.0.663's selection regression: `BuilderList` returned handled for clicks
+  outside its bounds once a builder was selected. The new Game input guard then
+  discarded map clicks. Both left/right handlers now check bounds and visibility;
+  hidden generic buttons also let clicks through. Real SDL input tests select a
+  unit after a builder on campaign levels 4 and 9, alongside feedback open/close.
+- Moved **Give feedback** to the top bar, retained campaign skip at bottom right,
+  and let the news ticker shrink/clip within the available top-bar space.
+- Feedback sends asynchronously to `/metaserver/feedback.php`, includes the active
+  AI houses/types/difficulties, and displays **View request / OK** only after a
+  confirmed issue URL. Failure preserves the entered text and retry id. No player
+  GitHub account or credential in the game. Sending is bounded to 20 seconds;
+  the modal cannot be dismissed while sending. Browser opens only on View request.
+- Campaign AI partner selection has AI Support Easy/Medium/Hard/Brutal and full
+  QuantBot Easy/Medium/Hard/Brutal/Defend. Descriptions distinguish economy/building
+  assistance from full unit control. Existing QuantBot shared-human-house behavior
+  already permits full campaign control; no simulation/save schema changed.
+- Server counterpart is the isolated website worktree
+  `/Users/stefan/Documents/projects/dunelegacy-feedback`, branch `feature/game-feedback`.
+  See its `docs/game-feedback.md`. Fixed repo, server-only Issues-scoped token,
+  input/rate limits, SQLite idempotency, and lost-response reconciliation. Mocked
+  PHP tests create no real GitHub issues. **Not deployed.** Website Actions secret
+  `FEEDBACK_GITHUB_TOKEN` was absent when checked; it must be provisioned before
+  live submission. No broad local account token was copied to the service.
+- Validation: native Release build; all six CTest targets (683 main cases passed,
+  three expected skips); expanded real-game probe with input, AI context, retry
+  and success states; standalone Emscripten compile of the browser feedback client;
+  rendered dialog/top-bar/campaign layout checks. No full browser build or live
+  GitHub issue creation was performed. Local app is `build/bin/dunecity.app`.
+  No install, running-game restart, push, tag, PR or public release was performed.
+
+
 Implemented on `feature/campaign-controls` in
 `/Users/stefan/Documents/projects/dunecity-campaign-controls`, based on main
 `b4d1471` (1.0.662). The older `dunecity` checkout/branch was left intact.

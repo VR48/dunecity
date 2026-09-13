@@ -66,7 +66,7 @@ with (out / 'run.log').open('w') as log:
     subprocess.run([str(binary), '--window', '--showlog'], cwd=out, env=env,
                    stdout=log, stderr=subprocess.STDOUT, check=True, timeout=60)
 text = (out / 'run.log').read_text()
-for marker in ('OWNERSHIP_PROBE_PASS:', 'COMMAND_BATCH_PROBE_PASS:', 'RELAY_PAUSE_PROBE_PASS:', 'CAMPAIGN_SKIP_PROBE_PASS:', 'FEEDBACK_EDITOR_PROBE_PASS:'):
+for marker in ('OWNERSHIP_PROBE_PASS:', 'COMMAND_BATCH_PROBE_PASS:', 'RELAY_PAUSE_PROBE_PASS:', 'CAMPAIGN_SKIP_PROBE_PASS:', 'FEEDBACK_EDITOR_PROBE_PASS:', 'MAP_INPUT_PROBE_PASS:', 'FEEDBACK_SUBMISSION_PROBE_PASS:', 'UNIT_SELECTION_PROBE_PASS:', 'AI_PARTNER_PROBE_PASS:'):
     if marker not in text:
         raise RuntimeError('Missing completion marker: ' + marker)
 subprocess.run(['python3', str(root / 'scripts/check-build-deps.py'), str(build)], check=True, cwd=root)

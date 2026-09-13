@@ -127,7 +127,8 @@ void SinglePlayerMenu::playCampaign() {
         "qBotSupportEasy",
         "qBotSupportMedium",
         "qBotSupportHard",
-        "qBotSupportBrutal"
+        "qBotSupportBrutal",
+        "qBotEasy", "qBotMedium", "qBotHard", "qBotBrutal", "qBotDefend"
     };
 
     const char* const kEnemyAIClasses[] = {
@@ -152,7 +153,7 @@ void SinglePlayerMenu::playCampaign() {
             humanHouseInfo.addPlayerInfo( GameInitSettings::PlayerInfo(settings.general.playerName, HUMANPLAYERCLASS) );
 
             if(supportSelected && supportPlayerClass != nullptr && *supportPlayerClass != '\0') {
-                std::string allyName = getHouseNameByNumber((HOUSETYPE) houseID) + " " + _("(AI Support)");
+                std::string allyName = getHouseNameByNumber((HOUSETYPE) houseID) + " " + (supportBotIndex >= 5 ? _("(QuantBot)") : _("(AI Support)"));
                 humanHouseInfo.addPlayerInfo(GameInitSettings::PlayerInfo(allyName, supportPlayerClass));
             }
 

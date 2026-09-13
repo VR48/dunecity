@@ -149,3 +149,12 @@ next scheduled deploy. Website main 9a85d48 contains the gateway and additive re
 Untracked play-test-* previews are also removed; restore previews after deployment,
 or finish their tests before publishing. The private loopback relay and SQLite data
 live outside the deployed webroot and are preserved.
+
+## In-game feedback service
+
+From 1.0.664, the client POSTs to `https://dunelegacy.com/metaserver/feedback.php`.
+Before publishing clients, deploy the corresponding website service and provision
+`FEEDBACK_GITHUB_TOKEN` as documented in the website repository's
+`docs/game-feedback.md`. Use a fine-grained token scoped to `VR48/dunecity` with
+Issues read/write only (plus mandatory Metadata read); never embed it in binaries,
+web assets or Git. A successful native build alone does not activate this service.

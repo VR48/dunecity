@@ -27,7 +27,7 @@
 #define MESSAGETIME         (16*MESSAGESCROLLSPEED)
 
 NewsTicker::NewsTicker() : Widget() {
-    enableResizing(false,false);
+    enableResizing(true,false);
 
     timer = -MESSAGETIME;
     pBackground = pGFXManager->getUIGraphic(UI_MessageBox);
@@ -75,7 +75,7 @@ void NewsTicker::draw(Point position) {
         return;
     }
 
-    SDL_Rect dest = calcDrawingRect(pBackground, position.x, position.y);
+    SDL_Rect dest = {position.x, position.y, getSize().x, getSize().y};
     SDL_RenderCopy(renderer, pBackground, nullptr, &dest);
 
     // draw message
@@ -111,7 +111,7 @@ void NewsTicker::draw(Point position) {
                 }
             }
 
-            textLocation.w = cut.w = getWidth(pCurrentMessageTexture.get());
+            textLocation.w = cut.w = std::min(getWidth(pCurrentMessageTexture.get()), std::max(0, getSize().x - 20));
             textLocation.h = cut.h = getHeight(pCurrentMessageTexture.get()) - cut.y;
             SDL_RenderCopy(renderer, pCurrentMessageTexture.get(), &cut, &textLocation);
         }

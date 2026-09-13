@@ -1686,12 +1686,16 @@ TEST_CASE("Only human campaign controllers can skip missions", "[campaign][comma
     REQUIRE_FALSE(CommandValidation::isWellFormedCommand(CMD_CAMPAIGN_SKIP, 1));
 }
 
-TEST_CASE("Feedback links preserve Unicode and cannot inject query parameters", "[feedback]") {
-    const auto url = FeedbackIssue::url("Bug & labels=admin", "Café #1\n100% + spice?", "Mod: vanilla");
-    REQUIRE(url.find("https://github.com/VR48/dunecity/issues/new?title=Bug%20%26%20labels%3Dadmin&body=") == 0);
-    REQUIRE(url.find("Caf%C3%A9%20%231%0A100%25%20%2B%20spice%3F") != std::string::npos);
-    REQUIRE(url.find("%0A%0A---%0AMod%3A%20vanilla") != std::string::npos);
-    REQUIRE_THROWS_AS(FeedbackIssue::url(" ", "Details", ""), std::invalid_argument);
-    REQUIRE_THROWS_AS(FeedbackIssue::url("Title", "\n\t", ""), std::invalid_argument);
-    REQUIRE_THROWS_AS(FeedbackIssue::url("Title", std::string(3000, '#'), ""), std::invalid_argument);
+TEST_CASE("Feedback submissions preserve text and restrict returned issue links", "[feedback]") {
+    const auto fields = FeedbackIssue::fields("id", "Bug & labels=admin", "Café #1\n100% + spice?", "Mod: vanilla");
+    REQUIRE(fields.at("title") == "Bug & labels=admin");
+    REQUIRE(fields.at("details") == "Café #1\n100% + spice?");
+    REQUIRE(fields.at("context") == "Mod: vanilla");
+    REQUIRE(FeedbackIssue::isIssueUrl("https://github.com/VR48/dunecity/issues/123"));
+    for(const auto* url : {"https://github.com/VR48/dunecity/issues/new", "https://evil.test/123",
+        "https://github.com/VR48/dunecity/issues/1?evil=1", "https://github.com/VR48/dunecity/issues/"})
+        REQUIRE_FALSE(FeedbackIssue::isIssueUrl(url));
+    REQUIRE_THROWS_AS(FeedbackIssue::fields("id", " ", "Details", ""), std::invalid_argument);
+    REQUIRE_THROWS_AS(FeedbackIssue::fields("id", "Title", "\n\t", ""), std::invalid_argument);
+    REQUIRE_THROWS_AS(FeedbackIssue::fields("id", "Title", std::string(8001, '#'), ""), std::invalid_argument);
 }

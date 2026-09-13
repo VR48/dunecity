@@ -8,8 +8,9 @@
 #include <GUI/TextView.h>
 #include <GUI/TextButton.h>
 #include <GUI/Label.h>
+#include <Network/FeedbackClient.h>
 
-// Small multiline editor for feedback. Text stays local until Open GitHub is clicked.
+// Small multiline editor for feedback. Text stays local until Send feedback is clicked.
 class FeedbackEditor : public TextView {
 public:
     const std::string& value() const { return contents; }
@@ -30,18 +31,24 @@ private:
 
 class FeedbackWindow final : public Window {
 public:
-    FeedbackWindow();
+    using Submit = std::function<std::shared_ptr<FeedbackClient::Submission>(const std::map<std::string, std::string>&)>;
+    explicit FeedbackWindow(Submit send = FeedbackClient::submit);
     ~FeedbackWindow() override;
     bool handleKeyPress(SDL_KeyboardEvent& key) override;
+    using Window::draw;
+    void draw(Point position) override;
 private:
-    void openGitHub();
+    Submit send;
+    void sendFeedback();
+    void pollSubmission();
     StaticContainer layout;
     Label heading, summaryLabel, detailsLabel, helpLabel, statusLabel;
     TextBox summary;
     FeedbackEditor details;
     TextView contextView;
     TextButton openButton, closeButton;
-    std::string context;
+    std::string context, requestId, submittedTitle, submittedDetails, issueUrl;
+    std::shared_ptr<FeedbackClient::Submission> submission;
     bool textInputWasActive = false;
 };
 #endif

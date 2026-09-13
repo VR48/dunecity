@@ -58,7 +58,8 @@ const char* const kSupportPlayerClasses[] = {
     "qBotSupportEasy",
     "qBotSupportMedium",
     "qBotSupportHard",
-    "qBotSupportBrutal"
+    "qBotSupportBrutal",
+    "qBotEasy", "qBotMedium", "qBotHard", "qBotBrutal", "qBotDefend"
 };
 
 constexpr int kSupportOptionCount = sizeof(kSupportPlayerClasses) / sizeof(kSupportPlayerClasses[0]);
@@ -153,18 +154,27 @@ HouseChoiceMenu::HouseChoiceMenu() : MenuBase()
     windowWidget.addWidget(&modDescription, Point(48, 411), Point(256, 38));
     updateModDescription();
 
-    label("AI support", 336, 294);
+    label("AI partner", 336, 294);
     supportBotDropDown.addEntry(_("None"), 0);
-    supportBotDropDown.addEntry(_("Easy"), 1);
-    supportBotDropDown.addEntry(_("Medium"), 2);
-    supportBotDropDown.addEntry(_("Hard"), 3);
-    supportBotDropDown.addEntry(_("Brutal"), 4);
+    supportBotDropDown.addEntry(_("AI Support (Easy)"), 1);
+    supportBotDropDown.addEntry(_("AI Support (Medium)"), 2);
+    supportBotDropDown.addEntry(_("AI Support (Hard)"), 3);
+    supportBotDropDown.addEntry(_("AI Support (Brutal)"), 4);
+    supportBotDropDown.addEntry(_("QuantBot Easy"), 5);
+    supportBotDropDown.addEntry(_("QuantBot Medium"), 6);
+    supportBotDropDown.addEntry(_("QuantBot Hard"), 7);
+    supportBotDropDown.addEntry(_("QuantBot Brutal"), 8);
+    supportBotDropDown.addEntry(_("QuantBot Defend"), 9);
     supportBotDropDown.setSelectedItem(s_supportBotIndex);
     supportBotDropDown.setOnSelectionChange(std::bind(&HouseChoiceMenu::onSupportBotSelectionChanged, this, std::placeholders::_1));
     windowWidget.addWidget(&supportBotDropDown, Point(336, 315), Point(256, 22));
-    label("An ally helps control your house.", 336, 339);
+    supportDescription.setTextFontSize(10);
+    supportDescription.setTextColor(COLOR_WHITE);
+    supportDescription.setAlignment(Alignment_Left);
+    windowWidget.addWidget(&supportDescription, Point(336, 339), Point(256, 30));
+    onSupportBotSelectionChanged(false);
 
-    label("Enemy AI", 336, 365);
+    label("Enemy AI", 336, 377);
     enemyAIDropDown.addEntry(_("QuantBot Easy"), 0);
     enemyAIDropDown.addEntry(_("QuantBot Medium"), 1);
     enemyAIDropDown.addEntry(_("QuantBot Hard"), 2);
@@ -173,8 +183,8 @@ HouseChoiceMenu::HouseChoiceMenu() : MenuBase()
     enemyAIDropDown.addEntry(_("Campaign AI"), 5);
     enemyAIDropDown.setSelectedItem(s_enemyAIIndex);
     enemyAIDropDown.setOnSelectionChange(std::bind(&HouseChoiceMenu::onEnemyAISelectionChanged, this, std::placeholders::_1));
-    windowWidget.addWidget(&enemyAIDropDown, Point(336, 386), Point(256, 22));
-    label("Choose how your opponents fight.", 336, 411);
+    windowWidget.addWidget(&enemyAIDropDown, Point(336, 398), Point(256, 22));
+    label("Choose how your opponents fight.", 336, 425);
 
     gameOptionsButton.setText(_("Game Options"));
     gameOptionsButton.setOnClick(std::bind(&HouseChoiceMenu::onGameOptions, this));
@@ -207,6 +217,9 @@ void HouseChoiceMenu::onGameOptions() {
 void HouseChoiceMenu::onSupportBotSelectionChanged(bool /*interactive*/) {
     int entry = supportBotDropDown.getSelectedEntryIntData();
     s_supportBotIndex = (entry >= 0 && entry < kSupportOptionCount) ? entry : 0;
+    supportDescription.setText(s_supportBotIndex >= 5
+        ? _("QuantBot plays for you: economy, building\nand unit control (including combat).")
+        : _("AI Support: economy and construction.\nYou command combat units."));
 }
 
 void HouseChoiceMenu::onEnemyAISelectionChanged(bool /*interactive*/) {

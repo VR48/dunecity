@@ -73,6 +73,7 @@ private:
     TextView        modDescription;
     std::vector<ModInfo> availableMods;
     TextButton      backButton;
+    Label          supportDescription;
     DropDownBox     supportBotDropDown;
     DropDownBox     enemyAIDropDown;
     TextButton hostCoopButton;
