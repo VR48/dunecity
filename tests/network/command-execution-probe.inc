@@ -185,7 +185,7 @@ int runOwnershipProbe() {
             result = std::make_shared<FeedbackClient::Submission>();
             click(40, 414);
             if(sent.size() != 2 || sent[0] != sent[1]) throw std::runtime_error("retry changed feedback or id");
-            result->response = "OK https://github.com/VR48/dunecity/issues/123"; result->done.store(true);
+            result->response = "OK https://github.com/ggtothemax/dunecity/issues/123"; result->done.store(true);
             feedback.draw();
             image = renderReadSurface(renderer); SavePNG(image.get(), "feedback-success.png");
             click(400, 414); // OK returns to game; View request is deliberately not opened in tests.

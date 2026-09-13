@@ -1,0 +1,29 @@
+<!doctype html><meta charset="utf-8"><title>DuneCity direct transport test</title><style>body{font:18px system-ui;background:#16130d;color:#ffe08a;margin:3rem}pre{white-space:pre-wrap}</style><h1>P2PKit browser transport test</h1><pre id="status">Connecting...</pre><script type="module">
+import {RTCTransport} from './rtc.mjs';
+const params=new URLSearchParams(location.search), self=params.get('peer')||'1', remote=self==='1'?'2':'1';
+const output=document.querySelector('#status'); const log=m=>output.textContent+='\n'+m;
+const bc=new BroadcastChannel('dc-p2p-'+params.get('room'));let handlers=new Set();let signalActive=true;
+const signal={ready:Promise.resolve(),onMessage(fn){handlers.add(fn);return()=>handlers.delete(fn)},send(m){if(signalActive)bc.postMessage(m)}};
+bc.onmessage=e=>{for(const fn of handlers)fn(e.data)};
+let pc;
+class TrackedPC extends RTCPeerConnection {constructor(config){super(config);pc=this}}
+// Announce presence before constructing initiator, so no offer can precede listener registration.
+let started=false,hello=setInterval(()=>bc.postMessage({hello:self}),250);
+const previous=bc.onmessage;bc.onmessage=e=>{if(e.data.hello===remote&&!started){started=true;bc.postMessage({hello:self});clearInterval(hello);run()}previous(e)};
+const hold=Math.min(90,Math.max(0,Number(params.get('hold')||0)));
+let received=0,complete=false;
+function run(){
+ const t=new RTCTransport({self,remote,backend:{RTCPeerConnection:TrackedPC},signalling:signal,initiator:self<remote,iceServers:[]});window.transport=t;
+ t.on('error',e=>log('FAIL '+e.message));t.on('disconnect',()=>{if(!complete)log('FAIL disconnected')});
+ t.on('message',async m=>{
+  const expected=received===0?'g:1:0:'+remote.repeat(524256):received===101?'offline:'+remote:'command:'+remote+':'+(received-1);
+  if(m!==expected){log('FAIL payload/order mismatch at '+received);t.disconnect();return}
+  received++;
+  if(received===(hold?102:101)){complete=true;log('PASS: full-size payload and 100 ordered commands received after signaling stopped'+(hold?'; continued after '+hold+' seconds offline':''));
+   const report=await pc.getStats();for(const stat of report.values())if(stat.type==='candidate-pair'&&stat.state==='succeeded'&&stat.nominated){const local=report.get(stat.localCandidateId),remote=report.get(stat.remoteCandidateId);log('Selected route: '+local?.candidateType+' → '+remote?.candidateType+'; bytes received '+stat.bytesReceived)}
+  }
+ });
+ t.on('connect',async()=>{log('Direct channel connected');await new Promise(r=>setTimeout(r,2000));signalActive=false;bc.close();handlers.clear();log('Signaling stopped; exchanging gameplay-shaped data');try{await t.send('g:1:0:'+self.repeat(524256));for(let i=0;i<100;i++)await t.send('command:'+self+':'+i);if(hold){await new Promise(r=>setTimeout(r,hold*1000));await t.send('offline:'+self)}}catch(e){log('FAIL '+e.message)}});
+}
+setTimeout(()=>{if(!complete)log('FAIL test deadline')},(hold+40)*1000);
+</script>

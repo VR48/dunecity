@@ -8,7 +8,7 @@ version numbers and run IDs below are verification examples, not next-version de
 
 | Purpose | Repository / local checkout on Stefan's MacBook Air | Destination |
 | --- | --- | --- |
-| Game and release automation | `VR48/dunecity`; `~/Documents/projects/dunecity` | GitHub Releases; SourceForge Files and dedicated source refs |
+| Game and release automation | `ggtothemax/dunecity`; `~/Documents/projects/dunecity` | GitHub Releases; SourceForge Files and dedicated source refs |
 | Main website | `VR48/dunelegacy.com`; `~/Documents/projects/dunelegacy.com` | https://dunelegacy.com via **Deploy to Droplet** |
 | Historical SourceForge repository | `ssh://svan058@git.code.sf.net/p/dunelegacy/code`; `~/Documents/projects/dunelegacy-code` | `master` holds Legacy history/old website; `dunecity` holds latest released game source |
 
@@ -52,9 +52,9 @@ are separate deliberate changes, such as `dc69c5a`.
 ## Retry without rebuilding
 
 ```sh
-gh workflow run sourceforge.yml --repo VR48/dunecity --ref main -f tag=vX.Y.Z
-gh run list --repo VR48/dunecity --workflow sourceforge.yml --limit 5
-gh run watch RUN_ID --repo VR48/dunecity --exit-status
+gh workflow run sourceforge.yml --repo ggtothemax/dunecity --ref main -f tag=vX.Y.Z
+gh run list --repo ggtothemax/dunecity --workflow sourceforge.yml --limit 5
+gh run watch RUN_ID --repo ggtothemax/dunecity --exit-status
 ```
 
 Dispatch only an existing published stable tag. Historical backfills do not
@@ -119,7 +119,7 @@ WASM and data URL carries the same version/content token; unversioned artifacts
 must revalidate. Verify the live `play/build.json` and download/hash every listed
 artifact after deployment. Browser-test fresh defaults, Display aspect changes,
 Options resolution changes, reload persistence, viewport resize and fullscreen.
-Crossplay uses `https://dunelegacy.com/relay`. Desktop ENet multiplayer remains
+Released 1.0.661 crossplay uses `https://dunelegacy.com/relay`. Desktop ENet multiplayer remains
 available; browser/native crossplay supports WebSocket and HTTPS polling transports,
 the public directory, optional private invitations and confirmed-name lobby chat.
 Package production clients with `--relay-origin https://dunelegacy.com` so their CSP
@@ -155,6 +155,25 @@ live outside the deployed webroot and are preserved.
 From 1.0.664, the client POSTs to `https://dunelegacy.com/metaserver/feedback.php`.
 Before publishing clients, deploy the corresponding website service and provision
 `FEEDBACK_GITHUB_TOKEN` as documented in the website repository's
-`docs/game-feedback.md`. Use a fine-grained token scoped to `VR48/dunecity` with
+`docs/game-feedback.md`. Use a fine-grained token scoped to `ggtothemax/dunecity` with
 Issues read/write only (plus mandatory Metadata read); never embed it in binaries,
 web assets or Git. A successful native build alone does not activate this service.
+
+### Direct-P2P release transition (1.0.663 candidate)
+
+The candidate uses actual P2PKit RTC/framing in browsers and compatible libdatachannel
+on desktop. Apache/PHP at `/p2p` handles admission, lobby/chat and introductions only.
+No gameplay relay or TURN fallback is present. Native ENet remains available.
+
+The web workflow copies matching PHP source with `scripts/package-p2p-service.py`
+into the website repository's private `p2p-service` directory. Its normal deploy
+installs a verified snapshot outside the webroot, preserves private configuration
+and worker-owned state, and keeps the tracked `/p2p` entrypoint across hourly updates.
+See that repository's `deploy/p2p-signaling.md`. Back up the existing SQLite database
+before its additive schema-3 migration. Old relay records and clients stay compatible.
+Package production browser clients with `--signaling-origin https://dunelegacy.com`.
+
+Hold stable publication until full public browser/browser and browser/native matches
+pass, including gameplay after signaling outage and SQLite runtime attribution.
+Transport fixtures alone are insufficient. Networks unable to establish direct ICE
+connectivity fail visibly; there is no hidden relay fallback.

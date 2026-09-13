@@ -116,3 +116,7 @@ __pycache__/
 /AI-*.md
 /*-REVIEW.md
 /*-ANALYSIS.md
+
+# The PHP development router is source, not a compiled bin directory.
+!tools/p2p-signaling/bin/
+!tools/p2p-signaling/bin/router.php

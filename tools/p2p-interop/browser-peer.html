@@ -1,0 +1,56 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>DuneCity direct play interoperability harness</title>
+<pre id="log">starting…</pre>
+<script src="/p2p-direct.js"></script>
+<script type="module">
+/*
+  The browser half of the interoperability harness.
+
+  It uses the shipped bridge - the same globalThis.DuneDirectBridge the game's WebAssembly talks
+  to - so what this exercises is the real browser path, not a test double of it. Signals go
+  through the loopback mailbox; gameplay never does.
+*/
+const log = message => { document.getElementById('log').textContent += `\n${message}` }
+const bridge = globalThis.DuneDirectBridge
+if (!bridge) { log('FAIL: platform/web/p2p-direct.js did not load; build it first'); throw new Error('no bridge') }
+
+// The native peer is the initiator by default, so this side answers.
+const params = new URLSearchParams(location.search)
+const initiator = params.get('initiator') === '1'
+const handle = bridge.create('[]', initiator, 'p2pkit')
+
+const send = (kind, payload) =>
+  fetch('/send', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                   body: JSON.stringify({ kind, payload }) })
+
+let largeSeen = false
+let ordered = 0
+
+setInterval(async () => {
+  for (let signal = bridge.pollSignal(handle); signal; signal = bridge.pollSignal(handle)) {
+    const split = signal.indexOf('|')
+    await send(signal.slice(0, split), signal.slice(split + 1))
+  }
+
+  for (const message of await (await fetch('/recv')).json()) {
+    if (message.kind === 'candidate') bridge.addRemoteCandidate(handle, message.payload)
+    else bridge.setRemoteDescription(handle, message.kind, message.payload)
+  }
+
+  for (let value = bridge.pollValue(handle); value; value = bridge.pollValue(handle)) {
+    const envelope = JSON.parse(value)
+    if (envelope.startsWith('g:')) {
+      // Echo the game envelope back unchanged: the native side compares the bytes.
+      largeSeen = true
+      bridge.sendValue(handle, JSON.stringify(envelope))
+      log(`echoed a game envelope of ${envelope.length} characters`)
+    } else if (envelope.startsWith('p:')) {
+      bridge.sendValue(handle, JSON.stringify(envelope))
+      ordered++
+      if (ordered % 25 === 0) log(`echoed ${ordered} ordered messages`)
+    }
+  }
+
+  if (largeSeen && ordered >= 100) log('browser side complete')
+}, 50)

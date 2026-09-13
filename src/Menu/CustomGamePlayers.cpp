@@ -588,7 +588,9 @@ CustomGamePlayers::CustomGamePlayers(const GameInitSettings& newGameInitSettings
             // Relay guests can join before the host chooses a map. startServer immediately
             // sends their lobby snapshot, so seat assignment must already be available.
             pNetworkManager->startServer(bLANServer, gameInitSettings.getServername(), settings.general.playerName, &gameInitSettings, 1, gameInitSettings.isMultiplePlayersPerHouse() ? numHouses*2 : numHouses);
-        } else {
+        }
+        // Direct hosts also wait for the acknowledged roster before their countdown.
+        if(!bServer || pNetworkManager->isDirectSession()) {
             pNetworkManager->setOnStartGame(std::bind(&CustomGamePlayers::onStartGame, this, std::placeholders::_1));
         }
         
@@ -1280,9 +1282,12 @@ void CustomGamePlayers::checkAllClientsReady() {
         
         // Now actually start the game
         unsigned int timeLeft = 3000;  // 3 seconds countdown
-        startGameTime = SDL_GetTicks() + timeLeft;
-        pNetworkManager->sendStartGame(timeLeft);
-        
+        if(!pNetworkManager->sendStartGame(timeLeft)) {
+            addInfoMessage("The match could not start because a player disconnected or was not ready.");
+            return;
+        }
+        if(!pNetworkManager->isDirectSession()) startGameTime = SDL_GetTicks() + timeLeft;
+        else addInfoMessage("Confirming the final players before starting...");
         disableAllDropDownBoxes();
         
         // Send Discord presence with game details
@@ -1503,6 +1508,20 @@ void CustomGamePlayers::onNext()
                     // Say so and let the host try again rather than killing the lobby.
                     bWaitingForModAcks = false;
                     addInfoMessage(reason);
+                    return;
+                }
+
+                // Matching content is not the only thing a direct match needs. Having a channel
+                // to each guest says nothing about whether the guests reached each other, and a
+                // match started across a missing guest-to-guest link loses that pair's commands
+                // with no error anywhere. Also recoverable: the link usually completes a moment
+                // later, so this asks the host to try again rather than ending the lobby.
+                if(!pNetworkManager->isMeshReady()) {
+                    bWaitingForModAcks = false;
+                    const std::string blocked = pNetworkManager->getMeshBlockedReason();
+                    addInfoMessage(blocked.empty()
+                        ? std::string(_("Not every player is connected to every other player yet."))
+                        : blocked);
                     return;
                 }
 

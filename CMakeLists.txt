@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.15)
 
 # Project name and version
-project(DuneCity VERSION 1.0.664 LANGUAGES C CXX)
+project(DuneCity VERSION 1.0.665 LANGUAGES C CXX)
 
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
@@ -54,6 +54,10 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 # Options
 option(DUNECITY_BUILD_TESTS "Build test suite" OFF)
+# Direct peer-to-peer play. ON natively; the browser build uses P2PKit's RTCTransport through
+# platform/web/src/dune-direct-bridge.ts instead of a native WebRTC library, so it is forced off
+# there and the Emscripten backend is compiled in its place.
+option(DUNECITY_DIRECT_P2P "Build the native direct peer-to-peer transport (libdatachannel)" ON)
 option(DUNECITY_ENABLE_PCH "Enable precompiled headers" ON)
 option(DUNECITY_STATIC_RUNTIME "Use static runtime libraries" OFF)
 
@@ -64,6 +68,88 @@ if(NOT EMSCRIPTEN)
     find_package(SDL2_mixer CONFIG REQUIRED)
     find_package(SDL2_ttf CONFIG REQUIRED)
     find_package(CURL REQUIRED)
+endif()
+
+if(EMSCRIPTEN)
+    set(DUNECITY_DIRECT_P2P OFF)
+endif()
+
+# libdatachannel carries the gameplay of a direct match natively, and has to interoperate with
+# the browser's own WebRTC stack. It is pinned to a commit rather than a tag: a tag can be moved,
+# and this is the library that terminates DTLS for every direct match.
+#
+# FetchContent at the pinned commit is the only default. Resolving whatever libdatachannel
+# happens to be installed would quietly swap out a security dependency, and the installed package
+# does not export the same target name anyway (it exports LibDataChannel::LibDataChannel, not the
+# ::LibDataChannelStatic alias), so accepting it needs an explicit opt-in rather than a lucky
+# find_package. To build against a local checkout of the same commit - which is what the macOS
+# builder does, without a network fetch:
+#
+#   -DFETCHCONTENT_SOURCE_DIR_LIBDATACHANNEL=/path/to/libdatachannel
+#
+# and to use a verified prebuilt install instead:
+#
+#   -DDUNECITY_SYSTEM_LIBDATACHANNEL=ON -DCMAKE_PREFIX_PATH=/path/to/install
+option(DUNECITY_SYSTEM_LIBDATACHANNEL
+       "Use an installed libdatachannel instead of the pinned source" OFF)
+set(DUNECITY_LIBDATACHANNEL_COMMIT "443f6934d9007eb7076ab7825ba330f355fcbead"
+    CACHE STRING "Pinned libdatachannel commit (v0.24.5)")
+
+if(DUNECITY_DIRECT_P2P)
+    set(DUNECITY_LIBDATACHANNEL_TARGET "")
+    if(DUNECITY_SYSTEM_LIBDATACHANNEL)
+        find_package(LibDataChannel CONFIG REQUIRED)
+        find_package(Threads REQUIRED)
+        find_package(OpenSSL)
+        foreach(CANDIDATE LibDataChannel::LibDataChannelStatic LibDataChannel::LibDataChannel)
+            if(TARGET ${CANDIDATE} AND NOT DUNECITY_LIBDATACHANNEL_TARGET)
+                set(DUNECITY_LIBDATACHANNEL_TARGET ${CANDIDATE})
+            endif()
+        endforeach()
+        if(NOT DUNECITY_LIBDATACHANNEL_TARGET)
+            message(FATAL_ERROR
+                "DUNECITY_SYSTEM_LIBDATACHANNEL is ON but the package exported no usable target.")
+        endif()
+        message(STATUS "Direct play uses the installed ${DUNECITY_LIBDATACHANNEL_TARGET}; "
+                       "verify it is commit ${DUNECITY_LIBDATACHANNEL_COMMIT}")
+    else()
+        include(FetchContent)
+        # libdatachannel terminates DTLS with OpenSSL. On Windows libcurl uses Schannel, so
+        # nothing else in this build pulls OpenSSL in and a clean CI machine would fail inside
+        # libdatachannel's own find_package. The vcpkg manifest carries it explicitly for that
+        # reason; asking for it here as well turns a confusing nested failure into a clear one.
+        find_package(OpenSSL QUIET)
+        if(NOT OpenSSL_FOUND)
+            message(STATUS "OpenSSL was not found up front; libdatachannel will look for it "
+                           "itself. If that fails, install the openssl dependency.")
+        endif()
+        # Scoped so that turning libdatachannel into a static library does not decide how every
+        # other dependency in this build is linked.
+        set(DUNECITY_SAVED_BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS})
+        set(BUILD_SHARED_LIBS OFF)
+        set(NO_WEBSOCKET ON CACHE BOOL "" FORCE)
+        set(NO_MEDIA ON CACHE BOOL "" FORCE)
+        set(NO_EXAMPLES ON CACHE BOOL "" FORCE)
+        set(NO_TESTS ON CACHE BOOL "" FORCE)
+        FetchContent_Declare(libdatachannel
+            GIT_REPOSITORY https://github.com/paullouisageneau/libdatachannel.git
+            GIT_TAG ${DUNECITY_LIBDATACHANNEL_COMMIT}
+            GIT_SUBMODULES_RECURSE ON)
+        FetchContent_MakeAvailable(libdatachannel)
+        set(BUILD_SHARED_LIBS ${DUNECITY_SAVED_BUILD_SHARED_LIBS})
+        foreach(CANDIDATE LibDataChannel::LibDataChannelStatic LibDataChannel::LibDataChannel
+                          datachannel-static datachannel)
+            if(TARGET ${CANDIDATE} AND NOT DUNECITY_LIBDATACHANNEL_TARGET)
+                set(DUNECITY_LIBDATACHANNEL_TARGET ${CANDIDATE})
+            endif()
+        endforeach()
+        if(NOT DUNECITY_LIBDATACHANNEL_TARGET)
+            message(FATAL_ERROR
+                "libdatachannel ${DUNECITY_LIBDATACHANNEL_COMMIT} built no target this project "
+                "recognises. Configure with -DDUNECITY_DIRECT_P2P=OFF to build without direct "
+                "online play.")
+        endif()
+    endif()
 endif()
 
 # Platform-specific settings

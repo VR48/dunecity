@@ -12,7 +12,7 @@ inline bool hasText(const std::string& value) {
 
 // Only a confirmed issue in this repository can be opened by the client.
 inline bool isIssueUrl(const std::string& url) {
-    const std::string prefix = "https://github.com/VR48/dunecity/issues/";
+    const std::string prefix = "https://github.com/ggtothemax/dunecity/issues/";
     return url.compare(0, prefix.size(), prefix) == 0 && url.size() > prefix.size()
         && url[prefix.size()] != '0'
         && url.find_first_not_of("0123456789", prefix.size()) == std::string::npos;

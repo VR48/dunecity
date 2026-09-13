@@ -1691,9 +1691,9 @@ TEST_CASE("Feedback submissions preserve text and restrict returned issue links"
     REQUIRE(fields.at("title") == "Bug & labels=admin");
     REQUIRE(fields.at("details") == "Café #1\n100% + spice?");
     REQUIRE(fields.at("context") == "Mod: vanilla");
-    REQUIRE(FeedbackIssue::isIssueUrl("https://github.com/VR48/dunecity/issues/123"));
-    for(const auto* url : {"https://github.com/VR48/dunecity/issues/new", "https://evil.test/123",
-        "https://github.com/VR48/dunecity/issues/1?evil=1", "https://github.com/VR48/dunecity/issues/"})
+    REQUIRE(FeedbackIssue::isIssueUrl("https://github.com/ggtothemax/dunecity/issues/123"));
+    for(const auto* url : {"https://github.com/ggtothemax/dunecity/issues/new", "https://evil.test/123",
+        "https://github.com/ggtothemax/dunecity/issues/1?evil=1", "https://github.com/ggtothemax/dunecity/issues/"})
         REQUIRE_FALSE(FeedbackIssue::isIssueUrl(url));
     REQUIRE_THROWS_AS(FeedbackIssue::fields("id", " ", "Details", ""), std::invalid_argument);
     REQUIRE_THROWS_AS(FeedbackIssue::fields("id", "Title", "\n\t", ""), std::invalid_argument);

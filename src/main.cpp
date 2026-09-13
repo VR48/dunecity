@@ -1162,6 +1162,14 @@ int main(int argc, char *argv[]) {
             settings.network.relayUseDevelopmentEndpoint =
                 myINIFile.getBoolValue("Network","Use Relay Development Endpoint",false);
 
+            // Direct play. Separate keys from the relay on purpose: this address may only ever
+            // name a signaling service, and the client refuses a relay address here.
+            settings.network.directEndpoint =
+                myINIFile.getStringValue("Network","Direct Endpoint",DEFAULT_DIRECT_ENDPOINT);
+            settings.network.directDevelopmentEndpoint =
+                myINIFile.getStringValue("Network","Direct Development Endpoint",
+                                         DEVELOPMENT_DIRECT_ENDPOINT);
+
 #ifdef __EMSCRIPTEN__
             // The browser build has no command line, so the page URL may name the relay. The
             // value goes through exactly the same validation as any other endpoint, and a plain
@@ -1172,6 +1180,8 @@ int main(int argc, char *argv[]) {
                 if(relayFromPage[0] != '\0') {
                     settings.network.relayEndpoint = relayFromPage;
                     settings.network.relayDevelopmentEndpoint = relayFromPage;
+                    settings.network.directEndpoint = relayFromPage;
+                    settings.network.directDevelopmentEndpoint = relayFromPage;
                 }
                 if(dunecityReadRelayDevelopmentParameter() != 0) {
                     settings.network.relayUseDevelopmentEndpoint = true;

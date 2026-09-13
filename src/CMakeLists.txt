@@ -227,6 +227,9 @@ target_sources(dunecity
         Network/RoomRelayClient.cpp
         Network/RoomAdmissionClient.cpp
         Network/FeedbackClient.cpp
+
+        Network/DirectRoomTransport.cpp
+        Network/BoundedHttpClient.cpp
         Network/ENetHttp.cpp
         Network/MetaServerClient.cpp
         Network/VersionChecker.cpp
@@ -468,14 +471,28 @@ endif()
 # it is the one tests/RelayHttpTransportTestCase drives against a scripted backend.
 target_sources(dunecity PRIVATE Network/RelayHttpTransport.cpp)
 
+# The direct peer-to-peer transport has one backend per runtime and they have to interoperate:
+# natively a real libdatachannel data channel, in the browser P2PKit's RTCTransport reached
+# through platform/web/src/dune-direct-bridge.ts. The wire format they share is
+# include/Network/P2PWireFraming.h, which is header-only precisely so the tests can drive the
+# real encoder and decoder without either backend.
 if(EMSCRIPTEN)
     target_sources(dunecity PRIVATE
         Network/RelayWebSocketEmscripten.cpp
-        Network/RelayHttpTransportEmscripten.cpp)
+        Network/RelayHttpTransportEmscripten.cpp
+        Network/DirectPeerConnectionEmscripten.cpp)
 else()
     target_sources(dunecity PRIVATE
         Network/RelayWebSocketCurl.cpp
-        Network/RelayHttpTransportCurl.cpp)
+        Network/RelayHttpTransportCurl.cpp
+        Network/DirectPeerConnectionLibdatachannel.cpp)
+
+    if(DUNECITY_DIRECT_P2P)
+        target_link_libraries(dunecity PRIVATE ${DUNECITY_LIBDATACHANNEL_TARGET})
+        target_compile_definitions(dunecity PRIVATE DUNECITY_HAVE_LIBDATACHANNEL)
+    else()
+        message(STATUS "libdatachannel is disabled; this build cannot play directly online")
+    endif()
 
     # libcurl gained its WebSocket API in 7.86. Older libcurl still builds - the transport
     # compiles out and the game says online play is unavailable - but it is worth being loud
@@ -499,6 +516,18 @@ if(EMSCRIPTEN)
         configure_file("${CMAKE_SOURCE_DIR}/web/${WEB_SHELL_ASSET}"
             "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${WEB_SHELL_ASSET}" COPYONLY)
     endforeach()
+
+    # The direct-play bridge bundle. It is generated from platform/web/src/dune-direct-bridge.ts
+    # and the vendored P2PKit source by tools/p2pkit-build, and committed, so a clean clone builds
+    # without npm at configure time. Copied, never built here; if it is missing the game still
+    # builds and simply reports that this page cannot open direct connections.
+    if(EXISTS "${CMAKE_SOURCE_DIR}/platform/web/p2p-direct.js")
+        configure_file("${CMAKE_SOURCE_DIR}/platform/web/p2p-direct.js"
+            "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/p2p-direct.js" COPYONLY)
+    else()
+        message(STATUS "platform/web/p2p-direct.js is absent; "
+                       "the browser build will have no direct-play bridge")
+    endif()
     set_property(TARGET dunecity APPEND PROPERTY LINK_DEPENDS
         "${CMAKE_SOURCE_DIR}/web/shell.html")
     target_compile_options(dunecity PRIVATE
