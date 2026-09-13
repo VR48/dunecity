@@ -10,15 +10,23 @@ in-game forwarding/relay. Existing native ENet remains available.
 Opus supplied the initial implementation and part of the review corrections. Stefan explicitly
 asked Codex to **stop using Opus** on 13 September; do not resume its sessions for this task.
 Codex completed the remaining fixes and owns coding/testing. Hermes has supplied independent
-security findings; a fixed snapshot review is still running. Do not describe that as approval.
+security findings; its third fixed-snapshot review finished without production approval.
+Report: `../outputs/network-hardening/p2p-hermes-review3.txt`. Codex must verify and address
+its remaining start-barrier/send-boundary, duplicate START and session lifecycle findings.
+Do not restart Opus or run further broad Hermes review rounds by default.
 
 Current checks: six native CTest suites pass; 160 PHP HTTP/concurrency tests pass; vendored RTC,
 bridge, bounded Fetch, framing and package tests pass. Real browser↔browser and browser↔native
 RTC transport tests passed previously; three native full sessions passed a 75-second outage of
-all PHP workers. The final-source repeat and full browser game acceptance remain in progress.
+all PHP workers. The final-source 75-second outage repeat passed using the standalone
+`tools/p2p-session-smoke` CMake target, with the PHP listener confirmed closed. Full browser
+game acceptance remains unfinished.
 A full browser game join uncovered unsigned timeout underflow when a new link was created after
 the frame clock sample; the signed deadline fix and advancing-clock regression now pass natively.
-The browser rebuild containing that fix is pending. A failed pair now requires fresh admission
+The browser rebuild containing that fix completed, but both existing test tabs crashed on
+reload and a fresh in-app browser boot also failed. The cause is not established. This local
+test build used `CMAKE_EXE_LINKER_FLAGS=-O1` to speed iteration; restore normal release
+linker settings and rebuild before preparing release artifacts. A failed pair now requires fresh admission
 instead of repeatedly generating new certificates under an existing pair identity.
 
 Security corrections include atomic grant redemption+seat commit in one authoritative room file,
